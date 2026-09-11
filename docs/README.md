@@ -14,7 +14,9 @@ docs/
 │     ├─ template.md
 │     └─ backlog.md
 ├─ requirements/
-│  └─ scope.md
+│  ├─ scope.md
+│  ├─ module-feature-comparison.md
+│  └─ roadmap.md
 ├─ modules/
 │  └─ README.md
 └─ development/
@@ -31,7 +33,9 @@ docs/
 | [ADR](architecture/adr/README.md) | 개별 결정의 배경, 대안, 결과, 변경 이력 기록 |
 | [ADR backlog](architecture/adr/backlog.md) | 아직 확정되지 않은 질문과 향후 논의 후보 관리 |
 | [요구사항](requirements/scope.md) | 제품이 제공해야 할 기능, 지원 후보, 범위 제외 항목 관리 |
+| [모듈별 기능 대조표](requirements/module-feature-comparison.md) | 원문 요구·합의·AI 제안과 기존 문서의 누락·축약을 항목 ID로 검토 |
 | [모듈](modules/README.md) | 구성 요소별 책임과 경계 탐색 |
+| [후속 확장 로드맵](requirements/roadmap.md) | 현재 범위에서 유예한 기능 관리. 도입 시점·릴리즈는 미정 |
 | [개발 문서](development/README.md) | 향후 확정할 개발·검증·배포 정책의 진입점 |
 
 상세 모듈 문서는 관련 ADR이 확정될 때 필요한 만큼 추가한다. 빈 기술 설계나 구현 구조를 미리 만들지 않는다.

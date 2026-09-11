@@ -7,6 +7,8 @@
 | ADR | 상태 | 확정일 |
 | --- | --- | --- |
 | [0001: Contribution 워크플로](0001-contribution-workflow.md) | Proposed — 브랜치 흐름·메시지·기본 브랜치·초기화 확정; 리뷰·보호 유예 | 전체 미확정; 부분 결정 2026-09-11 |
+| [0002: 생성 및 후처리 Custom Node 기능 범위](0002-custom-node-functional-scope.md) | Accepted — N-01~N-17 검토: 기능·Preset·출력 분리·후속 로드맵 | 2026-09-11 |
+| [0003: Generation 실행 계약과 Core 작업 조정·Queue 동기화](0003-generation-execution-and-queue.md) | Accepted — G-01~G-10 및 Core 조정·REST 페이지 조회 + SSE 변경 알림 | 2026-09-11 |
 
 [backlog](backlog.md)는 논의 후보 목록이며 ADR 승인 기록이 아니다. [template](template.md)을 사용해 논의할 ADR의 초안을 작성할 수 있다.
 
