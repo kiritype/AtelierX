@@ -1,0 +1,527 @@
+{
+  "$defs": {
+    "ComparisonCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "match": {
+          "minimum": 0,
+          "title": "Match",
+          "type": "integer"
+        },
+        "mismatch": {
+          "minimum": 0,
+          "title": "Mismatch",
+          "type": "integer"
+        },
+        "insufficient": {
+          "minimum": 0,
+          "title": "Insufficient",
+          "type": "integer"
+        },
+        "error": {
+          "minimum": 0,
+          "title": "Error",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "match",
+        "mismatch",
+        "insufficient",
+        "error"
+      ],
+      "title": "ComparisonCounts",
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^VAL_[A-Z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Message",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "input",
+            "access",
+            "provider",
+            "response",
+            "internal",
+            "recovery"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        }
+      },
+      "required": [
+        "profile",
+        "provider"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "feature": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Feature",
+          "type": "string"
+        },
+        "expected": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Expected",
+          "type": "string"
+        },
+        "observed": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Observed",
+          "type": "string"
+        },
+        "prompt_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Excerpt"
+        }
+      },
+      "required": [
+        "code",
+        "feature",
+        "expected",
+        "observed"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "GenerationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "requested": {
+          "minimum": 0,
+          "title": "Requested",
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "generation_failed": {
+          "minimum": 0,
+          "title": "Generation Failed",
+          "type": "integer"
+        },
+        "validation_error": {
+          "minimum": 0,
+          "title": "Validation Error",
+          "type": "integer"
+        },
+        "rejected": {
+          "minimum": 0,
+          "title": "Rejected",
+          "type": "integer"
+        },
+        "cancelled": {
+          "minimum": 0,
+          "title": "Cancelled",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requested",
+        "passed",
+        "generation_failed",
+        "validation_error",
+        "rejected",
+        "cancelled"
+      ],
+      "title": "GenerationSummary",
+      "type": "object"
+    },
+    "GroupContext": {
+      "additionalProperties": false,
+      "properties": {
+        "group_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "group_revision": {
+          "minimum": 0,
+          "title": "Group Revision",
+          "type": "integer"
+        },
+        "reference_revision": {
+          "minimum": 0,
+          "title": "Reference Revision",
+          "type": "integer"
+        },
+        "work_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Work Id",
+          "type": "string"
+        },
+        "character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "outfit_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Outfit Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "group_revision",
+        "reference_revision",
+        "work_id",
+        "character_id",
+        "outfit_id"
+      ],
+      "title": "GroupContext",
+      "type": "object"
+    },
+    "GroupItem": {
+      "additionalProperties": false,
+      "properties": {
+        "image_ref": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Image Ref",
+          "type": "string"
+        },
+        "compared_with": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Compared With",
+          "type": "array"
+        },
+        "verdict": {
+          "enum": [
+            "match",
+            "mismatch",
+            "insufficient",
+            "error"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "unavailable_features": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Unavailable Features",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "image_ref",
+        "compared_with",
+        "verdict",
+        "findings",
+        "unavailable_features",
+        "error"
+      ],
+      "title": "GroupItem",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "output_conditions": {
+          "title": "Output Conditions",
+          "type": "boolean"
+        },
+        "positive_prompt": {
+          "title": "Positive Prompt",
+          "type": "boolean"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "boolean"
+        },
+        "body_parts": {
+          "items": {
+            "enum": [
+              "hands",
+              "face",
+              "limbs"
+            ],
+            "type": "string"
+          },
+          "title": "Body Parts",
+          "type": "array"
+        },
+        "metadata": {
+          "title": "Metadata",
+          "type": "boolean"
+        },
+        "consistency": {
+          "title": "Consistency",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "output_conditions",
+        "positive_prompt",
+        "negative_prompt",
+        "body_parts",
+        "metadata",
+        "consistency"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Provider": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_id",
+        "revision",
+        "model",
+        "timeout_seconds"
+      ],
+      "title": "Provider",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "kind": {
+      "const": "group",
+      "title": "Kind",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Job Id",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "group": {
+      "$ref": "#/$defs/GroupContext"
+    },
+    "scope": {
+      "enum": [
+        "full",
+        "partial"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "targets": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Targets",
+      "type": "array"
+    },
+    "primary_reference": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Primary Reference",
+      "type": "string"
+    },
+    "auxiliary_references": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "title": "Auxiliary References",
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/GroupItem"
+      },
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    },
+    "counts": {
+      "$ref": "#/$defs/ComparisonCounts"
+    },
+    "summary": {
+      "enum": [
+        "all_match",
+        "mismatch_present",
+        "incomplete"
+      ],
+      "title": "Summary",
+      "type": "string"
+    },
+    "generation_summary": {
+      "$ref": "#/$defs/GenerationSummary"
+    },
+    "evidence": {
+      "$ref": "#/$defs/Evidence"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "job_id",
+    "request_id",
+    "group",
+    "scope",
+    "targets",
+    "primary_reference",
+    "auxiliary_references",
+    "items",
+    "counts",
+    "summary",
+    "generation_summary",
+    "evidence"
+  ],
+  "title": "GroupResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,96 @@
+{
+  "schema_version": "0.1",
+  "kind": "group",
+  "group": {
+    "group_id": "group-1",
+    "group_revision": 3,
+    "reference_revision": 2,
+    "work_id": "work-1",
+    "character_id": "character-1",
+    "outfit_id": "outfit-1"
+  },
+  "scope": "full",
+  "images": [
+    {
+      "ref": "ref-1",
+      "source": {
+        "type": "generation",
+        "server_id": "generation-local",
+        "image_id": "ref-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "positive_prompt": "adult woman, blue eyes, black jacket, upper body",
+      "negative_prompt": "text, watermark"
+    },
+    {
+      "ref": "img-1",
+      "source": {
+        "type": "generation",
+        "server_id": "generation-local",
+        "image_id": "img-1",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "positive_prompt": "adult woman, blue eyes, black jacket, upper body",
+      "negative_prompt": "text, watermark"
+    },
+    {
+      "ref": "img-2",
+      "source": {
+        "type": "generation",
+        "server_id": "generation-local",
+        "image_id": "img-2",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "positive_prompt": "adult woman, blue eyes, black jacket, upper body",
+      "negative_prompt": "text, watermark"
+    },
+    {
+      "ref": "img-3",
+      "source": {
+        "type": "generation",
+        "server_id": "generation-local",
+        "image_id": "img-3",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "positive_prompt": "adult woman, blue eyes, black jacket, upper body",
+      "negative_prompt": "text, watermark"
+    }
+  ],
+  "targets": [
+    "img-1",
+    "img-2",
+    "img-3"
+  ],
+  "primary_reference": "ref-1",
+  "auxiliary_references": [],
+  "common_features": [
+    {
+      "name": "eyes",
+      "expected": "blue"
+    }
+  ],
+  "generation_summary": {
+    "requested": 5,
+    "passed": 4,
+    "generation_failed": 1,
+    "validation_error": 0,
+    "rejected": 0,
+    "cancelled": 0
+  },
+  "profile": {
+    "profile_id": "profile-default",
+    "revision": 1,
+    "output_conditions": false,
+    "positive_prompt": false,
+    "negative_prompt": false,
+    "body_parts": [],
+    "metadata": false,
+    "consistency": true
+  },
+  "provider": {
+    "provider_id": "local-vision",
+    "revision": 1,
+    "model": "configured-vision-model",
+    "timeout_seconds": 180
+  }
+}

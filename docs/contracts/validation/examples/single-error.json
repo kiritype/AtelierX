@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1",
+  "kind": "single",
+  "job_id": "job-1",
+  "request_id": "request-1",
+  "image_ref": "img-1",
+  "evidence": {
+    "profile": {
+      "profile_id": "profile-default",
+      "revision": 1,
+      "output_conditions": true,
+      "positive_prompt": true,
+      "negative_prompt": true,
+      "body_parts": [],
+      "metadata": false,
+      "consistency": false
+    },
+    "provider": {
+      "provider_id": "local-vision",
+      "revision": 1,
+      "model": "configured-vision-model",
+      "timeout_seconds": 180
+    }
+  },
+  "outcome": "error",
+  "result": null,
+  "error": {
+    "code": "VAL_PROVIDER_TIMEOUT",
+    "message": "Provider did not respond in time.",
+    "stage": "provider"
+  }
+}

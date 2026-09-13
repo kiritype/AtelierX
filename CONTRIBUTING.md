@@ -1,6 +1,6 @@
 # AtelierX 기여 안내
 
-현재는 1인 개발이며 아키텍처·요구사항 확정 단계다. 제품 구현은 시작하지 않는다. 아래는 [ADR-0001](docs/architecture/adr/0001-contribution-workflow.md)의 확정된 부분만 정리한 운영 기준이다.
+현재는 1인 개발이며 아키텍처·요구사항 정리와 사용자 지정 ComfyUI Custom Node 개발을 병행한다. 구현 범위는 [개발 문서](docs/development/README.md)를 따른다. 아래는 [ADR-0001](docs/architecture/adr/0001-contribution-workflow.md)의 확정된 부분만 정리한 Git 운영 기준이다.
 
 ## 브랜치와 병합
 

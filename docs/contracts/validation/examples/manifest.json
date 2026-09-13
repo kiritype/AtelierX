@@ -1,0 +1,12 @@
+{
+  "single-request": "single-request",
+  "group-request": "group-request",
+  "single-passed": "single-result",
+  "single-rejected": "single-result",
+  "single-rejected-no-proposal": "single-result",
+  "single-error": "single-result",
+  "group-partial-failure": "group-result",
+  "group-partial-recheck": "group-result",
+  "job-running": "job",
+  "job-failed": "job"
+}

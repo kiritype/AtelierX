@@ -1,0 +1,535 @@
+{
+  "$defs": {
+    "ExpectedOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "media_type": {
+          "enum": [
+            "image/png",
+            "image/webp"
+          ],
+          "title": "Media Type",
+          "type": "string"
+        },
+        "alpha": {
+          "enum": [
+            "not_required",
+            "channel_required",
+            "transparency_required"
+          ],
+          "title": "Alpha",
+          "type": "string"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "media_type",
+        "alpha"
+      ],
+      "title": "ExpectedOutput",
+      "type": "object"
+    },
+    "GenerationSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_revision": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Capability Revision",
+          "type": "string"
+        },
+        "model_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Id"
+        },
+        "text_encoder_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text Encoder Id"
+        },
+        "vae_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vae Id"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "cfg": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cfg"
+        },
+        "steps": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Steps"
+        },
+        "sampler": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sampler"
+        },
+        "scheduler": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scheduler"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "loras": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Lora"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loras"
+        },
+        "postprocessing_snapshot_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^\\S+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Postprocessing Snapshot Id"
+        }
+      },
+      "required": [
+        "capability_revision"
+      ],
+      "title": "GenerationSettings",
+      "type": "object"
+    },
+    "GenerationSource": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "generation",
+          "title": "Type",
+          "type": "string"
+        },
+        "server_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Server Id",
+          "type": "string"
+        },
+        "image_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Image Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "server_id",
+        "image_id",
+        "sha256"
+      ],
+      "title": "GenerationSource",
+      "type": "object"
+    },
+    "Image": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Ref",
+          "type": "string"
+        },
+        "source": {
+          "discriminator": {
+            "mapping": {
+              "generation": "#/$defs/GenerationSource",
+              "upload": "#/$defs/UploadSource"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/GenerationSource"
+            },
+            {
+              "$ref": "#/$defs/UploadSource"
+            }
+          ],
+          "title": "Source"
+        },
+        "positive_prompt": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Positive Prompt",
+          "type": "string"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "source",
+        "positive_prompt",
+        "negative_prompt"
+      ],
+      "title": "Image",
+      "type": "object"
+    },
+    "Lora": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model_id",
+        "strength"
+      ],
+      "title": "Lora",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "output_conditions": {
+          "title": "Output Conditions",
+          "type": "boolean"
+        },
+        "positive_prompt": {
+          "title": "Positive Prompt",
+          "type": "boolean"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "boolean"
+        },
+        "body_parts": {
+          "items": {
+            "enum": [
+              "hands",
+              "face",
+              "limbs"
+            ],
+            "type": "string"
+          },
+          "title": "Body Parts",
+          "type": "array"
+        },
+        "metadata": {
+          "title": "Metadata",
+          "type": "boolean"
+        },
+        "consistency": {
+          "title": "Consistency",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "output_conditions",
+        "positive_prompt",
+        "negative_prompt",
+        "body_parts",
+        "metadata",
+        "consistency"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Provider": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_id",
+        "revision",
+        "model",
+        "timeout_seconds"
+      ],
+      "title": "Provider",
+      "type": "object"
+    },
+    "UploadSource": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "upload",
+          "title": "Type",
+          "type": "string"
+        },
+        "upload_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Upload Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "upload_id",
+        "sha256"
+      ],
+      "title": "UploadSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "kind": {
+      "const": "single",
+      "title": "Kind",
+      "type": "string"
+    },
+    "image": {
+      "$ref": "#/$defs/Image"
+    },
+    "generation_attempt_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Generation Attempt Id"
+    },
+    "profile": {
+      "$ref": "#/$defs/Profile"
+    },
+    "provider": {
+      "$ref": "#/$defs/Provider"
+    },
+    "expected_output": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExpectedOutput"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generation_settings": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GenerationSettings"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "image",
+    "generation_attempt_id",
+    "profile",
+    "provider",
+    "expected_output",
+    "generation_settings"
+  ],
+  "title": "SingleRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

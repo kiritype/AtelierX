@@ -1,0 +1,10 @@
+{
+  "prompt": {
+    "1": {"class_type":"LoadImage","inputs":{"image":"REPLACE_WITH_INPUT_IMAGE.png"}},
+    "2": {"class_type":"LoadImageMask","inputs":{"image":"REPLACE_WITH_REGION_MASK.png","channel":"red"}},
+    "3": {"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"REPLACE_WITH_INPAINT_COMPATIBLE_CHECKPOINT.safetensors"}},
+    "4": {"class_type":"AtelierXDetailer","inputs":{"image":["1",0],"region_mask":["2",0],"model":["3",0],"clip":["3",1],"vae":["3",2],"target":"face","positive_prompt":"detailed face, natural eyes","negative_prompt":"blurry, malformed","seed":0,"steps":20,"cfg":5.0,"sampler":"euler","scheduler":"normal","denoise":0.35,"grow_mask_by":6}},
+    "5": {"class_type":"PreviewImage","inputs":{"images":["4",0]}}
+  },
+  "client_id":"atelierx-detailer-example"
+}

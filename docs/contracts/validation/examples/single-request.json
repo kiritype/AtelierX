@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.1",
+  "kind": "single",
+  "image": {
+    "ref": "img-1",
+    "source": {
+      "type": "generation",
+      "server_id": "generation-local",
+      "image_id": "img-1",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "positive_prompt": "adult woman, blue eyes, black jacket, upper body",
+    "negative_prompt": "text, watermark"
+  },
+  "generation_attempt_id": "attempt-1",
+  "profile": {
+    "profile_id": "profile-default",
+    "revision": 1,
+    "output_conditions": true,
+    "positive_prompt": true,
+    "negative_prompt": true,
+    "body_parts": [],
+    "metadata": false,
+    "consistency": false
+  },
+  "provider": {
+    "provider_id": "local-vision",
+    "revision": 1,
+    "model": "configured-vision-model",
+    "timeout_seconds": 180
+  },
+  "expected_output": {
+    "width": 768,
+    "height": 1024,
+    "media_type": "image/png",
+    "alpha": "not_required"
+  },
+  "generation_settings": {
+    "capability_revision": "cap-1",
+    "seed": 123,
+    "steps": 24,
+    "cfg": 4.5
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "revision": 0,
+  "last_node_id": 3,
+  "last_link_id": 2,
+  "nodes": [
+    {"id":1,"type":"LoadImage","pos":[80,180],"size":[340,310],"flags":{},"order":0,"mode":0,"inputs":[{"name":"image","type":"COMBO","widget":{"name":"image"},"link":null}],"outputs":[{"name":"IMAGE","type":"IMAGE","links":[1]},{"name":"MASK","type":"MASK","links":null}],"properties":{"Node name for S&R":"LoadImage"},"widgets_values":["REPLACE_WITH_INPUT_IMAGE.png"]},
+    {"id":2,"type":"AtelierXUpscale","pos":[510,180],"size":[360,180],"flags":{},"order":1,"mode":0,"inputs":[{"name":"image","type":"IMAGE","link":1},{"name":"upscale_model","type":"COMBO","widget":{"name":"upscale_model"},"link":null},{"name":"scale","type":"FLOAT","widget":{"name":"scale"},"link":null}],"outputs":[{"name":"image","type":"IMAGE","links":[2]}],"properties":{"Node name for S&R":"AtelierXUpscale"},"widgets_values":["4x-UltraSharp.safetensors",1.5]},
+    {"id":3,"type":"PreviewImage","pos":[960,230],"size":[300,90],"flags":{},"order":2,"mode":0,"inputs":[{"name":"images","type":"IMAGE","link":2}],"outputs":[],"properties":{"Node name for S&R":"PreviewImage"}}
+  ],
+  "links":[[1,1,0,2,0,"IMAGE"],[2,2,0,3,0,"IMAGE"]],
+  "groups":[],"config":{},"extra":{"ds":{"scale":1,"offset":[0,0]}},"version":0.4
+}

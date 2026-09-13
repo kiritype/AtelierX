@@ -1,0 +1,78 @@
+{
+  "revision": 0,
+  "last_node_id": 4,
+  "last_link_id": 3,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadImage",
+      "pos": [80, 150],
+      "size": [320, 320],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        { "name": "IMAGE", "type": "IMAGE", "links": [1] },
+        { "name": "MASK", "type": "MASK", "links": [2] }
+      ],
+      "properties": { "Node name for S&R": "LoadImage" },
+      "widgets_values": ["SELECT_A_PNG_WITH_BACKGROUND_ALPHA.png", "image"]
+    },
+    {
+      "id": 2,
+      "type": "InvertMask",
+      "pos": [455, 330],
+      "size": [220, 80],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [{ "name": "mask", "type": "MASK", "link": 2 }],
+      "outputs": [{ "name": "MASK", "type": "MASK", "links": [3] }],
+      "properties": { "Node name for S&R": "InvertMask" },
+      "widgets_values": []
+    },
+    {
+      "id": 3,
+      "type": "AtelierXApplyCharacterAlpha",
+      "pos": [735, 150],
+      "size": [360, 180],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        { "name": "image", "type": "IMAGE", "link": 1 },
+        { "name": "character_mask", "type": "MASK", "link": 3 },
+        { "name": "enabled", "type": "BOOLEAN", "widget": { "name": "enabled" }, "link": null }
+      ],
+      "outputs": [
+        { "name": "image_rgba", "type": "IMAGE", "links": [4] },
+        { "name": "background_mask", "type": "MASK", "links": [] }
+      ],
+      "properties": { "Node name for S&R": "AtelierXApplyCharacterAlpha" },
+      "widgets_values": [true]
+    },
+    {
+      "id": 4,
+      "type": "PreviewImage",
+      "pos": [1150, 180],
+      "size": [300, 80],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [{ "name": "images", "type": "IMAGE", "link": 4 }],
+      "outputs": [],
+      "properties": { "Node name for S&R": "PreviewImage" }
+    }
+  ],
+  "links": [
+    [1, 1, 0, 3, 0, "IMAGE"],
+    [2, 1, 1, 2, 0, "MASK"],
+    [3, 2, 0, 3, 1, "MASK"],
+    [4, 3, 0, 4, 0, "IMAGE"]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": { "ds": { "scale": 1, "offset": [0, 0] } },
+  "version": 0.4
+}

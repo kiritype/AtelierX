@@ -1,0 +1,11 @@
+{
+  "prompt": {
+    "1": { "class_type": "LoadImage", "inputs": { "image": "REPLACE_WITH_INPUT_IMAGE.png" } },
+    "2": {
+      "class_type": "AtelierXUpscale",
+      "inputs": { "image": ["1", 0], "upscale_model": "4x-UltraSharp.safetensors", "scale": 1.5 }
+    },
+    "3": { "class_type": "PreviewImage", "inputs": { "images": ["2", 0] } }
+  },
+  "client_id": "atelierx-upscale-example"
+}

@@ -1,0 +1,9 @@
+{
+  "prompt": {
+    "1": {"class_type":"LoadImage","inputs":{"image":"REPLACE_WITH_INPUT_IMAGE.png"}},
+    "2": {"class_type":"LoadImageMask","inputs":{"image":"REPLACE_WITH_NSFW_DETECTION_MASK.png","channel":"red"}},
+    "3": {"class_type":"AtelierXCensor","inputs":{"image":["1",0],"detection_mask":["2",0],"treatment":"mosaic","intensity":15,"enabled":true}},
+    "4": {"class_type":"PreviewImage","inputs":{"images":["3",0]}}
+  },
+  "client_id":"atelierx-censor-example"
+}
