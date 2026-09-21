@@ -128,3 +128,5 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 2026-09-21 사용자 추가 지시로 새 `/draw` 생성 결과를 채널 구성원에게 공개하고 이미지에 스포일러를 기본 적용한다. `DISCORD_PUBLIC_RESULTS=true`는 guild 접근 모드에서만 허용한다. `/draw`의 초기 지연 응답부터 공개로 설정하고 동일 메시지를 PATCH하므로 진행 안내도 공개되며, 기존 재전송/중복 방지 동작을 유지한다. 별도 공개 followup을 반복 게시하지 않는다. `/status`는 계속 요청자 전용 비공개 응답이다. Bridge는 PNG/WebP 모두 `SPOILER_atelierx.*` 이름으로 첨부한다. 과거 비공개 결과는 다시 게시하지 않는다.
 
 구현 검증: Worker 12개(실제 workerd에서 공개 draw/비공개 status 확인), Bridge 12개 테스트 통과. Worker 코드는 version `502c92c5-0cfa-44ab-a01f-ea24e90e740a`으로 배포했지만 공개 설정은 아직 활성화하지 않았다. 스포일러 적용을 위한 로컬 서비스 재시작이 자동 승인 심사에서 거절되어 운영 Bridge는 이전 코드로 계속 실행 중이다. 사용자가 RDP에서 실행할 수 있도록 Git 제외 로컬 `.atelierx/discord/restart-pilot.ps1`을 준비하고 구문 검사만 완료했다. 재시작 후 health 확인과 Worker 공개 설정 활성화, 실제 Discord 공개/스포일러 표시 확인이 남아 있다. 현재 동작을 공개/스포일러 적용 완료로 보고하지 않는다.
+
+공개·스포일러 활성화: 사용자가 RDP에서 재시작 스크립트를 실행한 후 새 로컬 서비스 프로세스와 Core/Generation/Validation/Bridge health 200, 외부 Tunnel health 200을 확인했다. 스포일러 코드가 포함된 로컬 서비스를 재시작한 뒤 Worker secret `DISCORD_PUBLIC_RESULTS=true`를 반영했다. 이후 새 `/draw`는 공개 응답과 기본 이미지 스포일러를 사용하고 `/status`는 비공개를 유지한다. 실제 Discord 화면에서 공개/스포일러 표시를 확인하는 사용자 시험은 아직 남아 있다.
