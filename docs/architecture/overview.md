@@ -1,5 +1,7 @@
 # AtelierX 아키텍처 개요
 
+2026-09-21 사용자 지시: 배포 전 개인용 사용과 Discord 봇 구현을 우선한다. Discord는 F/E 분류·그룹과 독립된 자연어/원문 생성 요청이다. Workers는 수신·인증, 로컬 Bridge는 전달, Core는 독립 생성 상태·Planner·GPU·Generation 조정을 담당한다. 기존 그룹을 임의 생성하지 않으며 Core의 별도 `standalone_jobs`에 저장한다. [구현·권한·대기 계약](../development/discord-personal-bot.md).
+
 2026-09-13 최신 사용자 정정: 조각 기반 제작에서는 **외형을 항상 포함**한다. 전역 공유 조각은 본문과 **상의·하의 포함 여부만** 저장하며 appearance 선택 필드는 두지 않는다. 아래 과거 조각별 외형 선택 설명을 대체한다. 전역 Positive + 외형 + 선택한 상의/하의 + 조각 본문, 전역 Negative + 캐릭터 Negative를 사용한다. 구현·테스트를 계속 진행하도록 승인됐다.
 
 

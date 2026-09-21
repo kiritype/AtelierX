@@ -31,6 +31,7 @@ from .core_store import KINDS, Store
 from .core_validation import CoreValidation
 from .validation_evidence import clauses, expanded_clause
 from .gpu import GpuCoordinator
+from .core_standalone import StandaloneJobs
 from .queue_api import attach_queue_api
 from .frontend import attach as attach_frontend
 
@@ -372,7 +373,7 @@ async def errors(request, handler):
         return web.json_response({"error": {"code": "CORE_STORAGE_UNAVAILABLE", "message": "Core storage unavailable"}}, status=503)
 
 
-def create_app(db_path, generation_url, token, generation_token=None, poll=1, validation_config=None, validation_token=None, gpu_config=None):
+def create_app(db_path, generation_url, token, generation_token=None, poll=1, validation_config=None, validation_token=None, gpu_config=None, standalone_config=None):
     if not token:
         raise ValueError("ATELIERX_SERVICE_TOKEN must be set")
     app = web.Application(middlewares=[errors], client_max_size=2 * 1024 * 1024)
@@ -390,7 +391,8 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     core.plans = ProductionPlans(core)
     core.plans.attach(app)
     core.gpu = GpuCoordinator(core.store, gpu_config)
-    attach_queue_api(app, lambda: [dict(json.loads(row[0]), kind=kind) for table, kind in (("tasks", "generation"), ("validation_runs", "validation")) for row in core.store.db.execute("SELECT document FROM " + table)] + [dict(run, kind="group_validation") for run in core.groups.runs()])
+    core.standalone = StandaloneJobs(core, standalone_config, generation_settings, validate_postprocess_settings)
+    attach_queue_api(app, lambda: [dict(json.loads(row[0]), kind=kind) for table, kind in (("tasks", "generation"), ("validation_runs", "validation"), ("standalone_jobs", "standalone")) for row in core.store.db.execute("SELECT document FROM " + table)] + [dict(run, kind="group_validation") for run in core.groups.runs()])
     app[CORE] = core
 
     async def lifecycle(app):
@@ -398,10 +400,18 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                 core.session = session
                 worker = asyncio.create_task(core.worker())
+                async def standalone_worker():
+                    while True:
+                        await core.standalone.tick()
+                        await asyncio.sleep(core.poll)
+                standalone_worker_task = asyncio.create_task(standalone_worker())
                 yield
                 worker.cancel()
+                standalone_worker_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await worker
+                with contextlib.suppress(asyncio.CancelledError):
+                    await standalone_worker_task
         finally:
             core.store.close()
     app.cleanup_ctx.append(lifecycle)
@@ -415,7 +425,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
             return web.json_response(core.gpu.state())
         body = await request.json()
         fields(body, {"phase", "job_id"}, {"phase", "job_id"})
-        if body["phase"] not in {"generation", "validation"}:
+        if body["phase"] not in {"generation", "validation", "planner"}:
             invalid("Unknown GPU phase")
         text(body["job_id"], "job_id", True)
         result = await core.gpu.acquire(core.session, **body) if request.path.endswith("acquire") else await core.gpu.release(**body)
@@ -579,6 +589,35 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     async def validation_run(request):
         return web.json_response(core.store.validation_run(request.match_info["id"]))
 
+    async def standalone(request):
+        if request.method == "POST":
+            result, created = core.standalone.create(request.headers.get("Idempotency-Key"), await request.json())
+            return web.json_response(core.standalone.public(result), status=202 if created else 200)
+        return web.json_response(core.standalone.public(core.standalone.get(request.match_info["id"])))
+
+    async def standalone_by_key(request):
+        found = core.standalone.by_key(request.headers.get("Idempotency-Key"))
+        if not found:
+            raise ApiError("CORE_NOT_FOUND", "Standalone job key not found", 404)
+        return web.json_response(core.standalone.public(found[1]))
+
+    async def standalone_content(request):
+        image = await core.standalone.content(request.match_info["id"], request.match_info["image_id"])
+        try:
+            async with core.session.get(core.generation_url + "/v1/images/" + image["generation_image_id"], headers={"Authorization": "Bearer " + core.generation_token}, allow_redirects=False) as response:
+                if response.status != 200:
+                    raise ApiError("CORE_IMAGE_UNAVAILABLE", "Generation image unavailable", 502)
+                data = bytearray()
+                async for chunk in response.content.iter_chunked(65536):
+                    data.extend(chunk)
+                    if len(data) > min(image["bytes"], 128 * 1024 * 1024):
+                        raise ApiError("CORE_IMAGE_INTEGRITY", "Image exceeds recorded size", 502)
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            raise ApiError("CORE_IMAGE_UNAVAILABLE", "Generation image unavailable", 503)
+        if len(data) != image["bytes"] or hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise ApiError("CORE_IMAGE_INTEGRITY", "Image content changed", 502)
+        return web.Response(body=bytes(data), content_type=image["media_type"])
+
     category = r"/v1/{kind:works|characters|outfits}"
     app.add_routes([web.post("/v1/tasks/{id}/regenerations", regenerate), web.get("/v1/tasks/{id}/attempts", attempts),
                     web.get("/v1/regeneration-cycles/{id}", cycle), web.post("/v1/regeneration-cycles/{id}/stop", cycle), web.post("/v1/tasks/{id}/cancel", cancel_task), web.post("/v1/validation-runs/{id}/cancel", cancel_validation), web.get("/v1/gpu", gpu), web.post("/v1/gpu/acquire", gpu), web.post("/v1/gpu/release", gpu), web.get("/health", health), web.get(category, entity_collection), web.post(category, entity_collection),
@@ -590,7 +629,9 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                     web.get("/v1/tasks/{id}", task), web.get("/v1/images/{id}", image),
                     web.get("/v1/images/{id}/content", image_content),
                     web.get("/v1/images/{id}/validations", validations), web.post("/v1/images/{id}/validations", validations),
-                    web.get("/v1/validation-runs/{id}", validation_run)])
+                    web.get("/v1/validation-runs/{id}", validation_run),
+                    web.post("/v1/standalone-jobs", standalone), web.get("/v1/standalone-jobs/by-key", standalone_by_key),
+                    web.get("/v1/standalone-jobs/{id}", standalone), web.get("/v1/standalone-jobs/{id}/images/{image_id}/content", standalone_content)])
     return app
 
 
@@ -601,6 +642,7 @@ def main():
     parser.add_argument("--generation-url", default="http://127.0.0.1:8189")
     parser.add_argument("--validation-config", help="Core-owned JSON of Validation endpoint and registered profile/provider snapshots")
     parser.add_argument("--gpu-config", help="Shared GPU runtime configuration JSON")
+    parser.add_argument("--standalone-config", help="Core-owned standalone generation and local planner JSON")
     args = parser.parse_args()
     token = os.environ.get("ATELIERX_SERVICE_TOKEN")
     validation_config = json.loads(Path(args.validation_config).read_text(encoding="utf-8")) if args.validation_config else None
@@ -611,7 +653,8 @@ def main():
                           for key, value in validation_config["providers"].items()}}
     web.run_app(create_app(args.db, args.generation_url, token, os.environ.get("ATELIERX_GENERATION_TOKEN", token),
                            validation_config=validation_config, validation_token=os.environ.get("ATELIERX_VALIDATION_TOKEN", token),
-                           gpu_config=json.loads(Path(args.gpu_config).read_text(encoding="utf-8")) if args.gpu_config else None),
+                           gpu_config=json.loads(Path(args.gpu_config).read_text(encoding="utf-8")) if args.gpu_config else None,
+                           standalone_config=json.loads(Path(args.standalone_config).read_text(encoding="utf-8")) if args.standalone_config else None),
                 host="127.0.0.1", port=args.port)
 
 

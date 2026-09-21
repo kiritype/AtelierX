@@ -1,5 +1,7 @@
 # 문서 목차와 관리 범위
 
+[개인용 Discord 봇 구현·연결](development/discord-personal-bot.md): 그룹 없는 자연어/원문 생성, Workers와 로컬 전달 서비스, 응답 대기·권한·설정.
+
 [2026-09-21 구현·미구현 기능 점검](development/implementation-status-2026-09-21.md) · [후속 로드맵 — Discord 자연어 제작 봇 포함](requirements/roadmap.md)
 
 [장기 큐·복구 검증 및 오류 대응](development/production-plan-recovery-tests.md)

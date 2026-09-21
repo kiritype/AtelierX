@@ -1,0 +1,13 @@
+# Copy to .dev.vars and set real values locally. Do not commit .dev.vars.
+DISCORD_PUBLIC_KEY=hex_encoded_application_public_key
+DISCORD_APPLICATION_ID=discord_application_id
+# Comma-separated explicit Discord user IDs. DISCORD_ALLOWED_USER_ID remains supported for one existing local setup.
+DISCORD_ALLOWED_USER_IDS=your_discord_user_id,another_allowed_discord_user_id
+BRIDGE_URL=https://your-tunnel.example/v1/discord/jobs
+BRIDGE_TOKEN=local_bridge_bearer_token
+# Optional when the tunnel is protected by Cloudflare Access service tokens.
+# CF_ACCESS_CLIENT_ID=
+# CF_ACCESS_CLIENT_SECRET=
+# Set only for an explicit local development bridge such as http://localhost:8788/v1/discord/jobs.
+# ALLOW_INSECURE_LOCAL_BRIDGE=true
+# DISCORD_BOT_TOKEN=used_only_by_scripts/register-commands.mjs

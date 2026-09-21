@@ -32,7 +32,9 @@
 
 ## Discord 자연어 제작 봇 — Cloudflare Workers
 
-2026-09-21 사용자 요청으로 로드맵에 추가한다. **Discord에서 자연어 명령 → 로컬 LLM 해석 → Generation Backend를 통한 이미지 생성 → Discord 이미지 응답**이 목표이며, Cloudflare Workers를 사용한다. 이번 변경은 로드맵 등재다. 봇 코드·클라우드 자원·Discord 앱 배포 및 모델 교체는 아직 수행하지 않았다.
+2026-09-21 후속 지시로 **개인용 Discord 봇을 우선 구현**한다. 그룹 선택은 필요하지 않다. 자연어→로컬 LLM 프롬프트 변환과 자연어/Positive Prompt 원문 전달의 두 모드를 제공한다. F/E의 기존 분류·그룹 제작은 별도 흐름으로 유지한다. 아래 최초 검토안의 Backend 전체 완료 후 착수·그룹 기반 도구 활용은 봇의 선행 조건이 아니다. 구현 계약과 실제 연결 준비 상태는 [Discord 개인용 봇](../development/discord-personal-bot.md)을 따른다.
+
+최초 로드맵 요청은 **Discord에서 자연어 명령 → 로컬 LLM 해석 → Generation Backend를 통한 이미지 생성 → Discord 이미지 응답**이며, Cloudflare Workers를 사용한다. 다음 구성·검토안은 최초 등재 시점의 기록으로, 위 후속 지시와 현재 구현 계약을 우선한다.
 
 ### 구성과 책임
 

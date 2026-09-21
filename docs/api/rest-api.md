@@ -1,5 +1,24 @@
 # AtelierX REST API 명세 — 현재 구현
 
+## 그룹 없는 독립 생성 — 2026-09-21
+
+개인용 Discord 봇을 위한 Core 경로다. 기존 그룹 기반 Task/제작 계획은 변경하지 않는다. `--standalone-config`로 서버 설정을 등록해야 새 접수를 허용하며 미설정은 `CORE_STANDALONE_DISABLED`(503)다. 모든 경로에 기존 Core Bearer 인증이 필요하다.
+
+| Method | 경로 | 계약 |
+| --- | --- | --- |
+| POST | `/v1/standalone-jobs` | `Idempotency-Key`와 `{prompt,mode}`. mode=`natural` 또는 `direct`. 새 요청 202, 같은 키/내용 200, 충돌 409 |
+| GET | `/v1/standalone-jobs/by-key` | `Idempotency-Key`로 기존 접수 조회, 없으면 404 |
+| GET | `/v1/standalone-jobs/{id}` | `{id,state,images,error,validation,created_at}` |
+| GET | `/v1/standalone-jobs/{id}/images/{image_id}/content` | 해당 독립 작업에 속한 PNG/WebP bytes. 크기·SHA-256 검증 |
+
+prompt는 공백만 아닌 최대 20,000자 문자열이다(Discord 입력은 별도로 4,000자). direct는 원문을 Positive로 보존한다. natural은 로컬 Chat Completions의 텍스트 결과를 Positive로 사용한다. 모델·Negative·Seed·후처리는 서버 설정을 snapshot하며 클라이언트가 arbitrary URL/Workflow/SQL을 전달할 수 없다. 기본 예제는 1024→1536이며, Seed는 설정값을 유지한다. 자동 Validation/재생성은 요청하지 않고 `validation={state:not_requested,outcome:null}`로 표시한다.
+
+상태: `queued → planning(natural만) → planner_completed → ready_to_dispatch → dispatching → generation_pending|running → completed|failed`. direct는 Planner 단계를 생략한다. `/v1/queue`와 SSE에는 `kind=standalone`으로 포함된다. 별도 worker가 실행하여 Planner 호출이 기존 Core 조정 루프를 막지 않는다. GPU acquire/release의 phase에 `planner`가 추가됐으며 기존 validation과 같은 설정 모델을 사용한다.
+
+Generation POST 전 intent를 저장하며, 재시작·통신 단절 후에는 기존 키만 조회한다. `CORE_GENERATION_ACCEPTANCE_UNKNOWN`은 자동 재접수하지 않는다. Planner 실행 중 재시작은 `CORE_PLANNER_ACCEPTANCE_UNKNOWN`이며 추론을 자동 재시도하지 않는다. 본문까지 완료된 응답과 추론 결과 저장 여부를 구분해 GPU를 해제하고, 응답 불명은 권한을 보존한다. 설정 endpoint 변경은 `CORE_GENERATION_ENDPOINT_CHANGED`, 저장된 Planner 모델과 현재 GPU 모델 불일치는 `CORE_PLANNER_MODEL_CHANGED`다. 독립 생성 취소 API와 F/E 그룹 갤러리 편입은 이번 경로에 없다.
+
+Discord 전용 Bridge는 `POST /v1/discord/jobs`, `POST /v1/discord/status`를 제공하며 Core와 다른 Bearer 토큰과 Discord 사용자 허용 목록을 사용한다. 자세한 전달·대기·권한 계약은 [개인용 Discord 봇](../development/discord-personal-bot.md)을 따른다.
+
 전역 조각과 대량 제작 계획은 [별도 API 명세](prompt-fragments-production-plans.md)를 참조한다.
 
 기준일 2026-09-13. Core·Generation·Validation의 **실제로 등록된 API**를 기술한다. 초기 구현 범위와 아직 없는 확장 기능을 구분한다. 초기 구현 계약이며 API 안정 버전 선언은 아니다. ADR-0005 및 `docs/contracts/validation`의 Proposed Schema와 이 런타임 명세는 구분한다.

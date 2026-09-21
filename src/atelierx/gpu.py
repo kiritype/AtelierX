@@ -60,7 +60,7 @@ class GpuCoordinator:
         # Clear cached generation models before switching or measuring headroom.
         await request("POST", comfy + "/free", json={"unload_models": True, "free_memory": True})
         minimum = config.get("minimum_free_mib", {}).get(phase, 18000)
-        if phase == "validation":
+        if phase in {"validation", "planner"}:
             lm = config["lmstudio_url"].rstrip("/")
             models = await request("GET", lm + "/api/v1/models", headers={"Authorization": "Bearer " + config.get("api_key", "lm-studio")})
             if any(m["key"] == config["model"] and m.get("loaded_instances") for m in models["models"]):

@@ -1,0 +1,7 @@
+{
+  "core_url": "http://127.0.0.1:8190",
+  "core_token_env": "ATELIERX_SERVICE_TOKEN",
+  "bridge_token_env": "ATELIERX_DISCORD_BRIDGE_TOKEN",
+  "application_id": "REPLACE_WITH_DISCORD_APPLICATION_ID",
+  "allowed_user_ids": ["REPLACE_WITH_YOUR_DISCORD_USER_ID"]
+}
