@@ -130,3 +130,5 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 구현 검증: Worker 12개(실제 workerd에서 공개 draw/비공개 status 확인), Bridge 12개 테스트 통과. Worker 코드는 version `502c92c5-0cfa-44ab-a01f-ea24e90e740a`으로 배포했지만 공개 설정은 아직 활성화하지 않았다. 스포일러 적용을 위한 로컬 서비스 재시작이 자동 승인 심사에서 거절되어 운영 Bridge는 이전 코드로 계속 실행 중이다. 사용자가 RDP에서 실행할 수 있도록 Git 제외 로컬 `.atelierx/discord/restart-pilot.ps1`을 준비하고 구문 검사만 완료했다. 재시작 후 health 확인과 Worker 공개 설정 활성화, 실제 Discord 공개/스포일러 표시 확인이 남아 있다. 현재 동작을 공개/스포일러 적용 완료로 보고하지 않는다.
 
 공개·스포일러 활성화: 사용자가 RDP에서 재시작 스크립트를 실행한 후 새 로컬 서비스 프로세스와 Core/Generation/Validation/Bridge health 200, 외부 Tunnel health 200을 확인했다. 스포일러 코드가 포함된 로컬 서비스를 재시작한 뒤 Worker secret `DISCORD_PUBLIC_RESULTS=true`를 반영했다. 이후 새 `/draw`는 공개 응답과 기본 이미지 스포일러를 사용하고 `/status`는 비공개를 유지한다. 실제 Discord 화면에서 공개/스포일러 표시를 확인하는 사용자 시험은 아직 남아 있다.
+
+사용자 실제 화면 확인: 공개·스포일러 설정 활성화 후 새 `/draw`에 대해 사용자가 정상 동작을 확인했다. 공개 결과와 기본 스포일러 표시의 Discord 실제 화면 확인을 완료한 것으로 기록한다. 이 확인은 사용자 관찰에 근거하며, 별도 친구 계정의 권한 시험이나 이미지 품질 검사까지 검증한 것으로 확대하지 않는다.
