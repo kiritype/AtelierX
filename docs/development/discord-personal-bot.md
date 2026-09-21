@@ -164,3 +164,17 @@ Worker→Bridge→Core 전 구간에서 mode 생략을 Direct로 처리하고, �
 Worker를 기존 설정을 보존해 배포했다. version `34bb2f1e-466b-4eab-acf8-111ff3870087`, URL `https://atelierx-discord-worker.kiritype.workers.dev`. 기존 테스트 Guild의 draw/status를 갱신했으며 무관한 명령을 일괄 교체하지 않았다. Discord API 재조회에서 prompt 필수, negative 선택, mode 선택 및 Direct/Natural 순서를 확인했다. PowerShell 조회는 Discord 40333 응답을 받았으나 등록에 사용한 Node fetch 조회는 성공했다.
 
 운영 배포·명령 등록 확인과 이미지 생성 검증은 구분한다. 이번 후속 작업에서는 Discord 생성 메시지나 GPU 작업을 새로 보내지 않았다. 사용 예는 `/draw prompt:1 girl negative:hat, glasses`이며 mode를 생략하면 Direct다.
+
+
+## 2026-09-21 체크포인트 선택 후속 작업
+
+사용자가 선택 Negative와 기본 Direct의 실제 동작을 확인했고 체크포인트 선택을 추가 요청했다. 이전 절의 체크포인트 미구현은 당시 상태다.
+
+선택 checkpoint는 Core 독립 생성 설정의 allowed_checkpoints 목록 중 하나를 요청에 고정한다. 생략하면 generation_inputs.diffusion_model 기본값을 사용한다. 모델 목록은 Core REST가 제공하고 Discord 등록 스크립트가 이를 선택 메뉴로 옮기며, Worker/Bridge는 선택값을 전달한다. 등록 목록·Anima 호환성은 Generation이 실행 시 최종 검사한다. 텍스트 인코더·VAE·샘플러·Steps·CFG는 현재 서버 설정을 유지하며 체크포인트별 최적값을 자동 추정하지 않는다.
+
+현재 로컬 구성은 ComfyUI Anima Node의 등록 목록 5개를 allowed_checkpoints에 복사하고 기본 waiANIMA_v10Base10.safetensors를 유지한다. 모든 모델의 실제 GPU 생성·품질 검증을 완료했다는 뜻은 아니다. 선택한 모델과 Seed는 결과에 함께 표시한다. Core의 모델 목록에 제품상 25개 상한을 도입하지 않으며 Discord 고정 선택지의 제한을 넘으면 명령 등록에서 명시적으로 오류를 내고 후속 자동완성 방식으로 확장한다.
+
+
+운영 준비: `.atelierx/discord/standalone.json`에 5개 허용 모델을 저장했고 기존 설정은 `standalone.before-checkpoints.json`으로 보존했다(둘 다 Git 제외). 실제 로컬 설정을 격리된 Core 앱에 로드해 목록 5개·기본 모델 반환을 확인했다. Core/Bridge 회귀 25개, Worker/등록 스크립트 회귀 18개(workerd·모의 Core 목록 포함), Worker 배포 dry-run이 통과했다.
+
+아직 실행 중인 파일럿(PID 3452)은 이전 코드다. 현재 Windows 권한으로 명령줄을 읽을 수 없어 프로세스 식별 안전 검사를 충족하지 못하므로 임의 종료하지 않았다. 사용자 정상 재시작 후 `/v1/standalone-checkpoints` 확인→Worker 배포→Core URL/토큰을 사용하는 Guild 명령 등록 순으로 적용해야 한다. 재등록 전에는 Discord에 checkpoint 옵션이 표시되지 않는다. 모델별 실제 생성 시험은 이번 변경에서 실행하지 않았다.

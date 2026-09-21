@@ -39,7 +39,7 @@ test("workerd makes guild draw public while status remains ephemeral", async () 
     }
   }));
   try {
-    const draw = { id: "111111111111111111", application_id: "123456789012345678", type: 2, token: "test-token", guild_id: "444444444444444444", channel_id: "555555555555555555", member: { user: { id: "987654321098765432" } }, data: { name: "draw", options: [{ name: "prompt", value: "workerd regression" }, { name: "negative", value: "no watermark" }, { name: "mode", value: " DIRECT " }] } };
+    const draw = { id: "111111111111111111", application_id: "123456789012345678", type: 2, token: "test-token", guild_id: "444444444444444444", channel_id: "555555555555555555", member: { user: { id: "987654321098765432" } }, data: { name: "draw", options: [{ name: "prompt", value: "workerd regression" }, { name: "negative", value: "no watermark" }, { name: "checkpoint", value: "anima.safetensors" }, { name: "mode", value: " DIRECT " }] } };
     const status = { id: "222222222222222222", application_id: "123456789012345678", type: 2, token: "status-token", guild_id: "444444444444444444", channel_id: "555555555555555555", member: { user: { id: "987654321098765432" } }, data: { name: "status", options: [{ name: "request_id", value: "333333333333333333" }] } };
     const drawResponse = await dispatchSigned(mf, keyPair, draw);
     const statusResponse = await dispatchSigned(mf, keyPair, status);
@@ -52,6 +52,7 @@ test("workerd makes guild draw public while status remains ephemeral", async () 
     assert.equal(requests[0].payload.interaction_id, draw.id);
     assert.equal(requests[0].payload.mode, "direct");
     assert.equal(requests[0].payload.negative_prompt, "no watermark");
+    assert.equal(requests[0].payload.checkpoint, "anima.safetensors");
     assert.equal(requests[0].payload.guild_id, draw.guild_id);
     assert.equal(requests[1].payload.channel_id, status.channel_id);
   } finally {

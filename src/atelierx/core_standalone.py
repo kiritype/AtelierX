@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from .common import ApiError, canonical
+from .core_presets import _model_name
 
 
 class StandaloneJobs:
@@ -19,7 +20,7 @@ class StandaloneJobs:
         self.core, self.config = core, config
         if config is not None:
             required = {"generation_inputs", "postprocess", "llm"}
-            if not isinstance(config, dict) or set(config) - (required | {"seed_mode"}) or not required.issubset(config):
+            if not isinstance(config, dict) or set(config) - (required | {"seed_mode", "allowed_checkpoints"}) or not required.issubset(config):
                 raise ValueError("standalone config must contain generation_inputs, postprocess, and llm")
             if not isinstance(config.get("seed_mode", "fixed"), str) or config.get("seed_mode", "fixed") not in {"fixed", "random"}:
                 raise ValueError("standalone seed_mode must be fixed or random")
@@ -33,7 +34,19 @@ class StandaloneJobs:
             if not isinstance(generation, dict) or "negative_prompt" not in generation or not isinstance(generation["negative_prompt"], str):
                 raise ValueError("standalone generation_inputs requires negative_prompt")
             normalized = generation_settings({key: value for key, value in generation.items() if key != "negative_prompt"})
+            try:
+                allowed_checkpoints = config.get("allowed_checkpoints", [normalized["diffusion_model"]])
+                if (not isinstance(allowed_checkpoints, list) or not allowed_checkpoints
+                        or len(set(allowed_checkpoints)) != len(allowed_checkpoints)):
+                    raise ValueError()
+                for checkpoint in allowed_checkpoints:
+                    _model_name(checkpoint, "allowed_checkpoints entry")
+                if normalized["diffusion_model"] not in allowed_checkpoints:
+                    raise ValueError()
+            except (ApiError, TypeError, ValueError) as exc:
+                raise ValueError("standalone allowed_checkpoints is invalid") from exc
             config = {**config, "generation_inputs": {**normalized, "negative_prompt": generation["negative_prompt"]}}
+            config["allowed_checkpoints"] = allowed_checkpoints
             if core.gpu.config and llm["model"] != core.gpu.config.get("model"):
                 raise ValueError("standalone planner model must equal configured shared GPU model")
             if not isinstance(config["postprocess"], dict):
@@ -54,7 +67,16 @@ class StandaloneJobs:
         result = {key: job[key] for key in ("id", "state", "images", "error", "validation", "created_at")}
         if type(job.get("seed")) is int:
             result["seed"] = job["seed"]
+        inputs = job.get("generation_inputs") or job.get("config", {}).get("generation_inputs", {})
+        if isinstance(inputs.get("diffusion_model"), str):
+            result["checkpoint"] = inputs["diffusion_model"]
         return result
+
+    def checkpoints(self):
+        if self.config is None:
+            raise ApiError("CORE_STANDALONE_DISABLED", "Standalone jobs are not configured", 503)
+        return {"items": [{"name": name, "value": name} for name in self.config["allowed_checkpoints"]],
+                "default": self.config["generation_inputs"]["diffusion_model"]}
 
     def by_key(self, key):
         row = self.core.store.db.execute("SELECT fingerprint,document FROM standalone_jobs WHERE request_key=?", (key,)).fetchone()
@@ -69,7 +91,7 @@ class StandaloneJobs:
             raise ApiError("CORE_STANDALONE_DISABLED", "Standalone jobs are not configured", 503)
         if not key or len(key) > 200:
             raise ApiError("CORE_INVALID_INPUT", "Idempotency-Key of 1..200 characters is required")
-        allowed = {"prompt", "mode", "negative_prompt"}
+        allowed = {"prompt", "mode", "negative_prompt", "checkpoint"}
         if not isinstance(body, dict) or set(body) - allowed or "prompt" not in body:
             raise ApiError("CORE_INVALID_INPUT", "Body requires a prompt and optional mode or negative_prompt")
         mode = body.get("mode", "direct")
@@ -79,8 +101,10 @@ class StandaloneJobs:
         if (mode not in ("natural", "direct") or not isinstance(body["prompt"], str)
                 or not body["prompt"].strip() or len(body["prompt"]) > 20000
                 or ("negative_prompt" in body and (not isinstance(body["negative_prompt"], str)
-                                                    or len(body["negative_prompt"]) > 20000))):
-            raise ApiError("CORE_INVALID_INPUT", "Body requires a nonempty prompt, supported mode, and optional negative_prompt")
+                                                    or len(body["negative_prompt"]) > 20000))
+                or ("checkpoint" in body and (not isinstance(body["checkpoint"], str)
+                                                or not body["checkpoint"] or len(body["checkpoint"]) > 255))):
+            raise ApiError("CORE_INVALID_INPUT", "Body requires a nonempty prompt, supported mode, and optional negative_prompt or checkpoint")
         # Keep the legacy fingerprint for explicit lowercase direct requests
         # without a Negative, while making omitted and case-insensitive modes
         # semantically idempotent.
@@ -92,6 +116,10 @@ class StandaloneJobs:
                 raise ApiError("CORE_IDEMPOTENCY_CONFLICT", "Request key already has different content", 409)
             return old[1], False
         inputs = dict(self.config["generation_inputs"])
+        if "checkpoint" in body:
+            if body["checkpoint"] not in self.config["allowed_checkpoints"]:
+                raise ApiError("CORE_INVALID_INPUT", "checkpoint is not allowed")
+            inputs["diffusion_model"] = body["checkpoint"]
         requested_negative = body.get("negative_prompt")
         if isinstance(requested_negative, str) and requested_negative.strip():
             default_negative = inputs["negative_prompt"]

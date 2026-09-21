@@ -1,5 +1,6 @@
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_PROMPT_CODE_POINTS = 4000;
+const MAX_CHECKPOINT_CODE_POINTS = 100;
 const MAX_REQUEST_ID_CODE_POINTS = 200;
 const DEFAULT_ATTACHMENT_SIZE_LIMIT = 10 * 1024 * 1024;
 const SIGNATURE_MAX_AGE_SECONDS = 5 * 60;
@@ -97,10 +98,11 @@ function normalizeCommand(interaction, receivedAt, access) {
   if (interaction.data?.name === "draw") {
     const prompt = option("prompt");
     const negative = option("negative");
+    const checkpoint = option("checkpoint");
     const requestedMode = option("mode");
     const mode = requestedMode === undefined ? "direct" : normalizeMode(requestedMode);
-    if (!isBoundedString(prompt, MAX_PROMPT_CODE_POINTS) || !isOptionalBoundedString(negative, MAX_PROMPT_CODE_POINTS) || (mode !== "natural" && mode !== "direct")) return { ok: false, error: "invalid_draw" };
-    return { ok: true, payload: { ...base, prompt, mode, ...(negative === undefined ? {} : { negative_prompt: negative }) }, bridgePath: "/v1/discord/jobs", kind: "draw" };
+    if (!isBoundedString(prompt, MAX_PROMPT_CODE_POINTS) || !isOptionalBoundedString(negative, MAX_PROMPT_CODE_POINTS) || !isOptionalBoundedString(checkpoint, MAX_CHECKPOINT_CODE_POINTS) || (checkpoint !== undefined && checkpoint.trim().length === 0) || (mode !== "natural" && mode !== "direct")) return { ok: false, error: "invalid_draw" };
+    return { ok: true, payload: { ...base, prompt, mode, ...(negative === undefined ? {} : { negative_prompt: negative }), ...(checkpoint === undefined ? {} : { checkpoint }) }, bridgePath: "/v1/discord/jobs", kind: "draw" };
   }
   if (interaction.data?.name === "status") {
     const requestId = option("request_id");

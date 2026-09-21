@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 import aiohttp
 from aiohttp import web
-from aiohttp.test_utils import TestServer
+from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
-from atelierx.core import generation_settings
+from atelierx.core import create_app as core_app, generation_settings
 from atelierx.core_presets import validate_postprocess_settings
 from atelierx.core_standalone import StandaloneJobs
 from atelierx.core_store import Store
@@ -70,6 +70,38 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
                     self.jobs.create("invalid-negative-" + str(type(invalid)), {"prompt": "literal", "negative_prompt": invalid})
         with self.assertRaises(ApiError):
             self.jobs.create("unknown-field", {"prompt": "literal", "unknown": "value"})
+
+    async def test_checkpoint_is_allowlisted_and_snapshot_survives_config_change(self):
+        self.jobs.config["allowed_checkpoints"] = ["m", "models/alternate.safetensors"]
+        job, created = self.jobs.create("checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        self.assertTrue(created)
+        self.assertEqual(job["generation_inputs"]["diffusion_model"], "models/alternate.safetensors")
+        self.assertEqual(self.jobs.public(job)["checkpoint"], "models/alternate.safetensors")
+        self.jobs.config["allowed_checkpoints"] = ["m"]
+        repeated, created = self.jobs.create("checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        self.assertFalse(created); self.assertEqual(repeated["id"], job["id"])
+        with self.assertRaises(ApiError):
+            self.jobs.create("new-checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        for invalid in ("", "x" * 256, 123):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.jobs.create("invalid-checkpoint-" + str(type(invalid)), {"prompt": "literal", "checkpoint": invalid})
+
+    async def test_checkpoint_configuration_and_listing(self):
+        config = {**self.jobs.config, "allowed_checkpoints": ["m", "models/alternate.safetensors"]}
+        app = core_app(Path(self.tmp.name) / "checkpoint-core.sqlite3", "http://generation", "token",
+                       poll=100, standalone_config=config)
+        client = TestClient(TestServer(app)); await client.start_server()
+        try:
+            response = await client.get("/v1/standalone-checkpoints", headers={"Authorization": "Bearer token"})
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.json(), {"items": [{"name": "m", "value": "m"}, {"name": "models/alternate.safetensors", "value": "models/alternate.safetensors"}], "default": "m"})
+        finally:
+            await client.close()
+        for allowed in ([], ["models/alternate.safetensors"], ["../escape.safetensors"], ["https://example.invalid/model"]):
+            with self.subTest(allowed=allowed):
+                with self.assertRaises(ValueError):
+                    StandaloneJobs(self.core, {**self.jobs.config, "allowed_checkpoints": allowed}, generation_settings, validate_postprocess_settings)
 
     async def test_random_seed_is_safe_once_per_job_and_fixed_mode_remains_compatible(self):
         self.jobs.config["seed_mode"] = "random"

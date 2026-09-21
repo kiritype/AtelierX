@@ -109,6 +109,18 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ApiError):
                     self.bridge.accept(self.body(str(200 + len(str(invalid))), negative_prompt=invalid))
 
+    async def test_checkpoint_is_forwarded_and_reported_from_core(self):
+        self.job["checkpoint"] = "models/alternate.safetensors"
+        self.bridge.accept(self.body(checkpoint="models/alternate.safetensors"))
+        await self.bridge.tick()
+        self.assertEqual(self.last_body["checkpoint"], "models/alternate.safetensors")
+        self.assertEqual(self.bridge.records["100"]["checkpoint"], "models/alternate.safetensors")
+        self.assertIn(b"Checkpoint: models/alternate.safetensors", self.patches[-1])
+        for invalid in ("", "x" * 101, 123):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.bridge.accept(self.body(str(300 + len(str(invalid))), checkpoint=invalid))
+
     async def test_restart_after_dispatch_intent_uses_lookup_without_post(self):
         self.bridge.accept(self.body())
         record = self.bridge.records["100"]
