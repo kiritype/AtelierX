@@ -178,3 +178,12 @@ Worker를 기존 설정을 보존해 배포했다. version `34bb2f1e-466b-4eab-a
 운영 준비: `.atelierx/discord/standalone.json`에 5개 허용 모델을 저장했고 기존 설정은 `standalone.before-checkpoints.json`으로 보존했다(둘 다 Git 제외). 실제 로컬 설정을 격리된 Core 앱에 로드해 목록 5개·기본 모델 반환을 확인했다. Core/Bridge 회귀 25개, Worker/등록 스크립트 회귀 18개(workerd·모의 Core 목록 포함), Worker 배포 dry-run이 통과했다.
 
 아직 실행 중인 파일럿(PID 3452)은 이전 코드다. 현재 Windows 권한으로 명령줄을 읽을 수 없어 프로세스 식별 안전 검사를 충족하지 못하므로 임의 종료하지 않았다. 사용자 정상 재시작 후 `/v1/standalone-checkpoints` 확인→Worker 배포→Core URL/토큰을 사용하는 Guild 명령 등록 순으로 적용해야 한다. 재등록 전에는 Discord에 checkpoint 옵션이 표시되지 않는다. 모델별 실제 생성 시험은 이번 변경에서 실행하지 않았다.
+
+
+### 체크포인트 운영 반영 완료
+
+사용자 재시작 후 Core/Bridge가 새 PID 13072로 실행 중이며, 인증된 `/v1/standalone-checkpoints`에서 5개 모델과 기본 waiANIMA_v10Base10.safetensors를 확인했다. 기존 Tunnel을 통한 Bridge health는 200이다.
+
+Worker version `e6d8b1cd-3a03-4b92-ab93-7a2dc885689a`를 배포하고 Core의 실제 목록으로 테스트 Guild 명령을 재등록했다. Discord API 재조회에서 선택 checkpoint에 5개 항목, 기본 모델 우선 순서, 기존 선택 negative/mode를 확인했다. 로컬 프로세스 추가 재시작이나 Tunnel 변경은 하지 않았다.
+
+사용 예: `/draw prompt:1 girl checkpoint:novaAnimeAM_v40.safetensors`. 생략하면 기존 기본 모델을 사용한다. 이번 후속은 운영 연결·메뉴 등록 검증이며, 다른 체크포인트의 실제 생성 결과와 Discord 이미지 응답은 아직 사용자 확인 전이다.
