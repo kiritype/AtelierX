@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "atelierx-backends"
 version = "0.0.1"
 requires-python = ">=3.12"
-dependencies = ["aiohttp>=3.12,<4", "Pillow>=11,<13"]
+dependencies = ["aiohttp>=3.12,<4", "Pillow>=11,<13", "PyJWT[crypto]>=2.10,<3"]
 
 [project.scripts]
 atelierx-generation = "atelierx.generation:main"

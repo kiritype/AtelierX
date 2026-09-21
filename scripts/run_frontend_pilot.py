@@ -36,7 +36,8 @@ async def main(standalone_config=None, bridge_config=None):
     gpu = json.loads((ROOT / '.atelierx/gpu-config.json').read_text(encoding='utf-8'))
     core = core_app(data/'core.sqlite3', 'http://127.0.0.1:8189', token,
                     validation_config=core_config, validation_token=token, gpu_config=gpu,
-                    standalone_config=standalone_config)
+                    standalone_config=standalone_config,
+                    frontend_connection_path=(data / 'frontend-connection.json') if (data / 'frontend-connection.json').is_file() else None)
     apps = [(core,8190),
             (generation_app(data/'generation', 'http://127.0.0.1:8188', token,
                             coordinator_url='http://127.0.0.1:8190'),8189),

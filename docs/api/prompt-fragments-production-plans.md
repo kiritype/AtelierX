@@ -4,13 +4,17 @@
 
 ## 프롬프트 조각
 
-- `GET /v1/prompt-fragments`: `archived`, `limit`(최대 200), `offset`으로 조회한다.
-- `POST /v1/prompt-fragments`: `{name, body, include: {upper: true, lower: false}}`.
+- `GET /v1/prompt-fragment-categories`: 사용자 관리 단일 단계 분류 목록을 `archived`, `limit`(최대 200), `offset`으로 조회한다. 응답은 `{items, total, limit, offset}`이다.
+- `POST /v1/prompt-fragment-categories`: `{name}`으로 분류를 만든다. `GET`/`PATCH /v1/prompt-fragment-categories/{id}`는 현재 분류 조회와 revision 기반 이름 변경·보관 처리를 제공한다. 분류는 `{id, name, revision, archived, created_at, updated_at}`이다.
+- `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q`는 이름·본문 부분 검색이며 숫자 또는 `#` 뒤 숫자는 표시 번호 정확 검색이다.
+- `POST /v1/prompt-fragments`: 기존 `{name, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)를 더할 수 있다.
 - `GET /v1/prompt-fragments/{id}`: 현재 문서 조회.
 - `PATCH /v1/prompt-fragments/{id}`: 현재 `revision`과 변경 필드로 수정·보관 처리.
 - `GET /v1/prompt-fragments/{id}/revisions`: 변경 이력 페이지 조회.
 
-이름은 1–200자, 본문은 1–20,000자다. 생성 요청에는 `fragment: {id, revision}`을 지정한다. 조각 모드는 기존 구도·표정·동작·상황·include 직접 입력과 혼용하지 않는다. 최신 활성 revision만 신규 계획에 사용할 수 있으며 이미 저장된 계획의 스냅샷은 수정되지 않는다.
+분류는 태그가 아니며 조각당 하나 또는 미분류만 허용한다. 조각에는 생성 순서의 전역 양의 정수 `number`가 자동으로 한 번만 부여된다. 번호는 보관 여부와 무관하게 재사용하지 않으며 UUID `id`·revision 이력은 유지한다. 과거 데이터는 생성 시각, UUID 순으로 번호를 채우고 기존 revision 문서는 변경하지 않는다. 보관된 분류는 새 조각 또는 분류 변경 대상으로 지정할 수 없지만, 이미 그 분류를 가리키는 조각은 조회·이력·기존 계획 스냅샷에서 계속 읽을 수 있다.
+
+이름은 1–200자, 본문은 1–20,000자다. 생성 요청에는 `fragment: {id, revision}`을 지정한다. 조각 모드는 기존 구도·표정·동작·상황·include 직접 입력과 혼용하지 않는다. 최신 활성 revision만 신규 계획에 사용할 수 있으며 이미 저장된 계획의 스냅샷은 수정되지 않는다. 기존 스냅샷의 `{id, revision, body, include}` 모양은 호환을 위해 유지한다.
 
 양성 프롬프트는 전역 퀄리티 + 외형 + 조각에서 선택한 상의/하의 + 조각 본문이다. 음성 프롬프트는 기존 전역 네거티브 + 캐릭터 네거티브 정책을 유지한다.
 

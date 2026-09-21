@@ -27,6 +27,8 @@
 
 좌측 항목은 서로 다른 별도 URL이 아니라 하나의 설정 화면 안의 문맥 전환이다. 작은 화면에서는 navigation을 접고 선택한 category의 제목·저장 상태를 상단에 고정한다. 연결 상태와 서비스 주소를 안내할 수 있으나 token 값은 navigation에 표시하지 않으며, credential 편집·브라우저 저장 UI는 제공하지 않는다. 그 방식은 아직 미정이다.
 
+`Core 연결` 항목은 server-private Frontend connection 설정이 있는 Core에서 Access 자동 연결의 상태만 보여 준다. `configured`, `connected`, 인증 방식, token 저장 여부와 public origin은 표시할 수 있지만 Core token·Access assertion·JWKS는 반환하거나 표시하지 않는다. 최초 연결을 복구할 때만 사용자가 현재 Core token을 입력해 `PUT /v1/frontend-connection`으로 서버 설정의 같은 token을 확인·저장할 수 있다. 이 요청은 서비스 전체 token 회전이 아니며 입력값은 전송 후 즉시 지운다. 설정이 없거나 로컬 실행이면 기존 상단 Bearer 연결을 유지한다.
+
 ## category와 실제 API 연결
 
 | 좌측 category | 우측 핵심 내용 | 실제 Core API | 접어서 보이는 내용 |

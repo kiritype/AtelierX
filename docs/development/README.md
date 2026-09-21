@@ -1,8 +1,14 @@
 # 개발 문서 진입점
 
+[작업실 UI·모바일 구현 결과](frontend-studio-mobile.md): 전역 조각 카테고리·고유 번호, 단계별 작업실과 이미지셋, 반응형 검사 및 실사용 적용 한계.
+
+[조각 라이브러리·제작 흐름 UX](frontend-library-ux-review.md): 2026-09-22 승인한 화면 방향, 카테고리·전체 고유 번호, 모바일 대응 및 구현 전 점검 기준.
+
 [Core 기존 이미지 후처리](core-image-postprocess.md): 독립 후처리 Core·Frontend 연결과 검증 범위.
 
 [개인용 Discord 봇](discord-personal-bot.md): 2026-09-21 우선 구현 지시. 그룹과 독립된 자연어/원문 생성, 대기·만료·친구 허용 목록.
+
+[고정 Tunnel·Access 운영 기록](remote-access.md): `atelier.cftm.net` Frontend/Core와 `bridge.cftm.net` Worker/Bridge의 Access 경계, Tunnel 적용 및 남은 사용자 확인.
 
 [2026-09-21 구현 현황 점검](implementation-status-2026-09-21.md): 현재 코드 기준의 구현·부분 구현·미구현·미검증·유예 구분. 아래 과거 시점별 기록보다 이 점검과 최신 REST 명세를 우선 참고한다.
 

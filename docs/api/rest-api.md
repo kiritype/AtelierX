@@ -115,13 +115,24 @@ items는 1..32개의 Task 입력이며 group_id는 상위 경로에서 상속하
 
 기본 로컬 포트: Core **8190**, Generation **8189**, Validation **8191**, ComfyUI **8188**, LM Studio **1234**. 서버 실행 시 port를 변경할 수 있다. 서비스 간 주소는 서버 설정으로 지정한다.
 
-- 모든 경로(health 포함): `Authorization: Bearer <service-token>` 필수. `ATELIERX_SERVICE_TOKEN` 환경변수 사용.
+- 기본적으로 모든 경로(health 포함)는 `Authorization: Bearer <service-token>`이 필요하다. `ATELIERX_SERVICE_TOKEN` 환경변수를 사용한다. server-private Frontend connection 설정이 있는 Core의 같은 public origin 요청은 검증된 Cloudflare Access assertion으로 Browser 인증할 수 있으며, Access 검증에 실패하면 Bearer를 대체하지 않는다.
 - JSON 요청: `Content-Type: application/json`. `/v1/uploads`만 raw 이미지 bytes.
 - Job/Task 생성 및 검증 접수: `Idempotency-Key` 필수, 1~200자. 새 접수 202, 동일 키·내용 200 기존 결과, 다른 내용 409. 일반 category 생성에는 멱등 키 기능 없음.
 - Entity 생성은 201, 일반 조회·수정은 200. 접수 후 실패는 조회 HTTP 200의 결과 객체에서 확인한다.
 - API 오류 기본 형태: `{"error":{"code":"...","message":"..."}}`. Job 오류는 해당 객체의 `error`에 보관하며 Validation에는 `stage`가 추가된다.
 - 요청의 정의되지 않은 필드는 원칙적으로 거절한다. 필수 nullable 필드는 생략과 null을 구분한다.
 - 이미지 ID와 서버 등록 ID를 사용한다. 임의 파일 경로·클라이언트 지정 Provider URL/키는 요청으로 받지 않는다.
+
+### Frontend connection과 Cloudflare Access
+
+`--frontend-connection-config .atelierx/pilot/frontend-connection.json`을 명시한 Core만 아래 경로를 제공한다. 설정 파일은 `public_origin`, `issuer`, `audience`, `allowed_emails`, `core_token`만 가지며 [비밀 없는 예시](../../config/frontend-connection.example.json)를 따른다. `core_token`은 응답·정적 asset·로그에 넣지 않는다. Google OAuth는 이 계약 범위가 아니다.
+
+| Method | 경로 | 요청 | 응답 |
+| --- | --- | --- | --- |
+| GET | `/v1/frontend-connection` | 없음 | `{configured,connected,auth_mode,token_configured,public_origin}`. token 원문 없음 |
+| PUT | `/v1/frontend-connection` | `{token}`. 현재 Core token과 같은 값만 허용 | 위 상태 객체. token 회전·다른 service 변경 없음 |
+
+Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변경 요청의 `Origin`도 같을 때만 처리한다. Core는 `Cf-Access-Jwt-Assertion`의 RS256 signature를 issuer JWKS로 확인하고 issuer, audience, `exp`, `iat`, 허용 email을 검증한다. JWKS는 서버에서 제한된 캐시로만 조회한다. 설정이 없는 현재 Core에서는 인증된 GET이 `configured:false` 상태를 반환하고, Bearer 없는 요청은 기존 middleware의 401을 유지한다. 이 경로가 없는 구버전 Core는 인증된 조회에서 404를 반환한다.
 
 ## Core
 

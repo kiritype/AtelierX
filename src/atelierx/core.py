@@ -35,8 +35,10 @@ from .core_standalone import StandaloneJobs
 from .core_postprocess import CorePostprocess
 from .queue_api import attach_queue_api
 from .frontend import attach as attach_frontend
+from .frontend_connection import FrontendConnection
 
 CORE = web.AppKey("core", object)
+FRONTEND_CONNECTION = web.AppKey("frontend_connection", FrontendConnection)
 COMPONENTS = {"appearance", "upper", "lower"}
 GEN_FIELDS = {"diffusion_model", "text_encoder", "vae", "width", "height", "seed", "steps", "cfg", "sampler", "scheduler"}
 TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
@@ -361,9 +363,18 @@ async def errors(request, handler):
     if request.method == "GET" and request.path.startswith("/ui/"):
         return await handler(request)
     core = request.app[CORE]
-    if not hmac.compare_digest(request.headers.get("Authorization", "").encode(), ("Bearer " + core.token).encode()):
-        return web.json_response({"error": {"code": "CORE_UNAUTHORIZED", "message": "Bearer token required"}}, status=401)
     try:
+        authorization = request.headers.get("Authorization")
+        if authorization is not None:
+            if not hmac.compare_digest(authorization.encode(), ("Bearer " + core.token).encode()):
+                raise ApiError("CORE_UNAUTHORIZED", "Bearer token required", 401)
+        else:
+            connection = request.app[FRONTEND_CONNECTION]
+            if connection.config is None:
+                raise ApiError("CORE_UNAUTHORIZED", "Bearer token required", 401)
+            await connection.verify_access(request, core.session)
+            if request.path != "/v1/frontend-connection" and not connection.matches_core_token():
+                raise ApiError("CORE_FRONTEND_TOKEN_INVALID", "Stored frontend token does not match the current Core token", 401)
         return await handler(request)
     except ApiError as exc:
         return web.json_response({"error": {"code": exc.code, "message": exc.message}}, status=exc.status)
@@ -374,12 +385,13 @@ async def errors(request, handler):
         return web.json_response({"error": {"code": "CORE_STORAGE_UNAVAILABLE", "message": "Core storage unavailable"}}, status=503)
 
 
-def create_app(db_path, generation_url, token, generation_token=None, poll=1, validation_config=None, validation_token=None, gpu_config=None, standalone_config=None):
+def create_app(db_path, generation_url, token, generation_token=None, poll=1, validation_config=None, validation_token=None, gpu_config=None, standalone_config=None, frontend_connection_path=None):
     if not token:
         raise ValueError("ATELIERX_SERVICE_TOKEN must be set")
     app = web.Application(middlewares=[errors], client_max_size=2 * 1024 * 1024)
     attach_frontend(app)
     core = Core(db_path, generation_url, token, generation_token or token, poll)
+    app[FRONTEND_CONNECTION] = FrontendConnection(frontend_connection_path, token)
     core.presets.attach(app)
     core.fragments.attach(app)
     core.validation = CoreValidation(core, validation_config, validation_token)
@@ -427,6 +439,14 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     async def health(request):
         return web.json_response({"service": "core", "status": "ok", "database_version": 2,
                                   "validation_configured": bool(core.validation.url)})
+
+    async def frontend_connection(request):
+        connection = request.app[FRONTEND_CONNECTION]
+        if request.method == "PUT":
+            body = await request.json()
+            fields(body, {"token"}, {"token"})
+            connection.save_token(body["token"])
+        return web.json_response(connection.status("cloudflare_access" if request.headers.get("Authorization") is None else "bearer"), headers={"Cache-Control": "no-store"})
 
     async def gpu(request):
         if request.method == "GET":
@@ -677,6 +697,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                     web.get("/v1/regeneration-cycles/{id}", cycle), web.post("/v1/regeneration-cycles/{id}/stop", cycle), web.post("/v1/tasks/{id}/cancel", cancel_task), web.post("/v1/validation-runs/{id}/cancel", cancel_validation), web.get("/v1/gpu", gpu), web.post("/v1/gpu/acquire", gpu), web.post("/v1/gpu/release", gpu), web.get("/health", health), web.get(category, entity_collection), web.post(category, entity_collection),
                     web.get(category + "/{id}", entity_detail), web.patch(category + "/{id}", entity_detail),
                     web.get(category + "/{id}/revisions", history), web.get("/v1/settings", settings), web.patch("/v1/settings", settings),
+                    web.get("/v1/frontend-connection", frontend_connection), web.put("/v1/frontend-connection", frontend_connection),
                     web.get("/v1/groups", groups), web.post("/v1/groups", groups), web.get("/v1/groups/{id}", group), web.post("/v1/prompts/preview", preview),
                     web.get("/v1/images", gallery), web.get("/v1/group-batches", batch_list),
                     web.get("/v1/tasks", tasks), web.post("/v1/tasks", tasks), web.get("/v1/tasks/by-key", by_key),
@@ -702,6 +723,7 @@ def main():
     parser.add_argument("--validation-config", help="Core-owned JSON of Validation endpoint and registered profile/provider snapshots")
     parser.add_argument("--gpu-config", help="Shared GPU runtime configuration JSON")
     parser.add_argument("--standalone-config", help="Core-owned standalone generation and local planner JSON")
+    parser.add_argument("--frontend-connection-config", help="Private Cloudflare Access frontend connection JSON")
     args = parser.parse_args()
     token = os.environ.get("ATELIERX_SERVICE_TOKEN")
     validation_config = json.loads(Path(args.validation_config).read_text(encoding="utf-8")) if args.validation_config else None
@@ -713,7 +735,8 @@ def main():
     web.run_app(create_app(args.db, args.generation_url, token, os.environ.get("ATELIERX_GENERATION_TOKEN", token),
                            validation_config=validation_config, validation_token=os.environ.get("ATELIERX_VALIDATION_TOKEN", token),
                            gpu_config=json.loads(Path(args.gpu_config).read_text(encoding="utf-8")) if args.gpu_config else None,
-                           standalone_config=json.loads(Path(args.standalone_config).read_text(encoding="utf-8")) if args.standalone_config else None),
+                           standalone_config=json.loads(Path(args.standalone_config).read_text(encoding="utf-8")) if args.standalone_config else None,
+                           frontend_connection_path=args.frontend_connection_config),
                 host="127.0.0.1", port=args.port)
 
 

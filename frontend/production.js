@@ -2,6 +2,7 @@
  * Production pilot page.  It only composes Core REST requests; Core remains
  * responsible for prompt composition, frozen groups, and task orchestration.
  */
+import {fragmentKey, fragmentListPath, fragmentReference, preserveSelection} from "./fragment-picker.js";
 
 const EMPTY_COMPONENTS = Object.freeze({ appearance: "", upper: "", lower: "" });
 const DEFAULT_GENERATION = Object.freeze({
@@ -130,11 +131,23 @@ function pageState(ctx) {
   state.multiProductionPlans ||= {};
   state.fragments ||= [];
   state.fragmentOffset ||= 0;
-  state.fragmentLimit ||= 50;
+  state.fragmentLimit = 25;
   state.fragmentTotal ||= 0;
+  state.fragmentCategoryId ||= "";
+  state.fragmentSearch ||= "";
+  state.fragmentCategories ||= [];
+  state.productionSection ||= "prepare";
+  state.mobilePreparationPanel ||= "classification";
   state.draft ||= initialDraft();
   state.draft.include ||= { appearance: true, upper: true, lower: false };
   state.draft.fragmentSelections ||= [];
+  // Older in-memory drafts used `id@revision` strings. Keep their frozen
+  // meaning while moving the picker to the shared serializable reference.
+  state.draft.fragmentSelections = state.draft.fragmentSelections.map((value) => {
+    if (value && typeof value === "object") return value;
+    const [id, revision] = String(value).split("@");
+    return {id, revision: Number(revision)};
+  }).filter((value) => value.id && Number.isInteger(value.revision) && value.revision > 0);
   state.draft.multiPlanRequests ||= {};
   // Preserve existing free-form drafts as an explicitly chosen advanced mode.
   if (!state.draft.compositionMode) state.draft.compositionMode = state.draft.framingPrompt ? "direct" : "fragment";
@@ -326,6 +339,7 @@ export function freezeMultiProductionPlanRequests(state, keyFactory = makeKey) {
 }
 
 function presetReference(value) {
+  if (value && typeof value === "object") return fragmentReference(value);
   const [id, revision] = value.split("@");
   return { id, revision: Number(revision) };
 }
@@ -386,10 +400,14 @@ function generationPanel(state, api, rerender, notify) {
     draft.validationEnabled ? field("Single Profile", choice(draft.validationProfile, state.presets.profiles, (value) => { draft.validationProfile = value; invalidatePreview(draft); }), "등록된 설정만 선택합니다.") : null,
     draft.validationEnabled ? field("Provider", choice(draft.validationProvider, state.presets.providers, (value) => { draft.validationProvider = value; invalidatePreview(draft); })) : null,
   ]);
-  return node("section", { class: "panel" }, [node("h2", { text: "생성 설정" }), field("Generation Preset", presetSelect), node("div", { class: "grid" }, generationControls),
+  const directSettings = draft.generationPreset ? null : node("details", { class: "production-direct-settings", open: "" }, [
+    node("summary", { text: "직접 생성 설정" }), node("div", { class: "grid" }, generationControls),
     node("h3", { text: "LoRA" }), node("p", { class: "muted", text: "행 순서대로 적용합니다. 설치 확인된 Anima LoRA를 제안하며, 다른 등록 파일명도 직접 입력할 수 있습니다." }),
     node("datalist", { id: "production-known-anima-loras" }, KNOWN_ANIMA_LORAS.map((name) => node("option", { value: name }))), ...loraRows,
     button("+ LoRA", () => { draft.loras.push({ name: "", strength: 1 }); invalidatePreview(draft); rerender(); }, { secondary: true }),
+  ]);
+  return node("section", { class: "panel" }, [node("h2", { text: "생성 설정" }), field("생성 Preset", presetSelect),
+    draft.generationPreset ? node("p", { class: "muted", text: "선택한 Preset의 고정 설정을 사용합니다." }) : directSettings,
     node("h3", { text: "후처리" }), postprocess, node("h3", { text: "검사" }), validation]);
 }
 
@@ -398,8 +416,13 @@ function choice(value, items, onChange) {
     ...items.map((item) => selectedOption(item.profile_id || item.provider_id || item.id, `${item.name || item.profile_id || item.provider_id} (r${item.revision})`, value === (item.profile_id || item.provider_id || item.id)))]);
 }
 
-function fragmentReference(item) {
-  return `${item.id}@${item.revision}`;
+/** Query parameters for the read-only production fragment picker.
+ * Selection is deliberately kept in the draft, rather than in this query,
+ * so changing category, search text, or page cannot drop a chosen fragment.
+ */
+export function fragmentPickerQuery(state) {
+  return fragmentListPath({query: state.fragmentSearch, categoryId: state.fragmentCategoryId,
+    archived: false, limit: state.fragmentLimit, offset: state.fragmentOffset});
 }
 
 function directCompositionFields(draft, update) {
@@ -414,41 +437,13 @@ function directCompositionFields(draft, update) {
   ]);
 }
 
-function fragmentLibrary(state, api, rerender, notify) {
+function fragmentPicker(state, rerender) {
   const draft = state.draft;
-  const selections = new Set(draft.fragmentSelections);
-  const editor = state.fragmentEditor;
+  const selections = new Set(draft.fragmentSelections.map((value) => fragmentKey(value)));
   const setMode = (mode) => { draft.compositionMode = mode; invalidatePreview(draft, true); rerender(); };
   const toggle = (item, checked) => {
-    const ref = fragmentReference(item);
-    if (checked) selections.add(ref); else selections.delete(ref);
-    draft.fragmentSelections = [...selections];
+    draft.fragmentSelections = preserveSelection(draft.fragmentSelections, item, checked);
     invalidatePreview(draft, true); rerender();
-  };
-  const openEditor = (item = null) => {
-    state.fragmentEditor = item ? { id: item.id, revision: item.revision, name: item.name, body: item.body,
-      include: { upper: Boolean(item.include?.upper), lower: Boolean(item.include?.lower) } } :
-      { name: "", body: "", include: { upper: true, lower: false } };
-    rerender();
-  };
-  const save = async () => {
-    const value = state.fragmentEditor;
-    try {
-      const body = { name: value.name, body: value.body, include: { upper: Boolean(value.include.upper), lower: Boolean(value.include.lower) } };
-      const previousRef = value.id ? `${value.id}@${value.revision}` : null;
-      const result = value.id ? await api.patch(`/v1/prompt-fragments/${value.id}`, { revision: value.revision, ...body }) : await api.post("/v1/prompt-fragments", body);
-      if (previousRef && selections.delete(previousRef)) selections.add(fragmentReference(result));
-      if (!previousRef) selections.add(fragmentReference(result));
-      draft.fragmentSelections = [...selections]; state.fragmentEditor = null;
-      invalidatePreview(draft, true); notify("전역 조각을 저장했습니다."); await rerender(true);
-    } catch (error) { state.error = requestError(error); rerender(); }
-  };
-  const archive = async (item) => {
-    try {
-      await api.patch(`/v1/prompt-fragments/${item.id}`, { revision: item.revision, archived: true });
-      selections.delete(fragmentReference(item)); draft.fragmentSelections = [...selections];
-      invalidatePreview(draft, true); notify("전역 조각을 보관했습니다."); await rerender(true);
-    } catch (error) { state.error = requestError(error); rerender(); }
   };
   const selectedCount = draft.fragmentSelections.length;
   const mode = node("select", { onchange: (event) => setMode(event.target.value) }, [
@@ -457,47 +452,60 @@ function fragmentLibrary(state, api, rerender, notify) {
   ]);
   if (draft.compositionMode === "direct") return node("div", { class: "grid" }, [field("구성 방식", mode), directCompositionFields(draft, (name) => (value) => { draft[name] = value; invalidatePreview(draft, true); })]);
   const rows = state.fragments.map((item) => {
-    const ref = fragmentReference(item);
-    return node("li", { class: "row" }, [
+    const ref = fragmentKey(item);
+    const number = item.number ?? item.display_number;
+    const categoryName = state.fragmentCategories.find((category) => category.id === item.category_id)?.name || "미분류";
+    return node("li", { class: "row production-fragment-row" }, [
       node("input", { type: "checkbox", checked: selections.has(ref), "aria-label": `${item.name} 조각 선택`, onchange: (event) => toggle(item, event.target.checked) }),
-      node("span", { text: `${item.name} (r${item.revision})` }), button("수정", () => openEditor(item), { secondary: true }), button("보관", () => archive(item), { secondary: true }),
+      node("span", { text: `${number ? `#${number} · ` : ""}${item.name}` }),
+      node("small", { class: "muted", text: categoryName }),
     ]);
   });
-  const editorPanel = editor ? node("div", { class: "grid" }, [
-    field("조각 이름", textInput(editor.name, (value) => { editor.name = value; })),
-    field("조각 본문", textArea(editor.body, (value) => { editor.body = value; }, "구도·표정·동작·배경을 자유롭게 작성")),
-    field("상의 포함", node("input", { type: "checkbox", checked: editor.include.upper, onchange: (event) => { editor.include.upper = event.target.checked; } })),
-    field("하의 포함", node("input", { type: "checkbox", checked: editor.include.lower, onchange: (event) => { editor.include.lower = event.target.checked; } })),
-    node("p", { class: "muted", text: "외형은 모든 전역 조각에 항상 포함됩니다." }),
-    node("div", { class: "toolbar" }, [button("조각 저장", save), button("취소", () => { state.fragmentEditor = null; rerender(); }, { secondary: true })]),
-  ]) : null;
-  return node("div", { class: "grid" }, [field("구성 방식", mode),
-    node("p", { class: "muted", text: "전역 조각은 작품·캐릭터에 속하지 않습니다. 조각 본문에는 구도, 표정, 동작, 배경을 함께 작성할 수 있습니다." }),
-    editorPanel || node("div", {}, [node("ul", { class: "fragment-list" }, rows),
-      node("div", { class: "toolbar" }, [button("이전", () => { state.fragmentOffset = Math.max(0, state.fragmentOffset - state.fragmentLimit); rerender(true); }, { secondary: true, disabled: state.fragmentOffset === 0 }),
-        button("다음", () => { state.fragmentOffset += state.fragmentLimit; rerender(true); }, { secondary: true, disabled: state.fragmentOffset + state.fragmentLimit >= state.fragmentTotal }),
-        button("+ 전역 조각", () => openEditor(), { secondary: true })]),
-      node("p", { class: "muted", text: `조각 ${state.fragmentTotal ? state.fragmentOffset + 1 : 0}–${Math.min(state.fragmentOffset + state.fragmentLimit, state.fragmentTotal)} / ${state.fragmentTotal}` })]),
-    node("p", { class: selectedCount === 1 ? "muted" : "error", text: selectedCount === 1 ? "단일 미리보기에 조각 1개가 선택되었습니다." : `선택 조각: ${selectedCount}개. 단일 미리보기에는 정확히 1개를 선택하세요.` }),
-    selectedCount > 1 ? node("p", { class: "muted", text: "복수 선택은 아래 제작 계획에서 고정 미리보기로 만들고, 페이지별 Prompt를 확인한 뒤 명시적으로 시작합니다." }) : null,
+  const categoryOptions = state.fragmentCategories;
+  const filter = node("div", { class: "production-fragment-filter grid" }, [
+    field("카테고리", node("select", { onchange: (event) => { state.fragmentCategoryId = event.target.value; state.fragmentOffset = 0; rerender(true); } }, [selectedOption("", "전체", !state.fragmentCategoryId), ...categoryOptions.map((item) => selectedOption(item.id, item.name, state.fragmentCategoryId === item.id))])),
+    field("조각 찾기", textInput(state.fragmentSearch, (value) => { state.fragmentSearch = value; }, { placeholder: "번호 또는 이름" })),
+    button("검색", () => { state.fragmentOffset = 0; rerender(true); }, { secondary: true }),
+  ]);
+  const chosen = node("p", { class: "muted production-fragment-selection", text: selectedCount ? `선택함: ${selectedCount}개 조각` : "선택한 조각이 없습니다." });
+  return node("div", { class: "production-fragment-picker" }, [field("구성 방식", mode),
+    node("p", { class: "muted", text: "조각은 별도 ‘조각’ 화면에서 관리합니다. 여기서는 이번 제작에 사용할 조각만 고릅니다." }),
+    button("조각 관리 화면 열기", () => state.navigate?.("fragments"), {secondary: true}),
+    filter, node("ul", { class: "fragment-list", "aria-label": "전역 조각 목록" }, rows),
+    node("div", { class: "toolbar" }, [button("이전", () => { state.fragmentOffset = Math.max(0, state.fragmentOffset - state.fragmentLimit); rerender(true); }, { secondary: true, disabled: state.fragmentOffset === 0 }),
+      button("다음", () => { state.fragmentOffset += state.fragmentLimit; rerender(true); }, { secondary: true, disabled: state.fragmentOffset + state.fragmentLimit >= state.fragmentTotal })]),
+    node("p", { class: "muted", text: `조각 ${state.fragmentTotal ? state.fragmentOffset + 1 : 0}–${Math.min(state.fragmentOffset + state.fragmentLimit, state.fragmentTotal)} / ${state.fragmentTotal}` }), chosen,
+    node("p", { class: "muted", text: selectedCount === 1 ? "조각 1개를 골랐습니다. 아래에서 단일 미리보기를 확인할 수 있습니다." : selectedCount ? `조각 ${selectedCount}개를 골랐습니다. 복수 조각은 아래 제작 계획으로 만듭니다.` : "조각을 고르면 단일 미리보기 또는 복수 제작 계획을 만들 수 있습니다." }),
   ]);
 }
 
 async function refreshProductionPlan(state, api) {
-  if (!state.productionPlanId) return;
-  const plan = await api.get(`/v1/production-plans/${state.productionPlanId}`);
+  const requestedPlanId = state.productionPlanId;
+  if (!requestedPlanId) return;
+  const plan = await api.get(`/v1/production-plans/${requestedPlanId}`);
+  if (state.productionPlanId !== requestedPlanId) return;
   const [items, comparisons] = await Promise.all([
     api.get(query(`/v1/production-plans/${plan.id}/items`, { limit: 20, offset: state.planItemsOffset })),
     api.get(`/v1/production-plans/${plan.id}/comparisons`),
   ]);
+  if (state.productionPlanId !== requestedPlanId) return;
+  const itemValues = collection(items);
+  const fragmentIds = [...new Set(itemValues.map((item) => item.fragment?.id).filter(Boolean))];
+  const fragmentResults = await Promise.allSettled(fragmentIds.map((id) => api.get(`/v1/prompt-fragments/${id}`)));
+  if (state.productionPlanId !== requestedPlanId) return;
+  const fragments = Object.fromEntries(fragmentResults.flatMap((result, index) =>
+    result.status === "fulfilled" ? [[fragmentIds[index], result.value]] : []));
+  const group = plan.state === "awaiting_reference_confirmation" ? await api.get(`/v1/groups/${plan.group_id}`) : null;
+  if (state.productionPlanId !== requestedPlanId) return;
   state.productionPlan = plan;
   const pendingEntry = state.draft.multiPlanRequests?.[plan.group_id];
   if (pendingEntry?.plan?.id === plan.id) pendingEntry.plan = plan;
   if (state.multiProductionPlans?.[plan.group_id]?.id === plan.id) state.multiProductionPlans[plan.group_id] = plan;
-  state.productionPlanGroup = plan.state === "awaiting_reference_confirmation" ? await api.get(`/v1/groups/${plan.group_id}`) : null;
-  state.productionPlanItems = collection(items);
+  state.productionPlanGroup = group;
+  state.productionPlanItems = itemValues;
   state.productionPlanItemsTotal = Number.isInteger(items?.total) ? items.total : state.productionPlanItems.length;
   state.productionPlanComparisons = collection(comparisons);
+  state.productionPlanFragments = fragments;
 }
 
 function planSetupPanel(state, api, rerender, notify) {
@@ -535,7 +543,7 @@ function groupLabel(state, group) {
   const character = entityById(state.catalog.characters, group.character_id);
   const outfit = entityById(state.catalog.outfits, group.outfit_id);
   const names = [work?.name, character?.name, outfit?.name].filter(Boolean);
-  return `${names.length ? names.join(" / ") : "이름을 불러오는 중"} · r${group.outfit_revision} · ${group.id.slice(0, 8)}`;
+  return `${names.length ? names.join(" / ") : "이름을 불러오는 중"} · 고정본 r${group.outfit_revision}`;
 }
 
 function multiPlanSetupPanel(state, api, rerender, notify) {
@@ -576,7 +584,7 @@ function multiPlanSetupPanel(state, api, rerender, notify) {
       plan ? button("계획 미리보기", () => { clearProductionPlanSelection(state); state.productionPlanId = plan.id; state.productionPlan = plan; rerender(true); }, { secondary: true }) : null,
     ]);
   });
-  return node("section", { class: "panel" }, [node("h3", { text: "여러 캐릭터·의상 제작" }),
+  return node("details", { class: "panel production-multi-plan" }, [node("summary", { text: "여러 캐릭터·의상에 같은 조각 적용" }),
     node("p", { class: "muted", text: "선택한 각 고정 그룹에 같은 전역 조각과 생성 설정을 적용합니다. 그룹마다 별도 계획을 고정한 뒤 Prompt를 확인하고 시작합니다." }),
     node("ul", { class: "fragment-list" }, groups.map((group) => node("li", { class: "row" }, [
       node("input", { type: "checkbox", checked: selected.has(group.id), "aria-label": `${groupLabel(state, group)} 그룹 선택`, onchange: (event) => toggle(group.id, event.target.checked) }),
@@ -605,6 +613,7 @@ export function clearProductionPlanSelection(state) {
   state.productionPlanItems = [];
   state.productionPlanItemsTotal = 0;
   state.productionPlanComparisons = [];
+  state.productionPlanFragments = {};
   state.planItemsOffset = 0;
   if (typeof state.selectedId === "string" && state.selectedId.startsWith("plan:")) state.selectedId = null;
 }
@@ -632,15 +641,20 @@ function productionPlanPanel(state, api, rerender, notify) {
   };
   const prev = () => { state.planItemsOffset = Math.max(0, state.planItemsOffset - 20); refresh(); };
   const next = () => { state.planItemsOffset += 20; refresh(); };
-  const items = (state.productionPlanItems || []).map((item) => node("li", {}, [node("details", {}, [
-    node("summary", { text: `#${item.index + 1} · ${item.state}` }),
+  const items = (state.productionPlanItems || []).map((item) => {
+    const fragment = state.productionPlanFragments?.[item.fragment?.id];
+    const fragmentLabel = fragment?.number ? `조각 #${fragment.number}${fragment.name ? ` · ${fragment.name}` : ""}` : "조각 번호를 불러오는 중";
+    return node("li", {}, [node("details", {}, [
+    node("summary", { text: `${fragmentLabel} · 항목 ${item.index + 1} · ${item.state}` }),
     node("p", { class: "prompt-preview-text", text: `Positive: ${item.snapshot?.generation_inputs?.positive_prompt || ""}` }),
     node("p", { class: "prompt-preview-text", text: `Negative: ${item.snapshot?.generation_inputs?.negative_prompt || ""}` }),
-    node("pre", { text: JSON.stringify({ fragment: item.fragment, inclusion: item.snapshot?.inclusion, error: item.error }, null, 2) }),
-  ])]));
+    node("details", { class: "production-advanced" }, [node("summary", { text: "고정된 조각·포함 정보" }), node("pre", { text: JSON.stringify({ fragment: item.fragment, inclusion: item.snapshot?.inclusion, error: item.error }, null, 2) })]),
+    ])]);
+  });
   const terminal = ["completed", "failed", "cancelled", "insufficient_images"].includes(plan.state);
   return node("section", { class: "panel" }, [node("h2", { text: "고정 제작 계획" }),
-    node("p", { class: "badge", text: plan.state }), node("p", { text: `계획 ${plan.id} · ${plan.total}개 · 결과: ${plan.outcome || "아직 없음"}` }),
+    node("p", { class: "badge", text: plan.state }), node("p", { text: `${plan.total}개 조각 · 결과: ${plan.outcome || "아직 없음"}` }),
+    node("details", { class: "production-advanced" }, [node("summary", { text: "고급 정보" }), node("code", { text: `계획 ID: ${plan.id}` })]),
     node("pre", { text: JSON.stringify({ counts: plan.counts || {}, error: plan.error || null }, null, 2) }),
     plan.state === "awaiting_reference_confirmation" ? node("p", { class: "error", text: "현재 그룹 기준이 바뀌었습니다. Gallery에서 기준을 명시적으로 선택한 뒤 현재 revision을 확인하고 재개하세요." }) : null,
     node("div", { class: "toolbar" }, [button("새 제작으로 돌아가기", () => { clearProductionPlanSelection(state); rerender(true); }, { secondary: true }),
@@ -660,9 +674,10 @@ function productionPlanPanel(state, api, rerender, notify) {
 function groupPanel(state, api, rerender, notify) {
   if (state.productionPlanId) return productionPlanPanel(state, api, rerender, notify);
   const outfit = entityById(state.entities.outfits, state.selection.outfitId);
-  if (!outfit) return node("section", { class: "panel" }, [node("h2", { text: "이번 생성" }),
-    node("p", { class: "muted", text: "단일 생성은 의상을 선택한 뒤 고정 그룹을 만듭니다. 여러 기존 그룹은 아래에서 바로 선택할 수 있습니다." }),
-    fragmentLibrary(state, api, rerender, notify), multiPlanSetupPanel(state, api, rerender, notify)]);
+  if (!outfit) return node("section", { class: "panel production-generation" }, [node("h2", { text: "조각 선택과 생성 확인" }),
+    node("p", { class: "muted", text: "단일 생성은 의상을 선택한 뒤 고정 그룹을 만듭니다. 먼저 준비 단계에서 캐릭터와 의상을 고르세요." }),
+    button("캐릭터·의상 준비로 이동", () => { state.productionSection = "prepare"; state.mobilePreparationPanel = "classification"; rerender(); }, { secondary: true }),
+    fragmentPicker(state, rerender), multiPlanSetupPanel(state, api, rerender, notify)]);
   const createGroup = async () => {
     try {
       const group = await api.post("/v1/groups", { outfit_id: outfit.id });
@@ -673,8 +688,8 @@ function groupPanel(state, api, rerender, notify) {
     } catch (error) { state.error = requestError(error); rerender(); }
   };
   const groups = state.entities.groups;
-  const groupList = node("select", { onchange: (event) => { state.selection.groupId = event.target.value || null; invalidatePreview(state.draft); rerender(); } }, [selectedOption("", "그룹 선택", !state.selection.groupId),
-    ...groups.map((item) => selectedOption(item.id, `r${item.outfit_revision} · ${item.id.slice(0, 8)}`, state.selection.groupId === item.id))]);
+  const groupList = node("select", { onchange: (event) => { state.selection.groupId = event.target.value || null; invalidatePreview(state.draft); rerender(); } }, [selectedOption("", "고정 그룹 선택", !state.selection.groupId),
+    ...groups.map((item) => selectedOption(item.id, `고정본 r${item.outfit_revision}`, state.selection.groupId === item.id))]);
   const current = groups.find((item) => item.id === state.selection.groupId);
   const stale = current && current.outfit_revision !== outfit.revision;
   const draft = state.draft;
@@ -711,14 +726,15 @@ function groupPanel(state, api, rerender, notify) {
     } catch (error) { state.error = requestError(error); }
     finally { rerender(); }
   };
-  return node("section", { class: "panel" }, [node("h2", { text: "이번 생성" }), node("div", { class: "row" }, [field("고정 그룹", groupList), button("현재 의상으로 새 그룹", createGroup, { secondary: true })]),
-    stale ? node("p", { class: "error", text: "선택 그룹은 현재 의상과 다른 revision입니다. 과거 구성을 사용하거나 새 그룹을 만드세요." }) : null,
-    fragmentLibrary(state, api, rerender, notify),
+  return node("section", { class: "panel production-generation" }, [node("h2", { text: "조각 선택과 생성 확인" }), node("div", { class: "row" }, [field("생성에 쓸 고정 그룹", groupList), button("현재 의상으로 새 고정본 만들기", createGroup, { secondary: true })]),
+    node("p", { class: "muted", text: "현재 의상 원본을 저장해도, 이미 만든 고정 그룹과 과거 결과는 바뀌지 않습니다." }),
+    stale ? node("p", { class: "error", text: "선택한 것은 현재 의상과 다른 과거 고정본입니다. 이 구성을 계속 쓰거나 현재 의상으로 새 고정본을 만드세요." }) : null,
+    fragmentPicker(state, rerender),
     planSetupPanel(state, api, rerender, notify),
     multiPlanSetupPanel(state, api, rerender, notify),
     node("div", { class: "toolbar" }, [button("미리보기 갱신", preview, { disabled: draft.previewing }), button("명시적으로 Task 접수", submit, { disabled: draft.pending || !draft.preview?.preview_hash }),
       draft.pendingKey ? button("응답 유실 복구", recover, { secondary: true }) : null]),
-    previewView(draft.preview), draft.pendingKey ? node("p", { class: "muted", text: `복구 키를 보관 중입니다: ${draft.pendingKey}` }) : null,
+    previewView(draft.preview), draft.pendingKey ? node("details", { class: "production-advanced" }, [node("summary", { text: "응답 유실 복구 정보" }), node("code", { text: draft.pendingKey })]) : null,
     draft.task ? node("div", { class: "row" }, [node("span", { class: "badge", text: draft.task.state || "accepted" }), button("작업 현황 열기", () => ctxNavigate(state, "jobs", draft.task.id), { secondary: true })]) : null]);
 }
 
@@ -755,6 +771,7 @@ function treePanel(state, rerender) {
       expanded.characters[item.parent_id] = true;
     }
     state.editor = { ...item, components: { ...EMPTY_COMPONENTS, ...item.components } };
+    state.mobilePreparationPanel = "editor";
     rerender(true);
   };
   const toggle = (kind, id) => {
@@ -764,6 +781,7 @@ function treePanel(state, rerender) {
   const create = (kind, parentId = null) => {
     if (state.dirty) { state.error = "미저장 원본을 먼저 저장하거나 취소하세요."; rerender(); return; }
     state.editor = { kind, name: "", parent_id: parentId, negative_prompt: "", components: { ...EMPTY_COMPONENTS } };
+    state.mobilePreparationPanel = "editor";
     rerender();
   };
   const selectButton = (label, selected, action) => node("button", {
@@ -798,11 +816,12 @@ function treePanel(state, rerender) {
     }, { secondary: true })])]);
 }
 async function load(state, api) {
-  const [works, generation, postprocess, profiles, providers, fragments, groupProfiles] = await Promise.all([
+  const [works, generation, postprocess, profiles, providers, fragments, groupProfiles, fragmentCategories] = await Promise.all([
     api.get("/v1/works?limit=200&offset=0"), api.get("/v1/presets/generation?archived=false"), api.get("/v1/presets/postprocess?archived=false"),
     api.get("/v1/validation-settings/single-profiles"), api.get("/v1/validation-settings/providers"),
-    api.get(query("/v1/prompt-fragments", { archived: false, limit: state.fragmentLimit, offset: state.fragmentOffset })),
+    api.get(fragmentPickerQuery(state)),
     api.get("/v1/validation-settings/group-profiles"),
+    api.get("/v1/prompt-fragment-categories?archived=false&limit=200&offset=0"),
   ]);
   state.entities.works = collection(works);
   state.presets.generation = collection(generation); state.presets.postprocess = collection(postprocess);
@@ -810,6 +829,7 @@ async function load(state, api) {
   state.presets.groupProfiles = collection(groupProfiles);
   state.fragments = collection(fragments);
   state.fragmentTotal = Number.isInteger(fragments?.total) ? fragments.total : state.fragments.length;
+  state.fragmentCategories = collection(fragmentCategories);
   const workIds = [...new Set([state.selection.workId, ...Object.entries(state.expanded.works).filter(([, open]) => open).map(([id]) => id)].filter(Boolean))];
   const characterLists = await Promise.all(workIds.map((parentId) => api.get(query("/v1/characters", { parent_id: parentId, limit: 200, offset: 0 }))));
   state.entities.characters = characterLists.flatMap(collection);
@@ -849,9 +869,30 @@ export async function mount(container, ctx) {
       catch (error) { state.error = requestError(error); }
     }
     if (disposed || current !== loading) return;
-    const main = node("div", { class: "production-layout" }, [treePanel(state, rerender),
-      node("div", { class: "grid" }, [entityEditor(state, ctx.api, rerender, notify), groupPanel(state, ctx.api, rerender, notify)]),
-      generationPanel(state, ctx.api, rerender, notify)]);
+    const chooseSection = (section) => { state.productionSection = section; rerender(); };
+    const navigation = state.productionPlanId ? null : node("nav", {class: "production-sections", "aria-label": "제작 단계"}, [
+      button("1. 캐릭터·의상 준비", () => chooseSection("prepare"), {secondary: state.productionSection !== "prepare"}),
+      button("2. 조각 선택·생성 확인", () => chooseSection("compose"), {secondary: state.productionSection !== "compose"}),
+    ]);
+    const preparePanel = state.mobilePreparationPanel;
+    const preparation = node("section", {class: `production-preparation production-mobile-panels ${preparePanel === "editor" ? "editor-open" : "classification-open"}`}, [
+      node("nav", {class: "production-mobile-panel-switch", "aria-label": "준비 화면"}, [
+        button("분류", () => { state.mobilePreparationPanel = "classification"; rerender(); }, {secondary: preparePanel !== "classification"}),
+        button("편집", () => { state.mobilePreparationPanel = "editor"; rerender(); }, {secondary: preparePanel !== "editor"}),
+      ]),
+      node("div", {class: "production-mobile-panel production-classification"}, [treePanel(state, rerender)]),
+      node("div", {class: "production-mobile-panel production-editor"}, [
+        entityEditor(state, ctx.api, rerender, notify),
+        button("분류로 돌아가기", () => { state.mobilePreparationPanel = "classification"; rerender(); }, {secondary: true}),
+      ]),
+    ]);
+    const hasOutfit = Boolean(entityById(state.entities.outfits, state.selection.outfitId));
+    const composition = node("section", {class: "production-composition production-mobile-panels"}, [
+      node("div", {class: "production-mobile-panel production-confirmation"}, [groupPanel(state, ctx.api, rerender, notify)]),
+      state.productionPlanId || !hasOutfit ? null : node("div", {class: "production-mobile-panel production-settings"}, [generationPanel(state, ctx.api, rerender, notify)]),
+    ]);
+    const main = node("div", { class: "production-layout production-workflow" }, [navigation,
+      state.productionPlanId ? composition : state.productionSection === "compose" ? composition : preparation]);
     const children = state.error ? [node("p", { class: "error", role: "alert", text: state.error }), main] : [main];
     container.replaceChildren(...children);
     state.error = null;

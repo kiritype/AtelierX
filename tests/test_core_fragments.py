@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -55,6 +57,84 @@ class FragmentStoreTests(unittest.TestCase):
             self.fragments.update(created["id"], 2, {"name": "stale"})
         with self.assertRaisesRegex(ApiError, "supported changes"):
             self.fragments.update(created["id"], 1, {"appearance": True})
+
+    def test_category_filters_archive_rules_and_visible_numbers(self):
+        poses = self.fragments.create_category("Poses")
+        first = self.fragments.create("Standing", "standing", {"upper": True, "lower": True}, poses["id"])
+        second = self.fragments.create("No category", "sitting", {"upper": True, "lower": False})
+        self.assertEqual((first["number"], second["number"], second["category_id"]), (1, 2, None))
+        self.assertEqual(self.fragments.list(50, 0, category_id=poses["id"])["total"], 1)
+        self.assertEqual(self.fragments.list(50, 0, category_id="uncategorized")["items"][0]["id"], second["id"])
+        self.assertEqual(self.fragments.list(50, 0, search="stand")["items"][0]["id"], first["id"])
+        self.assertEqual(self.fragments.list(50, 0, search="#0001")["items"][0]["id"], first["id"])
+        with self.assertRaisesRegex(ApiError, "SQLite integer"):
+            self.fragments.list(50, 0, search="9" * 200)
+        archived = self.fragments.update_category(poses["id"], 1, {"archived": True})
+        self.assertTrue(archived["archived"])
+        self.assertEqual(self.fragments.get(first["id"])["category_id"], poses["id"])
+        self.fragments.update(first["id"], 1, {"category_id": poses["id"], "name": "Standing pose"})
+        with self.assertRaisesRegex(ApiError, "Archived prompt fragment category"):
+            self.fragments.create("Blocked", "blocked", {"upper": True, "lower": True}, poses["id"])
+        self.fragments.update(first["id"], 2, {"body": "still standing"})
+        self.fragments.update(second["id"], 1, {"archived": True})
+        third = self.fragments.create("Later", "walking", {"upper": True, "lower": True})
+        self.assertEqual(third["number"], 3)
+        self.db.close()
+        self.db = sqlite3.connect(self.path)
+        self.fragments = CoreFragments(self.db)
+        fourth = self.fragments.create("After reopen", "running", {"upper": True, "lower": True})
+        self.assertEqual(fourth["number"], 4)
+
+    def test_legacy_migration_assigns_stable_numbers_without_rewriting_history(self):
+        self.db.close()
+        self.db = sqlite3.connect(self.path)
+        self.db.executescript("""
+            DROP TABLE prompt_fragment_revisions;
+            DROP TABLE prompt_fragments;
+            DROP TABLE prompt_fragment_category_revisions;
+            DROP TABLE prompt_fragment_categories;
+            DROP TABLE prompt_fragment_number_sequence;
+            CREATE TABLE prompt_fragments (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, archived INTEGER NOT NULL, document TEXT NOT NULL);
+            CREATE TABLE prompt_fragment_revisions (fragment_id TEXT NOT NULL, revision INTEGER NOT NULL, document TEXT NOT NULL, PRIMARY KEY(fragment_id, revision));
+        """)
+        older = {"id": "z-id", "name": "Older", "body": "one", "include": {"upper": True, "lower": True}, "revision": 1, "archived": False, "created_at": 10, "updated_at": 10}
+        newer = {"id": "a-id", "name": "Newer", "body": "two", "include": {"upper": True, "lower": True}, "revision": 1, "archived": False, "created_at": 20, "updated_at": 20}
+        for document in (older, newer):
+            encoded = json.dumps(document, separators=(",", ":"), sort_keys=True)
+            self.db.execute("INSERT INTO prompt_fragments VALUES(?,?,?,?)", (document["id"], 1, 0, encoded))
+            self.db.execute("INSERT INTO prompt_fragment_revisions VALUES(?,?,?)", (document["id"], 1, encoded))
+        self.db.commit()
+        self.fragments = CoreFragments(self.db)
+        self.assertEqual((self.fragments.get("z-id")["number"], self.fragments.get("a-id")["number"]), (1, 2))
+        self.assertEqual(self.fragments.history("z-id", 10, 0)[0], older)
+        self.fragments = CoreFragments(self.db)
+        self.assertEqual(self.fragments.get("z-id")["number"], 1)
+
+    def test_concurrent_connections_allocate_distinct_numbers(self):
+        self.db.close()
+        ready = threading.Barrier(2)
+        numbers, errors = [], []
+        lock = threading.Lock()
+
+        def create_from_connection(name):
+            connection = sqlite3.connect(self.path, timeout=5)
+            try:
+                fragments = CoreFragments(connection)
+                ready.wait()
+                result = fragments.create(name, name, {"upper": True, "lower": True})
+                with lock:
+                    numbers.append(result["number"])
+            except Exception as error:  # surface worker failures in the test process
+                with lock:
+                    errors.append(error)
+            finally:
+                connection.close()
+
+        workers = [threading.Thread(target=create_from_connection, args=(name,)) for name in ("one", "two")]
+        for worker in workers: worker.start()
+        for worker in workers: worker.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(numbers), [1, 2])
 
 
 class FragmentPreviewTests(unittest.TestCase):
