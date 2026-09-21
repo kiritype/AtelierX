@@ -4,7 +4,7 @@
 
 ## 명령과 데이터 흐름
 
-아래 Direct 기본값·선택 Negative는 후속 구현 계약이다. 2026-09-21 이번 변경은 테스트 완료 상태이며 실행 중 프로세스 식별 권한 문제로 파일럿 재시작·Worker 배포·명령 재등록을 보류했다. 기존 운영 명령은 아직 이전 계약이다.
+아래 Direct 기본값·선택 Negative는 2026-09-21 사용자 재시작 이후 Worker 배포와 Guild 명령 재등록까지 반영했다. 실제 Discord 신규 요청으로 이미지가 반환되는 사용자 확인은 아직 별도다.
 
 - `/draw prompt:...`: mode 생략 시 Direct. 입력 문자열을 Positive Prompt로 그대로 전달한다. 자연어 문장과 태그형 문구 모두 가능하다.
 - `/draw prompt:... mode:natural`: 로컬 LLM이 Positive Prompt만 작성한 뒤 생성한다. 선택 메뉴에서 Direct/Natural을 고르며 API의 mode 문자열은 앞뒤 공백 제거·소문자 정규화 후 검사한다. 실제 운영 반영 상태는 아래 후속 기록을 따른다.
@@ -155,3 +155,12 @@ Worker→Bridge→Core 전 구간에서 mode 생략을 Direct로 처리하고, �
 운영 적용은 미완료다. 큐 및 GPU owner/waiting이 비어 있음을 확인한 뒤 기존 restart-pilot.ps1을 실행했으나 Windows가 PID 13104의 명령줄·실행 경로를 반환하지 않아 스크립트가 Unexpected service process로 중단했다. 서비스 종료 전 단계에서 멈췄으며 안전 확인을 제거하거나 강제 종료하지 않았다. 파일럿을 시작한 Windows 권한으로 정상 재시작한 뒤 Core/Bridge 준비를 확인하고 Worker 배포와 Guild 명령 재등록을 이어서 해야 한다. Tunnel은 변경하지 않았다.
 
 체크포인트 선택은 이번에 구현하지 않았다. 현재 Anima Node registry에는 5개 diffusion_model 이름이 노출된다. 작은 목록은 Discord 선택지로 제공하고 Core가 허용된 모델과 생성 설정을 고정하는 방식이 가능하다. 목록 등록은 각 모델의 생성 검증 완료를 뜻하지 않으며 SDXL 등 다른 계열 지원과 구분한다.
+
+
+### 사용자 재시작 후 운영 반영 완료
+
+사용자 재시작 후 파일럿 네 포트(8189~8192)가 새 PID 3452로 실행 중이며 Bridge와 기존 Tunnel을 통한 인증 health가 모두 200임을 확인했다. 이전 권한 문제로 중단한 재시작을 우회하거나 다른 프로세스를 종료하지 않았다.
+
+Worker를 기존 설정을 보존해 배포했다. version `34bb2f1e-466b-4eab-acf8-111ff3870087`, URL `https://atelierx-discord-worker.kiritype.workers.dev`. 기존 테스트 Guild의 draw/status를 갱신했으며 무관한 명령을 일괄 교체하지 않았다. Discord API 재조회에서 prompt 필수, negative 선택, mode 선택 및 Direct/Natural 순서를 확인했다. PowerShell 조회는 Discord 40333 응답을 받았으나 등록에 사용한 Node fetch 조회는 성공했다.
+
+운영 배포·명령 등록 확인과 이미지 생성 검증은 구분한다. 이번 후속 작업에서는 Discord 생성 메시지나 GPU 작업을 새로 보내지 않았다. 사용 예는 `/draw prompt:1 girl negative:hat, glasses`이며 mode를 생략하면 Direct다.
