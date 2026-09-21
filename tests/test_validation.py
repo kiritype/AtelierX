@@ -27,7 +27,7 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
             if self.mode == "bad": return web.json_response({"choices":[{"message":{"content":"not json"}}]})
             if self.mode == "reject": return web.Response(status=401)
             checks = json.loads(self.provider_bodies[-1]["messages"][1]["content"][0]["text"].split(": ", 1)[1])
-            verdict = {"assessments": [{"id": check["id"], "status": "mismatch" if self.mode == "fail" and i == 0 else "matched",
+            verdict = {"assessments": [{"id": check["id"], "status": "not_visible" if self.mode == "body-hidden" and check["kind"] == "body" else "uncertain" if self.mode == "body-uncertain" and check["kind"] == "body" else "mismatch" if self.mode == "fail" and i == 0 else "matched",
                         "observed": "test visual observation", "location": "center"} for i, check in enumerate(checks)]}
             choice = {"message":{"content":json.dumps(verdict)}}
             if self.mode == "length": choice["finish_reason"] = "length"
@@ -138,6 +138,43 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
         _, job = await self.submit_body(self.body(upload, profile), "local-only")
         self.assertEqual((await self.wait(job["job_id"]))["outcome"], "passed")
         self.assertEqual(self.calls, 1)
+
+    async def test_body_checks_visible_only_and_do_not_retry_on_unassessable_or_uncertain(self):
+        _, upload = await self.upload()
+        service = self.client.app[SERVICE]
+        body_only = dict(PROFILE, output_conditions=False, positive_prompt=False, negative_prompt=False, body_parts=["hands"])
+        service.profiles["default"] = body_only
+        self.mode = "body-hidden"
+        _, job = await self.submit_body(self.body(upload, body_only), "body-hidden")
+        result = await self.wait(job["job_id"])
+        self.assertEqual((result["outcome"], result["error"]["code"], result["error"]["stage"], result["result"]), ("error", "VAL_NO_ASSESSABLE_CHECKS", "evaluation", None))
+        self.assertIn("body-hands", result["error"]["message"])
+        self.mode = "body-uncertain"
+        _, job = await self.submit_body(self.body(upload, body_only), "body-uncertain")
+        result = await self.wait(job["job_id"])
+        self.assertEqual((result["outcome"], result["error"]["code"], result["result"]), ("error", "VAL_PROVIDER_INCONCLUSIVE", None))
+        self.assertEqual(self.calls, 2)
+
+    async def test_body_profile_rejects_duplicate_parts_and_output_failure_skips_vlm(self):
+        _, upload = await self.upload()
+        duplicate = dict(PROFILE, body_parts=["hands", "hands"])
+        self.assertEqual((await self.submit_body(self.body(upload, duplicate), "duplicate-body"))[0], 400)
+        body_profile = dict(PROFILE, positive_prompt=False, negative_prompt=False, body_parts=["hands"])
+        self.client.app[SERVICE].profiles["default"] = body_profile
+        _, job = await self.submit_body(self.body(upload, body_profile, {"width": 2, "height": 1, "media_type": "image/png", "alpha": "not_required"}), "body-local-failure")
+        result = await self.wait(job["job_id"])
+        self.assertEqual((result["outcome"], result["result"]["findings"][0]["code"], self.calls), ("failed", "output_conditions", 0))
+
+    async def test_queued_old_evaluation_version_fails_without_provider_call(self):
+        _, upload = await self.upload()
+        service = self.client.app[SERVICE]
+        job, _ = await service.submit("old-evaluation", self.body(upload))
+        job["evaluation_version"] -= 1
+        await service.run(job)
+        self.assertEqual((job["outcome"], job["error"]["code"], self.calls), ("error", "VAL_EVALUATION_CHANGED", 0))
+        job.update(state="completed", outcome="passed", result={"findings": []}, error=None, evaluation_version=5)
+        await service.run(job)
+        self.assertEqual((job["state"], job["outcome"], job["evaluation_version"]), ("completed", "passed", 5))
 
     async def test_transparency_decode_and_unsafe_inputs(self):
         service = self.client.app[SERVICE]

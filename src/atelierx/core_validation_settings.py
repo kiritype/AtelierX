@@ -11,9 +11,12 @@ def profile(value):
     if not isinstance(value, dict) or set(value) != PROFILE_FIELDS: invalid("Invalid single-image validation profile")
     if not isinstance(value["profile_id"], str) or not IDENT.fullmatch(value["profile_id"]): invalid("Invalid profile_id")
     if type(value["revision"]) is not int or value["revision"] < 1: invalid("Invalid profile revision")
-    if not isinstance(value["body_parts"], list) or value["body_parts"] or value["metadata"] or value["consistency"]: invalid("Profile enables checks unavailable in the single-image adapter")
+    if (not isinstance(value["body_parts"], list)
+            or any(not isinstance(part, str) or part not in {"hands", "face", "limbs"} for part in value["body_parts"])
+            or len(set(value["body_parts"])) != len(value["body_parts"])
+            or value["metadata"] or value["consistency"]): invalid("Profile enables checks unavailable in the single-image adapter")
     if any(type(value[k]) is not bool for k in ("output_conditions","positive_prompt","negative_prompt","metadata","consistency")): invalid("Profile flags must be boolean")
-    if not any(value[k] for k in ("output_conditions","positive_prompt","negative_prompt")): invalid("Profile must enable a supported check")
+    if not any(value[k] for k in ("output_conditions","positive_prompt","negative_prompt")) and not value["body_parts"]: invalid("Profile must enable a supported check")
     return copy.deepcopy(value)
 
 def provider(value):

@@ -48,6 +48,57 @@ class EvidenceTests(unittest.TestCase):
         answer = self.answers(); answer["assessments"][-1]["status"] = "mismatch"
         self.assertEqual(normalize_evidence(answer, self.checks)["findings"][0]["code"], "negative_prompt_mismatch")
 
+    def test_visible_body_anomaly_is_distinct_and_skipped_body_is_preserved(self):
+        request = {"profile": {"positive_prompt": True, "negative_prompt": False, "body_parts": ["hands", "face"]},
+                   "image": {"positive_prompt": "portrait", "negative_prompt": ""}}
+        checks = requirements(request)
+        answer = {"assessments": [
+            {"id": "positive-1", "status": "matched", "observed": "portrait", "location": "center"},
+            {"id": "body-hands", "status": "not_visible", "observed": "hands cropped", "location": "not in image"},
+            {"id": "body-face", "status": "mismatch", "observed": "extra visible eye", "location": "face"}]}
+        result = normalize_evidence(answer, checks)
+        self.assertEqual(result["outcome"], "failed")
+        finding = result["findings"][0]
+        self.assertEqual(finding["code"], "body_structure_anomaly")
+        self.assertNotIn("prompt_excerpt", finding)
+        self.assertEqual(result["evidence"][1]["status"], "not_visible")
+
+    def test_all_hidden_body_checks_are_error_but_mixed_checks_can_pass(self):
+        body_only = requirements({"profile": {"positive_prompt": False, "negative_prompt": False, "body_parts": ["hands"]},
+                                  "image": {"positive_prompt": "ignored", "negative_prompt": ""}})
+        hidden = {"assessments": [{"id": "body-hands", "status": "not_visible", "observed": "cropped", "location": "not in image"}]}
+        with self.assertRaises(ApiError) as failure:
+            normalize_evidence(hidden, body_only)
+        self.assertEqual(failure.exception.code, "VAL_NO_ASSESSABLE_CHECKS")
+        self.assertIn("body-hands", failure.exception.message)
+        local_result = normalize_evidence(hidden, body_only, local_checks_passed=True)
+        self.assertEqual(local_result["outcome"], "passed")
+        self.assertIn("not visible", local_result["regeneration"]["reason"])
+        mixed = requirements({"profile": {"positive_prompt": True, "negative_prompt": False, "body_parts": ["hands"]},
+                              "image": {"positive_prompt": "portrait", "negative_prompt": ""}})
+        result = normalize_evidence({"assessments": [
+            {"id": "positive-1", "status": "matched", "observed": "portrait", "location": "center"},
+            hidden["assessments"][0]]}, mixed)
+        self.assertEqual(result["outcome"], "passed")
+        self.assertIn("not visible", result["regeneration"]["reason"])
+
+    def test_default_profile_keeps_body_checks_off_and_body_responses_must_be_complete(self):
+        default = requirements({"profile": {"positive_prompt": True, "negative_prompt": False},
+                                "image": {"positive_prompt": "portrait", "negative_prompt": ""}})
+        self.assertFalse(any(check["kind"] == "body" for check in default))
+        checks = requirements({"profile": {"positive_prompt": False, "negative_prompt": False, "body_parts": ["hands", "face"]},
+                               "image": {"positive_prompt": "ignored", "negative_prompt": ""}})
+        with self.assertRaises(ApiError) as failure:
+            normalize_evidence({"assessments": [{"id": "body-hands", "status": "matched", "observed": "normal", "location": "hand"}]}, checks)
+        self.assertEqual(failure.exception.code, "VAL_PROVIDER_RESPONSE_INVALID")
+
+    def test_body_uncertainty_is_an_error(self):
+        checks = requirements({"profile": {"positive_prompt": False, "negative_prompt": False, "body_parts": ["limbs"]},
+                               "image": {"positive_prompt": "ignored", "negative_prompt": ""}})
+        with self.assertRaises(ApiError) as failure:
+            normalize_evidence({"assessments": [{"id": "body-limbs", "status": "uncertain", "observed": "unclear", "location": "edge"}]}, checks)
+        self.assertEqual(failure.exception.code, "VAL_PROVIDER_INCONCLUSIVE")
+
     def test_literal_coverage_weights_compounds_and_disabled_checks(self):
         self.assertEqual(clauses("(blue eyes, silver hair:1.2), shirt and brooch\nboots"), ["(blue eyes, silver hair:1.2)", "shirt and brooch", "boots"])
         request = {"profile": {"positive_prompt": True, "negative_prompt": False},

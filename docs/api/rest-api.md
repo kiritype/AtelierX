@@ -256,7 +256,9 @@ Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠
 - 최상위 `image,generation_attempt_id,profile,provider,expected_output` 필수. generation_attempt_id는 null 허용. generation_settings는 생략/null/object 허용하며 현재 상세 활용은 없음.
 - image ref·source·실제 positive/negative 필수. positive는 공백만인 문자열 불가, negative는 빈 문자열 허용.
 - 업로드 source는 `{"type":"upload","upload_id":"응답 ID","sha256":"해시"}`로 교체한다. source 필드는 두 종류를 혼합할 수 없다.
-- Profile 전체 객체는 등록값과 일치해야 한다. body_parts가 비어 있지 않거나 metadata/consistency=true이면 현재 `VAL_PROFILE_UNSUPPORTED`로 거절한다.
+- Profile 전체 객체는 등록값과 일치해야 한다. body_parts는 중복 없는 `hands`, `face`, `limbs` 목록이며 기본값은 빈 목록이다. metadata/consistency=true는 단일 adapter에서 `VAL_PROFILE_UNSUPPORTED`로 거절한다.
+- 신체 검사는 Prompt 필수 요소 검사와 별개다. 선택한 부위의 명확한 가시적 구조 이상만 `body_structure_anomaly` 불합격으로 기록한다. 가려지거나 화면 밖인 부위는 evidence의 `kind=body`, `status=not_visible`로 남기며 신체 불합격이나 해당 부위 통과로 세지 않는다. 같은 부위가 Positive에 필수 요소로 명시됐다면 별도의 Prompt 검사는 기존 규칙대로 누락 불합격이다.
+- 평가 가능한 신체 부위도 다른 수행 검사도 없으면 `VAL_NO_ASSESSABLE_CHECKS`(outcome=error, stage=evaluation)로 종료한다. 출력 조건 또는 다른 요구 검사가 통과한 혼합 요청은 해당 범위에서 통과할 수 있으나 `not_visible` 신체 근거를 보존한다. 불확실한 가시적 근거는 기존 `VAL_PROVIDER_INCONCLUSIVE` 오류다. 오류의 자동 검증 재시도·자동 재생성은 하지 않는다.
 - provider의 ID/revision/model/timeout은 서버 등록값과 일치해야 한다. timeout은 1 이상 정수다. 요청에 url/api_key를 넣을 수 없다.
 - output_conditions=true이면 expected_output 객체가 필요하다. alpha는 `not_required|channel_required|transparency_required`. 출력 조건은 **원본** PNG/WebP로 검사한다.
 - Core는 이미지의 원래 Task snapshot에 `postprocess.alpha`가 있으면 `transparency_required`, 없으면 `not_required`를 전달한다. 현재 Preset/설정 변경으로 과거 이미지의 요구를 바꾸지 않는다. 출력 조건을 끈 Profile은 이 검사를 수행하지 않는다. 실제 투명 픽셀 존재 여부를 검사하며 캐릭터 마스크·경계 품질을 보장하지 않는다. 기존 검증 Run은 그대로 보존하고 명시적 새 검증부터 적용한다.

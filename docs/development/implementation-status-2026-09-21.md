@@ -24,7 +24,7 @@
 | 자연어 제작·Prompt/도메인 AI 작성 | 미구현·상세 후속 | Validation의 VLM 호출은 존재하지만 제작 요청 해석·도구 호출 Planner는 없다. C-09~12와 [Agent 검토](local-agent-workflow-review.md). Draft/Review/Apply 상세는 Proposed이며 완성된 확정 계약으로 세지 않는다. |
 | Discord 봇 | 로드맵 등재·미구현 | Workers 수신/응답, 로컬 LLM adapter, Core 도구 연결, 인증·결과 전달·복구가 필요하다. [요청된 방향과 후속 검토안](../requirements/roadmap.md#discord-자연어-제작-봇--cloudflare-workers). |
 | SDXL / Illustrious | 미구현 | 현재 생성 Node/Backend 경로는 Anima 중심이다. SDXL 생성 Node·입력 계약·설치 자원·실제 실행 확인이 필요하다. [Custom Nodes](../../custom_nodes/), [Generation](../../src/atelierx/generation.py). |
-| 신체 구조 이상·Metadata 검사 | 미구현 | `body_parts`와 `metadata` 활성 Profile은 거절한다. Prompt에 손/얼굴이 명시된 경우의 일치 검사가 별도 구조 이상 검사를 대신하지 않는다. [Validation 요청 검사](../../src/atelierx/validation.py). |
+| 신체 구조 이상·Metadata 검사 | 신체 부분 구현, Metadata 미구현 | 후속 변경으로 `body_parts`의 손·얼굴·사지 선택 검사와 설정 화면을 연결했다. 실제 VLM 대조군에서 손가락 미탐이 있어 품질 보장으로 해석하지 않는다. 기본 비활성, 운영 재시작 미반영. `metadata`는 여전히 거절한다. [실행 기록](body-structure-validation.md). |
 | Alpha 출력 조건의 Core 자동 연결 | 부분 | Validation 자체에는 채널/투명도 검사가 있지만 Core 검증 요청은 `alpha: not_required`로 고정한다. Alpha 생성 성공과 자동 투명도 요구 검증을 구분해야 한다. [Core 검증 요청](../../src/atelierx/core_validation.py), [Validation](../../src/atelierx/validation.py). |
 | Provider별 실행·동시성 | 부분 | 등록/선택과 큐는 존재하나 단일 worker가 전체 후보 중 하나씩 실행한다. Provider별 독립 실행 제어는 남아 있다. 구체 동시성 수치는 미정이며 공유 GPU 직렬화는 유지해야 한다. [worker](../../src/atelierx/validation.py), [ADR-0016](../architecture/adr/0016-validation-execution-and-gpu-sharing.md). |
 | Python Client·CLI API 범위 | 부분 | 작업 생성·검증·재생성·취소·그룹 검사·설정 명령은 있다. 제작 계획·전역 조각·분류·Preset·Profile/Provider 관리의 전용 메서드/명령은 없다. Client의 범용 `request`로 REST 호출은 가능하다. [Client](../../src/atelierx/api_client.py), [CLI](../../src/atelierx/cli.py). |
