@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "description": "Predeclared body-structure VLM evaluation cases with operator-reviewed expectations. Original generation prompts and immutable file digests are recorded; file names are not treated as ground truth.",
+  "cases": [
+    {
+      "id": "anima-base-operator-review",
+      "image": "artifacts/generation-rest/20260913-033051/anima-base.png",
+      "sha256": "792d6df0947add8885fa6fb434ad974419d7858cb470b56ee0d34d958dcb452a",
+      "positive_prompt": "masterpiece, very aesthetic, A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+      "expected": {
+        "outcome": "passed",
+        "error_code": null,
+        "body_parts": {
+          "face": "matched"
+        }
+      },
+      "provenance": "Archived Anima generation; operator visually reviewed face as normal. Hands are not evaluated in this case."
+    },
+    {
+      "id": "anima-base-hands-hidden",
+      "image": "artifacts/generation-rest/20260913-033051/anima-base.png",
+      "sha256": "792d6df0947add8885fa6fb434ad974419d7858cb470b56ee0d34d958dcb452a",
+      "positive_prompt": "masterpiece, very aesthetic, A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+      "expected": {
+        "outcome": "error",
+        "error_code": "VAL_NO_ASSESSABLE_CHECKS",
+        "body_parts": {
+          "hands": "not_visible"
+        }
+      },
+      "provenance": "Archived Anima generation; operator visually reviewed hands as absent from the frame."
+    },
+    {
+      "id": "anima-base-face-and-hands",
+      "image": "artifacts/generation-rest/20260913-033051/anima-base.png",
+      "sha256": "792d6df0947add8885fa6fb434ad974419d7858cb470b56ee0d34d958dcb452a",
+      "positive_prompt": "masterpiece, very aesthetic, A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+      "expected": {
+        "outcome": "passed",
+        "error_code": null,
+        "body_parts": {
+          "face": "matched",
+          "hands": "not_visible"
+        }
+      },
+      "provenance": "Archived Anima generation; operator reviewed face as normal and hands as out of frame."
+    },
+    {
+      "id": "anima-multi-lora-face",
+      "image": "artifacts/generation-rest/20260913-033051/anima-multi-lora.png",
+      "sha256": "b64655f40eecc68fb83ba962cefcb7260ed7af5135506f30b6edf62830b30b5e",
+      "positive_prompt": "masterpiece, very aesthetic, A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+      "expected": {
+        "outcome": "passed",
+        "error_code": null,
+        "body_parts": {
+          "face": "matched"
+        }
+      },
+      "provenance": "Archived Anima generation; operator reviewed face as normal. Hair occlusion is not labeled as a missing eye."
+    },
+    {
+      "id": "procedural-hand-five-digits",
+      "image": "artifacts/body-validation-20260921/hand-5-digits.png",
+      "sha256": "5927714096756f64d0522c9a55debe4ddfe7d8c8f2c77428773563f5d3d38da7",
+      "positive_prompt": "procedural hand control image with five digits",
+      "expected": {
+        "outcome": "passed",
+        "error_code": null,
+        "body_parts": {
+          "hands": "matched"
+        }
+      },
+      "provenance": "Operator-created procedural anatomy control, not a realistic photo or archived generation."
+    },
+    {
+      "id": "procedural-hand-six-digits",
+      "image": "artifacts/body-validation-20260921/hand-6-digits.png",
+      "sha256": "dcf55cfe60e2c030e965c8a7033265bffe2a11c3dd7a684f9c25380772429bb4",
+      "positive_prompt": "procedural hand control image with a clearly visible six-digit hand anomaly",
+      "expected": {
+        "outcome": "failed",
+        "error_code": null,
+        "body_parts": {
+          "hands": "mismatch"
+        }
+      },
+      "provenance": "Operator-created procedural anatomy control with five upright digits and a thumb plus a clear sixth digit; not a realistic photo or archived generation."
+    }
+  ]
+}

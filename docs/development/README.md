@@ -150,3 +150,8 @@ GitHub 기본 브랜치 develop 및 최초 main 커밋과 동일 커밋의 devel
 
 
 [파일럿 폼 개선·묶음 회귀](frontend-pilot-refinement.md): 일반 필드·선택 폼, 초안 revision 보호와 실제 PNG 두 장의 묶음 실행을 추가 검증했다. 앞의 JSON 전용/묶음 화면 미시험 표기는 이 보고서의 범위로 갱신한다.
+
+
+## 2026-09-21 신체 구조 검사
+
+[신체 검사 구현·평가](body-structure-validation.md)에서 부위별 Profile, 보이지 않는 부위 처리, 모의 검사와 실제 VLM 평가 범위를 구분한다.

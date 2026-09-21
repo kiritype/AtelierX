@@ -124,12 +124,15 @@ def request_body(value):
         fail("provider max_tokens must be a positive integer")
     profile = value["profile"]
     required_object(profile, {"profile_id", "revision", "output_conditions", "positive_prompt", "negative_prompt", "body_parts", "metadata", "consistency"})
-    if type(profile["revision"]) is not int or profile["revision"] < 0 or not isinstance(profile["body_parts"], list) or any(part not in {"hands", "face", "limbs"} for part in profile["body_parts"]) or any(type(profile[field]) is not bool for field in ("output_conditions", "positive_prompt", "negative_prompt", "metadata", "consistency")):
+    if (type(profile["revision"]) is not int or profile["revision"] < 0 or not isinstance(profile["body_parts"], list)
+            or any(not isinstance(part, str) or part not in {"hands", "face", "limbs"} for part in profile["body_parts"])
+            or len(set(profile["body_parts"])) != len(profile["body_parts"])
+            or any(type(profile[field]) is not bool for field in ("output_conditions", "positive_prompt", "negative_prompt", "metadata", "consistency"))):
         fail("invalid profile")
     # Checks that this initial adapter cannot perform must never be silently ignored.
-    if profile["metadata"] or profile["consistency"] or profile["body_parts"]:
+    if profile["metadata"] or profile["consistency"]:
         fail("Requested profile checks are not supported by the single-image adapter", "VAL_PROFILE_UNSUPPORTED", 422)
-    if not any(profile[key] for key in ("positive_prompt", "negative_prompt", "output_conditions")):
+    if not any(profile[key] for key in ("positive_prompt", "negative_prompt", "output_conditions")) and not profile["body_parts"]:
         fail("At least one supported check must be enabled", "VAL_PROFILE_UNSUPPORTED", 422)
     if profile["output_conditions"] and value["expected_output"] is None: fail("expected_output is required by profile", "VAL_OUTPUT_CONDITIONS_REQUIRED", 422)
     if value["expected_output"] is not None and not isinstance(value["expected_output"], dict): fail("expected_output must be object or null")
@@ -307,7 +310,7 @@ class Validation:
         try:
             answer = json.loads(payload["choices"][0]["message"]["content"])
             changes = answer.pop("regeneration_changes", []) if context and isinstance(answer, dict) else []
-            result = normalize_evidence(answer, checks)
+            result = normalize_evidence(answer, checks, job["request"]["profile"]["output_conditions"])
             if context:
                 result["regeneration"]["changes"] = validate_changes(changes, result["evidence"], context)
             if result["outcome"] == "failed" and not changes:
@@ -316,6 +319,8 @@ class Validation:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc: raise ApiError("VAL_PROVIDER_RESPONSE_INVALID", "Provider response could not be parsed", 502) from exc
 
     async def run(self, job):
+        if job["state"] in TERMINAL:
+            return
         configured = self.registry.provider(job["request"]["provider"]) if self.registry.enabled else self.providers.get(job["request"]["provider"]["provider_id"])
         if job["state"] == "queued" and configured.get("shared_gpu"):
             if not getattr(self, "coordinator_url", None):
@@ -351,7 +356,8 @@ class Validation:
             if exc.code == "VAL_OUTPUT_CONDITIONS_FAILED":
                 job.update(state="completed", outcome="failed", result={"findings":[{"code":"output_conditions","feature":"output_conditions","expected":"Configured output conditions","observed":exc.message}],"regeneration":{"required":True,"reason":"Output conditions failed.","changes":[]}}, error=None)
             else:
-                job.update(state="failed", outcome="error", result=None, error={"code": exc.code, "message": exc.message, "stage": "provider" if exc.code.startswith("VAL_PROVIDER") else "access"})
+                stage = "provider" if exc.code.startswith("VAL_PROVIDER") else "evaluation" if exc.code == "VAL_NO_ASSESSABLE_CHECKS" else "access"
+                job.update(state="failed", outcome="error", result=None, error={"code": exc.code, "message": exc.message, "stage": stage})
         self.save(job)
 
     async def worker(self):

@@ -60,8 +60,10 @@ class ValidationSettingsTests(unittest.TestCase):
         with self.assertRaises(ApiError) as invalid_update: settings.update("provider","vision",1,[])
         self.assertEqual(invalid_update.exception.status,422)
         db.close()
-    def test_invalid_unimplemented_single_checks_are_rejected(self):
-        with self.assertRaises(ApiError): self.settings.create("profile",dict(PROFILE,profile_id="hands",body_parts=["hands"]))
+    def test_body_part_profiles_are_supported_but_invalid_parts_are_rejected(self):
+        self.assertEqual(self.settings.create("profile",dict(PROFILE,profile_id="hands",body_parts=["hands"]))["body_parts"],["hands"])
+        for invalid in (["hands", "hands"], ["unknown"], [1]):
+            with self.assertRaises(ApiError): self.settings.create("profile",dict(PROFILE,profile_id="invalid-" + str(invalid),body_parts=invalid))
 
 class RegistryTests(unittest.TestCase):
     def test_old_revision_remains_after_new_snapshot_and_conflict_is_atomic(self):
