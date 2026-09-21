@@ -142,6 +142,7 @@ test("uses direct mode by default and omits an absent negative prompt", async ()
   const payload = JSON.parse(calls[0].init.body);
   assert.equal(payload.mode, "direct");
   assert.equal(Object.hasOwn(payload, "negative_prompt"), false);
+  assert.equal(Object.hasOwn(payload, "checkpoint"), false);
 });
 
 test("forwards an explicitly empty negative prompt unchanged", async () => {

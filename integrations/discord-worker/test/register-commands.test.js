@@ -16,6 +16,7 @@ test("registers Core checkpoint choices with the default first", async () => {
     calls.push({ url, init });
     if (url === "http://127.0.0.1:8190/v1/standalone-checkpoints") {
       assert.equal(init.headers.authorization, "Bearer core-token");
+      assert.equal(init.redirect, "error");
       return Response.json({ items: [{ name: "first.safetensors", value: "first.safetensors" }, { name: "default.safetensors", value: "default.safetensors" }], default: "default.safetensors" });
     }
     return new Response(null, { status: 201 });
@@ -31,6 +32,8 @@ test("fails registration when Core checkpoint configuration is unavailable or in
   await assert.rejects(registerCommands({ env: { ...env, ATELIERX_CORE_TOKEN: "" }, fetchImpl: unexpectedFetch }), /configuration is invalid/);
   await assert.rejects(registerCommands({ env: { ...env, ATELIERX_CORE_URL: "https://core.example" }, fetchImpl: unexpectedFetch }), /configuration is invalid/);
   await assert.rejects(registerCommands({ env, fetchImpl: async () => Response.json({ items: [], default: "none.safetensors" }) }), /too many or no checkpoints/);
+  const tooMany = Array.from({ length: 26 }, (_, index) => `checkpoint-${index}.safetensors`);
+  await assert.rejects(registerCommands({ env, fetchImpl: async () => Response.json({ items: tooMany.map((value) => ({ name: value, value })), default: tooMany[0] }) }), /too many or no checkpoints/);
 });
 
 async function unexpectedFetch() { throw new Error("fetch should not run"); }
