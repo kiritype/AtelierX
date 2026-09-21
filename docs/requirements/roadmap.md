@@ -70,3 +70,8 @@ Discord ← Workers ← Core 작업 상태·이미지 조회
 - Planner와 생성/검증의 GPU 경합을 시험하고, 실제 실행·모의 서비스 시험·미검증 범위를 분리해 기록한다.
 
 현재 기능과 남은 구현은 [2026-09-21 구현 현황 점검](../development/implementation-status-2026-09-21.md)을 참고한다.
+
+
+## 체크포인트별 Natural 변환 보완 — 후속 과제
+
+2026-09-21 사용자 지적: 현재 Core Natural은 간단한 Positive 문장 재작성이며 체크포인트가 이해하는 어휘·태그·자연어 조합을 고려하지 않는다. 모델별 작성 규칙, 사용자 의도 보존, Direct 대비 실제 이미지 평가를 포함해 나중에 보완한다. Discord/F/E에 변환 로직을 복제하지 않고 Core가 담당한다. 구현된 기본 경로를 모델별 프롬프트 최적화 완료로 보고하지 않는다. 구체 우선순위는 [남은 작업 제안](../development/remaining-work-priorities.md)에서 사용자와 결정한다.

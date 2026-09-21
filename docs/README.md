@@ -1,5 +1,7 @@
 # 문서 목차와 관리 범위
 
+[남은 작업 분류·개인 사용 우선순위 제안](development/remaining-work-priorities.md): Discord 최신 상태를 반영한 기능·오류/복구·품질·운영 분류.
+
 [개인용 Discord 봇 구현·연결](development/discord-personal-bot.md): 그룹 없는 자연어/원문 생성, Workers와 로컬 전달 서비스, 응답 대기·권한·설정.
 
 [2026-09-21 구현·미구현 기능 점검](development/implementation-status-2026-09-21.md) · [후속 로드맵 — Discord 자연어 제작 봇 포함](requirements/roadmap.md)
