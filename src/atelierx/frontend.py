@@ -13,6 +13,7 @@ _ASSETS = {
     "gallery.js": "text/javascript; charset=utf-8",
     "jobs.js": "text/javascript; charset=utf-8",
     "settings.js": "text/javascript; charset=utf-8",
+    "connection.js": "text/javascript; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
 }
 

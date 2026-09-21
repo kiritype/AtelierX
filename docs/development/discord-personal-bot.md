@@ -187,3 +187,12 @@ Worker를 기존 설정을 보존해 배포했다. version `34bb2f1e-466b-4eab-a
 Worker version `e6d8b1cd-3a03-4b92-ab93-7a2dc885689a`를 배포하고 Core의 실제 목록으로 테스트 Guild 명령을 재등록했다. Discord API 재조회에서 선택 checkpoint에 5개 항목, 기본 모델 우선 순서, 기존 선택 negative/mode를 확인했다. 로컬 프로세스 추가 재시작이나 Tunnel 변경은 하지 않았다.
 
 사용 예: `/draw prompt:1 girl checkpoint:novaAnimeAM_v40.safetensors`. 생략하면 기존 기본 모델을 사용한다. 이번 후속은 운영 연결·메뉴 등록 검증이며, 다른 체크포인트의 실제 생성 결과와 Discord 이미지 응답은 아직 사용자 확인 전이다.
+
+
+## 2026-09-21 두 번째 서버 추가 — 로컬 재시작 대기
+
+사용자가 새 서버 `1237999012301373450`(망명길의끝)을 허용하도록 요청했다. Discord API에서 봇 설치를 확인했고, 기존 서버를 유지한 채 Worker `DISCORD_ALLOWED_GUILD_IDS` secret과 Git 제외 로컬 Worker/Bridge 설정의 서버 목록을 갱신했다. 채널 제한은 두지 않는다. 다른 서버·DM 차단과 기존 공개 스포일러/요청자별 조회 정책은 유지한다.
+
+실행 중인 Core의 목록으로 새 서버의 `/draw`, `/status`를 등록했다. Discord API 재조회에서 기존·신규 두 서버의 명령과 checkpoint 선택지 5개를 확인했다. Backend 세 서비스 health 200, 진행 작업 0개, Bridge 대기 기록 0개를 확인했다.
+
+실행 중인 파일럿 PID 13072의 명령줄이 현재 Windows 권한에서 조회되지 않아 안전한 프로세스 식별을 충족하지 못했다. 프로세스를 종료하지 않았으며 사용자 정상 재시작이 필요하다. 현재 Bridge의 새 서버 모의 상태 조회는 403으로, 파일 설정은 갱신됐지만 실행 중 허용 목록에는 아직 반영되지 않았다. 사용자 재시작 후 Bridge 권한 확인과 새 서버의 실제 `/draw` 이미지 응답 확인이 남아 있다. Tunnel과 제품 소스는 변경하지 않았다.

@@ -1,0 +1,9 @@
+{
+  "public_origin": "https://atelier.example.com",
+  "issuer": "https://team-name.cloudflareaccess.com",
+  "audience": "cloudflare-access-application-audience",
+  "allowed_emails": [
+    "owner@example.com"
+  ],
+  "core_token": "set-a-local-service-token-here"
+}

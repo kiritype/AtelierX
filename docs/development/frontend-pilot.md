@@ -4,15 +4,18 @@
 
 ## 실행
 
-- 접속: `http://127.0.0.1:8190/ui/`
+- 접속: 로컬은 `http://127.0.0.1:8190/ui/`, Access 운영 주소는 `https://atelier.cftm.net/ui/`.
 - 실행 명령: `.venv/Scripts/python.exe -B scripts/run_frontend_pilot.py`
-- 토큰: `.atelierx/pilot/token.txt`의 값을 첫 연결 화면에 입력한다. 브라우저 메모리에만 보관하며 새로고침·종료 후 재입력한다. URL·HTML·localStorage에 넣지 않는다.
+- 기본 Bearer 연결: `.atelierx/pilot/token.txt`의 값을 첫 연결 화면에 입력한다. 브라우저 메모리에만 보관하며 URL·HTML·localStorage에는 넣지 않는다.
+- Access 자동 연결: server-private `.atelierx/pilot/frontend-connection.json`이 있고 Core가 Cloudflare Access assertion을 검증하면, 허용된 Access 로그인 사용자는 브라우저에 Core Bearer를 다시 입력하지 않는다. 설정 파일 형식은 [비밀 없는 예시](../../config/frontend-connection.example.json)를 따르며 실제 `core_token`은 Git·Frontend asset·API GET 응답에 넣지 않는다. 미설정·로컬 실행은 기존 Bearer 연결을 유지한다.
 - 데이터: `.atelierx/pilot/core.sqlite3`, `.atelierx/pilot/generation`, `.atelierx/pilot/validation`.
 - 실제 최종 이미지: `.atelierx/pilot/generation/images/`. ComfyUI 중간 출력과 구분한다.
 
 실행기는 기존 Core/Generation/Validation app을 localhost 8190/8189/8191에 올린다. 각 서비스의 독립 실행 명령도 유지한다. 기존 ComfyUI 8188과 `.atelierx/validation-coordinated-config.json`, `.atelierx/gpu-config.json`을 사용한다. 해당 포트에 서비스가 이미 있다면 중복 실행하지 않는다. 파일럿 초기 작업으로 작품 ‘파일럿 스튜디오’ > 캐릭터 ‘루나’ > 의상 ‘화이트 셔츠’와 ‘파일럿 Anima · 1024’ Preset을 저장했다. 초기 데이터는 기존 작업 DB에서 가져오지 않았다.
 
 빌드 과정 없는 HTML/CSS/JavaScript ES module이다. Core는 `/ui/`의 명시된 정적 파일만 공개하고 REST Bearer 인증을 유지한다. 별도 BFF·SQL 접근·브라우저 오케스트레이션은 없다. Python Client와 브라우저 Client는 같은 REST를 각각 감싼 초기 adapter이며 Schema 기반 공용 코드 생성은 아직 도입하지 않았다.
+
+Access 자동 연결은 Core가 서버에서 JWT signature·issuer·audience·만료·허용 email·public host를 확인하는 경우에만 활성화한다. Frontend가 `Cf-Access-Jwt-Assertion`, JWKS, Access client secret 또는 Core token 원문을 처리하거나 저장하지 않는다. Access assertion이 없거나 만료되면 UI는 Access 로그인 안내를 보이고, 기존 Bearer fallback은 로컬·미설정 환경의 호환 경로다. 이 후속 인증의 실제 브라우저 검증은 별도로 기록한다.
 
 ## 네 메뉴의 파일럿 범위
 

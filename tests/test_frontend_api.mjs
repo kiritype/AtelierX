@@ -21,6 +21,11 @@ assert.equal(calls[0].options.redirect, "error");
 assert.ok(calls[0].options.signal instanceof AbortSignal);
 assert.equal(calls[0].options.body, '{"group_id":"group"}');
 
+calls.length = 0;
+const tokenless = new ApiClient();
+await tokenless.get("/health");
+assert.equal(calls[0].options.headers.Authorization, undefined);
+
 await assert.rejects(client.get("https://external.invalid/v1/tasks"), (error) =>
   error instanceof ApiClientError && error.code === "CLIENT_INVALID_PATH");
 await assert.rejects(client.get("/v1/../health"), (error) =>

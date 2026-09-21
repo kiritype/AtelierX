@@ -20,7 +20,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
     async def test_only_allowlisted_ui_assets_bypass_rest_authentication(self):
         for path, content_type in (("/ui/", "text/html"), ("/ui/api.js", "text/javascript"), ("/ui/app.js", "text/javascript"),
                                    ("/ui/production.js", "text/javascript"), ("/ui/gallery.js", "text/javascript"),
-                                   ("/ui/jobs.js", "text/javascript"), ("/ui/settings.js", "text/javascript"),
+                                   ("/ui/jobs.js", "text/javascript"), ("/ui/settings.js", "text/javascript"), ("/ui/connection.js", "text/javascript"),
                                    ("/ui/styles.css", "text/css")):
             response = await self.client.get(path)
             self.assertEqual(response.status, 200, path)
