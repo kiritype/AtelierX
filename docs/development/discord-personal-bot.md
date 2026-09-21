@@ -68,6 +68,8 @@ Worker 이름은 `atelierx-discord-worker`다. 기존 다른 Worker는 변경하
 
 후속 연결 작업: 사용자 제공 Application ID·Public Key·본인 User ID를 Worker secrets에 반영했고, Bridge 토큰을 로컬에서 생성해 별도 secret으로 등록했다. 실제 식별값과 토큰은 `.atelierx/discord/`의 Git 제외 설정에만 보관한다. 미서명 POST는 현재 401로 거절된다. 로컬 파일럿 Core/Generation/Validation과 Bridge를 시작해 각 health 200, 기존 Core 활성 작업 없음(전체 15개)을 확인했다. 공개 Tunnel 시작은 자동 승인 심사에서 거절되어 확인 대기 중이며, Discord endpoint 설정·Bot Token을 사용하는 테스트 Guild 명령 등록·실제 Discord 수신은 아직 남아 있다. 새 Worker secret 등록 이후 버전은 최초 코드 배포 version과 구분한다.
 
+추가 연결 확인: 로컬 Git 제외 파일에 저장한 Bot Token으로 앱 ID를 검증했고 Discord Interaction Endpoint를 배포된 Worker 주소로 설정한 뒤 재조회했다. Discord의 endpoint 검증은 통과했다. 테스트 Guild 명령 등록은 HTTP 403 / 50001 Missing Access로 거절되었으며, Bot의 Guild 목록에 대상 서버가 없는 것을 확인했다. 사용자가 서버에 앱을 설치한 뒤 `/draw`·`/status` 등록을 다시 진행해야 한다. 공개 Tunnel과 Discord 실제 이미지 응답 검증은 아직 남아 있다.
+
 ```powershell
 cloudflared tunnel --url http://127.0.0.1:8192
 ```
