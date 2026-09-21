@@ -80,8 +80,11 @@ class Bridge:
         common = {"interaction_id", "application_id", "interaction_token", "user_id", "attachment_size_limit", "received_at"}
         if self.access_mode == "guild":
             common |= {"guild_id", "channel_id"}
-        expected = common | ({"request_id"} if status else {"prompt", "mode"})
-        if not isinstance(body, dict) or set(body) != expected:
+        draw_required = common | {"prompt"}
+        draw_optional = {"mode", "negative_prompt", "checkpoint"}
+        expected = common | {"request_id"} if status else draw_required
+        if (not isinstance(body, dict) or (set(body) != expected if status else
+                                          (not draw_required.issubset(body) or set(body) - (draw_required | draw_optional)))):
             raise ApiError("BRIDGE_INVALID_INPUT", "Unexpected request fields")
         if any(not identifier(body[k]) for k in ("interaction_id", "application_id", "user_id")):
             raise ApiError("BRIDGE_INVALID_INPUT", "Invalid Discord identifier")
@@ -105,9 +108,21 @@ class Bridge:
             original = self.records.get(body.get("request_id")) if identifier(body.get("request_id")) else None
             if not original or original["kind"] != "draw" or original["user_id"] != body["user_id"]:
                 raise ApiError("BRIDGE_NOT_FOUND", "Request not found", 404)
-        elif (body["mode"] not in ("natural", "direct") or not isinstance(body["prompt"], str)
-              or not body["prompt"].strip() or len(body["prompt"]) > 4000):
-            raise ApiError("BRIDGE_INVALID_INPUT", "A prompt and supported mode are required")
+        else:
+            mode = body.get("mode", "direct")
+            if not isinstance(mode, str):
+                raise ApiError("BRIDGE_INVALID_INPUT", "Mode must be natural or direct")
+            mode = mode.strip().lower()
+            if (mode not in ("natural", "direct") or not isinstance(body["prompt"], str)
+                    or not body["prompt"].strip() or len(body["prompt"]) > 4000
+                    or ("negative_prompt" in body and (not isinstance(body["negative_prompt"], str)
+                                                        or len(body["negative_prompt"]) > 4000))
+                    or ("checkpoint" in body and (not isinstance(body["checkpoint"], str)
+                                                    or not body["checkpoint"] or len(body["checkpoint"]) > 100))):
+                raise ApiError("BRIDGE_INVALID_INPUT", "A prompt, supported mode, and optional negative_prompt or checkpoint are required")
+            # Match Core's canonical request shape.  This also retains the
+            # historical hash for lowercase direct requests without a Negative.
+            body = {**body, "mode": mode}
         fingerprint = hashlib.sha256(canonical({k: v for k, v in body.items()
                                                if k not in {"received_at", "interaction_token", "attachment_size_limit"}}).encode()).hexdigest()
         existing = self.records.get(body["interaction_id"])
@@ -125,6 +140,10 @@ class Bridge:
             record["request_id"] = body["request_id"]
         else:
             record.update(prompt=body["prompt"], mode=body["mode"], core_id=None, images=[], error=None)
+            if "negative_prompt" in body:
+                record["negative_prompt"] = body["negative_prompt"]
+            if "checkpoint" in body:
+                record["checkpoint"] = body["checkpoint"]
         self.save(record)
         return self.public(record), True
 
@@ -159,8 +178,12 @@ class Bridge:
                 self.save(record); return
             record["state"] = "dispatching"
             self.save(record)
-            result = await self.core("POST", "/v1/standalone-jobs", key=key,
-                                     payload={"prompt": record["prompt"], "mode": record["mode"]})
+            payload = {"prompt": record["prompt"], "mode": record["mode"]}
+            if "negative_prompt" in record:
+                payload["negative_prompt"] = record["negative_prompt"]
+            if "checkpoint" in record:
+                payload["checkpoint"] = record["checkpoint"]
+            result = await self.core("POST", "/v1/standalone-jobs", key=key, payload=payload)
         elif not record.get("core_id"):
             result = await self.core("GET", "/v1/standalone-jobs/by-key", key=key)
             if result is None:
@@ -183,9 +206,11 @@ class Bridge:
             raise ApiError("BRIDGE_PROTOCOL_ERROR", "Invalid image descriptors", 502)
         seed = result.get("seed")
         seed_fields = {"seed": seed} if type(seed) is int else {}
+        checkpoint = result.get("checkpoint")
+        checkpoint_fields = {"checkpoint": checkpoint} if isinstance(checkpoint, str) else {}
         record.update(state=state if state in TERMINAL else "core_pending", images=images,
                       error=code if state == "failed" else None)
-        record.update(seed_fields)
+        record.update(seed_fields, **checkpoint_fields)
         self.save(record)
 
     async def notify_received(self, record):
@@ -255,6 +280,8 @@ class Bridge:
             content += f" · Core {original['core_id']}"
         if type(original.get("seed")) is int:
             content += f"\nSeed: {original['seed']}"
+        if isinstance(original.get("checkpoint"), str):
+            content += f"\nCheckpoint: {original['checkpoint']}"
         attachment = None
         if original["state"] == "completed":
             content += "\n생성 완료 · 품질 검증은 요청하지 않았습니다."

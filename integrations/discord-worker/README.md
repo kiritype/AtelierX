@@ -2,7 +2,7 @@
 
 This Worker accepts only signed Discord interaction webhooks using configured user or guild/channel access rules. It has no database, queue, GPU access, Core access, or generation logic. It forwards accepted commands to the authenticated local bridge reachable through a HTTPS Cloudflare Tunnel.
 
-`/draw prompt:<text> mode:<natural|direct>` defers publicly when guild access and `DISCORD_PUBLIC_RESULTS=true` are configured (otherwise ephemerally), and sends exactly one request to `BRIDGE_URL` (`/v1/discord/jobs`). `natural` is the default; the bridge asks Core to convert the request using the local LLM. `direct` preserves the supplied prompt. The request is bounded to 64 KiB, while `prompt` is bounded to 4,000 Unicode code points.
+`/draw prompt:<text> negative:<optional text> checkpoint:<optional registered name> mode:<direct|natural>` defers publicly when guild access and `DISCORD_PUBLIC_RESULTS=true` are configured (otherwise ephemerally), and sends exactly one request to `BRIDGE_URL` (`/v1/discord/jobs`). `direct` is the default and preserves the supplied prompt; `natural` asks the bridge to have Core convert it using the local LLM. Mode input is trimmed and case-insensitive. A supplied `negative` value is forwarded unchanged as `negative_prompt`; its composition with any Core negative setting remains Core's responsibility. A supplied `checkpoint` is forwarded unchanged for Core allowlist validation. The request is bounded to 64 KiB, while `prompt` and `negative` are each bounded to 4,000 Unicode code points and `checkpoint` to 100.
 
 `/status request_id:<Discord interaction ID>` also defers ephemerally, then sends a fresh interaction token to `/v1/discord/status`. The local bridge uses that token only to return a saved result to its original owner; it must never start generation again. This gives the user a way to retrieve a result after Discord's original interaction-token window expires.
 
@@ -16,7 +16,7 @@ Copy `.dev.vars.example` to `.dev.vars`, add actual secrets locally, then run (N
 npm test
 ```
 
-`npm run register-commands` POSTs only the two command definitions to Discord, preserving unrelated application commands. It is intentionally not run automatically. It requires `DISCORD_APPLICATION_ID` and `DISCORD_BOT_TOKEN` in the process environment; set `DISCORD_GUILD_ID` to register into one personal test server instead of globally. Deploying the Worker and setting Discord's interactions endpoint are separate, manual operations.
+`npm run register-commands` first reads the allowlisted checkpoint choices from Core's loopback-only `GET /v1/standalone-checkpoints`, then POSTs only the two command definitions to Discord, preserving unrelated application commands. It is intentionally not run automatically. It requires `DISCORD_APPLICATION_ID`, `DISCORD_BOT_TOKEN`, `ATELIERX_CORE_URL`, and `ATELIERX_CORE_TOKEN` in the process environment; set `DISCORD_GUILD_ID` to register into one personal test server instead of globally. Core must return 1–25 valid choices and identify one default; registration fails instead of dropping checkpoint choices. Deploying the Worker and setting Discord's interactions endpoint are separate, manual operations.
 
 `BRIDGE_URL` must be HTTPS and exactly end in `/v1/discord/jobs`. HTTP is accepted only for `localhost`, `127.0.0.1`, or `[::1]` when `ALLOW_INSECURE_LOCAL_BRIDGE=true` is explicitly set for local development. `BRIDGE_TOKEN` and optional Cloudflare Access service-token credentials belong in Worker secrets, never in `wrangler.jsonc`.
 

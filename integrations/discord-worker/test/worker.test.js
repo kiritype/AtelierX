@@ -50,6 +50,24 @@ test("rejects invalid draw input before the deferred response", async () => {
   assert.equal(ctx.promises.length, 0);
 });
 
+test("rejects malformed or overlong optional negative prompts before the deferred response", async () => {
+  for (const negative of [42, "x".repeat(4001)]) {
+    const { request, ctx } = await signedRequest(drawInteraction({ negative }));
+    const response = await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: unexpectedFetch });
+    assert.equal(response.status, 400);
+    assert.equal(ctx.promises.length, 0);
+  }
+});
+
+test("rejects malformed or overlong optional checkpoint values before the deferred response", async () => {
+  for (const checkpoint of [42, " ", "x".repeat(101)]) {
+    const { request, ctx } = await signedRequest(drawInteraction({ checkpoint }));
+    const response = await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: unexpectedFetch });
+    assert.equal(response.status, 400);
+    assert.equal(ctx.promises.length, 0);
+  }
+});
+
 test("guild public draw is visible, while status remains ephemeral", async () => {
   const guildEnv = { ...baseEnv, DISCORD_ACCESS_MODE: "guild", DISCORD_PUBLIC_RESULTS: "true", DISCORD_ALLOWED_GUILD_IDS: "444444444444444444", DISCORD_ALLOWED_CHANNEL_IDS: "555555555555555555" };
   const dm = await signedRequest(drawInteraction({ userId: "111111111111111111" }));
@@ -94,7 +112,7 @@ test("public results fail closed outside guild mode", async () => {
 });
 
 test("defers an ephemeral draw and sends the exact normalized job once", async () => {
-  const { request, ctx } = await signedRequest(drawInteraction({ prompt: "draw a fox", mode: "direct" }));
+  const { request, ctx } = await signedRequest(drawInteraction({ prompt: "draw a fox", negative: "no text", checkpoint: "anima.safetensors", mode: " NATURAL " }));
   const calls = [];
   const response = await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: async (url, init) => {
     calls.push({ url, init });
@@ -108,8 +126,35 @@ test("defers an ephemeral draw and sends the exact normalized job once", async (
   assert.equal(calls[0].init.redirect, "manual");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     interaction_id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, interaction_token: "interaction-token", user_id: "987654321098765432",
-    attachment_size_limit: 10485760, received_at: now, prompt: "draw a fox", mode: "direct"
+    attachment_size_limit: 10485760, received_at: now, prompt: "draw a fox", mode: "natural", negative_prompt: "no text", checkpoint: "anima.safetensors"
   });
+});
+
+test("uses direct mode by default and omits an absent negative prompt", async () => {
+  const { request, ctx } = await signedRequest(drawInteraction({ omitMode: true }));
+  const calls = [];
+  const response = await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: async (url, init) => {
+    calls.push({ url, init });
+    return Response.json({ interaction_id: "111111111111111111", state: "accepted" }, { status: 202 });
+  } });
+  assert.equal(response.status, 200);
+  await Promise.all(ctx.promises);
+  const payload = JSON.parse(calls[0].init.body);
+  assert.equal(payload.mode, "direct");
+  assert.equal(Object.hasOwn(payload, "negative_prompt"), false);
+  assert.equal(Object.hasOwn(payload, "checkpoint"), false);
+});
+
+test("forwards an explicitly empty negative prompt unchanged", async () => {
+  const { request, ctx } = await signedRequest(drawInteraction({ negative: "", omitMode: true }));
+  const calls = [];
+  const response = await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: async (url, init) => {
+    calls.push({ url, init });
+    return Response.json({ interaction_id: "111111111111111111", state: "accepted" }, { status: 202 });
+  } });
+  assert.equal(response.status, 200);
+  await Promise.all(ctx.promises);
+  assert.equal(JSON.parse(calls[0].init.body).negative_prompt, "");
 });
 
 test("a bridge 5xx is acceptance-unknown and never retries dispatch", async () => {
@@ -158,8 +203,12 @@ test("status uses its status bridge path and a fresh interaction token", async (
   });
 });
 
-function drawInteraction({ prompt = "a watercolor fox", mode = "natural", userId = "987654321098765432" } = {}) {
-  return { id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "interaction-token", attachment_size_limit: 10485760, member: { user: { id: userId } }, data: { name: "draw", options: [{ name: "prompt", value: prompt }, { name: "mode", value: mode }] } };
+function drawInteraction({ prompt = "a watercolor fox", negative, checkpoint, mode = "direct", omitMode = false, userId = "987654321098765432" } = {}) {
+  const options = [{ name: "prompt", value: prompt }];
+  if (negative !== undefined) options.push({ name: "negative", value: negative });
+  if (checkpoint !== undefined) options.push({ name: "checkpoint", value: checkpoint });
+  if (!omitMode) options.push({ name: "mode", value: mode });
+  return { id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "interaction-token", attachment_size_limit: 10485760, member: { user: { id: userId } }, data: { name: "draw", options } };
 }
 function guildDrawInteraction({ userId = "111111111111111111", guildId = "444444444444444444", channelId = "555555555555555555" } = {}) {
   return { id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "interaction-token", attachment_size_limit: 10485760, guild_id: guildId, channel_id: channelId, member: { user: { id: userId } }, data: { name: "draw", options: [{ name: "prompt", value: "guild request" }] } };

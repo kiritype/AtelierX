@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 import aiohttp
 from aiohttp import web
-from aiohttp.test_utils import TestServer
+from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
-from atelierx.core import generation_settings
+from atelierx.core import create_app as core_app, generation_settings
 from atelierx.core_presets import validate_postprocess_settings
 from atelierx.core_standalone import StandaloneJobs
 from atelierx.core_store import Store
@@ -44,6 +44,64 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "ready_to_dispatch")
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "completed")
         self.assertEqual(self.calls[0][2]["json"]["inputs"]["positive_prompt"], "literal, prompt")
+
+    async def test_optional_mode_is_normalized_without_changing_legacy_fingerprint(self):
+        direct, created = self.jobs.create("legacy-direct", {"prompt": "literal", "mode": "direct"})
+        defaulted, repeated = self.jobs.create("legacy-direct", {"prompt": "literal"})
+        self.assertTrue(created); self.assertFalse(repeated); self.assertEqual(direct["id"], defaulted["id"])
+        natural, _ = self.jobs.create("normalized-natural", {"prompt": "literal", "mode": " Natural "})
+        self.assertEqual(natural["request"]["mode"], "natural")
+
+    async def test_optional_negative_is_snapshotted_and_combined_by_core(self):
+        negative = "  low quality,  watermark\n"
+        job, _ = self.jobs.create("negative", {"prompt": "literal", "negative_prompt": negative})
+        self.assertEqual(job["request"], {"prompt": "literal", "mode": "direct", "negative_prompt": negative})
+        self.assertEqual(job["generation_inputs"]["negative_prompt"], "bad, " + negative)
+        omitted, _ = self.jobs.create("default-negative", {"prompt": "literal"})
+        whitespace, _ = self.jobs.create("whitespace-negative", {"prompt": "literal", "negative_prompt": " \n "})
+        self.assertEqual(omitted["generation_inputs"]["negative_prompt"], "bad")
+        self.assertEqual(whitespace["generation_inputs"]["negative_prompt"], "bad")
+        self.jobs.config["generation_inputs"]["negative_prompt"] = ""
+        no_base, _ = self.jobs.create("no-base-negative", {"prompt": "literal", "negative_prompt": negative})
+        self.assertEqual(no_base["generation_inputs"]["negative_prompt"], negative)
+        for invalid in (123, "x" * 20001):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.jobs.create("invalid-negative-" + str(type(invalid)), {"prompt": "literal", "negative_prompt": invalid})
+        with self.assertRaises(ApiError):
+            self.jobs.create("unknown-field", {"prompt": "literal", "unknown": "value"})
+
+    async def test_checkpoint_is_allowlisted_and_snapshot_survives_config_change(self):
+        self.jobs.config["allowed_checkpoints"] = ["m", "models/alternate.safetensors"]
+        job, created = self.jobs.create("checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        self.assertTrue(created)
+        self.assertEqual(job["generation_inputs"]["diffusion_model"], "models/alternate.safetensors")
+        self.assertEqual(self.jobs.public(job)["checkpoint"], "models/alternate.safetensors")
+        self.jobs.config["allowed_checkpoints"] = ["m"]
+        repeated, created = self.jobs.create("checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        self.assertFalse(created); self.assertEqual(repeated["id"], job["id"])
+        with self.assertRaises(ApiError):
+            self.jobs.create("new-checkpoint", {"prompt": "literal", "checkpoint": "models/alternate.safetensors"})
+        for invalid in ("", "x" * 256, 123):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.jobs.create("invalid-checkpoint-" + str(type(invalid)), {"prompt": "literal", "checkpoint": invalid})
+
+    async def test_checkpoint_configuration_and_listing(self):
+        config = {**self.jobs.config, "allowed_checkpoints": ["m", "models/alternate.safetensors"]}
+        app = core_app(Path(self.tmp.name) / "checkpoint-core.sqlite3", "http://generation", "token",
+                       poll=100, standalone_config=config)
+        client = TestClient(TestServer(app)); await client.start_server()
+        try:
+            response = await client.get("/v1/standalone-checkpoints", headers={"Authorization": "Bearer token"})
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.json(), {"items": [{"name": "m", "value": "m"}, {"name": "models/alternate.safetensors", "value": "models/alternate.safetensors"}], "default": "m"})
+        finally:
+            await client.close()
+        for allowed in ([], ["models/alternate.safetensors"], ["../escape.safetensors"], ["https://example.invalid/model"]):
+            with self.subTest(allowed=allowed):
+                with self.assertRaises(ValueError):
+                    StandaloneJobs(self.core, {**self.jobs.config, "allowed_checkpoints": allowed}, generation_settings, validate_postprocess_settings)
 
     async def test_random_seed_is_safe_once_per_job_and_fixed_mode_remains_compatible(self):
         self.jobs.config["seed_mode"] = "random"

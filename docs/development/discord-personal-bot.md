@@ -4,9 +4,12 @@
 
 ## 명령과 데이터 흐름
 
-- `/draw prompt:... mode:natural`: 로컬 LLM이 Positive Prompt만 작성한 뒤 생성한다. 기본 모드다.
-- `/draw prompt:... mode:direct`: 입력 문자열을 Positive Prompt로 그대로 전달한다. 자연어 문장과 태그형 문구 모두 가능하다.
+아래 Direct 기본값·선택 Negative는 2026-09-21 사용자 재시작 이후 Worker 배포와 Guild 명령 재등록까지 반영했다. 실제 Discord 신규 요청으로 이미지가 반환되는 사용자 확인은 아직 별도다.
+
+- `/draw prompt:...`: mode 생략 시 Direct. 입력 문자열을 Positive Prompt로 그대로 전달한다. 자연어 문장과 태그형 문구 모두 가능하다.
+- `/draw prompt:... mode:natural`: 로컬 LLM이 Positive Prompt만 작성한 뒤 생성한다. 선택 메뉴에서 Direct/Natural을 고르며 API의 mode 문자열은 앞뒤 공백 제거·소문자 정규화 후 검사한다. 실제 운영 반영 상태는 아래 후속 기록을 따른다.
 - `/status request_id:...`: 자신의 기존 요청 상태 또는 이미지를 새 응답으로 받는다. 새 생성 요청이 아니다.
+- `/draw prompt:... negative:...`: 선택 Negative 입력. 구현 기본 동작은 서버 기본 Negative 뒤에 추가이며, 이는 결합 방식 질문의 답변 전 명시한 권장 가정이다. 생략·빈 문자열·공백만 입력하면 기본값을 유지한다.
 
 ```text
 Discord Slash command
@@ -19,7 +22,7 @@ Discord Slash command
 
 Core의 기존 groups/tasks 테이블에 임시 그룹을 만들지 않는다. 별도 `standalone_jobs` 테이블에 입력·설정·실행 상태를 보관한다. Bridge는 SQL·Generation·LLM에 직접 접근하지 않는 전달용 클라이언트다. 이미지 원본은 기존 Generation 저장 영역에 남는다. 독립 생성 결과는 현재 F/E 그룹 갤러리에 자동 편입하지 않는다.
 
-첫 구현은 생성과 이미지 전달이며 단일/묶음 Validation과 자동 재생성을 요청하지 않는다. 응답에는 품질 검증 미요청 상태를 표시한다. 분류가 없는 요청에 캐릭터 외형·캐릭터 Negative를 임의로 붙이지 않는다. direct Positive는 원문 보존, Negative·모델·Seed·생성/업스케일 설정은 서버의 독립 생성 설정을 사용한다. 현재 명령에서 크기·모델·Negative·Seed를 개별 override하지 않는다.
+첫 구현은 생성과 이미지 전달이며 단일/묶음 Validation과 자동 재생성을 요청하지 않는다. 응답에는 품질 검증 미요청 상태를 표시한다. 분류가 없는 요청에 캐릭터 외형·캐릭터 Negative를 임의로 붙이지 않는다. direct Positive는 원문을 보존한다. 선택 옵션 `negative`는 Core에 `negative_prompt`로 전달하며 서버 기본 Negative에 추가한다. 생략·빈 값은 기본값을 유지한다. 이 결합은 Core만 수행하고 Planner는 Negative를 재작성하지 않는다. 모델·Seed·생성/업스케일 설정은 서버의 독립 생성 설정을 사용한다. 현재 명령에서 크기·모델·Seed를 개별 override하지 않는다.
 
 ## 대기·중복·친구 공개
 
@@ -141,3 +144,46 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 무작위 Seed 구현 검증: Core standalone·Bridge 관련 19개 테스트 통과. 최대 안전 정수, 동일 멱등 키의 난수 재선택 방지, 최종 Generation 입력 일치, 과거 queued 작업의 고정 Seed 복원, Seed 0의 Discord 표시를 확인했다. 로컬 standalone 설정은 random으로 준비했으나 서비스 재시작 전이므로 현재 실행 프로세스는 기존 고정 Seed 설정을 사용한다. 앞선 로컬 재시작 도구 실행 차단 때문에 사용자 RDP 재시작 후 활성화 확인이 필요하다. 실제 GPU/Discord의 무작위 Seed 표시 시험은 아직 남아 있다.
 
 무작위 Seed 후속 확인: 사용자가 동작 확인을 완료했다고 응답했다. 사용자 관찰 기준으로 운영 적용 확인을 기록하며, 별도 대규모 난수/이미지 다양성 평가를 완료한 것으로 확대하지 않는다. 이후 Discord 봇은 일반 테스트용이므로 추가 기능·고정 Tunnel·전용 운영 개선은 후순위로 미룬다.
+
+
+## 2026-09-21 선택 Negative와 기본 Direct 후속 구현
+
+Worker→Bridge→Core 전 구간에서 mode 생략을 Direct로 처리하고, 문자열은 앞뒤 공백 제거·소문자 정규화한다. Discord 선택 목록은 Direct를 먼저 표시한다. 선택 negative는 negative_prompt로 전달하며 Core만 서버 기본값에 결합하고 신규 작업 생성 입력에 고정한다. 같은 요청 재전달·재시작에서 Negative를 다시 추가하거나 Seed를 다시 고르지 않는다. 기존 lowercase mode와 Negative 미입력 요청의 멱등 fingerprint는 유지한다.
+
+검증: Core standalone/Bridge 22개, Worker 15개(workerd 포함) 통과. Worker dry-run과 등록 스크립트 구문 검사도 통과했다. 실제 Discord Negative 입력→GPU 생성은 미검증이며 이번에 새 이미지 생성이나 타인 메시지 전송을 하지 않았다.
+
+운영 적용은 미완료다. 큐 및 GPU owner/waiting이 비어 있음을 확인한 뒤 기존 restart-pilot.ps1을 실행했으나 Windows가 PID 13104의 명령줄·실행 경로를 반환하지 않아 스크립트가 Unexpected service process로 중단했다. 서비스 종료 전 단계에서 멈췄으며 안전 확인을 제거하거나 강제 종료하지 않았다. 파일럿을 시작한 Windows 권한으로 정상 재시작한 뒤 Core/Bridge 준비를 확인하고 Worker 배포와 Guild 명령 재등록을 이어서 해야 한다. Tunnel은 변경하지 않았다.
+
+체크포인트 선택은 이번에 구현하지 않았다. 현재 Anima Node registry에는 5개 diffusion_model 이름이 노출된다. 작은 목록은 Discord 선택지로 제공하고 Core가 허용된 모델과 생성 설정을 고정하는 방식이 가능하다. 목록 등록은 각 모델의 생성 검증 완료를 뜻하지 않으며 SDXL 등 다른 계열 지원과 구분한다.
+
+
+### 사용자 재시작 후 운영 반영 완료
+
+사용자 재시작 후 파일럿 네 포트(8189~8192)가 새 PID 3452로 실행 중이며 Bridge와 기존 Tunnel을 통한 인증 health가 모두 200임을 확인했다. 이전 권한 문제로 중단한 재시작을 우회하거나 다른 프로세스를 종료하지 않았다.
+
+Worker를 기존 설정을 보존해 배포했다. version `34bb2f1e-466b-4eab-acf8-111ff3870087`, URL `https://atelierx-discord-worker.kiritype.workers.dev`. 기존 테스트 Guild의 draw/status를 갱신했으며 무관한 명령을 일괄 교체하지 않았다. Discord API 재조회에서 prompt 필수, negative 선택, mode 선택 및 Direct/Natural 순서를 확인했다. PowerShell 조회는 Discord 40333 응답을 받았으나 등록에 사용한 Node fetch 조회는 성공했다.
+
+운영 배포·명령 등록 확인과 이미지 생성 검증은 구분한다. 이번 후속 작업에서는 Discord 생성 메시지나 GPU 작업을 새로 보내지 않았다. 사용 예는 `/draw prompt:1 girl negative:hat, glasses`이며 mode를 생략하면 Direct다.
+
+
+## 2026-09-21 체크포인트 선택 후속 작업
+
+사용자가 선택 Negative와 기본 Direct의 실제 동작을 확인했고 체크포인트 선택을 추가 요청했다. 이전 절의 체크포인트 미구현은 당시 상태다.
+
+선택 checkpoint는 Core 독립 생성 설정의 allowed_checkpoints 목록 중 하나를 요청에 고정한다. 생략하면 generation_inputs.diffusion_model 기본값을 사용한다. 모델 목록은 Core REST가 제공하고 Discord 등록 스크립트가 이를 선택 메뉴로 옮기며, Worker/Bridge는 선택값을 전달한다. 등록 목록·Anima 호환성은 Generation이 실행 시 최종 검사한다. 텍스트 인코더·VAE·샘플러·Steps·CFG는 현재 서버 설정을 유지하며 체크포인트별 최적값을 자동 추정하지 않는다.
+
+현재 로컬 구성은 ComfyUI Anima Node의 등록 목록 5개를 allowed_checkpoints에 복사하고 기본 waiANIMA_v10Base10.safetensors를 유지한다. 모든 모델의 실제 GPU 생성·품질 검증을 완료했다는 뜻은 아니다. 선택한 모델과 Seed는 결과에 함께 표시한다. Core의 모델 목록에 제품상 25개 상한을 도입하지 않으며 Discord 고정 선택지의 제한을 넘으면 명령 등록에서 명시적으로 오류를 내고 후속 자동완성 방식으로 확장한다.
+
+
+운영 준비: `.atelierx/discord/standalone.json`에 5개 허용 모델을 저장했고 기존 설정은 `standalone.before-checkpoints.json`으로 보존했다(둘 다 Git 제외). 실제 로컬 설정을 격리된 Core 앱에 로드해 목록 5개·기본 모델 반환을 확인했다. Core/Bridge 회귀 25개, Worker/등록 스크립트 회귀 18개(workerd·모의 Core 목록 포함), Worker 배포 dry-run이 통과했다.
+
+아직 실행 중인 파일럿(PID 3452)은 이전 코드다. 현재 Windows 권한으로 명령줄을 읽을 수 없어 프로세스 식별 안전 검사를 충족하지 못하므로 임의 종료하지 않았다. 사용자 정상 재시작 후 `/v1/standalone-checkpoints` 확인→Worker 배포→Core URL/토큰을 사용하는 Guild 명령 등록 순으로 적용해야 한다. 재등록 전에는 Discord에 checkpoint 옵션이 표시되지 않는다. 모델별 실제 생성 시험은 이번 변경에서 실행하지 않았다.
+
+
+### 체크포인트 운영 반영 완료
+
+사용자 재시작 후 Core/Bridge가 새 PID 13072로 실행 중이며, 인증된 `/v1/standalone-checkpoints`에서 5개 모델과 기본 waiANIMA_v10Base10.safetensors를 확인했다. 기존 Tunnel을 통한 Bridge health는 200이다.
+
+Worker version `e6d8b1cd-3a03-4b92-ab93-7a2dc885689a`를 배포하고 Core의 실제 목록으로 테스트 Guild 명령을 재등록했다. Discord API 재조회에서 선택 checkpoint에 5개 항목, 기본 모델 우선 순서, 기존 선택 negative/mode를 확인했다. 로컬 프로세스 추가 재시작이나 Tunnel 변경은 하지 않았다.
+
+사용 예: `/draw prompt:1 girl checkpoint:novaAnimeAM_v40.safetensors`. 생략하면 기존 기본 모델을 사용한다. 이번 후속은 운영 연결·메뉴 등록 검증이며, 다른 체크포인트의 실제 생성 결과와 Discord 이미지 응답은 아직 사용자 확인 전이다.

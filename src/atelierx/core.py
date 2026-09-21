@@ -601,6 +601,9 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
             raise ApiError("CORE_NOT_FOUND", "Standalone job key not found", 404)
         return web.json_response(core.standalone.public(found[1]))
 
+    async def standalone_checkpoints(request):
+        return web.json_response(core.standalone.checkpoints())
+
     async def standalone_content(request):
         image = await core.standalone.content(request.match_info["id"], request.match_info["image_id"])
         try:
@@ -631,6 +634,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                     web.get("/v1/images/{id}/validations", validations), web.post("/v1/images/{id}/validations", validations),
                     web.get("/v1/validation-runs/{id}", validation_run),
                     web.post("/v1/standalone-jobs", standalone), web.get("/v1/standalone-jobs/by-key", standalone_by_key),
+                    web.get("/v1/standalone-checkpoints", standalone_checkpoints),
                     web.get("/v1/standalone-jobs/{id}", standalone), web.get("/v1/standalone-jobs/{id}/images/{image_id}/content", standalone_content)])
     return app
 
