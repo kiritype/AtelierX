@@ -90,3 +90,8 @@ Worker 설치·검증·등록 방법은 [Worker README](../../integrations/disco
 - 실제 생성 근거: `artifacts/discord-standalone-20260921/report.json`, `direct.png`, `natural.png`. 재현 스크립트는 [test_standalone_generation_rest.py](../../scripts/test_standalone_generation_rest.py)다. 실행 전 사용자 큐·모델 사용 상태를 확인하며 동일 GPU의 다른 작업과 겹치지 않는다.
 - Discord 앱 연결 및 Discord에서 시작한 실제 생성→이미지 첨부는 앱 식별값·설정 연결 후 확인해야 한다. 비공개 응답의 사용자 경험과 친구 실제 계정의 권한 시험도 아직 남아 있다.
 - 전체 회귀 이후 초기 진행 메시지의 지연 응답 경쟁을 보완하고 Bridge 10개 테스트를 다시 통과했다. 실제 시험의 임시 Core/Generation 서버는 종료했고 기존 ComfyUI·LM Studio 프로세스는 유지했다. 파일럿 DB는 이번 실제 시험에서 사용하지 않았다.
+
+
+### 사용자 직접 실행 후 Tunnel 연결 확인
+
+2026-09-21 사용자가 RDP에서 Quick Tunnel을 직접 실행했다. 제공한 임시 주소를 대상으로 `/health` 인증 없음 401, 올바른 Bridge 인증 200을 확인했다. Worker `atelierx-discord-worker`의 `BRIDGE_URL`을 해당 Tunnel의 `/v1/discord/jobs`로 반영했고 secrets 갱신 성공을 확인했다. 실제 주소는 Git 제외 로컬 설정에 저장한다. Quick Tunnel은 실행 창 종료 시 끊기고 재실행 시 주소가 바뀌므로 새 주소 반영이 필요하다. Discord에서 시작한 `/draw`의 실제 이미지 응답은 아직 미검증이다. `cftm.net` 기반 고정 Tunnel은 아직 구성하지 않았다.
