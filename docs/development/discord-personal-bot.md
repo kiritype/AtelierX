@@ -139,3 +139,5 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 사용자 지시로 Discord 독립 생성은 새 요청마다 무작위 Seed를 사용하고 완료 응답과 `/status`에 실제 사용값을 표시한다. Core 설정 `seed_mode=random`에서 신규 작업 접수 때 53비트 안전 정수 범위의 Seed를 한 번 선택·저장한다. 같은 요청의 멱등 재접수·서비스 재시작·전달 재시도는 Seed를 다시 선택하지 않는다. 기존 설정과의 호환을 위해 seed_mode 생략은 fixed다. Direct/Natural 모두 동일 규칙이며 기존 F/E 그룹 제작의 Seed 정책을 바꾸지 않는다. Discord에서 Seed 직접 지정 옵션은 이번 변경에 포함하지 않는다.
 
 무작위 Seed 구현 검증: Core standalone·Bridge 관련 19개 테스트 통과. 최대 안전 정수, 동일 멱등 키의 난수 재선택 방지, 최종 Generation 입력 일치, 과거 queued 작업의 고정 Seed 복원, Seed 0의 Discord 표시를 확인했다. 로컬 standalone 설정은 random으로 준비했으나 서비스 재시작 전이므로 현재 실행 프로세스는 기존 고정 Seed 설정을 사용한다. 앞선 로컬 재시작 도구 실행 차단 때문에 사용자 RDP 재시작 후 활성화 확인이 필요하다. 실제 GPU/Discord의 무작위 Seed 표시 시험은 아직 남아 있다.
+
+무작위 Seed 후속 확인: 사용자가 동작 확인을 완료했다고 응답했다. 사용자 관찰 기준으로 운영 적용 확인을 기록하며, 별도 대규모 난수/이미지 다양성 평가를 완료한 것으로 확대하지 않는다. 이후 Discord 봇은 일반 테스트용이므로 추가 기능·고정 Tunnel·전용 운영 개선은 후순위로 미룬다.

@@ -1,5 +1,7 @@
 # AtelierX 아키텍처 개요
 
+2026-09-21 최신 사용자 지시: Discord 봇은 일반 테스트용으로 두고 추가 개발의 순위를 뒤로 미룬다. 본체 Backend/F/E 제작 흐름의 남은 기능을 우선 검토한다. 아래 같은 날짜의 Discord 우선 착수 기록은 당시 범위다. [현재 우선순위 제안](../development/remaining-work-priorities.md).
+
 2026-09-21 Discord 권한 변경: 설치 권한(Discord 앱 소유자 한정)과 사용 권한(지정 서버/채널의 모든 멤버)을 분리한다. Worker는 서명된 서버·채널·멤버 정보를 검사하고 Bridge도 동일 범위를 재검사한다. Core 작업 조정 책임과 요청자별 결과 소유권은 유지한다.
 
 2026-09-21 사용자 지시: 배포 전 개인용 사용과 Discord 봇 구현을 우선한다. Discord는 F/E 분류·그룹과 독립된 자연어/원문 생성 요청이다. Workers는 수신·인증, 로컬 Bridge는 전달, Core는 독립 생성 상태·Planner·GPU·Generation 조정을 담당한다. 기존 그룹을 임의 생성하지 않으며 Core의 별도 `standalone_jobs`에 저장한다. [구현·권한·대기 계약](../development/discord-personal-bot.md).
