@@ -6,6 +6,7 @@ const el = (tag, text = "", className = "") => {
 };
 const key = () => crypto.randomUUID();
 const errorText = (error) => error?.code ? `${error.code}: ${error.message || "Request failed"}` : error?.message || String(error);
+export const verdictLabel = value => ({passed:"통과",failed:"불합격",matched:"일치",mismatch:"불일치",reference:"기준 이미지",stale:"이전 기준",insufficient:"비교 불충분",reference_conflict:"기준 충돌",not_eligible:"검사 대상 제외",error:"실행 오류",unvalidated:"미검증",pending:"대기",cancelled:"취소",completed:"검사 완료",running:"검사 중",queued:"대기"}[value] || value || "미검증");
 
 export function eligibleIds(consistency) {
   return Array.isArray(consistency?.eligible_image_ids) ? [...new Set(consistency.eligible_image_ids)] : [];
@@ -135,6 +136,12 @@ export async function mount(container, ctx) {
   const message = el("p", "", "error");
   const browser = el("aside", "", "classification-tree panel");
   const layout = el("div", "", "gallery-browser-layout");
+  layout.classList.toggle("detail-open", Boolean(state.mobileDetail));
+  const treeToggle = button("작품·캐릭터 선택", () => {
+    const open = layout.classList.toggle("tree-open"); treeToggle.setAttribute("aria-expanded", String(open));
+  }, "mobile-only button");
+  treeToggle.setAttribute("aria-expanded", "false");
+  toolbar.append(treeToggle);
   layout.append(browser, cards, detail); root.append(toolbar, message, layout); container.append(root);
 
   const [singleWrap, single] = select("단일 검사", [["", "전체"], ["passed", "통과"], ["failed", "불합격"], ["pending", "대기"], ["error", "오류"], ["unvalidated", "미검증"], ["cancelled", "취소"]]);
@@ -142,13 +149,30 @@ export async function mount(container, ctx) {
   const [mediaWrap, media] = select("형식", [["", "전체"], ["image/png", "PNG"], ["image/webp", "WebP"]]);
   single.value = state.filters.single_outcome || ""; group.value = state.filters.group_status || ""; media.value = state.filters.media_type || "";
   toolbar.append(singleWrap, groupWrap, mediaWrap);
+  toolbar.append(button("검증 통과 이미지", () => {
+    single.value = "passed"; group.value = "matched"; state.offset = 0; clearDetail(); refresh();
+  }), el("span", "단일 통과 + 현재 기준 그룹 일치", "muted"));
   toolbar.append(button("필터 적용", () => { state.offset = 0; refresh(); }), button("초기화", () => {
     for (const input of [single, group, media]) input.value = ""; state.filters = {}; state.offset = 0; clearDetail(); renderClassification(); refresh();
   }));
 
   const collection = (payload) => Array.isArray(payload?.items) ? payload.items : [];
   let classificationEpoch = 0;
-  const clearDetail = () => { state.selected = null; detailEpoch++; revoke(detailUrls); detail.replaceChildren(el("p", "이미지를 선택하세요.", "muted")); };
+  const clearDetail = () => { state.selected = null; state.mobileDetail = false; layout.classList.remove("detail-open"); detailEpoch++; revoke(detailUrls); detail.replaceChildren(el("p", "이미지를 선택하세요.", "muted")); };
+  const backToList = () => { clearDetail(); ctx.onDetailChange?.(null); };
+  let imageQueue = [], imageLoads = 0;
+  const drainImages = () => {
+    if (disposed) return;
+    while (imageLoads < 3 && imageQueue.length) {
+      const load = imageQueue.shift(); imageLoads++;
+      load().finally(() => { imageLoads--; drainImages(); });
+    }
+  };
+  const observeImages = typeof IntersectionObserver === "function" ? new IntersectionObserver(entries => {
+    for (const entry of entries) if (entry.isIntersecting) {
+      observeImages.unobserve(entry.target); imageQueue.push(entry.target.loadPreview); drainImages();
+    }
+  }, {rootMargin: "200px"}) : null;
   const entityPath = (kind, parentId) => `/v1/${kind}?${new URLSearchParams({parent_id: parentId, limit: "200", offset: "0"})}`;
   const loadChildren = async (kind, parentId) => {
     const tree = state.classification; const cache = kind === "characters" ? tree.characters : tree.outfits;
@@ -159,7 +183,7 @@ export async function mount(container, ctx) {
     finally { delete tree.loading[`${kind}:${parentId}`]; if (!disposed) renderClassification(); }
   };
   const selectClassification = (kind, item) => {
-    state.filters = classificationFilters(state.filters, kind, item.id); state.offset = 0; clearDetail(); renderClassification(); refresh();
+    state.filters = classificationFilters(state.filters, kind, item.id); state.offset = 0; clearDetail(); layout.classList.remove("tree-open"); treeToggle.setAttribute("aria-expanded", "false"); renderClassification(); refresh();
   };
   const row = (kind, item, childrenKind = null) => {
     const tree = state.classification; const expandedKey = `${kind}:${item.id}`; const hasChildren = Boolean(childrenKind);
@@ -198,6 +222,7 @@ export async function mount(container, ctx) {
 
   async function refresh() {
     const epoch = ++refreshEpoch;
+    observeImages?.disconnect(); imageQueue = [];
     message.textContent = ""; cards.replaceChildren(el("p", "불러오는 중…", "muted"));
     const filters = {...state.filters, single_outcome: single.value, group_status: group.value, media_type: media.value};
     state.filters = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
@@ -219,20 +244,26 @@ export async function mount(container, ctx) {
   function card(image) {
     const item = el("article", "", "panel");
     const preview = document.createElement("img"); preview.alt = "생성 이미지"; preview.loading = "lazy";
-    item.append(preview, el("strong", image.media_type), el("span", `단일: ${image.single_outcome}`, "badge"), el("span", `묶음: ${image.group_status}`, "badge"));
+    item.append(preview, el("strong", image.media_type), el("span", `단일: ${verdictLabel(image.single_outcome)}`, "badge"), el("span", `그룹: ${verdictLabel(image.group_status)}`, "badge"));
     item.append(el("small", image.id, "muted"));
     item.setAttribute("role", "button"); item.tabIndex = 0; item.setAttribute("aria-label", `이미지 상세 열기: ${image.id}`);
-    item.addEventListener("click", () => showDetail(image.id));
-    item.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); showDetail(image.id); } });
+    const openDetail = () => { ctx.onDetailChange?.(image.id); showDetail(image.id); };
+    item.addEventListener("click", openDetail);
+    item.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetail(); } });
     const epoch = refreshEpoch;
-    ctx.api.imageBlob(image.content_url).then((blob) => {
+    item.loadPreview = async () => {
+      if (disposed || epoch !== refreshEpoch) return;
+      await ctx.api.imageBlob(image.content_url).then((blob) => {
       const url = URL.createObjectURL(blob);
       if (disposed || epoch !== refreshEpoch) { URL.revokeObjectURL(url); return; }
       cardUrls.add(url); preview.src = url;
-    }).catch(() => { if (!disposed && epoch === refreshEpoch) preview.alt = "이미지를 불러올 수 없음"; });
+      }).catch(() => { if (!disposed && epoch === refreshEpoch) preview.alt = "이미지를 불러올 수 없음"; });
+    };
+    if (observeImages) observeImages.observe(item); else { imageQueue.push(item.loadPreview); drainImages(); }
     return item;
   }
   async function showDetail(imageId) {
+    state.mobileDetail = true; layout.classList.add("detail-open");
     state.selected = imageId; const epoch = ++detailEpoch; revoke(detailUrls); detail.replaceChildren(el("p", "상세를 불러오는 중…", "muted"));
     try {
       const image = await ctx.api.get(`/v1/images/${imageId}`);
@@ -240,6 +271,13 @@ export async function mount(container, ctx) {
       const history = await ctx.api.get(`/v1/images/${imageId}/validations`);
       if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
       detail.replaceChildren(el("h2", "이미지 상세"), el("p", `형식: ${image.media_type} · ${image.bytes} bytes`), el("p", `Task: ${image.task_id}`, "muted"));
+      detail.prepend(button("← 이미지 목록", backToList, "button mobile-only"));
+      if (task.snapshot?.fragment?.id) {
+        const fragmentInfo = el("p", "조각 번호 확인 중…", "muted"); detail.append(fragmentInfo);
+        ctx.api.get(`/v1/prompt-fragments/${task.snapshot.fragment.id}`).then(fragment => {
+          if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) fragmentInfo.textContent = `조각 #${fragment.number ?? "–"} · 생성 당시 revision ${task.snapshot.fragment.revision}`;
+        }).catch(() => { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) fragmentInfo.textContent = "조각 번호 조회 불가 · 당시 생성 입력은 아래에서 확인할 수 있습니다."; });
+      }
       const enlarged = document.createElement("img"); enlarged.alt = "선택한 생성 이미지"; enlarged.style.maxHeight = "480px"; enlarged.style.maxWidth = "100%";
       const retryImage = button("이미지 다시 불러오기", () => loadImage()); retryImage.hidden = true;
       let enlargedUrl = null;
@@ -259,10 +297,10 @@ export async function mount(container, ctx) {
       detail.append(enlarged, retryImage); loadImage();
       const inputs = task.snapshot?.generation_inputs || {};
       const prompt = { positive_prompt: inputs.positive_prompt ?? "", negative_prompt: inputs.negative_prompt ?? "" };
-      detail.append(el("h3", "당시 Prompt"), el("pre", JSON.stringify(prompt, null, 2)), el("h3", "당시 후처리 설정"), el("pre", JSON.stringify(task.snapshot?.postprocess ?? {}, null, 2)));
+      const inputsDetail = el("details"); inputsDetail.append(el("summary", "생성 당시 프롬프트·설정"), el("h3", "당시 Prompt"), el("pre", JSON.stringify(prompt, null, 2)), el("h3", "당시 후처리 설정"), el("pre", JSON.stringify(task.snapshot?.postprocess ?? {}, null, 2))); detail.append(inputsDetail);
       detail.append(el("h3", "단일 검사 이력"));
       for (const run of history.items) {
-        const row = el("div", `${run.state}${run.outcome ? ` / ${run.outcome}` : ""}`, "row");
+        const row = el("div", `${verdictLabel(run.state)}${run.outcome ? ` / ${verdictLabel(run.outcome)}` : ""}`, "row");
         row.append(button("결과", async () => {
           try {
             const current = await ctx.api.get(`/v1/validation-runs/${run.id}`);
@@ -273,7 +311,7 @@ export async function mount(container, ctx) {
       await addPostprocessActions(image, epoch);
       if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
       void addSingleActions(image, epoch); addRegenerationAction(image); await addGroupActions(image, epoch);
-    } catch (error) { if (!disposed && epoch === detailEpoch) { detail.replaceChildren(); detail.append(el("p", errorText(error), "error")); } }
+    } catch (error) { if (!disposed && epoch === detailEpoch) { detail.replaceChildren(); detail.append(button("← 이미지 목록", backToList, "button mobile-only"), el("p", errorText(error), "error")); } }
   }
   async function registry(kind) {
     const response = await ctx.api.get(`/v1/validation-settings/${kind}`);
@@ -513,5 +551,5 @@ export async function mount(container, ctx) {
     if (activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id)) detail.append(section);
   }
   await loadWorks(); await refresh(); if (state.selected) showDetail(state.selected);
-  return () => { disposed = true; revoke(cardUrls); revoke(detailUrls); };
+  return () => { disposed = true; imageQueue = []; observeImages?.disconnect(); revoke(cardUrls); revoke(detailUrls); };
 }

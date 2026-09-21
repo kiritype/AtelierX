@@ -1,5 +1,7 @@
 # 개발 문서 진입점
 
+[작업실 UI·모바일 구현 결과](frontend-studio-mobile.md): 전역 조각 카테고리·고유 번호, 단계별 작업실과 이미지셋, 반응형 검사 및 실사용 적용 한계.
+
 [조각 라이브러리·제작 흐름 UX](frontend-library-ux-review.md): 2026-09-22 승인한 화면 방향, 카테고리·전체 고유 번호, 모바일 대응 및 구현 전 점검 기준.
 
 [Core 기존 이미지 후처리](core-image-postprocess.md): 독립 후처리 Core·Frontend 연결과 검증 범위.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, freezeMultiProductionPlanRequests, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from "../frontend/production.js";
+import { buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, fragmentPickerQuery, freezeMultiProductionPlanRequests, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from "../frontend/production.js";
 
 function state(overrides = {}) {
   return {
@@ -96,6 +96,11 @@ test("fragment mode rejects zero or multiple selections for a single preview", (
   assert.throws(() => buildGenerationBody(state({ compositionMode: "fragment", fragmentSelections: ["a@1", "b@1"] })), /하나만/);
 });
 
+test("fragment picker uses Core category and query filters without placing selection in the request", () => {
+  const path = fragmentPickerQuery({fragmentSearch: "미소", fragmentCategoryId: "expression", fragmentLimit: 25, fragmentOffset: 50});
+  assert.equal(path, "/v1/prompt-fragments?archived=false&limit=25&offset=50&q=%EB%AF%B8%EC%86%8C&category_id=expression");
+});
+
 
 test("production plan freezes ordered fragment refs with required validation settings", () => {
   const body = buildProductionPlanBody(state({
@@ -107,6 +112,15 @@ test("production plan freezes ordered fragment refs with required validation set
   assert.deepEqual(body.validation, { profile_id: "single-profile", provider_id: "single-provider" });
   assert.deepEqual(body.group_validation, { profile_id: "group-profile", provider_id: "group-provider" });
   assert.equal("fragment" in body, false);
+});
+
+test("production plans accept selected fragment references from the shared picker", () => {
+  const body = buildProductionPlanBody(state({
+    compositionMode: "fragment", fragmentSelections: [{id: "fragment-a", revision: 2}, {id: "fragment-b", revision: 5}],
+    validationEnabled: true, validationProfile: "single-profile", validationProvider: "single-provider",
+    groupValidationProfile: "group-profile", groupValidationProvider: "group-provider",
+  }));
+  assert.deepEqual(body.fragments, [{id: "fragment-a", revision: 2}, {id: "fragment-b", revision: 5}]);
 });
 
 test("production plan requires two fragments and both validation selections", () => {

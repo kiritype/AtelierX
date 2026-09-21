@@ -10,6 +10,7 @@ const button = (text, action, disabled = false) => {
 const errorText = (error) => error?.message || "요청을 완료하지 못했습니다.";
 const key = () => globalThis.crypto?.randomUUID?.() || `jobs-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const items = (value) => Array.isArray(value?.items) ? value.items : [];
+export const jobLabel = (state) => ({queued:"대기",pending:"대기",running:"실행 중",completed:"실행 완료",failed:"실패",cancelled:"취소됨",cancelling:"취소 중",generated:"생성 완료",generation_pending:"생성 중",single_validation_pending:"단일 검사 중",group_validation_pending:"그룹 검사 중",single_failed:"단일 불합격",generation_failed:"생성 실패",passed:"통과",error:"실행 오류",incomplete:"판정 미완료",awaiting_reference_confirmation:"기준 확인 필요",insufficient_images:"비교 이미지 부족",draft:"준비됨"}[state] || state || "대기");
 let controlSequence = 0;
 
 export function presetReference(value) {
@@ -216,17 +217,17 @@ export async function mount(container, ctx) {
     state.form = { groups: items(groupPage), generation: items(generation), postprocess: items(postprocess), singleProfiles: items(singleProfiles), groupProfiles: items(groupProfiles), providers: items(providers) };
   }
   function renderTasks(page) {
-    tasks.replaceChildren(el("h2", "Task")); if (!items(page).length) tasks.append(el("p", "작업이 없습니다.", "muted"));
-    for (const task of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${task.state} · ${task.id}`, "badge"), button("상세", () => { state.selectedTask = task.id; state.selectedBatch = null; state.selectedPostprocess = null; showTask(task.id); })); tasks.append(row); }
+    tasks.replaceChildren(el("h2", "개별 생성")); if (!items(page).length) tasks.append(el("p", "작업이 없습니다.", "muted"));
+    for (const task of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${jobLabel(task.state)} · ${task.id.slice(0,8)}`, "badge"), button("상세", () => { state.selectedTask = task.id; state.selectedBatch = null; state.selectedPostprocess = null; showTask(task.id); })); tasks.append(row); }
   }
   function renderPlans(page) {
     plansHost.replaceChildren(el("h2", "조각 기반 제작 계획"));
     plansHost.append(el("p", `전체 ${page.total}개 계획 · 각 계획의 총 대기 수와 실제 실행 수는 구분됩니다.`, "muted"));
     for (const plan of items(page)) {
       const row = el("div", "", "row");
-      row.append(el("span", `${plan.id} · ${plan.state} · ${plan.total}장 · 판정: ${plan.outcome || "대기"}`),
+      row.append(el("span", `${plan.total}장 · ${jobLabel(plan.state)} · 판정: ${jobLabel(plan.outcome)}`),
         button("제작 계획 열기", () => ctx.navigate("production", `plan:${plan.id}`)));
-      plansHost.append(row, el("p", Object.entries(plan.counts || {}).map(([status, count]) => `${status}: ${count}`).join(" · "), "muted"));
+      plansHost.append(row, el("p", Object.entries(plan.counts || {}).map(([status, count]) => `${jobLabel(status)}: ${count}`).join(" · "), "muted"));
     }
     const pager = el("div", "", "row");
     pager.append(button("계획 이전", () => { state.planOffset = Math.max(0, state.planOffset - 20); refresh(); }, !state.planOffset),
