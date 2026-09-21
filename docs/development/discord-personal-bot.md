@@ -66,6 +66,8 @@ Worker 이름은 `atelierx-discord-worker`다. 기존 다른 Worker는 변경하
 
 2026-09-21 새 Worker 배포 완료: `https://atelierx-discord-worker.kiritype.workers.dev`, version `51095047-ae6d-4c86-8689-b8f6e0a4873b`. 앱 Public Key·ID·허용 사용자 ID·Bridge 연결 설정은 아직 입력하지 않았다. 따라서 현재 GET은 405, POST는 `misconfigured`로 거절하며 생성 요청을 전달하지 않는다. 실제 Discord 연결 완료를 뜻하지 않는다. Tunnel·명령 등록은 아직 실행하지 않았다.
 
+후속 연결 작업: 사용자 제공 Application ID·Public Key·본인 User ID를 Worker secrets에 반영했고, Bridge 토큰을 로컬에서 생성해 별도 secret으로 등록했다. 실제 식별값과 토큰은 `.atelierx/discord/`의 Git 제외 설정에만 보관한다. 미서명 POST는 현재 401로 거절된다. 로컬 파일럿 Core/Generation/Validation과 Bridge를 시작해 각 health 200, 기존 Core 활성 작업 없음(전체 15개)을 확인했다. 공개 Tunnel 시작은 자동 승인 심사에서 거절되어 확인 대기 중이며, Discord endpoint 설정·Bot Token을 사용하는 테스트 Guild 명령 등록·실제 Discord 수신은 아직 남아 있다. 새 Worker secret 등록 이후 버전은 최초 코드 배포 version과 구분한다.
+
 ```powershell
 cloudflared tunnel --url http://127.0.0.1:8192
 ```
