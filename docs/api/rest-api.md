@@ -409,11 +409,13 @@ Core는 접수 시 reference revision·선택 이미지의 group/단일 통과 �
 
 ## 저장 이미지 독립 후처리
 
+Core 접수·파생 결과·취소·페이지 조회는 [Core 이미지 후처리 계약](../development/core-image-postprocess.md)을 따른다. Core의 `POST /v1/images/{id}/postprocess-jobs`는 Core 이미지 ID와 `{postprocess:{...}}` 또는 `{preset:{id,revision}}`를 받는다. Generation의 동일 모양 경로는 Generation 이미지 ID를 받으므로 구분한다. 새 결과는 후처리 Job 이력에 연결하며 원본 그룹·검사·기준을 자동 교체하지 않는다.
+
 Generation `POST /v1/images/{image_id}/postprocess-jobs`는 `Idempotency-Key`와 `{postprocess:{...}}`를 받는다. 신규 202/동일 입력 기존 Job 200이며 일반 Job 조회·취소·Queue·SSE를 사용한다. 지원 stage/설정은 기존 Anima 후처리와 같다. 하나 이상 stage를 지정한다.
 
 입력은 Generation에 저장된 image ID만 허용한다. Job에는 `kind=postprocess`, `source_image_id`, `source_sha256`, `source_media_type`과 원래 generation inputs를 보관한다. 원본 파일·기존 결과를 수정하지 않고 새 Job/이미지를 만든다. 실행 직전 SHA-256을 검사하고 `LoadImage`→선택 stage의 고정 graph를 실행한다. 업로드 파일명은 Job별로 고정하며 arbitrary graph·URL·파일경로는 받지 않는다.
 
-원본 Anima context 없음은 `GEN_POSTPROCESS_CONTEXT_MISSING`(409), 미등록 image ID는 `GEN_IMAGE_NOT_FOUND`(404), 파일 누락은 `GEN_OUTPUT_MISSING`, 실행 전 원본 변경은 Job 오류 `GEN_IMAGE_INTEGRITY`다. Detailer 모델은 실제 등록 자원으로 다시 검사한다. 실행 오류의 자동 재제출은 하지 않는다. 현재 원본 context를 가진 Generation 저장 이미지에 한정하며 외부 이미지 직접 업로드·Core 이미지 목록으로의 독립 후처리 결과 자동 편입은 후속 범위다.
+원본 Anima context 없음은 `GEN_POSTPROCESS_CONTEXT_MISSING`(409), 미등록 image ID는 `GEN_IMAGE_NOT_FOUND`(404), 파일 누락은 `GEN_OUTPUT_MISSING`, 실행 전 원본 변경은 Job 오류 `GEN_IMAGE_INTEGRITY`다. Detailer 모델은 실제 등록 자원으로 다시 검사한다. 실행 오류의 자동 재제출은 하지 않는다. 현재 원본 context를 가진 Generation 저장 이미지에 한정한다. Core 후처리 Job 결과 조회와 기존 그룹 이미지 목록 편입은 별개이며, 외부 이미지 직접 업로드·그룹 편입은 후속 범위다.
 
 
 ## 생성·후처리 Preset

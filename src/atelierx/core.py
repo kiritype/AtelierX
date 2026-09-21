@@ -32,6 +32,7 @@ from .core_validation import CoreValidation
 from .validation_evidence import clauses, expanded_clause
 from .gpu import GpuCoordinator
 from .core_standalone import StandaloneJobs
+from .core_postprocess import CorePostprocess
 from .queue_api import attach_queue_api
 from .frontend import attach as attach_frontend
 
@@ -392,7 +393,8 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     core.plans.attach(app)
     core.gpu = GpuCoordinator(core.store, gpu_config)
     core.standalone = StandaloneJobs(core, standalone_config, generation_settings, validate_postprocess_settings)
-    attach_queue_api(app, lambda: [dict(json.loads(row[0]), kind=kind) for table, kind in (("tasks", "generation"), ("validation_runs", "validation"), ("standalone_jobs", "standalone")) for row in core.store.db.execute("SELECT document FROM " + table)] + [dict(run, kind="group_validation") for run in core.groups.runs()])
+    core.postprocess = CorePostprocess(core)
+    attach_queue_api(app, lambda: [dict(json.loads(row[0]), kind=kind) for table, kind in (("tasks", "generation"), ("validation_runs", "validation"), ("standalone_jobs", "standalone"), ("postprocess_jobs", "postprocess")) for row in core.store.db.execute("SELECT document FROM " + table)] + [dict(run, kind="group_validation") for run in core.groups.runs()])
     app[CORE] = core
 
     async def lifecycle(app):
@@ -404,14 +406,20 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                     while True:
                         await core.standalone.tick()
                         await asyncio.sleep(core.poll)
+                async def postprocess_worker():
+                    while True:
+                        await core.postprocess.tick()
+                        await asyncio.sleep(core.poll)
                 standalone_worker_task = asyncio.create_task(standalone_worker())
+                postprocess_worker_task = asyncio.create_task(postprocess_worker())
                 yield
-                worker.cancel()
-                standalone_worker_task.cancel()
+                worker.cancel(); standalone_worker_task.cancel(); postprocess_worker_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await worker
                 with contextlib.suppress(asyncio.CancelledError):
                     await standalone_worker_task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await postprocess_worker_task
         finally:
             core.store.close()
     app.cleanup_ctx.append(lifecycle)
@@ -589,6 +597,49 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     async def validation_run(request):
         return web.json_response(core.store.validation_run(request.match_info["id"]))
 
+    async def postprocess_jobs(request):
+        if request.method == "POST":
+            job, created = core.postprocess.create(request.match_info["id"], request.headers.get("Idempotency-Key"), await request.json())
+            return web.json_response(core.postprocess.public(job), status=202 if created else 200)
+        try:
+            limit, offset = int(request.query.get("limit", 50)), int(request.query.get("offset", 0))
+        except ValueError:
+            raise ApiError("CORE_INVALID_INPUT", "limit and offset must be integers")
+        page = core.postprocess.list(request.query.get("state"), request.query.get("source_image_id"), limit, offset)
+        return web.json_response({**page, "items": [core.postprocess.public(job) for job in page["items"]]})
+
+    async def postprocess_job(request):
+        return web.json_response(core.postprocess.public(core.postprocess.get(request.match_info["id"])))
+
+    async def postprocess_by_key(request):
+        found = core.postprocess.by_key(request.headers.get("Idempotency-Key"))
+        if not found:
+            raise ApiError("CORE_NOT_FOUND", "Postprocess job key not found", 404)
+        return web.json_response(core.postprocess.public(found[1]))
+
+    async def cancel_postprocess(request):
+        job = core.postprocess.cancel(request.match_info["id"])
+        return web.json_response(core.postprocess.public(job), status=200 if job["state"] in {"completed", "failed", "cancelled"} else 202)
+
+    async def postprocess_content(request):
+        job, image = await core.postprocess.content(request.match_info["id"], request.match_info["image_id"])
+        if job["generation_endpoint"] != core.generation_url:
+            raise ApiError("CORE_GENERATION_ENDPOINT_CHANGED", "Postprocess image belongs to another Generation endpoint", 409)
+        try:
+            async with core.session.get(core.generation_url + "/v1/images/" + image["image_id"], headers={"Authorization": "Bearer " + core.generation_token}, allow_redirects=False) as response:
+                if response.status != 200:
+                    raise ApiError("CORE_IMAGE_UNAVAILABLE", "Postprocess image unavailable", 502)
+                data = bytearray()
+                async for chunk in response.content.iter_chunked(65536):
+                    data.extend(chunk)
+                    if len(data) > min(image["bytes"], 128 * 1024 * 1024):
+                        raise ApiError("CORE_IMAGE_INTEGRITY", "Postprocess image exceeds recorded size", 502)
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            raise ApiError("CORE_IMAGE_UNAVAILABLE", "Postprocess image unavailable", 503)
+        if len(data) != image["bytes"] or hashlib.sha256(data).hexdigest() != image["sha256"]:
+            raise ApiError("CORE_IMAGE_INTEGRITY", "Postprocess image content changed", 502)
+        return web.Response(body=bytes(data), content_type=image["media_type"])
+
     async def standalone(request):
         if request.method == "POST":
             result, created = core.standalone.create(request.headers.get("Idempotency-Key"), await request.json())
@@ -631,8 +682,12 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                     web.get("/v1/tasks", tasks), web.post("/v1/tasks", tasks), web.get("/v1/tasks/by-key", by_key),
                     web.get("/v1/tasks/{id}", task), web.get("/v1/images/{id}", image),
                     web.get("/v1/images/{id}/content", image_content),
+                    web.post("/v1/images/{id}/postprocess-jobs", postprocess_jobs),
                     web.get("/v1/images/{id}/validations", validations), web.post("/v1/images/{id}/validations", validations),
                     web.get("/v1/validation-runs/{id}", validation_run),
+                    web.get("/v1/postprocess-jobs", postprocess_jobs), web.get("/v1/postprocess-jobs/by-key", postprocess_by_key),
+                    web.get("/v1/postprocess-jobs/{id}", postprocess_job), web.post("/v1/postprocess-jobs/{id}/cancel", cancel_postprocess),
+                    web.get("/v1/postprocess-jobs/{id}/images/{image_id}/content", postprocess_content),
                     web.post("/v1/standalone-jobs", standalone), web.get("/v1/standalone-jobs/by-key", standalone_by_key),
                     web.get("/v1/standalone-checkpoints", standalone_checkpoints),
                     web.get("/v1/standalone-jobs/{id}", standalone), web.get("/v1/standalone-jobs/{id}/images/{image_id}/content", standalone_content)])

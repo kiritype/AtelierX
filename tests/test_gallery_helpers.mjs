@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
 const source = await readFile(new URL("../frontend/gallery.js", import.meta.url), "utf8");
-const {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, classificationFilters} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+const {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, classificationFilters, postprocessRequest} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 assert.deepEqual(eligibleIds({eligible_image_ids: ["passed-a", "passed-b", "passed-a"]}), ["passed-a", "passed-b"]);
 assert.deepEqual(eligibleIds({eligible_image_ids: null}), []);
@@ -39,3 +39,9 @@ const initialFilters = {work_id: "work-a", character_id: "character-a", outfit_i
 assert.deepEqual(classificationFilters(initialFilters, "works", "work-b"), {work_id: "work-b", media_type: "image/png"});
 assert.deepEqual(classificationFilters(initialFilters, "characters", "character-b"), {work_id: "work-a", character_id: "character-b", media_type: "image/png"});
 assert.deepEqual(classificationFilters(initialFilters, "outfits", "outfit-b"), {...initialFilters, outfit_id: "outfit-b"});
+
+assert.deepEqual(postprocessRequest({preset: "portrait-finish@3"}), {preset: {id: "portrait-finish", revision: 3}});
+assert.deepEqual(postprocessRequest({preset: "", upscaleEnabled: true, upscaleModel: "4x-UltraSharp.safetensors", upscaleScale: "1.5", encodeEnabled: true, webpEnabled: true, webpQuality: "90", advanced: ""}), {postprocess: {upscale: {upscale_model: "4x-UltraSharp.safetensors", scale: 1.5}, encode: {webp_enabled: true, webp_quality: 90}}});
+assert.deepEqual(postprocessRequest({preset: "", advanced: '{"alpha":{"segmentation_model":"seg.pt"}}'}), {postprocess: {alpha: {segmentation_model: "seg.pt"}}});
+assert.throws(() => postprocessRequest({preset: "", upscaleEnabled: false, encodeEnabled: false, advanced: ""}), /stage/);
+assert.throws(() => postprocessRequest({preset: "", upscaleEnabled: true, upscaleModel: "", upscaleScale: "1.5", advanced: ""}), /Upscale/);
