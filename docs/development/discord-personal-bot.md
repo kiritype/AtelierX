@@ -23,7 +23,7 @@ Core의 기존 groups/tasks 테이블에 임시 그룹을 만들지 않는다. �
 
 ## 대기·중복·친구 공개
 
-Discord의 초기 응답은 3초 이내여야 하며 interaction token은 15분 동안 유효하다. Worker는 생성 완료를 기다리지 않고 비공개 지연 응답(type 5, flags 64)을 반환한다. 로컬 Bridge는 접수 ID와 `/status` 사용법을 먼저 표시하고 결과를 나중에 첨부한다. [Discord 응답 계약](https://docs.discord.com/developers/interactions/receiving-and-responding)
+Discord의 초기 응답은 3초 이내여야 하며 interaction token은 15분 동안 유효하다. Worker는 생성 완료를 기다리지 않고 지연 응답(type 5)을 반환한다. 새 `/draw`는 공개 결과 설정을 사용하고 `/status`는 비공개(flags 64)를 유지한다. 로컬 Bridge는 접수 ID와 `/status` 사용법을 먼저 표시하고 결과를 나중에 첨부한다. [Discord 응답 계약](https://docs.discord.com/developers/interactions/receiving-and-responding)
 
 - Worker는 로컬 접수만 짧게 전달한다. GPU 실행을 Worker의 `waitUntil` 안에서 기다리지 않는다.
 - Bridge는 토큰 유효기간에 여유를 두어 14분 후 기존 응답 전달을 중단한다. 이미 접수된 Core 작업은 계속 추적하며, 새 `/status`의 토큰으로 결과를 받을 수 있다. 만료 전에 Core에 접수조차 못한 오래된 요청은 새로 생성하지 않는다.
@@ -31,7 +31,7 @@ Discord의 초기 응답은 3초 이내여야 하며 interaction token은 15분 
 - 이미지 응답은 원래 메시지 PATCH로 전달한다. 전달 재시도는 생성과 분리하며, 실패한 전달 때문에 다시 생성하지 않는다. Discord 429의 대기 시간을 반영한다.
 - Discord의 첨부 한도 안에서 PNG 또는 WebP 하나를 전달한다. 로컬 어댑터는 요청당 메모리 사용을 위해 최대 20MiB를 읽는다. 이는 생성 이미지 개수의 제품 상한이 아니다. 전달 가능한 파일이 없으면 로컬 보존 상태를 안내한다.
 - `users` 모드는 기존 `DISCORD_ALLOWED_USER_IDS` / `allowed_user_ids`를 사용한다. `guild` 모드는 Worker와 Bridge 양쪽에서 지정한 서버·선택적 채널을 검사하고 해당 범위의 모든 멤버를 허용한다. 서명된 Discord member/guild/channel 정보와 Bridge Bearer 인증을 사용한다. DM·다른 서버·범위 밖 채널은 소유자도 우회할 수 없다.
-- `/status`는 원래 요청자만 사용할 수 있다. 초기 응답·이미지는 ephemeral이며 같은 서버의 다른 사람에게 자동 공유하지 않는다. 관리자·결제·조직 권한 체계는 도입하지 않는다.
+- `/status`는 원래 요청자만 사용할 수 있고 응답도 비공개다. 새 `/draw`의 진행·결과는 요청한 채널에 공개하며 첨부 이미지에 스포일러를 기본 적용한다. 관리자·결제·조직 권한 체계는 도입하지 않는다.
 
 LLM 추론 중 응답이 유실되거나 Core가 종료되면 자동 추론 재시도하지 않고 실행 불명 오류를 남긴다. 실행 종료가 불명인 GPU 권한은 임의 시간 만료로 해제하지 않는다. 실제 종료 여부 확인과 수동 복구가 필요한 경우가 있으며, 장기 무인 복구 완료로 보고하지 않는다.
 
@@ -121,3 +121,10 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 
 
 권한 활성화 완료: 사용자가 현재 서버 전체 멤버로 범위를 확정했다. Worker/Bridge 모두 guild 모드와 기존 테스트 Guild 한 개를 설정하고 채널 제한은 두지 않았다. 코드 배포 version `26aa9769-e22a-4e86-868a-b0895ee6bd58` 이후 secrets도 반영했다. Core/Generation/Validation/ComfyUI와 Bridge에 진행 중 작업이 없음을 확인한 뒤 로컬 파일럿만 재시작했고 네 서비스 health 200을 확인했다. 사용자 실행 Tunnel은 유지했다. 외부 Tunnel을 통한 모의 상태 조회에서 허용 서버의 타인 결과는 404, 다른 서버는 403을 확인했다(실제 타인 Discord 계정의 생성 시험과 구분). Discord 앱 API를 재조회해 `bot_public=false`도 확인했으므로 소유자만 서버에 봇을 설치하는 설정이 완료되었다. 기존 서버 설치나 요청 결과를 삭제하지 않았다.
+
+
+### 공개 생성 결과와 기본 스포일러
+
+2026-09-21 사용자 추가 지시로 새 `/draw` 생성 결과를 채널 구성원에게 공개하고 이미지에 스포일러를 기본 적용한다. `DISCORD_PUBLIC_RESULTS=true`는 guild 접근 모드에서만 허용한다. `/draw`의 초기 지연 응답부터 공개로 설정하고 동일 메시지를 PATCH하므로 진행 안내도 공개되며, 기존 재전송/중복 방지 동작을 유지한다. 별도 공개 followup을 반복 게시하지 않는다. `/status`는 계속 요청자 전용 비공개 응답이다. Bridge는 PNG/WebP 모두 `SPOILER_atelierx.*` 이름으로 첨부한다. 과거 비공개 결과는 다시 게시하지 않는다.
+
+구현 검증: Worker 12개(실제 workerd에서 공개 draw/비공개 status 확인), Bridge 12개 테스트 통과. Worker 코드는 version `502c92c5-0cfa-44ab-a01f-ea24e90e740a`으로 배포했지만 공개 설정은 아직 활성화하지 않았다. 스포일러 적용을 위한 로컬 서비스 재시작이 자동 승인 심사에서 거절되어 운영 Bridge는 이전 코드로 계속 실행 중이다. 사용자가 RDP에서 실행할 수 있도록 Git 제외 로컬 `.atelierx/discord/restart-pilot.ps1`을 준비하고 구문 검사만 완료했다. 재시작 후 health 확인과 Worker 공개 설정 활성화, 실제 Discord 공개/스포일러 표시 확인이 남아 있다. 현재 동작을 공개/스포일러 적용 완료로 보고하지 않는다.

@@ -2,7 +2,7 @@
 
 This Worker accepts only signed Discord interaction webhooks using configured user or guild/channel access rules. It has no database, queue, GPU access, Core access, or generation logic. It forwards accepted commands to the authenticated local bridge reachable through a HTTPS Cloudflare Tunnel.
 
-`/draw prompt:<text> mode:<natural|direct>` defers ephemerally and sends exactly one request to `BRIDGE_URL` (`/v1/discord/jobs`). `natural` is the default; the bridge asks Core to convert the request using the local LLM. `direct` preserves the supplied prompt. The request is bounded to 64 KiB, while `prompt` is bounded to 4,000 Unicode code points.
+`/draw prompt:<text> mode:<natural|direct>` defers publicly when guild access and `DISCORD_PUBLIC_RESULTS=true` are configured (otherwise ephemerally), and sends exactly one request to `BRIDGE_URL` (`/v1/discord/jobs`). `natural` is the default; the bridge asks Core to convert the request using the local LLM. `direct` preserves the supplied prompt. The request is bounded to 64 KiB, while `prompt` is bounded to 4,000 Unicode code points.
 
 `/status request_id:<Discord interaction ID>` also defers ephemerally, then sends a fresh interaction token to `/v1/discord/status`. The local bridge uses that token only to return a saved result to its original owner; it must never start generation again. This gives the user a way to retrieve a result after Discord's original interaction-token window expires.
 
@@ -26,3 +26,5 @@ Current deployment and end-to-end verification status are maintained in [the per
 
 
 Access modes: `DISCORD_ACCESS_MODE=users` (default) uses the existing explicit user allowlist. `guild` requires nonempty `DISCORD_ALLOWED_GUILD_IDS` and a signed guild member identity; optional `DISCORD_ALLOWED_CHANNEL_IDS` narrows access to exact channels. Guild mode forwards `guild_id` and `channel_id` to the Bridge, which must use the matching policy. DM and other guilds are rejected, including for the owner. Empty or malformed required scope does not grant public access. Bot installation restrictions are separate: disable Public Bot in the Discord Developer Portal to restrict server installation to the application owner.
+
+In public result mode, `/draw` progress and its final image share the public original response. `/status` remains ephemeral and requester-only. Bridge image attachments use `SPOILER_` filenames by default. Existing ephemeral messages are not republished or converted to public messages.

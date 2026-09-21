@@ -264,7 +264,7 @@ class Bridge:
         kwargs = {"json": payload}
         if attachment:
             data, media = attachment
-            filename = "atelierx." + ("png" if media == "image/png" else "webp")
+            filename = "SPOILER_atelierx." + ("png" if media == "image/png" else "webp")
             payload["attachments"] = [{"id": 0, "filename": filename}]
             form = aiohttp.FormData()
             form.add_field("payload_json", json.dumps(payload))

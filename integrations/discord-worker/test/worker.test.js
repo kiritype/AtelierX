@@ -50,8 +50,8 @@ test("rejects invalid draw input before the deferred response", async () => {
   assert.equal(ctx.promises.length, 0);
 });
 
-test("guild mode accepts any member only in an allowed guild and channel", async () => {
-  const guildEnv = { ...baseEnv, DISCORD_ACCESS_MODE: "guild", DISCORD_ALLOWED_GUILD_IDS: "444444444444444444", DISCORD_ALLOWED_CHANNEL_IDS: "555555555555555555" };
+test("guild public draw is visible, while status remains ephemeral", async () => {
+  const guildEnv = { ...baseEnv, DISCORD_ACCESS_MODE: "guild", DISCORD_PUBLIC_RESULTS: "true", DISCORD_ALLOWED_GUILD_IDS: "444444444444444444", DISCORD_ALLOWED_CHANNEL_IDS: "555555555555555555" };
   const dm = await signedRequest(drawInteraction({ userId: "111111111111111111" }));
   const dmResponse = await handleInteraction(dm.request, guildEnv, dm.ctx, { now: () => now, fetch: unexpectedFetch });
   assert.equal(dmResponse.status, 403);
@@ -68,17 +68,28 @@ test("guild mode accepts any member only in an allowed guild and channel", async
     return Response.json({ interaction_id: "111111111111111111", state: "accepted" }, { status: 202 });
   } });
   assert.equal(validResponse.status, 200);
+  assert.deepEqual(await validResponse.json(), { type: 5, data: { flags: 0 } });
   await Promise.all(validNonOwner.ctx.promises);
   const payload = JSON.parse(calls[0].init.body);
   assert.equal(payload.user_id, "111111111111111111");
   assert.equal(payload.guild_id, "444444444444444444");
   assert.equal(payload.channel_id, "555555555555555555");
+  const status = await signedRequest(guildStatusInteraction());
+  const statusResponse = await handleInteraction(status.request, guildEnv, status.ctx, { now: () => now, fetch: acceptedFetch });
+  assert.deepEqual(await statusResponse.json(), { type: 5, data: { flags: 64 } });
+  await Promise.all(status.ctx.promises);
 });
 
 test("guild mode fails closed for malformed configured identifiers", async () => {
   const guildEnv = { ...baseEnv, DISCORD_ACCESS_MODE: "guild", DISCORD_ALLOWED_GUILD_IDS: "444444444444444444,not-an-id" };
   const interaction = await signedRequest(guildDrawInteraction());
   const response = await handleInteraction(interaction.request, guildEnv, interaction.ctx, { now: () => now, fetch: unexpectedFetch });
+  assert.equal(response.status, 500);
+});
+
+test("public results fail closed outside guild mode", async () => {
+  const interaction = await signedRequest(drawInteraction());
+  const response = await handleInteraction(interaction.request, { ...baseEnv, DISCORD_PUBLIC_RESULTS: "true" }, interaction.ctx, { now: () => now, fetch: unexpectedFetch });
   assert.equal(response.status, 500);
 });
 
@@ -152,6 +163,9 @@ function drawInteraction({ prompt = "a watercolor fox", mode = "natural", userId
 }
 function guildDrawInteraction({ userId = "111111111111111111", guildId = "444444444444444444", channelId = "555555555555555555" } = {}) {
   return { id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "interaction-token", attachment_size_limit: 10485760, guild_id: guildId, channel_id: channelId, member: { user: { id: userId } }, data: { name: "draw", options: [{ name: "prompt", value: "guild request" }] } };
+}
+function guildStatusInteraction() {
+  return { id: "222222222222222222", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "status-token", attachment_size_limit: 10485760, guild_id: "444444444444444444", channel_id: "555555555555555555", member: { user: { id: "111111111111111111" } }, data: { name: "status", options: [{ name: "request_id", value: "333333333333333333" }] } };
 }
 function statusInteraction() { return { id: "222222222222222222", application_id: baseEnv.DISCORD_APPLICATION_ID, type: 2, token: "new-status-token", attachment_size_limit: 10485760, user: { id: "987654321098765432" }, data: { name: "status", options: [{ name: "request_id", value: "333333333333333333" }] } }; }
 async function signedRequest(body, timestamp = now) {

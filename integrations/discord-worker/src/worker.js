@@ -52,13 +52,14 @@ export async function handleInteraction(request, env, ctx, dependencies = {}) {
   const command = normalizeCommand(interaction, now(), access);
   if (!command.ok) return jsonResponse({ error: command.error }, 400);
   ctx.waitUntil(dispatchAndReport(command, config, fetchImpl));
-  return jsonResponse({ type: 5, data: { flags: 64 } }, 200);
+  return jsonResponse({ type: 5, data: { flags: commandInitialFlags(command, config) } }, 200);
 }
 
 function getConfig(env) {
   const publicKey = env.DISCORD_PUBLIC_KEY;
   const applicationId = env.DISCORD_APPLICATION_ID;
   const accessMode = env.DISCORD_ACCESS_MODE ?? "users";
+  const publicResults = parseStrictBoolean(env.DISCORD_PUBLIC_RESULTS);
   const allowedUserIds = parseSnowflakeList(env.DISCORD_ALLOWED_USER_IDS ?? env.DISCORD_ALLOWED_USER_ID);
   const allowedGuildIds = parseSnowflakeList(env.DISCORD_ALLOWED_GUILD_IDS);
   const allowedChannelIds = env.DISCORD_ALLOWED_CHANNEL_IDS === undefined ? [] : parseSnowflakeList(env.DISCORD_ALLOWED_CHANNEL_IDS);
@@ -66,10 +67,11 @@ function getConfig(env) {
   if (!isHex(publicKey, 64)) return { ok: false };
   const validAccessConfig = (accessMode === "users" && allowedUserIds !== null)
     || (accessMode === "guild" && allowedGuildIds !== null && allowedChannelIds !== null);
+  const validResultVisibility = publicResults !== null && (!publicResults || accessMode === "guild");
   return {
     ok: true,
-    ready: isSnowflake(applicationId) && validAccessConfig && Boolean(bridgeUrl) && isNonEmptyString(env.BRIDGE_TOKEN) && hasCompleteAccessToken(env),
-    publicKey, applicationId, accessMode, allowedUserIds, allowedGuildIds, allowedChannelIds, bridgeUrl, bridgeToken: env.BRIDGE_TOKEN, accessClientId: env.CF_ACCESS_CLIENT_ID, accessClientSecret: env.CF_ACCESS_CLIENT_SECRET
+    ready: isSnowflake(applicationId) && validAccessConfig && validResultVisibility && Boolean(bridgeUrl) && isNonEmptyString(env.BRIDGE_TOKEN) && hasCompleteAccessToken(env),
+    publicKey, applicationId, accessMode, publicResults, allowedUserIds, allowedGuildIds, allowedChannelIds, bridgeUrl, bridgeToken: env.BRIDGE_TOKEN, accessClientId: env.CF_ACCESS_CLIENT_ID, accessClientSecret: env.CF_ACCESS_CLIENT_SECRET
   };
 }
 
@@ -105,6 +107,10 @@ function normalizeCommand(interaction, receivedAt, access) {
     return { ok: true, payload: { ...base, request_id: requestId }, bridgePath: "/v1/discord/status", kind: "status" };
   }
   return { ok: false, error: "unsupported_command" };
+}
+
+function commandInitialFlags(command, config) {
+  return command.kind === "draw" && config.accessMode === "guild" && config.publicResults ? 0 : 64;
 }
 
 async function dispatchAndReport(command, config, fetchImpl) {
@@ -225,6 +231,7 @@ function parseSnowflakeList(value) {
   const values = value.split(",").map((item) => item.trim());
   return values.length > 0 && values.every(isSnowflake) ? [...new Set(values)] : null;
 }
+function parseStrictBoolean(value) { return value === undefined ? false : value === "true" ? true : value === "false" ? false : null; }
 function hasCompleteAccessToken(env) { return Boolean(env.CF_ACCESS_CLIENT_ID) === Boolean(env.CF_ACCESS_CLIENT_SECRET); }
 function isHex(value, length) { return typeof value === "string" && value.length === length && /^[0-9a-f]+$/i.test(value); }
 function hexBytes(value) { const out = new Uint8Array(value.length / 2); for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16); return out; }

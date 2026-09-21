@@ -87,6 +87,7 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.last_key, "discord:100")
         self.assertEqual(len(self.patches), 2)
         self.assertIn(self.image_bytes, self.patches[-1])
+        self.assertIn(b"SPOILER_atelierx.png", self.patches[-1])
         self.assertEqual(self.bridge.records["100"]["delivery"], "delivered")
         self.assertIsNone(self.bridge.records["100"]["token"])
         self.assertTrue(all(h == "Bearer core-secret" for h in self.core_headers))

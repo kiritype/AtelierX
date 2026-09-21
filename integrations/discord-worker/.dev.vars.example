@@ -9,6 +9,8 @@ DISCORD_ALLOWED_USER_IDS=your_discord_user_id,another_allowed_discord_user_id
 # Leave DISCORD_ALLOWED_CHANNEL_IDS unset to allow every channel in those guilds, or provide a restricted comma-separated list.
 # DISCORD_ALLOWED_GUILD_IDS=your_guild_id
 # DISCORD_ALLOWED_CHANNEL_IDS=your_channel_id
+# Guild draw results are ephemeral by default. Set only in guild mode to make the deferred result visible in-channel.
+# DISCORD_PUBLIC_RESULTS=true
 BRIDGE_URL=https://your-tunnel.example/v1/discord/jobs
 BRIDGE_TOKEN=local_bridge_bearer_token
 # Optional when the tunnel is protected by Cloudflare Access service tokens.
