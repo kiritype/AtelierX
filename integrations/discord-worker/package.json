@@ -1,0 +1,17 @@
+{
+  "name": "@atelierx/discord-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "register-commands": "node scripts/register-commands.mjs"
+  },
+  "devDependencies": {
+    "miniflare": "5.20260918.0-alpha",
+    "wrangler": "4.135.0"
+  }
+}

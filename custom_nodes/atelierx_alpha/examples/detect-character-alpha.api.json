@@ -1,0 +1,25 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": { "image": "REPLACE_WITH_AN_IMAGE_IN_COMFYUI_INPUT.png" }
+    },
+    "2": {
+      "class_type": "AtelierXDetectCharacterMask",
+      "inputs": {
+        "image": ["1", 0],
+        "segmentation_model": "REPLACE_WITH_A_REGISTERED_LOCAL_ULTRALYTICS_SEGMENTATION_MODEL.pt",
+        "confidence": 0.35
+      }
+    },
+    "3": {
+      "class_type": "AtelierXApplyCharacterAlpha",
+      "inputs": { "image": ["1", 0], "character_mask": ["2", 0], "enabled": true }
+    },
+    "4": {
+      "class_type": "PreviewImage",
+      "inputs": { "images": ["3", 0] }
+    }
+  },
+  "client_id": "atelierx-alpha-detection-example"
+}

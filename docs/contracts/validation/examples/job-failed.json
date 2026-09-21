@@ -1,0 +1,14 @@
+{
+  "schema_version": "0.1",
+  "job_id": "job-1",
+  "kind": "single",
+  "revision": 3,
+  "state": "failed",
+  "wait_reason": null,
+  "result_available": true,
+  "error": {
+    "code": "VAL_PROVIDER_TIMEOUT",
+    "message": "Provider did not respond in time.",
+    "stage": "provider"
+  }
+}

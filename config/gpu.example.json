@@ -1,0 +1,9 @@
+{
+  "comfy_url": "http://127.0.0.1:8188",
+  "lmstudio_url": "http://localhost:1234",
+  "model": "qwen3-vl-8b-instruct-abliterated",
+  "api_key": "lm-studio",
+  "gpu_index": 0,
+  "minimum_free_mib": {"generation": 18000, "validation": 18000},
+  "resident_minimum_free_mib": 128
+}

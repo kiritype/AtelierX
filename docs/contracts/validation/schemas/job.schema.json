@@ -1,0 +1,134 @@
+{
+  "$defs": {
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^VAL_[A-Z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Message",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "input",
+            "access",
+            "provider",
+            "response",
+            "internal",
+            "recovery"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "Error",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Job Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "single",
+        "group"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 0,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "running",
+        "cancelling",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "wait_reason": {
+      "anyOf": [
+        {
+          "enum": [
+            "provider",
+            "gpu",
+            "memory"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Wait Reason"
+    },
+    "result_available": {
+      "title": "Result Available",
+      "type": "boolean"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Error"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "kind",
+    "revision",
+    "state",
+    "wait_reason",
+    "result_available",
+    "error"
+  ],
+  "title": "Job",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

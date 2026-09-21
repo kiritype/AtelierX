@@ -1,12 +1,13 @@
 # AtelierX 기여 안내
 
-현재는 1인 개발이며 아키텍처·요구사항 확정 단계다. 제품 구현은 시작하지 않는다. 아래는 [ADR-0001](docs/architecture/adr/0001-contribution-workflow.md)의 확정된 부분만 정리한 운영 기준이다.
+현재는 1인 개발이며 아키텍처·요구사항 정리와 사용자 지정 ComfyUI Custom Node 개발을 병행한다. 구현 범위는 [개발 문서](docs/development/README.md)를 따른다. 아래는 [ADR-0001](docs/architecture/adr/0001-contribution-workflow.md)의 확정된 부분만 정리한 Git 운영 기준이다.
 
 ## 브랜치와 병합
 
 - GitHub 기본 브랜치와 개발 통합 브랜치는 `develop`이다.
 - 릴리즈는 `main`을 기준으로 한다. 릴리즈 트리거와 버전 체계는 별도 결정한다.
 - 일반 작업은 develop에서, 릴리즈 긴급 수정은 main에서 `hotfix/*`로 분기한다.
+- 사용자 지시(2026-09-21): 작업 브랜치 이름에 `codex/` 접두사를 붙이지 않고 작업 내용을 나타내는 이름을 사용한다. 다른 명명 세부는 ADR-0001의 제안 상태를 유지한다.
 
 | 흐름 | 병합 방법 |
 | --- | --- |

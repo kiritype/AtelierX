@@ -1,0 +1,99 @@
+{
+  "schema_version": "0.1",
+  "kind": "group",
+  "job_id": "job-group",
+  "request_id": "req-group",
+  "group": {
+    "group_id": "group-1",
+    "group_revision": 3,
+    "reference_revision": 2,
+    "work_id": "work-1",
+    "character_id": "character-1",
+    "outfit_id": "outfit-1"
+  },
+  "scope": "full",
+  "targets": [
+    "img-1",
+    "img-2",
+    "img-3"
+  ],
+  "primary_reference": "ref-1",
+  "auxiliary_references": [],
+  "items": [
+    {
+      "image_ref": "img-1",
+      "compared_with": [
+        "ref-1"
+      ],
+      "verdict": "match",
+      "findings": [],
+      "unavailable_features": [],
+      "error": null
+    },
+    {
+      "image_ref": "img-2",
+      "compared_with": [
+        "ref-1"
+      ],
+      "verdict": "mismatch",
+      "findings": [
+        {
+          "code": "ELEMENT_MISMATCH",
+          "feature": "eyes",
+          "expected": "blue",
+          "observed": "brown",
+          "prompt_excerpt": "blue eyes"
+        }
+      ],
+      "unavailable_features": [],
+      "error": null
+    },
+    {
+      "image_ref": "img-3",
+      "compared_with": [
+        "ref-1"
+      ],
+      "verdict": "error",
+      "findings": [],
+      "unavailable_features": [],
+      "error": {
+        "code": "VAL_PROVIDER_TIMEOUT",
+        "message": "Provider did not respond in time.",
+        "stage": "provider"
+      }
+    }
+  ],
+  "counts": {
+    "match": 1,
+    "mismatch": 1,
+    "insufficient": 0,
+    "error": 1
+  },
+  "summary": "mismatch_present",
+  "generation_summary": {
+    "requested": 5,
+    "passed": 4,
+    "generation_failed": 1,
+    "validation_error": 0,
+    "rejected": 0,
+    "cancelled": 0
+  },
+  "evidence": {
+    "profile": {
+      "profile_id": "profile-default",
+      "revision": 1,
+      "output_conditions": false,
+      "positive_prompt": false,
+      "negative_prompt": false,
+      "body_parts": [],
+      "metadata": false,
+      "consistency": true
+    },
+    "provider": {
+      "provider_id": "local-vision",
+      "revision": 1,
+      "model": "configured-vision-model",
+      "timeout_seconds": 180
+    }
+  }
+}

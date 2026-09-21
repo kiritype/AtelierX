@@ -1,5 +1,7 @@
 # 모듈별 기능 대조표
 
+2026-09-13 구현 현황은 [Backend 구현 체크리스트](../development/backend-implementation-checklist.md)에서 별도로 관리한다. 아래 표의 문서 반영·사용자 검토 표시는 구현 완료 표시가 아니다.
+
 상태: **사용자 검토용 초안**. 작성일: 2026-09-11.
 
 목적은 원래 요구한 기능을 복원하고 기존 문서의 누락·축약을 확인하는 것이다. 이 표 작성은 신규 기능, 구현 방식, 모듈 배치 또는 MVP 범위를 승인하는 행위가 아니다. 제품 구현은 시작하지 않는다.
@@ -88,7 +90,7 @@ N-16~N-17은 2026-09-11 추가 확정 요구로 [ADR-0002](../architecture/adr/0
 | G-06 | 최종 출력 이미지 검증·사용자 검토. 진행 중 이미지 Preview 보류 | 사용자 방향 / ADR-0003 | R: Preview UI로 축약 | 파일 접근·반환 계약. 단계별 사용자 검토 이미지는 현재 미채택 | 수정 |
 | G-07 | 결과 파일 Generation 영역 보관. 에러코드·실패 단계 연계 로그·API 오류 제공 | 사용자 합의 / ADR-0003 | R/O: 반영 | 경로·원격 파일 전달·Core Metadata 등록·에러코드 목록 | 수정 |
 | G-08 | Core가 Context와 전체 작업 조정, Generation은 API 입력으로 ComfyUI 실행. SQLite·AI Provider 직접 접근 금지 유지 | 사용자 합의 / ADR-0003 | O/M/R: 반영 | Context 필드·서비스 간 상세 계약 | 수정 |
-| G-09 | 동일 GPU 단일 Generation·FIFO·취소·재시작 상태 확인 복구. Validation 재생성 여부/변경값 → Core 새 시도 요청 | 사용자 합의 / ADR-0003 | Bk: Queue 등 TODO; R: Job으로 축약 | Queue 저장·Batch 세부·기본 재생성 상한·Validation 오류 정책·GPU 공유 | 수정 |
+| G-09 | 동일 GPU 단일 Generation·FIFO·취소·재시작 상태 확인 복구. Validation 재생성 여부/변경값 → Core 새 시도 요청 | 사용자 합의 / ADR-0003 | Bk: Queue 등 TODO; R: Job으로 축약 | Queue 저장·Batch 세부·Generation 오류별 복구·GPU 공유. 재생성 상한·횟수 계산·설정 적용은 ADR-0003 추가 결정, Validation 오류는 ADR-0004·0006 참조 | 수정 |
 | G-10 | LoRA 사용 포함·학습 제외. 별도/외부 Trainer는 향후 검토 | 사용자 합의 / ADR-0003 | R/O: 반영 | 향후 Trainer 도입 여부·시점 | 유지 |
 
 ## 3. Core Backend
@@ -97,10 +99,10 @@ N-16~N-17은 2026-09-11 추가 확정 요구로 [ADR-0002](../architecture/adr/0
 
 | ID | 기능·요구 내용 | 근거 / 상태 | 기존 문서 대조 | 남은 정의·책임 확인 | 확인 |
 | --- | --- | --- | --- | --- | --- |
-| C-01 | 작품 관리 REST 기능 | U1/U11 / B | R: 반영 | 작품 필드·관계·변경·삭제 규칙 | ☐ |
-| C-02 | 캐릭터 및 외형 관리 | U1/U11 / B | R: 반영 | 외형 구성 단위, 캐릭터와 외형의 관계 | ☐ |
-| C-03 | 의상·상의·하의·액세서리 구성 관리 | U1 / B | R: 반영 | 공용 의상, 조합·교체·참조 규칙 | ☐ |
-| C-04 | 전역 Positive / Negative Prompt 관리 | U1 / B | R: 반영 | 적용 범위, 중복·충돌·우선순위 | ☐ |
+| C-01 | 작품 관리 REST 기능 | U1/U11 / B; ADR-0021 및 사용자 정정 | R: 반영 | Prompt category로 관리하며 작품은 생성 문구에서 제외. 관계 표현 재검토, 필드·API·상세 삭제 절차 미정 | 의미 정정 |
+| C-02 | 캐릭터 및 외형 관리 | U1/U11 / B; ADR-0021 사용자 정정 | R: 반영 | 작품 > 캐릭터 > 의상(외형 포함). 별도 외형 선택 표현 대체, 속성·API 상세 미정 | 의미 정정 |
+| C-03 | 의상·상의·하의·액세서리 구성 관리 | U1 / B; ADR-0021 사용자 정정 | R: 반영 | 의상 내부 외형 / 상의 / 하의(풋웨어 포함) 확정. 참조·조합·중첩 충돌 상세 미정 | 의미 정정 |
+| C-04 | 전역 Positive(퀄리티) / Negative Prompt 관리 | U1 / B; ADR-0021·0022 확정 | R: 반영 | 전역 퀄리티 우선 조합·전역 Negative 기본·초기 의상별 Negative 저장 없음. 상세 충돌 탐지 미정 | 유지 |
 | C-05 | 표정·상황·동작 Prompt 관리 | U1 / B | R: 반영 | 분류, 재사용, 조합 규칙 | ☐ |
 | C-06 | 조합 시 상의·하의·의상 포함 여부 선택 | U1 원문 요구 | R: 누락 | 포함 플래그의 위치와 충돌 처리; 실행 위치 미정 | ☐ |
 | C-07 | 여러 Prompt 구성 요소를 조합하는 기능 | U1 원문 요구 | M: Frontend 금지만 명시; Bk: Compiler TODO | 저장·조합·모델별 변환을 분리해서 정의 | ☐ |
@@ -120,6 +122,8 @@ N-16~N-17은 2026-09-11 추가 확정 요구로 [ADR-0002](../architecture/adr/0
 ## 4. Validation Backend
 
 **검증 기능을 독립 REST로 제공**한다. 원래 Local VLM 요구와 이후 외부 multimodal Provider 지원 방향을 함께 보존한다.
+
+2026-09-12 [ADR-0004](../architecture/adr/0004-validation-outcomes-and-errors.md)에서 V-01·V-04·V-07·V-13 관련 입력·판정·오류 경계를 부분 확정했다. 이미지와 실제 생성 Prompt로 검증하고, 명시 요소가 보이지 않거나 상이하면 불합격이다. Core는 자세·구도에 맞게 Prompt를 구성하므로 upper body에서 제외된 하의·footwear는 해당 일치 검사 대상이 아니다. Provider 오류·파싱 실패는 에러코드로 반환하며 자동 이미지 재생성을 유발하지 않는다. 사용자는 CLI·Frontend에서 해당 이미지의 수동 재생성을 요청할 수 있고 Core가 새 시도를 조정한다. 각 행의 나머지 기능·Schema·Provider 설정·검증 재시도는 일괄 확정하지 않는다.
 
 | ID | 기능·요구 내용 | 근거 / 상태 | 기존 문서 대조 | 남은 정의·책임 확인 | 확인 |
 | --- | --- | --- | --- | --- | --- |
@@ -258,6 +262,8 @@ N-16~N-17은 2026-09-11 추가 확정 요구로 [ADR-0002](../architecture/adr/0
 
 ## 검토 기록
 
+2026-09-12: [ADR-0004](../architecture/adr/0004-validation-outcomes-and-errors.md)에 이미지·생성 Prompt 입력, 명시 요소 누락·불일치 불합격, 실행 오류 에러코드 반환·자동 이미지 재생성 금지·수동 재생성 지원을 기록했다. C-06~C-08의 구도별 Prompt 구성 전제 및 G-09·L-08·X-04의 반복 흐름과 연결한다. Validation 전체 항목이나 관련 Client 상세 계약을 검토 완료한 것은 아니다.
+
 N-01~N-10은 유지·보완 확정했고 N-16~N-17은 추가 확정했다. N-11~N-15도 검토 완료했으며 상세 기법·구조는 미정으로 남겼다. 이후 G-01~G-10 및 관련 X 항목을 ADR-0003으로 반영했다. 다른 모듈은 관련 책임 변경을 주석으로 연결했으며 미검토 기능을 일괄 승인하지 않았다.
 
 | 일자 | 항목 ID | 검토 결과 | 변경 내용 / 근거 | 반영 문서·ADR |
@@ -289,3 +295,29 @@ N-01~N-10은 유지·보완 확정했고 N-16~N-17은 추가 확정했다. N-11~
 | 2026-09-11 | X-09 | 수정 | Queue는 REST 페이지 조회 + SSE 변경 알림. 대량 변경 묶음·필요 목록 재조회 | [ADR-0003](../architecture/adr/0003-generation-execution-and-queue.md) |
 
 권장 검토 순서: **Custom Nodes → Generation Backend → Core → Validation → Frontend·CLI·SDK → 모델·파일 관리 → 교차 서비스 흐름**. 첫 검토에서는 기능의 존재·뜻·누락을 확인하고, 책임 배정과 상세 기술 선택은 그 다음에 수행한다.
+
+2026-09-13: [ADR-0007](../architecture/adr/0007-group-image-validation.md)로 V-03의 중복 검사를 초기 범위에서 제외하고, V-05·V-12의 그룹 일관성·선택 재검증·기준 시스템 선정/사용자 수정·기준 교체 후 확인 흐름을 확정했다. 나머지 검사 후보와 전체 Schema는 미정이다.
+
+2026-09-13: [ADR-0008](../architecture/adr/0008-group-reference-selection.md)로 V-05·V-12 관련 기준 선정·비교 부족·충돌·이미지 추가·기준 삭제 처리와 변경 이력 보존을 확정했다. 구체 점수·알고리즘·응답 Schema는 미정이다.
+
+2026-09-13: [ADR-0009](../architecture/adr/0009-group-validation-results.md)로 V-12·V-13 관련 묶음 결과 정보·그룹 요약·부분 결과 보존·사용자 확인을 확정했다. Score·Confidence 등 다른 후보와 기계 검증 Schema는 일괄 승인하지 않는다.
+
+2026-09-13: [ADR-0010](../architecture/adr/0010-group-completion-and-partial-failure.md)로 그룹 고정 대상·묶음 시작 조건·부분 실패/취소·생성 현황과 일관성 요약 분리를 확정했다. 구체 Batch/Job 접수·상태·동시성은 후속 계약이다.
+
+2026-09-13: [ADR-0011](../architecture/adr/0011-validation-input-context.md)로 V-01·V-04·V-05 및 교차 서비스의 검증 입력 정보·최종 출력 검사·Core 준비·외부 AI 최소 Context를 확정했다. 필수/선택·전송·Schema는 미정이다.
+
+2026-09-13: [ADR-0012](../architecture/adr/0012-validation-image-transfer-and-required-input.md)로 검증 이미지 조회 API/업로드·필수 입력·접근 오류·선택 정보 부족 처리 확정. 전송/인증 구현·Schema는 후속이다.
+
+2026-09-13: [ADR-0013](../architecture/adr/0013-validation-access-and-temporary-files.md)로 검증 이미지 접근·업로드 제한·임시 파일 수명 원칙을 확정했다. 인증 기술·제한/기간 값은 미정이다.
+
+2026-09-13: [ADR-0014](../architecture/adr/0014-validation-checks-and-profiles.md)로 V-02~V-06·V-13·V-14·V-16의 검사 운영·기본 On/Off·Profile·검사 순서 원칙을 확정했다. 구체 알고리즘·Metadata 영향·사용자 세부 제어는 후속이다.
+
+2026-09-13: [ADR-0015](../architecture/adr/0015-validation-providers-and-fallback.md)로 V-07~V-11·V-15의 Provider 등록/설정·지원 기능 처리·자동 Fallback 제외·수동 변경 재검증을 확정했다. 구체 Provider 구현/모델·수치·품질 보장은 테스트/후속 설계 대상이다.
+
+2026-09-13: [ADR-0016](../architecture/adr/0016-validation-execution-and-gpu-sharing.md)로 Validation 비동기 실행·Provider Queue/동시성·취소/복구·Core 공유 GPU 조정을 확정했다. 구체 런타임·저장·원자성·수치는 후속이다.
+
+2026-09-13: [ADR-0017](../architecture/adr/0017-regeneration-change-validation.md)로 재생성 변경 범위·제작 의도 보존·일괄 적용·Validation/Core/Generation 검사 책임을 확정했다. 구체 Schema·검사 알고리즘·Generation 오류 복구는 후속이다.
+
+2026-09-13: ADR-0018로 묶음 운영 예외 확정. ADR-0019는 사용자 위임에 따른 API/저장/운영값 초안이며 각 세부를 사용자 승인 완료로 표시하지 않는다.
+
+2026-09-13: ADR-0020으로 검증 접수/응답 유실·취소 경합·과거 결과·Core 중복 저장 방지를 확정했다. Core 도메인·Prompt·Preset·Import/Export 등의 개별 요구는 별도 검토 대상이다.

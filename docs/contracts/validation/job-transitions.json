@@ -1,0 +1,8 @@
+{
+  "queued": {"dispatch": "running", "cancel": "cancelled", "recover": "queued", "input_failure": "failed"},
+  "running": {"finish": "completed", "fail": "failed", "timeout": "failed", "cancel": "cancelling", "recover_attached": "running", "recover_untraceable": "failed"},
+  "cancelling": {"cancel_confirmed": "cancelled", "late_response": "cancelled", "recover_attached": "cancelling", "recover_untraceable": "failed"},
+  "completed": {"late_response": "completed", "cancel": "completed"},
+  "failed": {"late_response": "failed", "cancel": "failed"},
+  "cancelled": {"late_response": "cancelled", "cancel": "cancelled"}
+}

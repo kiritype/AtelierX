@@ -1,0 +1,7 @@
+{
+  "prompt": {
+    "1": {"class_type":"LoadImage","inputs":{"image":"REPLACE_WITH_INPUT_IMAGE.png"}},
+    "2": {"class_type":"AtelierXEncodeSave","inputs":{"image":["1",0],"filename_prefix":"image","webp_enabled":true,"webp_quality":90}}
+  },
+  "client_id":"atelierx-encode-example"
+}

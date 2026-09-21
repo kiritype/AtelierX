@@ -1,0 +1,27 @@
+{
+  "seed_mode": "random",
+  "generation_inputs": {
+    "diffusion_model": "waiANIMA_v10Base10.safetensors",
+    "text_encoder": "waiANIMA_v10Base10_txt.safetensors",
+    "vae": "qwen_image_vae.safetensors",
+    "negative_prompt": "low quality, blurry",
+    "width": 1024,
+    "height": 1024,
+    "seed": 12345,
+    "steps": 24,
+    "cfg": 4.5,
+    "sampler": "euler_ancestral",
+    "scheduler": "normal",
+    "loras": []
+  },
+  "postprocess": {
+    "upscale": {"upscale_model": "4x-UltraSharp.safetensors", "scale": 1.5},
+    "encode": {"webp_enabled": true, "webp_quality": 90}
+  },
+  "llm": {
+    "url": "http://localhost:1234/v1/chat/completions",
+    "model": "qwen3-vl-8b-instruct-abliterated",
+    "api_key_env": "ATELIERX_PLANNER_API_KEY",
+    "timeout_seconds": 120
+  }
+}

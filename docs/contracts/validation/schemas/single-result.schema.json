@@ -1,0 +1,426 @@
+{
+  "$defs": {
+    "Change": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "enum": [
+            "positive_prompt",
+            "negative_prompt",
+            "seed",
+            "cfg",
+            "steps",
+            "sampler",
+            "scheduler",
+            "model_id",
+            "text_encoder_id",
+            "vae_id",
+            "width",
+            "height",
+            "loras",
+            "postprocessing_snapshot_id"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/Lora"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        },
+        "reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "value",
+        "reason"
+      ],
+      "title": "Change",
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^VAL_[A-Z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Message",
+          "type": "string"
+        },
+        "stage": {
+          "enum": [
+            "input",
+            "access",
+            "provider",
+            "response",
+            "internal",
+            "recovery"
+          ],
+          "title": "Stage",
+          "type": "string"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "stage"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "$ref": "#/$defs/Profile"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        }
+      },
+      "required": [
+        "profile",
+        "provider"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "feature": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Feature",
+          "type": "string"
+        },
+        "expected": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Expected",
+          "type": "string"
+        },
+        "observed": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Observed",
+          "type": "string"
+        },
+        "prompt_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Excerpt"
+        }
+      },
+      "required": [
+        "code",
+        "feature",
+        "expected",
+        "observed"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Lora": {
+      "additionalProperties": false,
+      "properties": {
+        "model_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model Id",
+          "type": "string"
+        },
+        "strength": {
+          "title": "Strength",
+          "type": "number"
+        }
+      },
+      "required": [
+        "model_id",
+        "strength"
+      ],
+      "title": "Lora",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "output_conditions": {
+          "title": "Output Conditions",
+          "type": "boolean"
+        },
+        "positive_prompt": {
+          "title": "Positive Prompt",
+          "type": "boolean"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "boolean"
+        },
+        "body_parts": {
+          "items": {
+            "enum": [
+              "hands",
+              "face",
+              "limbs"
+            ],
+            "type": "string"
+          },
+          "title": "Body Parts",
+          "type": "array"
+        },
+        "metadata": {
+          "title": "Metadata",
+          "type": "boolean"
+        },
+        "consistency": {
+          "title": "Consistency",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "output_conditions",
+        "positive_prompt",
+        "negative_prompt",
+        "body_parts",
+        "metadata",
+        "consistency"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Provider": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_id",
+        "revision",
+        "model",
+        "timeout_seconds"
+      ],
+      "title": "Provider",
+      "type": "object"
+    },
+    "Regeneration": {
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        },
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/Change"
+          },
+          "title": "Changes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "required",
+        "reason",
+        "changes"
+      ],
+      "title": "Regeneration",
+      "type": "object"
+    },
+    "SingleVerdict": {
+      "additionalProperties": false,
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "regeneration": {
+          "$ref": "#/$defs/Regeneration"
+        }
+      },
+      "required": [
+        "findings",
+        "regeneration"
+      ],
+      "title": "SingleVerdict",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "kind": {
+      "const": "single",
+      "title": "Kind",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Job Id",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "image_ref": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Image Ref",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "passed",
+        "rejected",
+        "error"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SingleVerdict"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Error"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence": {
+      "$ref": "#/$defs/Evidence"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "job_id",
+    "request_id",
+    "image_ref",
+    "outcome",
+    "result",
+    "error",
+    "evidence"
+  ],
+  "title": "SingleResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

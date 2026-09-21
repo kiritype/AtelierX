@@ -1,0 +1,28 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "AtelierXAnimaGenerate",
+      "inputs": {
+        "diffusion_model": "waiANIMA_v10Base10.safetensors",
+        "text_encoder": "waiANIMA_v10Base10_txt.safetensors",
+        "vae": "qwen_image_vae.safetensors",
+        "positive_prompt": "A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+        "negative_prompt": "child, minor, nude, nsfw, blurry, low quality",
+        "width": 768,
+        "height": 1024,
+        "seed": 123456789,
+        "steps": 24,
+        "cfg": 4.5,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal"
+      }
+    },
+    "2": {
+      "class_type": "PreviewImage",
+      "inputs": {
+        "images": ["1", 0]
+      }
+    }
+  },
+  "client_id": "atelierx-anima-example"
+}

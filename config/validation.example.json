@@ -1,0 +1,35 @@
+{
+  "core": {
+    "url": "http://127.0.0.1:8191",
+    "generation_server_id": "generation-local"
+  },
+  "generation_sources": {
+    "generation-local": {
+      "url": "http://127.0.0.1:8189",
+      "token_env": "ATELIERX_SERVICE_TOKEN"
+    }
+  },
+  "providers": {
+    "local-vision": {
+      "url": "http://localhost:1234/v1",
+      "api_key": "lm-studio",
+      "model": "qwen3-vl-8b-instruct-abliterated",
+      "revision": 1,
+      "timeout_seconds": 180,
+      "response_format": "json_schema",
+      "image_format": "png"
+    }
+  },
+  "profiles": {
+    "single-default": {
+      "profile_id": "single-default",
+      "revision": 1,
+      "output_conditions": true,
+      "positive_prompt": true,
+      "negative_prompt": true,
+      "body_parts": [],
+      "metadata": false,
+      "consistency": false
+    }
+  }
+}

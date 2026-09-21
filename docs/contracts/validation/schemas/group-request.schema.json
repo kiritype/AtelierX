@@ -1,0 +1,432 @@
+{
+  "$defs": {
+    "Feature": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Name",
+          "type": "string"
+        },
+        "expected": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Expected",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "expected"
+      ],
+      "title": "Feature",
+      "type": "object"
+    },
+    "GenerationSource": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "generation",
+          "title": "Type",
+          "type": "string"
+        },
+        "server_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Server Id",
+          "type": "string"
+        },
+        "image_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Image Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "server_id",
+        "image_id",
+        "sha256"
+      ],
+      "title": "GenerationSource",
+      "type": "object"
+    },
+    "GenerationSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "requested": {
+          "minimum": 0,
+          "title": "Requested",
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "generation_failed": {
+          "minimum": 0,
+          "title": "Generation Failed",
+          "type": "integer"
+        },
+        "validation_error": {
+          "minimum": 0,
+          "title": "Validation Error",
+          "type": "integer"
+        },
+        "rejected": {
+          "minimum": 0,
+          "title": "Rejected",
+          "type": "integer"
+        },
+        "cancelled": {
+          "minimum": 0,
+          "title": "Cancelled",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "requested",
+        "passed",
+        "generation_failed",
+        "validation_error",
+        "rejected",
+        "cancelled"
+      ],
+      "title": "GenerationSummary",
+      "type": "object"
+    },
+    "GroupContext": {
+      "additionalProperties": false,
+      "properties": {
+        "group_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Group Id",
+          "type": "string"
+        },
+        "group_revision": {
+          "minimum": 0,
+          "title": "Group Revision",
+          "type": "integer"
+        },
+        "reference_revision": {
+          "minimum": 0,
+          "title": "Reference Revision",
+          "type": "integer"
+        },
+        "work_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Work Id",
+          "type": "string"
+        },
+        "character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Character Id",
+          "type": "string"
+        },
+        "outfit_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Outfit Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "group_revision",
+        "reference_revision",
+        "work_id",
+        "character_id",
+        "outfit_id"
+      ],
+      "title": "GroupContext",
+      "type": "object"
+    },
+    "Image": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Ref",
+          "type": "string"
+        },
+        "source": {
+          "discriminator": {
+            "mapping": {
+              "generation": "#/$defs/GenerationSource",
+              "upload": "#/$defs/UploadSource"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/GenerationSource"
+            },
+            {
+              "$ref": "#/$defs/UploadSource"
+            }
+          ],
+          "title": "Source"
+        },
+        "positive_prompt": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Positive Prompt",
+          "type": "string"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "source",
+        "positive_prompt",
+        "negative_prompt"
+      ],
+      "title": "Image",
+      "type": "object"
+    },
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "output_conditions": {
+          "title": "Output Conditions",
+          "type": "boolean"
+        },
+        "positive_prompt": {
+          "title": "Positive Prompt",
+          "type": "boolean"
+        },
+        "negative_prompt": {
+          "title": "Negative Prompt",
+          "type": "boolean"
+        },
+        "body_parts": {
+          "items": {
+            "enum": [
+              "hands",
+              "face",
+              "limbs"
+            ],
+            "type": "string"
+          },
+          "title": "Body Parts",
+          "type": "array"
+        },
+        "metadata": {
+          "title": "Metadata",
+          "type": "boolean"
+        },
+        "consistency": {
+          "title": "Consistency",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "revision",
+        "output_conditions",
+        "positive_prompt",
+        "negative_prompt",
+        "body_parts",
+        "metadata",
+        "consistency"
+      ],
+      "title": "Profile",
+      "type": "object"
+    },
+    "Provider": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Model",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider_id",
+        "revision",
+        "model",
+        "timeout_seconds"
+      ],
+      "title": "Provider",
+      "type": "object"
+    },
+    "UploadSource": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "upload",
+          "title": "Type",
+          "type": "string"
+        },
+        "upload_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^\\S+$",
+          "title": "Upload Id",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "upload_id",
+        "sha256"
+      ],
+      "title": "UploadSource",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "kind": {
+      "const": "group",
+      "title": "Kind",
+      "type": "string"
+    },
+    "group": {
+      "$ref": "#/$defs/GroupContext"
+    },
+    "scope": {
+      "enum": [
+        "full",
+        "partial"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "images": {
+      "items": {
+        "$ref": "#/$defs/Image"
+      },
+      "maxItems": 128,
+      "minItems": 2,
+      "title": "Images",
+      "type": "array"
+    },
+    "targets": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Targets",
+      "type": "array"
+    },
+    "primary_reference": {
+      "maxLength": 200,
+      "minLength": 1,
+      "pattern": "^\\S+$",
+      "title": "Primary Reference",
+      "type": "string"
+    },
+    "auxiliary_references": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "type": "string"
+      },
+      "title": "Auxiliary References",
+      "type": "array"
+    },
+    "common_features": {
+      "items": {
+        "$ref": "#/$defs/Feature"
+      },
+      "minItems": 1,
+      "title": "Common Features",
+      "type": "array"
+    },
+    "generation_summary": {
+      "$ref": "#/$defs/GenerationSummary"
+    },
+    "profile": {
+      "$ref": "#/$defs/Profile"
+    },
+    "provider": {
+      "$ref": "#/$defs/Provider"
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "group",
+    "scope",
+    "images",
+    "targets",
+    "primary_reference",
+    "auxiliary_references",
+    "common_features",
+    "generation_summary",
+    "profile",
+    "provider"
+  ],
+  "title": "GroupRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
