@@ -97,12 +97,47 @@ class CoreValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["outcome"], "passed")
         self.assertEqual(self.posts[0]["image"]["positive_prompt"], "blue eyes, shirt, upper body")
         self.assertEqual(self.posts[0]["image"]["source"]["image_id"], self.image["generation_image_id"])
+        self.assertEqual(self.posts[0]["expected_output"]["alpha"], "not_required")
         _, image = await self.request("GET", "/v1/images/" + self.image["id"])
         self.assertEqual(image["validation"]["outcome"], "passed")
         await self.client.close()
         self.client = await self.new_client()
         status, duplicate = await self.submit()
         self.assertEqual((status, duplicate["id"], len(self.posts)), (200, run["id"], 1))
+
+    async def test_alpha_requirement_uses_saved_postprocess_snapshot_for_revalidation(self):
+        core = self.client.app[CORE]
+        preset = core.presets.create("postprocess", "Transparent character", {
+            "alpha": {"segmentation_model": "person.pt"}})
+        inputs = {"diffusion_model": "anima.safetensors", "text_encoder": "anima-te.safetensors",
+                  "vae": "anima-vae.safetensors", "width": 512, "height": 512, "seed": 7,
+                  "steps": 24, "cfg": 4.5, "sampler": "euler", "scheduler": "normal"}
+        snapshot = core.preview({"group_id": self.task["group_id"], "framing": "upper_body",
+                                 "generation_inputs": inputs,
+                                 "presets": {"postprocess": {"id": preset["id"], "revision": 1}}})["snapshot"]
+        # Later preset edits apply to new Tasks only; this image retains the
+        # alpha stage selected when its Task snapshot was created.
+        core.presets.update("postprocess", preset["id"], 1, {
+            "settings": {"encode": {"webp_enabled": True}}})
+        task = core.store.create_task("alpha-snapshot", "alpha-snapshot", self.task["group_id"], snapshot)
+        image = {"id": str(uuid.uuid4()), "task_id": task["id"], "group_id": task["group_id"],
+                 "generation_image_id": str(uuid.uuid4()) + "-0", "sha256": hashlib.sha256(b"alpha").hexdigest(),
+                 "media_type": "image/webp", "bytes": 5, "validation_state": "not_requested"}
+        core.store.finish_generation(task, [image])
+
+        first, created = core.validation.submit(image["id"], "alpha-revalidation", {"profile_id": "p", "provider_id": "v"})
+        repeated, repeated_created = core.validation.submit(image["id"], "alpha-revalidation", {"profile_id": "p", "provider_id": "v"})
+        self.assertTrue(created)
+        self.assertFalse(repeated_created)
+        self.assertEqual(repeated["id"], first["id"])
+        self.assertEqual(first["request"]["expected_output"], {
+            "width": 512, "height": 512, "media_type": "image/webp", "alpha": "transparency_required"})
+
+        await core.validation.advance(first)
+        await core.validation.advance(first)
+        revalidated, revalidated_created = core.validation.submit(image["id"], "alpha-revalidation-new", {"profile_id": "p", "provider_id": "v"})
+        self.assertTrue(revalidated_created)
+        self.assertEqual(revalidated["request"]["expected_output"]["alpha"], "transparency_required")
 
     async def test_error_is_recorded_without_regeneration_and_manual_revalidation(self):
         self.outcome = "error"

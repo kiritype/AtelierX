@@ -82,9 +82,15 @@ class CoreValidation:
             "positive_prompt": gen["positive_prompt"], "negative_prompt": gen["negative_prompt"],
             "negative_sources": task["snapshot"].get("negative_sources", {"global": gen["negative_prompt"], "character": ""})},
             generation_attempt_id=task["id"], profile=profile, provider=provider,
-            expected_output={"width": self.output_dimension(task, "width"), "height": self.output_dimension(task, "height"), "media_type": image["media_type"], "alpha": "not_required"},
+            expected_output={"width": self.output_dimension(task, "width"), "height": self.output_dimension(task, "height"), "media_type": image["media_type"], "alpha": self.output_alpha(task)},
             generation_settings={key: gen[key] for key in ("seed", "steps", "cfg") if key in gen} or None)
         return self.core.store.create_validation(image_id, key, fingerprint, payload, self.url), True
+
+    @staticmethod
+    def output_alpha(task):
+        """Derive the output check from the immutable generation snapshot."""
+        postprocess = task.get("snapshot", {}).get("postprocess")
+        return "transparency_required" if isinstance(postprocess, dict) and "alpha" in postprocess else "not_required"
 
     @staticmethod
     def output_dimension(task, axis):
