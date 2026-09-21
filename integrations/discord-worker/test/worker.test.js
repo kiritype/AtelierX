@@ -62,7 +62,7 @@ test("defers an ephemeral draw and sends the exact normalized job once", async (
   await Promise.all(ctx.promises);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://bridge.example/v1/discord/jobs");
-  assert.equal(calls[0].init.redirect, "error");
+  assert.equal(calls[0].init.redirect, "manual");
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     interaction_id: "111111111111111111", application_id: baseEnv.DISCORD_APPLICATION_ID, interaction_token: "interaction-token", user_id: "987654321098765432",
     attachment_size_limit: 10485760, received_at: now, prompt: "draw a fox", mode: "direct"
@@ -83,6 +83,21 @@ test("a bridge 5xx is acceptance-unknown and never retries dispatch", async () =
   const edit = calls.find((call) => call.init.method === "PATCH");
   assert.match(edit.url, /^https:\/\/discord\.com\/api\/v10\/webhooks\//);
   assert.match(JSON.parse(edit.init.body).content, /acceptance is unknown/);
+});
+
+test("a bridge redirect is not followed and is reported as acceptance-unknown", async () => {
+  const { request, ctx } = await signedRequest(drawInteraction());
+  const calls = [];
+  await handleInteraction(request, baseEnv, ctx, { now: () => now, fetch: async (url, init) => {
+    calls.push({ url, init });
+    if (url === baseEnv.BRIDGE_URL) return new Response(null, { status: 302, headers: { location: "https://untrusted.example/" } });
+    return new Response(null, { status: 200 });
+  } });
+  await Promise.all(ctx.promises);
+  assert.equal(calls.filter((call) => call.url === baseEnv.BRIDGE_URL).length, 1);
+  assert.equal(calls[0].init.redirect, "manual");
+  assert.equal(calls.some((call) => call.url === "https://untrusted.example/"), false);
+  assert.equal(calls.find((call) => call.init.method === "PATCH").init.redirect, "manual");
 });
 
 test("status uses its status bridge path and a fresh interaction token", async () => {

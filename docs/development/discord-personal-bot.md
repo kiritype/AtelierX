@@ -95,3 +95,17 @@ Worker 설치·검증·등록 방법은 [Worker README](../../integrations/disco
 ### 사용자 직접 실행 후 Tunnel 연결 확인
 
 2026-09-21 사용자가 RDP에서 Quick Tunnel을 직접 실행했다. 제공한 임시 주소를 대상으로 `/health` 인증 없음 401, 올바른 Bridge 인증 200을 확인했다. Worker `atelierx-discord-worker`의 `BRIDGE_URL`을 해당 Tunnel의 `/v1/discord/jobs`로 반영했고 secrets 갱신 성공을 확인했다. 실제 주소는 Git 제외 로컬 설정에 저장한다. Quick Tunnel은 실행 창 종료 시 끊기고 재실행 시 주소가 바뀌므로 새 주소 반영이 필요하다. Discord에서 시작한 `/draw`의 실제 이미지 응답은 아직 미검증이다. `cftm.net` 기반 고정 Tunnel은 아직 구성하지 않았다.
+
+
+### 첫 Discord 요청 장애 진단
+
+실제 `/draw` 요청은 Discord에서 비공개 대기 응답을 받았지만 로컬 Bridge 접수 기록은 없었다. Cloudflare 로그에서 `bridge_dispatch_failed`(unknown), `discord_original_response_edit_failed`를 확인했다. 실제 workerd를 사용하는 격리 Miniflare 실행으로 `fetch(..., {redirect: "error"})`가 전송 전에 TypeError를 발생시키는 것을 재현했다. 해당 런타임은 follow/manual만 지원한다. 따라서 Node의 모의 fetch 테스트와 서명 PING만으로 외부 요청 경로를 검증한 이전 시험에는 공백이 있었다. 실제 이미지 생성이나 Discord 전달 성공으로 집계하지 않는다.
+
+수정: 외부 fetch를 `redirect: "manual"`로 전환해 리디렉션을 따라가지 않고 비정상 상태로 처리한다. 실패 로그에는 정해진 사유 코드와 HTTP 상태만 추가하며 토큰·웹훅 URL은 기록하지 않는다. 수정 후 실제 workerd의 서명된 draw 요청이 모의 Bridge에 정확히 한 번 도착했고 배포 dry-run도 통과했다. Worker version `91fd9a21-0ed1-4149-a9d2-679bd43d4816`으로 배포했다. 원래 요청의 Core by-key 조회는 404였으며 자동 재접수하지 않았다. 사용자에게 새 요청 한 번으로 실제 Discord 경로를 재검증하도록 안내했다.
+
+
+### 수정 후 실제 Discord 이미지 응답 성공
+
+사용자가 테스트 Guild에서 `/draw prompt:1 girl mode:Direct`를 새로 요청했다. 접수 ID 안내 후 Core `completed`, Bridge `delivered`, error=null, delivery_attempts=0을 확인했다. 실제 생성 이미지 한 장의 PNG/WebP는 각각 1536×1536이며 Core content API로 읽어 decode·SHA-256·바이트 수를 검증했다. 로컬 근거는 `artifacts/discord-first-live-result.json`이다. Validation은 `not_requested`이므로 품질 합격으로 해석하지 않는다. Discord에서 시작한 direct 생성→업스케일→이미지 전달 경로를 실제 검증한 결과이며, natural 모드의 Discord 전체 경로·친구 권한·장기 운영·고정 Tunnel은 아직 미검증이다.
+
+회귀 검증: Worker 테스트 9개 통과(실제 Miniflare/workerd→모의 Bridge 전송 및 3xx 리디렉션 미추적 포함). 기존 Node 모의 테스트와 실제 런타임 테스트를 구분한다. 오류 응답에 본문이 없어도 HTTP 상태 분류를 보존하는 보완을 포함한 최종 Worker version은 `06a15e20-b2f4-4e2f-a210-299ab14126ad`이며 배포 완료했다. 실제 Discord 성공은 앞선 redirect 수정 version에서 확인한 결과다.

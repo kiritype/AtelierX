@@ -99,20 +99,21 @@ async function dispatchAndReport(command, config, fetchImpl) {
   const message = result.definiteFailure
     ? `The local bridge rejected this request (request ${command.payload.interaction_id}).`
     : `Request ${command.payload.interaction_id} may have reached the local bridge, but acceptance is unknown. It was not sent again automatically.`;
-  console.error(JSON.stringify({ event: "bridge_dispatch_failed", command: command.kind, interaction_id: command.payload.interaction_id, outcome: result.definiteFailure ? "rejected" : "unknown" }));
+  console.error(JSON.stringify({ event: "bridge_dispatch_failed", command: command.kind, interaction_id: command.payload.interaction_id, outcome: result.definiteFailure ? "rejected" : "unknown", reason: result.reason, bridge_status: result.status ?? null }));
   await editOriginalResponse(fetchImpl, command.payload, message);
 }
 
 async function postJson(fetchImpl, url, body, headers, timeoutMs) {
   try {
     const { response, text } = await fetchJsonWithDeadline(fetchImpl, url, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) }, timeoutMs);
-    if (response.status >= 400 && response.status < 500) return { accepted: false, definiteFailure: true };
-    if (response.status !== 200 && response.status !== 202) return { accepted: false, definiteFailure: false };
+    if (response.status >= 400 && response.status < 500) return { accepted: false, definiteFailure: true, reason: "bridge_http_4xx", status: response.status };
+    if (response.status >= 500) return { accepted: false, definiteFailure: false, reason: "bridge_http_5xx", status: response.status };
+    if (response.status !== 200 && response.status !== 202) return { accepted: false, definiteFailure: false, reason: "bridge_http_unexpected", status: response.status };
     const payload = parseJson(text);
     if (payload?.interaction_id === body.interaction_id && isNonEmptyString(payload.state)) return { accepted: true, state: payload.state };
-    return { accepted: false, definiteFailure: false };
-  } catch {
-    return { accepted: false, definiteFailure: false };
+    return { accepted: false, definiteFailure: false, reason: "bridge_response_invalid", status: response.status };
+  } catch (error) {
+    return { accepted: false, definiteFailure: false, reason: error?.name === "AbortError" ? "bridge_timeout" : "bridge_transport_error" };
   }
 }
 
@@ -128,23 +129,29 @@ function bridgeHeaders(config) {
 async function editOriginalResponse(fetchImpl, payload, content) {
   const url = `${DISCORD_API_BASE}/webhooks/${encodeURIComponent(payload.application_id)}/${encodeURIComponent(payload.interaction_token)}/messages/@original`;
   try {
-    await fetchWithTimeout(fetchImpl, url, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }, DISCORD_TIMEOUT_MS);
-  } catch {
-    console.error(JSON.stringify({ event: "discord_original_response_edit_failed", interaction_id: payload.interaction_id }));
+    const response = await fetchWithTimeout(fetchImpl, url, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }, DISCORD_TIMEOUT_MS);
+    if (!response.ok) console.error(JSON.stringify({ event: "discord_original_response_edit_failed", interaction_id: payload.interaction_id, reason: "discord_http_error", discord_status: response.status }));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "discord_original_response_edit_failed", interaction_id: payload.interaction_id, reason: error?.name === "AbortError" ? "discord_timeout" : "discord_transport_error" }));
   }
 }
 
 async function fetchWithTimeout(fetchImpl, url, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try { return await fetchImpl(url, { ...init, redirect: "error", signal: controller.signal }); } finally { clearTimeout(timer); }
+  // workerd supports manual redirects, while redirect:"error" is rejected at this compatibility date.
+  // Manual mode preserves the response status and never forwards bridge credentials to another URL.
+  try { return await fetchImpl(url, { ...init, redirect: "manual", signal: controller.signal }); } finally { clearTimeout(timer); }
 }
 
 async function fetchJsonWithDeadline(fetchImpl, url, init, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(url, { ...init, redirect: "error", signal: controller.signal });
+    const response = await fetchImpl(url, { ...init, redirect: "manual", signal: controller.signal });
+    // A non-acceptance status is enough to classify the outcome. Do not require
+    // an error response body, which is commonly absent on tunnel and gateway 5xx.
+    if (response.status !== 200 && response.status !== 202) return { response, text: null };
     const result = await readLimitedStream(response.body, MAX_BODY_BYTES);
     if (!result.ok) throw new Error(result.error);
     return { response, text: result.text };
