@@ -99,6 +99,21 @@ class CoreValidation:
             async with self.core.session.request(method, self.url + path, headers=headers, allow_redirects=False, **kwargs) as response:
                 if response.status == 404:
                     return None
+                # A gateway/service timeout leaves a persisted dispatch intent
+                # ambiguous. Keep it active so the next tick can resolve by
+                # idempotency key. A Validation-originated VAL_* error retains
+                # its explicit terminal meaning even when sent via a gateway.
+                if response.status in (502, 503, 504):
+                    try:
+                        failure = await response.json()
+                        error = failure.get("error", {})
+                        if isinstance(error.get("code"), str) and error["code"].startswith("VAL_") and isinstance(error.get("message"), str):
+                            raise ApiError(error["code"], error["message"], 502)
+                    except ApiError:
+                        raise
+                    except (aiohttp.ClientError, ValueError, AttributeError):
+                        pass
+                    raise ApiError("CORE_VALIDATION_UNAVAILABLE", "Validation temporarily unavailable", 503)
                 if response.status not in (200, 202):
                     try:
                         failure = await response.json()

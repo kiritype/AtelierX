@@ -1,5 +1,7 @@
 # 개발 문서 진입점
 
+[2026-09-21 구현 현황 점검](implementation-status-2026-09-21.md): 현재 코드 기준의 구현·부분 구현·미구현·미검증·유예 구분. 아래 과거 시점별 기록보다 이 점검과 최신 REST 명세를 우선 참고한다.
+
 [대량 제작 flow 재검토](batch-production-flow-review.md): 개수 상한 없는 논리 제작 작업, 사용자 조각 체크 선택, 내부 분할 생성·묶음 검증 및 기존 32개 제약 해소 방향. 구현 전 검토.
 
 [분류 트리·자유 Prompt 입력](frontend-ux-tree-prompts.md): 제작/갤러리 분류 탐색, 랜덤 Seed·Sampler/Scheduler 선택, 여러 줄 구도·표정·동작·상황 및 대량 조각 사전 검토.
@@ -14,7 +16,7 @@
 
 [현재 REST API 명세](../api/rest-api.md)와 [Negative 출처 분리 ADR](../architecture/adr/0023-negative-prompt-sources.md)을 참고한다.
 
-[Backend 구현 체크리스트](backend-implementation-checklist.md): 확정 요구·코드·시험을 대조한 현재 완료/부분/미구현/미검증 범위와 권장 순서. 과거 시점별 개발 기록의 미구현 표현보다 이 현황표를 우선 참고한다.
+[Backend 구현 체크리스트](backend-implementation-checklist.md): 9월 13일의 요구·코드·시험 대조와 시점별 개발 기록. 현재 구현 상태는 상단의 2026-09-21 점검을 따른다.
 
 [새 생성·전체 후처리·실제 VLM 통합](real-vlm-pipeline-2026-09-13.md): WebP Provider 호환성 수정 후 PNG/WebP 실제 검증과 Core 재시작 보존 확인. Backend 회귀 39개 통과.
 

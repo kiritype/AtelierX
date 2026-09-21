@@ -1,8 +1,12 @@
 """Durable queue checks using real SQLite and simulated execution providers."""
 import asyncio
+import time
 import unittest
+import uuid
 from pathlib import Path
 
+from atelierx.common import canonical
+from atelierx.core_groups import CoreGroups
 from atelierx.core_production_plans import ProductionPlans, WINDOW
 from atelierx.core_store import Store
 import test_production_plans as fixtures
@@ -77,6 +81,31 @@ class PlanRecoveryTests(unittest.TestCase):
         asyncio.run(self.plans.tick())
         self.assertEqual(self.store.task(task["id"])["state"], "cancelled")
         self.assertEqual(self.plans.get(plan["id"])["counts"], {"cancelled": 2})
+
+    def test_real_group_run_lookup_recovers_then_cancels_after_database_reopen(self):
+        """Use the production SQLite lookup when a comparison link was not saved."""
+        self.reference()
+        plan, _ = self.plans.create("comparison-link-gap", self.body())
+        self.plans.start(plan["id"], {"plan_hash": plan["plan_hash"]})
+        CoreGroups(self.core)
+        run_id = str(uuid.uuid4())
+        request_key = f"production-plan-group:{plan['id']}:0:0"
+        run = {"id": run_id, "group_id": self.group["id"], "created_at": time.time(), "state": "queued",
+               "request": {"reference_revision": 1}, "outcome": None, "result": None, "error": None}
+        with self.store.db:
+            self.store.db.execute("INSERT INTO group_runs VALUES(?,?,?,?)",
+                                  (run_id, request_key, "fault-test", canonical(run)))
+        self.reopen()
+        self.core.groups = CoreGroups(self.core)
+        self.plans.recover_comparison_links(self.plans.get(plan["id"]))
+        linked = self.plans.comparisons(plan["id"])
+        self.assertEqual([(item["index"], item["run_id"], item["state"]) for item in linked],
+                         [(0, run_id, "queued")])
+        self.plans.cancel(plan["id"])
+        self.plans.advance(self.plans.get(plan["id"]))
+        self.assertEqual(self.core.groups.get(run_id)["state"], "cancelled")
+        self.plans.advance(self.plans.get(plan["id"]))
+        self.assertEqual(self.plans.get(plan["id"])["state"], "cancelled")
 
     def test_single_validation_cancel_waits_and_never_dispatches_more(self):
         plan, _ = self.plans.create("single-cancel", self.body(10))

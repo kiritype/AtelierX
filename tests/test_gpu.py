@@ -2,8 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
+import aiohttp
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 from atelierx.core_store import Store
-from atelierx.gpu import GpuCoordinator
+from atelierx.gpu import GpuCoordinator, permission
 
 
 class GpuTests(unittest.IsolatedAsyncioTestCase):
@@ -41,3 +44,34 @@ class GpuTests(unittest.IsolatedAsyncioTestCase):
             await gpu.release("generation", "a")
             self.assertEqual(gpu.state()["waiting"], [])
             store.close()
+
+    async def test_malformed_coordinator_acknowledgement_withholds_permission(self):
+        malformed = web.Application()
+        async def invalid_json(request):
+            return web.Response(text="{", content_type="application/json")
+        malformed.router.add_post("/v1/gpu/acquire", invalid_json)
+        server = TestServer(malformed)
+        await server.start_server()
+        class Service:
+            coordinator_url = str(server.make_url("/"))
+            token = "token"
+            def save(self, job): pass
+        try:
+            async with aiohttp.ClientSession() as session:
+                service = Service(); service.session = session
+                self.assertFalse(await permission(service, {"job_id": "bad-json"}, "generation"))
+        finally:
+            await server.close()
+
+        non_object = web.Application()
+        async def array_json(request):
+            return web.json_response([])
+        non_object.router.add_post("/v1/gpu/acquire", array_json)
+        server = TestServer(non_object)
+        await server.start_server()
+        try:
+            async with aiohttp.ClientSession() as session:
+                service = Service(); service.coordinator_url = str(server.make_url("/")); service.session = session
+                self.assertFalse(await permission(service, {"job_id": "array-json"}, "generation"))
+        finally:
+            await server.close()

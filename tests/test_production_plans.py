@@ -37,6 +37,10 @@ class FakeGroups:
     def get(self, run_id):
         return self.runs[run_id]
 
+    def runs_with_key_prefix(self, prefix):
+        return [dict(run, request_key=key) for _, key, _, _, run_id in self.calls if key.startswith(prefix)
+                for run in [self.runs[run_id]]]
+
     def cancel(self, run_id):
         self.cancelled.append(run_id)
         self.runs[run_id]["state"] = "cancelled"
@@ -207,6 +211,25 @@ class ProductionPlanTests(unittest.TestCase):
         asyncio.run(self.plans.tick())
         self.assertEqual(self.store.task(task["id"])["state"], "cancelled")
         self.assertEqual(self.plans.get(plan["id"])["counts"], {"cancelled": 2})
+
+    def test_cancel_recovers_group_run_committed_before_comparison_link(self):
+        self.reference()
+        plan, _ = self.plans.create("comparison-link-gap", self.body())
+        self.mark_passed(plan)
+        self.plans.start(plan["id"], {"plan_hash": plan["plan_hash"]})
+        original = self.plans.compare_save
+        self.plans.compare_save = lambda *_: (_ for _ in ()).throw(RuntimeError("interrupted after group submit"))
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            self.plans.advance(self.plans.get(plan["id"]))
+        run_id = self.groups.calls[0][4]
+        self.plans.compare_save = original
+        self.plans.cancel(plan["id"])
+        self.plans.advance(self.plans.get(plan["id"]))
+        self.assertIn(run_id, self.groups.cancelled)
+        # Cancellation is cooperative: one pass requests it, the next observes
+        # the terminal group Run before closing the parent plan.
+        self.plans.advance(self.plans.get(plan["id"]))
+        self.assertEqual(self.plans.get(plan["id"])["state"], "cancelled")
 
 
 if __name__ == "__main__":

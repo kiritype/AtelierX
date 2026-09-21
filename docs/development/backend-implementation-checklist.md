@@ -1,5 +1,7 @@
 # Backend 요구사항·구현 대조 체크리스트
 
+> 최신 점검: [2026-09-21 구현 현황](implementation-status-2026-09-21.md). 아래는 9월 13일의 시점별 기록이다. Shared API Client·제품 CLI·Frontend, 전역 조각·제작 계획, Profile/Provider CRUD 및 Upscale은 이후 구현됐다. 아래 미구현 표현을 현재 상태로 사용하지 않는다. 실제 운영 준비도는 [실사용 준비도](practical-readiness.md)를 따른다.
+
 기준일: 2026-09-13. 확정 ADR·요구사항을 현재 `src/atelierx`의 API/worker/store 및 테스트와 대조했다. **현재 구현 범위는 Anima 생성·후처리·단일/묶음 검증·재생성·Preset 및 Core 조정의 초기 기능이다. 세 Backend 전체 완료가 아니다.**
 
 이 문서는 구현 현황이다. 기존 [기능 대조표](../requirements/module-feature-comparison.md)의 문서 반영 여부·사용자 검토 표시를 구현 완료로 바꾸지 않는다. 미정 상세를 Accepted로 전환하거나 새 기능을 승인하지 않는다.
@@ -115,7 +117,7 @@ V03의 과거 출처 분리 문제는 ADR-0023 구현으로 해결했다. 실제
 - 구현: [Core API](../../src/atelierx/core.py), [Core 저장](../../src/atelierx/core_store.py), [Core 검증 연결](../../src/atelierx/core_validation.py), [Generation](../../src/atelierx/generation.py), [후처리 그래프](../../src/atelierx/generation_pipeline.py), [Validation](../../src/atelierx/validation.py), [항목별 판정](../../src/atelierx/validation_evidence.py).
 - 시험: [tests](../../tests/), [전체 테스트 리포트](full-test-report-2026-09-13.md), [실제 VLM 전체 흐름·WebP 수정](real-vlm-pipeline-2026-09-13.md). 과거 보고서의 테스트 수는 해당 시점 기록이다. 최신 통합 수치는 상단 기준점을 참조하며 미검증 품질을 대표하지 않는다.
 - 공개 경로: [실제 REST 명세](../api/rest-api.md)에 Core·Generation·Validation의 등록 경로와 제한을 함께 기록한다.
-- 제품 Shared API Client·CLI·Frontend는 아직 미구현. Python 테스트 스크립트와 서버 실행 CLI 진입점은 제품 CLI가 아니다.
+- 당시 제품 Shared API Client·CLI·Frontend는 미구현이었다. 이후 구현된 제품 기능과 잔여 범위는 상단의 2026-09-21 점검을 따른다.
 
 ## 다음 작업 순서
 

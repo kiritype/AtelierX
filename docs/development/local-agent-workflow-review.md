@@ -2,6 +2,8 @@
 
 상태: 설계 검토 초안. 작성일: 2026-09-13.
 
+> 2026-09-21 보충: 아래는 당시 후보 검토 기록이다. 이후 Upscale Node/API·실제 1024→1536 실행, 전역 프롬프트 조각 및 제작 계획이 구현됐다. 해당 기능의 미구현 표현과 당시 권고 순서는 현재 상태가 아니다. 로컬 Planner/도구 adapter는 아직 미구현이다. [현재 구현 점검](implementation-status-2026-09-21.md)과 [Discord 봇을 포함한 로드맵](../requirements/roadmap.md)을 우선 참고한다.
+
 최신 사용자 지시: 로컬 Agent/skill 및 Qwen 27B 공용 모델 운용은 [후속 로드맵](../requirements/roadmap.md)에 기록하고 **Backend 3개 완료 후** 실제 구현 방식을 검토한다. 아래 권고 순서는 즉시 착수 지시가 아니다. 현재 Validation 모델 설정은 변경하지 않는다. 이 문서는 특정 LM Studio 모델,
 Hermes/OpenClaw 또는 다른 외부 프로젝트의 기능·호환성·성능을 주장하거나, 제품
 결정을 확정하는 ADR이 아니다. 해당 도구의 정확한 model ID와 tool-calling 지원은 별도

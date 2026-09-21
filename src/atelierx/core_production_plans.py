@@ -140,6 +140,27 @@ class ProductionPlans:
             self.db.execute("INSERT OR REPLACE INTO production_plan_comparisons VALUES(?,?,?,?,?)",
                 (plan["id"], plan["sequence"], item["index"], item["state"], canonical(item)))
 
+    def recover_comparison_links(self, plan):
+        """Link a persisted group Run after interruption before ``compare_save``.
+
+        The child is idempotently named from the plan/sequence/chunk.  Without
+        this recovery, cancelling immediately after that narrow interruption
+        could mark the plan terminal while leaving the active remote comparison.
+        """
+        finder = getattr(self.core.groups, "runs_with_key_prefix", None)
+        if not finder:
+            return
+        prefix = f"production-plan-group:{plan['id']}:{plan['sequence']}:"
+        known = {item["index"] for item in self.comparisons(plan["id"])}
+        for run in finder(prefix):
+            try:
+                index = int(run.get("request_key", "").rsplit(":", 1)[1])
+            except (AttributeError, IndexError, ValueError):
+                continue
+            if index not in known:
+                self.compare_save(plan, {"index": index, "run_id": run["id"], "state": run["state"],
+                                         "outcome": run.get("outcome"), "error": run.get("error")})
+
     def cancel(self, plan_id):
         plan = self.get(plan_id)
         if plan["state"] in TERMINAL:
@@ -182,6 +203,7 @@ class ProductionPlans:
 
     def advance(self, plan):
         pid = plan["id"]
+        self.recover_comparison_links(plan)
         if plan["cancel_requested"]:
             # Repeat after reload if interruption occurred between intent and row updates.
             self.cancel_queued(pid)

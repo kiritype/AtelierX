@@ -198,6 +198,8 @@ Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,ima
 
 Job 주요 응답: `job_id,prompt_id,state,inputs,requested_postprocess,postprocess,images,error,created_at,updated_at` 등. `requested_postprocess`는 원요청, `postprocess`는 정규화 설정이다. 내부 node_inputs·멱등 키·fingerprint는 공개하지 않는다.
 
+Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠금을 기다린다. 접수 handler 내부의 저장 지연을 키 없음으로 오인하지 않으며, 조회 시간 초과는 Core가 기존 키로 다시 확인한다. Validation 연결의 bare HTTP 502/503/504도 접수 결과 재조회 대상으로 취급하되, 구조화된 `VAL_*` 오류 응답은 명시 오류로 보존한다. 완료된 Validation `outcome=error`의 자동 추론 재시도는 허용하지 않는다.
+
 상태: `queued → submitting → submitted|running → completed|failed`. 오류·수락 불명은 임의로 다시 생성하지 않는다. 이미지 목록은 `image_id,sha256,bytes,media_type,url` 등의 메타데이터를 포함한다. 정확한 이미지 descriptor는 실행 결과와 [Generation 소스](../../src/atelierx/generation.py)의 capture/public을 기준으로 한다.
 
 ## Validation
@@ -315,6 +317,8 @@ Queue/SSE는 작은 상태 필드 `id|job_id,kind?,state,created_at,updated_at?,
 Core는 ComfyUI busy 여부를 확인하고, 생성 전 지정 LM Studio 모델이 idle인지 CLI 조회 후 native REST로 unload한다. 다른 모델이 로드됐거나 실행 중이면 대기한다. ComfyUI `/free` 후 GPU 메모리를 확인한다. 새 모델용 기본 여유는 18,000 MiB, 이미 선택 VLM이 로드된 경우 128 MiB의 초기값을 사용한다. 이는 이번 RTX4090·선택 모델에서 확인한 값이며 모델마다 설정 조정이 필요하다. 권한 부여가 임의 모델의 추론 성공을 보장하지 않는다.
 
 권한은 시간만으로 만료시키지 않는다. Provider timeout/수락 불명 등 실제 종료를 확인할 수 없으면 권한을 보수적으로 유지한다. 해당 runtime 작업 종료 확인 및 운영자 복구가 필요하며 자동 강제 해제는 없다. Core 재시작 시 저장된 owner를 유지하고 같은 Job이 재요청하면 기존 권한을 반환한다. 내부 release API는 서비스의 실제 종료 확인 후 호출하는 신뢰 경계이며 사용자별 세부 권한 분리는 후속이다.
+
+Generation이 권한 취득 후 ComfyUI의 다른 작업을 발견하고 아직 자신의 `/prompt`를 제출하지 않았다면 권한을 반납하고 대기한다. 제출 응답의 `prompt_id`가 저장된 ID와 다르면 `GEN_EXECUTION_UNKNOWN`으로 종료하며 권한을 보존한다. coordinator 응답의 `granted`/`released`는 JSON boolean `true`만 성공으로 인정한다. 손상된 JSON이나 다른 자료형의 응답은 허가·반납 확인으로 사용하지 않는다.
 
 [구현·실행 기록](../development/core-orchestration-validation.md)을 참고한다.
 

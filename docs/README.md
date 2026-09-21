@@ -1,5 +1,7 @@
 # 문서 목차와 관리 범위
 
+[2026-09-21 구현·미구현 기능 점검](development/implementation-status-2026-09-21.md) · [후속 로드맵 — Discord 자연어 제작 봇 포함](requirements/roadmap.md)
+
 [장기 큐·복구 검증 및 오류 대응](development/production-plan-recovery-tests.md)
 
 [실사용 준비도와 남은 검증](development/practical-readiness.md)

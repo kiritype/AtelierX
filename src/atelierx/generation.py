@@ -287,6 +287,10 @@ class Generation:
                 return
             queue = await self.call("GET", "/queue")
             if queue["queue_running"] or queue["queue_pending"]:
+                # This job has not been submitted, so it cannot be executing.
+                # Do not monopolize the shared lease while another ComfyUI
+                # client drains its queue.
+                await permission(self, job, "generation", release=True)
                 return
             if not job.get("source_image_id"):
                 await self.node_schema()
@@ -315,7 +319,9 @@ class Generation:
                 result = await self.call("POST", "/prompt", json={
                     "prompt": prompt, "prompt_id": job["prompt_id"], "client_id": "atelierx-generation"})
                 if result.get("prompt_id") != job["prompt_id"]:
-                    raise ApiError("GEN_PROTOCOL_ERROR", "ComfyUI did not preserve prompt_id", 502)
+                    # The remote response does not prove rejection or which
+                    # prompt was accepted. Keep the lease and never repost.
+                    raise ApiError("GEN_EXECUTION_UNKNOWN", "ComfyUI acceptance identity is unknown; no automatic resubmission", 502)
             except ApiError as exc:
                 if exc.code != "GEN_COMFY_UNAVAILABLE":
                     raise
@@ -451,9 +457,14 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
 
     async def by_key(request):
         key = request.headers.get("Idempotency-Key")
-        if key not in service.keys:
-            raise ApiError("GEN_JOB_NOT_FOUND", "Key not found", 404)
-        return web.json_response(service.public(service.lookup(service.keys[key])))
+        # submit holds this lock while it validates the node schema and then
+        # durably records the idempotency mapping.  Waiting here prevents a
+        # recovery GET from observing a transient 404 between an accepted POST
+        # and its persisted key.
+        async with service.lock:
+            if key not in service.keys:
+                raise ApiError("GEN_JOB_NOT_FOUND", "Key not found", 404)
+            return web.json_response(service.public(service.lookup(service.keys[key])))
 
     async def image(request):
         image_id = request.match_info["image_id"]

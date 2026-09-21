@@ -33,8 +33,9 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.posts, self.history, self.pending, self.running = [], {}, [], []
-        self.busy, self.registered, self.reject, self.lose_response = True, True, False, False
+        self.busy, self.registered, self.reject, self.lose_response, self.wrong_prompt_id = True, True, False, False, False
         self.schema = schema()
+        self.grants, self.releases = [], []
         fake = web.Application()
 
         async def info(request):
@@ -58,7 +59,7 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
             self.pending = [[0, data["prompt_id"]]]
             if self.lose_response:
                 return web.Response(text="acceptance response corrupted")
-            return web.json_response({"prompt_id": data["prompt_id"]})
+            return web.json_response({"prompt_id": "another-prompt" if self.wrong_prompt_id else data["prompt_id"]})
 
         async def image(request):
             return web.Response(body=b"\x89PNG\r\n\x1a\nfixture", content_type="image/png")
@@ -67,6 +68,16 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
                          web.get("/history/{id}", history), web.post("/prompt", post), web.get("/view", image)])
         self.comfy = TestServer(fake)
         await self.comfy.start_server()
+        coordinator = web.Application()
+        async def acquire(request):
+            self.grants.append(await request.json())
+            return web.json_response({"granted": True})
+        async def release(request):
+            self.releases.append(await request.json())
+            return web.json_response({"released": True})
+        coordinator.add_routes([web.post("/v1/gpu/acquire", acquire), web.post("/v1/gpu/release", release)])
+        self.coordinator = TestServer(coordinator)
+        await self.coordinator.start_server()
         self.client = await self.new_client()
 
     async def new_client(self):
@@ -77,6 +88,7 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.close()
         await self.comfy.close()
+        await self.coordinator.close()
         self.tmp.cleanup()
 
     async def post(self, inputs=None, key="key"):
@@ -170,6 +182,28 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
         result = await self.await_state(job["job_id"], "failed")
         self.assertEqual(result["error"]["code"], "GEN_EXECUTION_UNKNOWN")
         self.assertEqual(len(self.posts), 2)
+
+    async def test_queue_race_releases_gpu_before_any_prompt_submission(self):
+        self.client.app[SERVICE].coordinator_url = str(self.coordinator.make_url("/"))
+        job = await (await self.post(key="queue-race")).json()
+        await asyncio.sleep(.05)
+        current = await (await self.client.get(f'/v1/jobs/{job["job_id"]}', headers={"Authorization": "Bearer test-token"})).json()
+        self.assertEqual(current["state"], "queued")
+        self.assertFalse(self.posts)
+        self.assertTrue(self.grants)
+        self.assertTrue(self.releases)
+
+    async def test_wrong_prompt_identity_is_unknown_and_retains_gpu_lease(self):
+        self.client.app[SERVICE].coordinator_url = str(self.coordinator.make_url("/"))
+        self.busy = False
+        self.wrong_prompt_id = True
+        job = await (await self.post(key="wrong-prompt-id")).json()
+        result = await self.await_state(job["job_id"], "failed")
+        self.assertEqual(result["error"]["code"], "GEN_EXECUTION_UNKNOWN")
+        self.assertTrue(result["gpu_requested"])
+        await asyncio.sleep(.04)
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.releases, [])
 
 
     async def test_cancel_queued_and_running_without_interrupting_user_job(self):

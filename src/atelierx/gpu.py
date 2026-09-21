@@ -113,7 +113,11 @@ class GpuCoordinator:
 async def permission(service, job, phase, release=False):
     try:
         return await _permission(service, job, phase, release)
-    except (aiohttp.ClientError, asyncio.TimeoutError):
+    # A coordinator reply is an inter-service boundary.  A malformed success
+    # response must be treated exactly like an unavailable coordinator: do not
+    # grant or release based on an unparseable acknowledgement, and keep the
+    # service worker alive to retry its durable state later.
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError, AttributeError):
         return False
 
 
@@ -131,7 +135,9 @@ async def _permission(service, job, phase, release=False):
         if response.status != 200:
             return False
         result = await response.json()
-        success = result.get("released" if release else "granted", False)
+        # JSON numbers are truthy in Python, but only the protocol's literal
+        # boolean acknowledgement may change durable GPU ownership state.
+        success = result.get("released" if release else "granted") is True
         if release and success:
             job["gpu_requested"] = False
             service.save(job)

@@ -183,6 +183,11 @@ class CoreGroups:
             raise ApiError("CORE_NOT_FOUND", "Group replacement not found", 404)
         return json.loads(row[0])
 
+    def runs_with_key_prefix(self, prefix):
+        """Recovery lookup for a durable parent record missing its child link."""
+        return [dict(json.loads(row[1]), request_key=row[0]) for row in self.store.db.execute(
+            "SELECT request_key,document FROM group_runs WHERE request_key LIKE ? ORDER BY request_key", (prefix + "%",))]
+
     def replacement_save(self, replacement):
         with self.store.db:
             self.store.db.execute("UPDATE group_replacements SET document=? WHERE id=?", (canonical(replacement), replacement["id"]))
