@@ -68,3 +68,25 @@ C:\StabilityMatrix\Packages\ComfyUI\venv\Scripts\python.exe -B -m unittest disco
 ## 2026-09-13 실제 설치·실행 후속 기록
 
 이 문서의 초기 CPU 검증·미설치 기록 이후 ComfyUI 설치와 REST 실행을 완료했다. 현재 모델·실행 결과·사용자 Workflow와 검증 한계는 [보조 노드 실제 검증](postprocess-live-validation.md)을 따른다.
+
+## 2026-09-21 Core 검사 요구 연결
+
+Core가 단일 검사 요청을 만들 때 이미지의 Task snapshot에 고정된 `postprocess.alpha` 존재 여부를 반영한다. Alpha 단계가 있으면 `expected_output.alpha=transparency_required`, 없으면 기존 `not_required`를 유지한다. 현재 Preset이나 전역 설정이 아니라 원래 생성 설정을 사용하며 PNG/WebP 모두 같은 조건을 적용한다.
+
+출력 조건 검사를 활성화한 Profile에서 투명 영역이 없으면 기존 Validation 계약대로 `completed/failed`로 종료하고 AI 검사를 생략한다. Profile의 `output_conditions=false`는 유지한다. 과거 검증 Run을 수정하거나 자동 재검사하지 않으며, 명시적 새 검사부터 새 연결을 사용한다.
+
+이 검사는 Alpha 채널만 존재하는 완전 불투명 이미지도 구분하지만, 투명 픽셀의 최소 면적이나 캐릭터 보존·머리카락 경계 품질을 새 기준으로 도입하지 않는다. 기존 Validation의 투명 픽셀 존재 검사에 생성 요구를 연결하는 수정이다.
+
+### 자동 회귀 검증
+
+- `tests.test_core_validation` + `tests.test_validation`: 21개 통과. 원래 Preset snapshot과 이후 Preset 수정의 분리, 멱등 접수·명시적 재검사, Alpha 미사용, 실제 PNG/WebP decode에 의한 투명/불투명 판정, 출력 검사 비활성화를 확인했다. Provider가 필요한 테스트는 모의 Provider다.
+- `tests.test_regeneration` + `tests.test_production_plans`: 15개 통과. 기존 재생성·계획 흐름을 확인했다.
+- 실행 중인 파일럿은 재시작하지 않았다. 코드 변경은 별도 테스트 프로세스에서 확인했으며 기존 파일럿 프로세스에 반영됐다고 보고하지 않는다. 운영 반영은 작업이 없는 시점의 정상 재시작이 필요하다.
+
+### 기존 실제 GPU 출력 재검사
+
+`artifacts/backend-pipeline-rest/20260913-053307/alpha.png`와 `alpha.webp`의 원본 바이트를 격리된 Generation HTTP 대역이 제공하고, 실제 Core REST·별도 SQLite·Validation으로 검사했다. 두 요청 모두 Core가 `transparency_required`를 전달했고 `completed/passed`로 종료했다. 동일 이미지에서 메모리 내 변환으로 만든 불투명 대조군 PNG/WebP는 모두 `completed/failed`이며 실행 오류가 아니었다.
+
+출력 조건만 켠 Profile로 검사했고 Provider 호출은 0회다. 새 GPU 생성이나 실제 VLM 추론 검증이 아니라 **기존 GPU 출력 + 모의 Generation 전송 + 실제 Core/Validation의 연결 검증**이다. 파일럿 데이터·실행 중 서비스는 변경하지 않았다. 마스크·경계의 시각적 품질은 이번 판정 범위가 아니다.
+
+로컬 실행 근거: `artifacts/alpha-validation-20260921/report.json`, 재현 스크립트 `artifacts/alpha-validation-20260921/run_real_alpha_files.py`. 실제 이미지·로그와 해당 로컬 재검사 도구는 Git에 포함되지 않으며, 새 clone에서 재현 가능한 회귀 검사는 위 tests 모듈이다.

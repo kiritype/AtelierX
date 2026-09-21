@@ -32,7 +32,7 @@
 | --- | --- | --- | --- |
 | R1 | P3 | Discord 장애·동시 요청 실제 시험 | 로컬 오프라인, Tunnel 단절, 응답 유실, 15분 초과, 첨부 제한, 여러 멤버 요청을 소규모로 시험. 이미 구현한 멱등성·만료·소유권 처리가 실제 환경에서도 동작하는지 확인. 친구 계정 접근 시험은 별도. |
 | R2 | P1 | 접수 불명·정체의 사용자 복구 | 실행 종료 불명이나 영구 단절을 조회/정리하는 절차·화면 보완. 자동 재접수/Provider 재시도/시간 기반 GPU 강제 반납으로 해결하지 않음. |
-| R3 | P1 | Alpha 생성 조건과 검사 연결 | Validation의 투명도 검사는 있으나 Core 요청은 alpha=not_required로 고정. 생성 설정에 맞는 검사 요구를 연결하고 회귀 검증. |
+| R3 | 구현 완료 | Alpha 생성 조건과 검사 연결 | 원래 Task snapshot의 Alpha 단계에 따라 transparency_required/not_required를 전달하도록 보완. 검증 범위와 운영 반영 여부는 [Alpha 기록](alpha-validation.md)을 따른다. 경계 품질 평가는 Q3로 남음. |
 | R4 | P2 | 실제 ComfyUI·VLM·GPU 장애 확대 | 기존 작은 생성 복구 시험 외에 ComfyUI 자체 재시작, 실제 VLM 도중 중단, OOM·외부 ComfyUI 경합 시험. 대량 무인 시험은 P3으로 분리. |
 | R5 | P3 | Provider별 실행 제어·장기 부하 | 현재 단일 Validation worker 중심. Provider별 독립 제어가 필요할 때 구현하고 공유 GPU 직렬화를 유지. 수천 장 연속 실행·장기 무인 운영은 개인 사용의 선행 조건이 아님. |
 
@@ -55,7 +55,7 @@
 
 ## 권장 실행 순서 — Discord 후순위 반영
 
-1. R3: Alpha 생성 설정과 Core 검사 요구의 연결 누락을 먼저 보완. 작은 범위로 기존 기능의 정확도를 높인다.
+1. R3 완료 후 F4/Q2로 이동: Alpha 생성 설정과 Core 검사 요구의 연결 누락을 보완했다. 운영 반영·검증 범위는 [Alpha 기록](alpha-validation.md)을 따른다.
 2. F4/Q2: 신체 구조 이상·Metadata 등 Validation 미구현 범위를 설계/구현하고 작은 대표 이미지 세트로 평가. Metadata 검사 대상·판정 기준 등 미확정 제품 정책은 구분한다. VLM 호출 성공만으로 기능 완료로 보지 않는다.
 3. F5/Q3: 기존 이미지의 독립 후처리를 Core 접수·결과 관리와 연결. 외부 이미지 입력은 별도 입력/보관 정책을 정한 뒤 확장한다. 후처리 품질은 표본으로 확인한다.
 4. F6/R2: F/E에서 생성 결과 확인→검사→후처리/재생성→오류 확인의 제작 흐름을 완성. 고급 설정 폼과 초안 보존을 먼저, 모델 다운로드 등 주변 기능은 뒤로 둔다.
@@ -64,6 +64,6 @@
 7. F3/Q1: 체크포인트별 Natural 개선은 기본 제작 흐름 이후. Core의 태그+자연어 작성 규칙을 모델별로 검증한다.
 8. F1/F2/R1/O1 및 F9/F10/R5/O4: Discord 추가 기능·고정 Tunnel, 모델/Agent 확장, 무인 대량 운영은 필요할 때 진행.
 
-우선순위 제안의 중심은 **기존 연결 누락 → Backend 미구현 기능 → F/E 실제 제작 흐름 → 편의·확장**이다. 원래 요구의 캐릭터 동일성 목표는 유지하지만 기법은 미확정이며 실제 기본 제작 결과를 보고 별도 순위를 결정한다. Discord를 후순위로 미룬 것은 사용자 확정 사항이고, 위 세부 작업 순서는 검토 제안이다. 이번 작업에서 제품 구현이나 GPU 시험은 새로 실행하지 않았다.
+우선순위 제안의 중심은 **기존 연결 누락 → Backend 미구현 기능 → F/E 실제 제작 흐름 → 편의·확장**이다. 원래 요구의 캐릭터 동일성 목표는 유지하지만 기법은 미확정이며 실제 기본 제작 결과를 보고 별도 순위를 결정한다. Discord를 후순위로 미룬 것은 사용자 확정 사항이고, 위 세부 작업 순서는 검토 제안이다. 우선순위 검토 이후 사용자 지시로 R3 구현에 착수했으며 나머지 항목을 함께 승인한 것으로 보지 않는다.
 
 근거: [Discord 최신 기록](discord-personal-bot.md), [실사용 준비도](practical-readiness.md), [복구 시험](production-plan-recovery-tests.md), [로드맵](../requirements/roadmap.md), `src/atelierx/core_standalone.py`, `src/atelierx/core_validation.py`, `src/atelierx/validation.py`, `src/atelierx/api_client.py`, `integrations/discord-worker/scripts/register-commands.mjs`.

@@ -256,6 +256,7 @@ Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠
 - Profile 전체 객체는 등록값과 일치해야 한다. body_parts가 비어 있지 않거나 metadata/consistency=true이면 현재 `VAL_PROFILE_UNSUPPORTED`로 거절한다.
 - provider의 ID/revision/model/timeout은 서버 등록값과 일치해야 한다. timeout은 1 이상 정수다. 요청에 url/api_key를 넣을 수 없다.
 - output_conditions=true이면 expected_output 객체가 필요하다. alpha는 `not_required|channel_required|transparency_required`. 출력 조건은 **원본** PNG/WebP로 검사한다.
+- Core는 이미지의 원래 Task snapshot에 `postprocess.alpha`가 있으면 `transparency_required`, 없으면 `not_required`를 전달한다. 현재 Preset/설정 변경으로 과거 이미지의 요구를 바꾸지 않는다. 출력 조건을 끈 Profile은 이 검사를 수행하지 않는다. 실제 투명 픽셀 존재 여부를 검사하며 캐릭터 마스크·경계 품질을 보장하지 않는다. 기존 검증 Run은 그대로 보존하고 명시적 새 검증부터 적용한다.
 - 입력은 정지 PNG/WebP, 최대 16 MiB·40MP. animation/multi-frame은 거절한다.
 
 ### Negative 출처 계약 — ADR-0023

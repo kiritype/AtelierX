@@ -144,16 +144,34 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
         image = Image.new("P", (1, 1), 0)
         buffer = io.BytesIO(); image.save(buffer, format="PNG", transparency=0)
         self.assertEqual(service.decode_image(buffer.getvalue())[-2:], (True, True))
-        _, upload = await self.upload()
-        _, job = await self.submit_body(self.body(upload, expected={"width": 1, "height": 1, "media_type": "image/png", "alpha": "transparency_required"}), "opaque")
-        self.assertEqual((await self.wait(job["job_id"]))["outcome"], "failed")
-        body = self.body(upload); body["image"]["source"]["upload_id"] = "../outside"
+        opaque_upload = None
+        for format, media_type in (("PNG", "image/png"), ("WEBP", "image/webp")):
+            for alpha, expected_outcome in ((0, "passed"), (255, "failed")):
+                data = io.BytesIO()
+                kwargs = {"format": format}
+                if format == "WEBP": kwargs["lossless"] = True
+                Image.new("RGBA", (1, 1), (10, 20, 30, alpha)).save(data, **kwargs)
+                _, upload = await self.upload(data.getvalue())
+                if alpha == 255: opaque_upload = upload
+                _, job = await self.submit_body(self.body(upload, expected={
+                    "width": 1, "height": 1, "media_type": media_type, "alpha": "transparency_required"}),
+                    f"{format.lower()}-{alpha}")
+                self.assertEqual((await self.wait(job["job_id"]))["outcome"], expected_outcome)
+
+        # A profile that opts out of output conditions keeps that opt-out even
+        # when the request records an alpha requirement.
+        disabled_output = dict(PROFILE, output_conditions=False)
+        service.profiles["default"] = disabled_output
+        _, job = await self.submit_body(self.body(opaque_upload, disabled_output, {
+            "width": 1, "height": 1, "media_type": "image/webp", "alpha": "transparency_required"}), "output-opt-out")
+        self.assertEqual((await self.wait(job["job_id"]))["outcome"], "passed")
+        body = self.body(opaque_upload); body["image"]["source"]["upload_id"] = "../outside"
         self.assertEqual((await self.submit_body(body, "unsafe"))[0], 400)
-        body = self.body(upload); body["provider"]["url"] = "http://untrusted.invalid"
+        body = self.body(opaque_upload); body["provider"]["url"] = "http://untrusted.invalid"
         self.assertEqual((await self.submit_body(body, "unknown-field"))[0], 400)
         PROVIDER.pop("url", None)
         self.assertEqual((await self.upload(PNG[:-10]))[0], 422)
-        self.assertEqual(self.calls, 0)
+        self.assertEqual(self.calls, 3)
 
     async def test_queued_provider_change_rejected_and_old_key_still_returns(self):
         _, upload = await self.upload()
