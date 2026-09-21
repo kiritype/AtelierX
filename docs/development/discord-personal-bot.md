@@ -118,3 +118,6 @@ Worker 설치·검증·등록 방법은 [Worker README](../../integrations/disco
 Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCORD_ALLOWED_CHANNEL_IDS`(선택)를 Bridge `access_mode=guild`, `allowed_guild_ids`, `allowed_channel_ids`와 맞춘다. 채널 목록을 지정하지 않으면 허용 서버 전체이며, 지정하면 정확히 일치하는 채널만 허용한다. 비어 있거나 잘못된 제한 목록은 전체 공개로 취급하지 않는다. Worker는 guild 모드에서만 Bridge 요청에 `guild_id`/`channel_id`를 추가한다. users 모드는 기본값이며 기존 계약을 유지한다.
 
 구현 검증: Worker 11개(실제 workerd 회귀 포함), Bridge 12개 테스트 통과. 모의 요청으로 비소유자의 허용 범위 접근, DM/다른 서버/채널 거절, 타인 상태 조회 거절을 확인했다. 실제 적용 범위(현재 서버 전체 또는 특정 채널)의 사용자 확인과 Discord 관리 화면 로그인은 아직 대기 중이다. 따라서 현재 운영 설정은 users/본인 한정으로 유지하며 Public Bot OFF 변경 완료로 보고하지 않는다. 설치 제한은 Discord Developer Portal의 Bot → Public Bot OFF로 설정하고 API 재조회로 검증한다.
+
+
+권한 활성화 완료: 사용자가 현재 서버 전체 멤버로 범위를 확정했다. Worker/Bridge 모두 guild 모드와 기존 테스트 Guild 한 개를 설정하고 채널 제한은 두지 않았다. 코드 배포 version `26aa9769-e22a-4e86-868a-b0895ee6bd58` 이후 secrets도 반영했다. Core/Generation/Validation/ComfyUI와 Bridge에 진행 중 작업이 없음을 확인한 뒤 로컬 파일럿만 재시작했고 네 서비스 health 200을 확인했다. 사용자 실행 Tunnel은 유지했다. 외부 Tunnel을 통한 모의 상태 조회에서 허용 서버의 타인 결과는 404, 다른 서버는 403을 확인했다(실제 타인 Discord 계정의 생성 시험과 구분). Discord 앱 API를 재조회해 `bot_public=false`도 확인했으므로 소유자만 서버에 봇을 설치하는 설정이 완료되었다. 기존 서버 설치나 요청 결과를 삭제하지 않았다.
