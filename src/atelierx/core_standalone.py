@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import time
 import uuid
 from urllib.parse import urlparse
@@ -18,8 +19,10 @@ class StandaloneJobs:
         self.core, self.config = core, config
         if config is not None:
             required = {"generation_inputs", "postprocess", "llm"}
-            if not isinstance(config, dict) or set(config) != required:
+            if not isinstance(config, dict) or set(config) - (required | {"seed_mode"}) or not required.issubset(config):
                 raise ValueError("standalone config must contain generation_inputs, postprocess, and llm")
+            if not isinstance(config.get("seed_mode", "fixed"), str) or config.get("seed_mode", "fixed") not in {"fixed", "random"}:
+                raise ValueError("standalone seed_mode must be fixed or random")
             llm = config["llm"]
             if not isinstance(llm, dict) or set(llm) != {"url", "model", "api_key_env", "timeout_seconds"}:
                 raise ValueError("standalone llm config is invalid")
@@ -48,7 +51,10 @@ class StandaloneJobs:
 
     @staticmethod
     def public(job):
-        return {key: job[key] for key in ("id", "state", "images", "error", "validation", "created_at")}
+        result = {key: job[key] for key in ("id", "state", "images", "error", "validation", "created_at")}
+        if type(job.get("seed")) is int:
+            result["seed"] = job["seed"]
+        return result
 
     def by_key(self, key):
         row = self.core.store.db.execute("SELECT fingerprint,document FROM standalone_jobs WHERE request_key=?", (key,)).fetchone()
@@ -71,8 +77,12 @@ class StandaloneJobs:
             if old[0] != fingerprint:
                 raise ApiError("CORE_IDEMPOTENCY_CONFLICT", "Request key already has different content", 409)
             return old[1], False
+        inputs = dict(self.config["generation_inputs"])
+        if self.config.get("seed_mode", "fixed") == "random":
+            # Keep random bot seeds exactly representable by Worker/Discord JavaScript clients.
+            inputs["seed"] = secrets.randbelow(2**53)
         job = {"id": str(uuid.uuid4()), "state": "queued", "created_at": time.time(), "request": body, "config": self.config, "generation_endpoint": self.core.generation_url,
-               "generation_job_id": None, "generation_inputs": None, "images": [], "error": None,
+               "generation_job_id": None, "generation_inputs": inputs, "seed": inputs["seed"], "images": [], "error": None,
                "validation": {"state": "not_requested", "outcome": None}}
         try:
             with self.core.store.db:
@@ -123,6 +133,12 @@ class StandaloneJobs:
                 await self.core.gpu.release("planner", job["id"])
             raise ApiError("CORE_PLANNER_ACCEPTANCE_UNKNOWN", "Planner result is unknown after restart; no automatic retry", 502)
         if job["state"] == "queued":
+            # Pre-seed persisted jobs created before seed snapshots were introduced.
+            # They retain their configured fixed seed and are never rerandomized.
+            if job.get("generation_inputs") is None:
+                job["generation_inputs"] = dict(job["config"]["generation_inputs"])
+                job["seed"] = job["generation_inputs"]["seed"]
+                self.save(job)
             if job["request"]["mode"] == "natural":
                 if self.core.gpu.config and job["config"]["llm"]["model"] != self.core.gpu.config.get("model"):
                     raise ApiError("CORE_PLANNER_MODEL_CHANGED", "Saved planner model differs from GPU configuration", 409)
@@ -138,11 +154,11 @@ class StandaloneJobs:
                     if job.get("planner_response_received"):
                         await self.core.gpu.release("planner", job["id"])
                     raise
-                job["generation_inputs"] = {**job["config"]["generation_inputs"], "positive_prompt": positive}
+                job["generation_inputs"] = {**job["generation_inputs"], "positive_prompt": positive}
                 job["state"] = "planner_completed"; self.save(job)
                 await self.core.gpu.release("planner", job["id"])
             else:
-                job["generation_inputs"] = {**job["config"]["generation_inputs"], "positive_prompt": job["request"]["prompt"]}
+                job["generation_inputs"] = {**job["generation_inputs"], "positive_prompt": job["request"]["prompt"]}
                 self.save(job)
             job["state"] = "ready_to_dispatch"; self.save(job)
             return

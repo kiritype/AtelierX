@@ -25,7 +25,7 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.image_bytes = b"test-image"
         self.job = {"id": "core-1", "state": "completed", "images": [
             {"image_id": "image-1", "bytes": len(self.image_bytes), "media_type": "image/png",
-             "sha256": hashlib.sha256(self.image_bytes).hexdigest()}]}
+             "sha256": hashlib.sha256(self.image_bytes).hexdigest()}], "seed": 0}
         self.lookup_missing = False
         self.delivery_status = 200
         self.core_headers = []
@@ -88,6 +88,7 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.patches), 2)
         self.assertIn(self.image_bytes, self.patches[-1])
         self.assertIn(b"SPOILER_atelierx.png", self.patches[-1])
+        self.assertIn(b"Seed: 0", self.patches[-1])
         self.assertEqual(self.bridge.records["100"]["delivery"], "delivered")
         self.assertIsNone(self.bridge.records["100"]["token"])
         self.assertTrue(all(h == "Bearer core-secret" for h in self.core_headers))

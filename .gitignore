@@ -35,3 +35,6 @@ artifacts/group-consistency-cases/
 artifacts/core-browse-rest/
 
 artifacts/frontend-pilot/
+
+# Wrangler local deployment state.
+/.wrangler/

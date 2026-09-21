@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | POST | `/v1/standalone-jobs` | `Idempotency-Key`와 `{prompt,mode}`. mode=`natural` 또는 `direct`. 새 요청 202, 같은 키/내용 200, 충돌 409 |
 | GET | `/v1/standalone-jobs/by-key` | `Idempotency-Key`로 기존 접수 조회, 없으면 404 |
-| GET | `/v1/standalone-jobs/{id}` | `{id,state,images,error,validation,created_at}` |
+| GET | `/v1/standalone-jobs/{id}` | `{id,state,images,error,validation,created_at,seed}` |
 | GET | `/v1/standalone-jobs/{id}/images/{image_id}/content` | 해당 독립 작업에 속한 PNG/WebP bytes. 크기·SHA-256 검증 |
 
-prompt는 공백만 아닌 최대 20,000자 문자열이다(Discord 입력은 별도로 4,000자). direct는 원문을 Positive로 보존한다. natural은 로컬 Chat Completions의 텍스트 결과를 Positive로 사용한다. 모델·Negative·Seed·후처리는 서버 설정을 snapshot하며 클라이언트가 arbitrary URL/Workflow/SQL을 전달할 수 없다. 기본 예제는 1024→1536이며, Seed는 설정값을 유지한다. 자동 Validation/재생성은 요청하지 않고 `validation={state:not_requested,outcome:null}`로 표시한다.
+prompt는 공백만 아닌 최대 20,000자 문자열이다(Discord 입력은 별도로 4,000자). direct는 원문을 Positive로 보존한다. natural은 로컬 Chat Completions의 텍스트 결과를 Positive로 사용한다. 모델·Negative·Seed·후처리는 서버 설정을 snapshot하며 클라이언트가 arbitrary URL/Workflow/SQL을 전달할 수 없다. 기본 예제는 1024→1536이다. 독립 생성 설정의 선택 필드 `seed_mode`는 `fixed`(생략 시 기존 설정값 유지) 또는 `random`이다. random은 신규 접수 시 Core가 0~2^53−1 범위의 정수를 한 번 선택해 작업 snapshot에 고정한다. 같은 멱등 키·재시작·전달 재시도는 기존 값을 유지한다. 응답 seed는 저장된 작업의 실제 생성 입력에 근거하며 현재 전역 설정으로 과거 값을 추정하지 않는다. 과거 작업 중 seed 공개 필드가 저장되지 않은 경우 해당 필드는 생략될 수 있다. 자동 Validation/재생성은 요청하지 않고 `validation={state:not_requested,outcome:null}`로 표시한다.
 
 상태: `queued → planning(natural만) → planner_completed → ready_to_dispatch → dispatching → generation_pending|running → completed|failed`. direct는 Planner 단계를 생략한다. `/v1/queue`와 SSE에는 `kind=standalone`으로 포함된다. 별도 worker가 실행하여 Planner 호출이 기존 Core 조정 루프를 막지 않는다. GPU acquire/release의 phase에 `planner`가 추가됐으며 기존 validation과 같은 설정 모델을 사용한다.
 

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import aiohttp
 from aiohttp import web
@@ -43,6 +44,23 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "ready_to_dispatch")
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "completed")
         self.assertEqual(self.calls[0][2]["json"]["inputs"]["positive_prompt"], "literal, prompt")
+
+    async def test_random_seed_is_safe_once_per_job_and_fixed_mode_remains_compatible(self):
+        self.jobs.config["seed_mode"] = "random"
+        with patch("atelierx.core_standalone.secrets.randbelow", return_value=9007199254740991) as random_seed:
+            job, _ = self.jobs.create("random", {"prompt":"x","mode":"direct"})
+            duplicate, created = self.jobs.create("random", {"prompt":"x","mode":"direct"})
+        self.assertFalse(created); self.assertEqual(job["seed"], 9007199254740991)
+        self.assertEqual(duplicate["seed"], job["seed"]); random_seed.assert_called_once_with(2**53)
+        await self.jobs.advance(job); await self.jobs.advance(job)
+        self.assertEqual(self.calls[-1][2]["json"]["inputs"]["seed"], job["seed"])
+
+    async def test_legacy_queued_job_uses_saved_fixed_config_seed_without_rerandomizing(self):
+        job, _ = self.jobs.create("legacy", {"prompt":"x","mode":"direct"})
+        job.pop("seed"); job["generation_inputs"] = None; self.jobs.save(job)
+        await self.jobs.advance(job)
+        saved = self.jobs.get(job["id"])
+        self.assertEqual((saved["seed"], saved["generation_inputs"]["seed"]), (1, 1))
 
     async def test_natural_uses_fake_llm_releases_planner_and_posts_once(self):
         async def llm(request):

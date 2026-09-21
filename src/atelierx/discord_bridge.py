@@ -181,8 +181,11 @@ class Bridge:
         images = result.get("images", [])
         if not isinstance(images, list) or any(not isinstance(item, dict) for item in images):
             raise ApiError("BRIDGE_PROTOCOL_ERROR", "Invalid image descriptors", 502)
+        seed = result.get("seed")
+        seed_fields = {"seed": seed} if type(seed) is int else {}
         record.update(state=state if state in TERMINAL else "core_pending", images=images,
                       error=code if state == "failed" else None)
+        record.update(seed_fields)
         self.save(record)
 
     async def notify_received(self, record):
@@ -250,6 +253,8 @@ class Bridge:
         content = f"요청 {original['id']} · {original['state']}"
         if original.get("core_id"):
             content += f" · Core {original['core_id']}"
+        if type(original.get("seed")) is int:
+            content += f"\nSeed: {original['seed']}"
         attachment = None
         if original["state"] == "completed":
             content += "\n생성 완료 · 품질 검증은 요청하지 않았습니다."

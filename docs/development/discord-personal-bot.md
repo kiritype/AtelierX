@@ -132,3 +132,10 @@ Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCOR
 공개·스포일러 활성화: 사용자가 RDP에서 재시작 스크립트를 실행한 후 새 로컬 서비스 프로세스와 Core/Generation/Validation/Bridge health 200, 외부 Tunnel health 200을 확인했다. 스포일러 코드가 포함된 로컬 서비스를 재시작한 뒤 Worker secret `DISCORD_PUBLIC_RESULTS=true`를 반영했다. 이후 새 `/draw`는 공개 응답과 기본 이미지 스포일러를 사용하고 `/status`는 비공개를 유지한다. 실제 Discord 화면에서 공개/스포일러 표시를 확인하는 사용자 시험은 아직 남아 있다.
 
 사용자 실제 화면 확인: 공개·스포일러 설정 활성화 후 새 `/draw`에 대해 사용자가 정상 동작을 확인했다. 공개 결과와 기본 스포일러 표시의 Discord 실제 화면 확인을 완료한 것으로 기록한다. 이 확인은 사용자 관찰에 근거하며, 별도 친구 계정의 권한 시험이나 이미지 품질 검사까지 검증한 것으로 확대하지 않는다.
+
+
+### 새 draw 무작위 Seed와 사용값 표시
+
+사용자 지시로 Discord 독립 생성은 새 요청마다 무작위 Seed를 사용하고 완료 응답과 `/status`에 실제 사용값을 표시한다. Core 설정 `seed_mode=random`에서 신규 작업 접수 때 53비트 안전 정수 범위의 Seed를 한 번 선택·저장한다. 같은 요청의 멱등 재접수·서비스 재시작·전달 재시도는 Seed를 다시 선택하지 않는다. 기존 설정과의 호환을 위해 seed_mode 생략은 fixed다. Direct/Natural 모두 동일 규칙이며 기존 F/E 그룹 제작의 Seed 정책을 바꾸지 않는다. Discord에서 Seed 직접 지정 옵션은 이번 변경에 포함하지 않는다.
+
+무작위 Seed 구현 검증: Core standalone·Bridge 관련 19개 테스트 통과. 최대 안전 정수, 동일 멱등 키의 난수 재선택 방지, 최종 Generation 입력 일치, 과거 queued 작업의 고정 Seed 복원, Seed 0의 Discord 표시를 확인했다. 로컬 standalone 설정은 random으로 준비했으나 서비스 재시작 전이므로 현재 실행 프로세스는 기존 고정 Seed 설정을 사용한다. 앞선 로컬 재시작 도구 실행 차단 때문에 사용자 RDP 재시작 후 활성화 확인이 필요하다. 실제 GPU/Discord의 무작위 Seed 표시 시험은 아직 남아 있다.

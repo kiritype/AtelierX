@@ -1,4 +1,5 @@
 {
+  "seed_mode": "random",
   "generation_inputs": {
     "diffusion_model": "waiANIMA_v10Base10.safetensors",
     "text_encoder": "waiANIMA_v10Base10_txt.safetensors",
