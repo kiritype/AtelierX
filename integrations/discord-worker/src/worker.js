@@ -44,12 +44,12 @@ export async function handleInteraction(request, env, ctx, dependencies = {}) {
   if (!config.ready) return jsonResponse({ error: "misconfigured" }, 500);
   if (interaction.application_id !== config.applicationId) return jsonResponse({ error: "invalid_application" }, 401);
 
-  const userId = interaction.member?.user?.id ?? interaction.user?.id;
-  if (!isNonEmptyString(userId) || !config.allowedUserIds.includes(userId)) {
+  const access = authorizeInteraction(interaction, config);
+  if (!access.authorized) {
     return jsonResponse({ error: "forbidden" }, 403);
   }
 
-  const command = normalizeCommand(interaction, now());
+  const command = normalizeCommand(interaction, now(), access);
   if (!command.ok) return jsonResponse({ error: command.error }, 400);
   ctx.waitUntil(dispatchAndReport(command, config, fetchImpl));
   return jsonResponse({ type: 5, data: { flags: 64 } }, 200);
@@ -58,21 +58,40 @@ export async function handleInteraction(request, env, ctx, dependencies = {}) {
 function getConfig(env) {
   const publicKey = env.DISCORD_PUBLIC_KEY;
   const applicationId = env.DISCORD_APPLICATION_ID;
-  const allowedUserIds = parseAllowedUserIds(env.DISCORD_ALLOWED_USER_IDS ?? env.DISCORD_ALLOWED_USER_ID);
+  const accessMode = env.DISCORD_ACCESS_MODE ?? "users";
+  const allowedUserIds = parseSnowflakeList(env.DISCORD_ALLOWED_USER_IDS ?? env.DISCORD_ALLOWED_USER_ID);
+  const allowedGuildIds = parseSnowflakeList(env.DISCORD_ALLOWED_GUILD_IDS);
+  const allowedChannelIds = env.DISCORD_ALLOWED_CHANNEL_IDS === undefined ? [] : parseSnowflakeList(env.DISCORD_ALLOWED_CHANNEL_IDS);
   const bridgeUrl = validateBridgeUrl(env.BRIDGE_URL, env.ALLOW_INSECURE_LOCAL_BRIDGE);
   if (!isHex(publicKey, 64)) return { ok: false };
+  const validAccessConfig = (accessMode === "users" && allowedUserIds !== null)
+    || (accessMode === "guild" && allowedGuildIds !== null && allowedChannelIds !== null);
   return {
     ok: true,
-    ready: isSnowflake(applicationId) && allowedUserIds.length > 0 && Boolean(bridgeUrl) && isNonEmptyString(env.BRIDGE_TOKEN) && hasCompleteAccessToken(env),
-    publicKey, applicationId, allowedUserIds, bridgeUrl, bridgeToken: env.BRIDGE_TOKEN, accessClientId: env.CF_ACCESS_CLIENT_ID, accessClientSecret: env.CF_ACCESS_CLIENT_SECRET
+    ready: isSnowflake(applicationId) && validAccessConfig && Boolean(bridgeUrl) && isNonEmptyString(env.BRIDGE_TOKEN) && hasCompleteAccessToken(env),
+    publicKey, applicationId, accessMode, allowedUserIds, allowedGuildIds, allowedChannelIds, bridgeUrl, bridgeToken: env.BRIDGE_TOKEN, accessClientId: env.CF_ACCESS_CLIENT_ID, accessClientSecret: env.CF_ACCESS_CLIENT_SECRET
   };
 }
 
-function normalizeCommand(interaction, receivedAt) {
+function authorizeInteraction(interaction, config) {
+  if (config.accessMode === "users") {
+    const userId = interaction.member?.user?.id ?? interaction.user?.id;
+    return isSnowflake(userId) && config.allowedUserIds.includes(userId) ? { authorized: true, userId, mode: "users" } : { authorized: false };
+  }
+  const userId = interaction.member?.user?.id;
+  const guildId = interaction.guild_id;
+  const channelId = interaction.channel_id;
+  const channelAllowed = config.allowedChannelIds.length === 0 || config.allowedChannelIds.includes(channelId);
+  return isSnowflake(userId) && isSnowflake(guildId) && isSnowflake(channelId) && config.allowedGuildIds.includes(guildId) && channelAllowed
+    ? { authorized: true, userId, guildId, channelId, mode: "guild" }
+    : { authorized: false };
+}
+
+function normalizeCommand(interaction, receivedAt, access) {
   if (interaction.type !== 2 || !isNonEmptyString(interaction.id) || !isNonEmptyString(interaction.token)) return { ok: false, error: "unsupported_interaction" };
   const options = Array.isArray(interaction.data?.options) ? interaction.data.options : [];
   const option = (name) => options.find((candidate) => candidate?.name === name)?.value;
-  const base = { interaction_id: interaction.id, application_id: interaction.application_id, interaction_token: interaction.token, user_id: interaction.member?.user?.id ?? interaction.user?.id, attachment_size_limit: normalizeAttachmentLimit(interaction.attachment_size_limit), received_at: receivedAt };
+  const base = { interaction_id: interaction.id, application_id: interaction.application_id, interaction_token: interaction.token, user_id: access.userId, attachment_size_limit: normalizeAttachmentLimit(interaction.attachment_size_limit), received_at: receivedAt, ...(access.mode === "guild" ? { guild_id: access.guildId, channel_id: access.channelId } : {}) };
   if (interaction.data?.name === "draw") {
     const prompt = option("prompt");
     const requestedMode = option("mode");
@@ -201,7 +220,11 @@ function normalizeAttachmentLimit(value) { return Number.isSafeInteger(value) &&
 function isBoundedString(value, max) { return typeof value === "string" && value.trim().length > 0 && Array.from(value).length <= max; }
 function isNonEmptyString(value) { return typeof value === "string" && value.length > 0; }
 function isSnowflake(value) { return typeof value === "string" && /^\d{17,20}$/.test(value); }
-function parseAllowedUserIds(value) { return typeof value === "string" ? [...new Set(value.split(",").map((item) => item.trim()).filter(isSnowflake))] : []; }
+function parseSnowflakeList(value) {
+  if (typeof value !== "string") return null;
+  const values = value.split(",").map((item) => item.trim());
+  return values.length > 0 && values.every(isSnowflake) ? [...new Set(values)] : null;
+}
 function hasCompleteAccessToken(env) { return Boolean(env.CF_ACCESS_CLIENT_ID) === Boolean(env.CF_ACCESS_CLIENT_SECRET); }
 function isHex(value, length) { return typeof value === "string" && value.length === length && /^[0-9a-f]+$/i.test(value); }
 function hexBytes(value) { const out = new Uint8Array(value.length / 2); for (let i = 0; i < out.length; i += 1) out[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16); return out; }

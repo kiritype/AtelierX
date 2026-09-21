@@ -69,9 +69,11 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.tmp.cleanup()
 
     def body(self, identifier="100", **changes):
-        return dict(interaction_id=identifier, application_id="123", interaction_token="test-token",
+        body = dict(interaction_id=identifier, application_id="123", interaction_token="test-token",
                     user_id="456", prompt="a blue bird", mode="direct", attachment_size_limit=10000,
-                    received_at=time.time(), **changes)
+                    received_at=time.time())
+        body.update(changes)
+        return body
 
     async def test_duplicate_and_completed_image_delivery(self):
         public, created = self.bridge.accept(self.body())
@@ -180,6 +182,37 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ApiError) as failure:
             self.bridge.accept(status, status=True)
         self.assertEqual(failure.exception.status, 404)
+
+    async def test_guild_mode_allows_nonowner_in_scope_and_denies_outside_or_dm(self):
+        config = {**self.config, "access_mode": "guild", "allowed_guild_ids": ["900"], "allowed_channel_ids": ["901"]}
+        config.pop("allowed_user_id")
+        bridge = Bridge(Path(self.tmp.name) / "guild", config, discord_api=str(self.discord_server.make_url("")))
+        try:
+            body = self.body("200", user_id="789", guild_id="900", channel_id="901")
+            self.assertTrue(bridge.accept(body)[1])
+            saved = bridge.records["200"]
+            self.assertEqual((saved["guild_id"], saved["channel_id"]), ("900", "901"))
+            for changes in ({"guild_id":"999", "channel_id":"901"}, {"guild_id":"900", "channel_id":"999"}):
+                with self.assertRaises(ApiError) as failure: bridge.accept(self.body(str(201 + len(changes)), user_id="789", **changes))
+                self.assertEqual(failure.exception.status, 403)
+            dm = self.body("204", user_id="789"); dm.pop("guild_id", None); dm.pop("channel_id", None)
+            with self.assertRaises(ApiError): bridge.accept(dm)
+        finally:
+            bridge.owner.close()
+
+    async def test_guild_mode_status_remains_requester_only_and_invalid_config_fails_closed(self):
+        config = {**self.config, "access_mode": "guild", "allowed_guild_ids": ["900"]}; config.pop("allowed_user_id")
+        bridge = Bridge(Path(self.tmp.name) / "guild-status", config, discord_api=str(self.discord_server.make_url("")))
+        try:
+            bridge.accept(self.body("210", user_id="789", guild_id="900", channel_id="901"))
+            status = self.body("211", user_id="790", guild_id="900", channel_id="901"); status.pop("prompt"); status.pop("mode"); status["request_id"] = "210"
+            with self.assertRaises(ApiError) as failure: bridge.accept(status, status=True)
+            self.assertEqual(failure.exception.status, 404)
+        finally:
+            bridge.owner.close()
+        for bad in ({**self.config, "access_mode":"guild", "allowed_guild_ids":[]}, {**self.config, "access_mode":"guild", "allowed_guild_ids":["900"], "allowed_channel_ids":[]}):
+            bad.pop("allowed_user_id", None)
+            with self.assertRaises(ValueError): Bridge(Path(self.tmp.name) / ("bad" + str(len(bad))), bad)
 
     async def test_real_core_rest_to_bridge_delivery_without_creating_a_group(self):
         submissions = []

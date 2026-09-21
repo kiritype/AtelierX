@@ -41,10 +41,21 @@ class Bridge:
         self.core_token = os.environ.get(config["core_token_env"], "")
         if not self.token or not self.core_token:
             raise ValueError("Bridge and Core token environment variables are required")
+        self.access_mode = config.get("access_mode", "users")
         self.allowed_users = config.get("allowed_user_ids", [config.get("allowed_user_id")])
-        if (not identifier(config.get("application_id")) or not isinstance(self.allowed_users, list)
-                or not self.allowed_users or any(not identifier(user) for user in self.allowed_users)):
-            raise ValueError("Discord application_id and nonempty allowed_user_ids are required")
+        self.allowed_guilds = config.get("allowed_guild_ids")
+        self.allowed_channels = config.get("allowed_channel_ids")
+        if not identifier(config.get("application_id")) or self.access_mode not in {"users", "guild"}:
+            raise ValueError("Discord application_id and access_mode are required")
+        if self.access_mode == "users":
+            if (not isinstance(self.allowed_users, list) or not self.allowed_users
+                    or any(not identifier(user) for user in self.allowed_users)):
+                raise ValueError("nonempty allowed_user_ids are required for users access")
+        elif (not isinstance(self.allowed_guilds, list) or not self.allowed_guilds
+              or any(not identifier(guild) for guild in self.allowed_guilds)
+              or (self.allowed_channels is not None and (not isinstance(self.allowed_channels, list)
+                  or not self.allowed_channels or any(not identifier(channel) for channel in self.allowed_channels)))):
+            raise ValueError("valid allowed_guild_ids and optional allowed_channel_ids are required for guild access")
         parsed = urlsplit(config["core_url"])
         if (parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username
                 or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}):
@@ -67,13 +78,22 @@ class Bridge:
 
     def accept(self, body, status=False):
         common = {"interaction_id", "application_id", "interaction_token", "user_id", "attachment_size_limit", "received_at"}
+        if self.access_mode == "guild":
+            common |= {"guild_id", "channel_id"}
         expected = common | ({"request_id"} if status else {"prompt", "mode"})
         if not isinstance(body, dict) or set(body) != expected:
             raise ApiError("BRIDGE_INVALID_INPUT", "Unexpected request fields")
         if any(not identifier(body[k]) for k in ("interaction_id", "application_id", "user_id")):
             raise ApiError("BRIDGE_INVALID_INPUT", "Invalid Discord identifier")
-        if body["application_id"] != self.config["application_id"] or body["user_id"] not in self.allowed_users:
+        if body["application_id"] != self.config["application_id"]:
             raise ApiError("BRIDGE_FORBIDDEN", "Discord identity is not allowed", 403)
+        if self.access_mode == "users":
+            if body["user_id"] not in self.allowed_users:
+                raise ApiError("BRIDGE_FORBIDDEN", "Discord identity is not allowed", 403)
+        elif (not identifier(body["guild_id"]) or not identifier(body["channel_id"])
+              or body["guild_id"] not in self.allowed_guilds
+              or (self.allowed_channels is not None and body["channel_id"] not in self.allowed_channels)):
+            raise ApiError("BRIDGE_FORBIDDEN", "Discord guild or channel is not allowed", 403)
         if (not isinstance(body["interaction_token"], str)
                 or not re.fullmatch(r"[A-Za-z0-9_.-]{1,2048}", body["interaction_token"])):
             raise ApiError("BRIDGE_INVALID_INPUT", "Invalid response token")
@@ -99,6 +119,8 @@ class Bridge:
                       fingerprint=fingerprint, user_id=body["user_id"], created_at=body["received_at"],
                       token=body["interaction_token"], attachment_limit=min(body["attachment_size_limit"], 20 * 1024 * 1024),
                       state="queued", delivery="pending", delivery_attempts=0, next_delivery_at=0)
+        if self.access_mode == "guild":
+            record.update(guild_id=body["guild_id"], channel_id=body["channel_id"])
         if status:
             record["request_id"] = body["request_id"]
         else:

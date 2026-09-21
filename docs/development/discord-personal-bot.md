@@ -1,6 +1,6 @@
 # 개인용 Discord 봇 — 2026-09-21
 
-사용자 확정 범위: 배포 전 개인 사용을 우선하며, Discord 봇은 F/E의 분류·그룹과 독립된 생성 흐름이다. 자연어를 로컬 LLM으로 프롬프트화하거나, 자연어/Positive Prompt를 그대로 Anima에 전달해 이미지를 응답한다. 처음에는 본인만, 이후 명시적으로 추가한 친구만 사용할 수 있게 한다. 외부 Generation API 테스트와 Backend 전체 완료는 이 작업의 선행 조건이 아니다.
+사용자 확정 범위: 배포 전 개인 사용을 우선하며, Discord 봇은 F/E의 분류·그룹과 독립된 생성 흐름이다. 자연어를 로컬 LLM으로 프롬프트화하거나, 자연어/Positive Prompt를 그대로 Anima에 전달해 이미지를 응답한다. 최초에는 본인/친구 User ID 목록으로 제한했으나, 후속 사용자 지시로 설치는 소유자만 하고 지정한 서버/채널의 모든 멤버가 사용할 수 있는 정책을 추가했다. 실제 활성화 상태는 아래 권한 변경 기록을 따른다. 외부 Generation API 테스트와 Backend 전체 완료는 이 작업의 선행 조건이 아니다.
 
 ## 명령과 데이터 흐름
 
@@ -30,7 +30,7 @@ Discord의 초기 응답은 3초 이내여야 하며 interaction token은 15분 
 - Discord interaction ID를 로컬 중복 키와 Core의 `discord:<ID>` 키로 사용한다. 전송 응답 유실·프로세스 재시작 후 기존 키를 조회한다. 확인되지 않는 접수는 명시적 오류로 남기고 자동 재접수하지 않는다.
 - 이미지 응답은 원래 메시지 PATCH로 전달한다. 전달 재시도는 생성과 분리하며, 실패한 전달 때문에 다시 생성하지 않는다. Discord 429의 대기 시간을 반영한다.
 - Discord의 첨부 한도 안에서 PNG 또는 WebP 하나를 전달한다. 로컬 어댑터는 요청당 메모리 사용을 위해 최대 20MiB를 읽는다. 이는 생성 이미지 개수의 제품 상한이 아니다. 전달 가능한 파일이 없으면 로컬 보존 상태를 안내한다.
-- Worker의 `DISCORD_ALLOWED_USER_IDS`와 Bridge의 `allowed_user_ids`에 본인 ID만 넣는다. 친구 공개 때 두 목록에 해당 ID를 추가한다. 서버 구성원이라는 이유만으로 생성 권한을 부여하지 않는다.
+- `users` 모드는 기존 `DISCORD_ALLOWED_USER_IDS` / `allowed_user_ids`를 사용한다. `guild` 모드는 Worker와 Bridge 양쪽에서 지정한 서버·선택적 채널을 검사하고 해당 범위의 모든 멤버를 허용한다. 서명된 Discord member/guild/channel 정보와 Bridge Bearer 인증을 사용한다. DM·다른 서버·범위 밖 채널은 소유자도 우회할 수 없다.
 - `/status`는 원래 요청자만 사용할 수 있다. 초기 응답·이미지는 ephemeral이며 같은 서버의 다른 사람에게 자동 공유하지 않는다. 관리자·결제·조직 권한 체계는 도입하지 않는다.
 
 LLM 추론 중 응답이 유실되거나 Core가 종료되면 자동 추론 재시도하지 않고 실행 불명 오류를 남긴다. 실행 종료가 불명인 GPU 권한은 임의 시간 만료로 해제하지 않는다. 실제 종료 여부 확인과 수동 복구가 필요한 경우가 있으며, 장기 무인 복구 완료로 보고하지 않는다.
@@ -109,3 +109,12 @@ Worker 설치·검증·등록 방법은 [Worker README](../../integrations/disco
 사용자가 테스트 Guild에서 `/draw prompt:1 girl mode:Direct`를 새로 요청했다. 접수 ID 안내 후 Core `completed`, Bridge `delivered`, error=null, delivery_attempts=0을 확인했다. 실제 생성 이미지 한 장의 PNG/WebP는 각각 1536×1536이며 Core content API로 읽어 decode·SHA-256·바이트 수를 검증했다. 로컬 근거는 `artifacts/discord-first-live-result.json`이다. Validation은 `not_requested`이므로 품질 합격으로 해석하지 않는다. Discord에서 시작한 direct 생성→업스케일→이미지 전달 경로를 실제 검증한 결과이며, natural 모드의 Discord 전체 경로·친구 권한·장기 운영·고정 Tunnel은 아직 미검증이다.
 
 회귀 검증: Worker 테스트 9개 통과(실제 Miniflare/workerd→모의 Bridge 전송 및 3xx 리디렉션 미추적 포함). 기존 Node 모의 테스트와 실제 런타임 테스트를 구분한다. 오류 응답에 본문이 없어도 HTTP 상태 분류를 보존하는 보완을 포함한 최종 Worker version은 `06a15e20-b2f4-4e2f-a210-299ab14126ad`이며 배포 완료했다. 실제 Discord 성공은 앞선 redirect 수정 version에서 확인한 결과다.
+
+
+### 설치 권한과 서버/채널 사용 권한 분리
+
+2026-09-21 사용자 지시: 봇 설치는 앱 소유자만, 지정한 서버/채널의 사용은 모든 멤버에게 허용한다. 결과의 비공개 응답과 `/status` 요청자 소유권은 유지한다.
+
+Worker `DISCORD_ACCESS_MODE=guild`, `DISCORD_ALLOWED_GUILD_IDS`(필수), `DISCORD_ALLOWED_CHANNEL_IDS`(선택)를 Bridge `access_mode=guild`, `allowed_guild_ids`, `allowed_channel_ids`와 맞춘다. 채널 목록을 지정하지 않으면 허용 서버 전체이며, 지정하면 정확히 일치하는 채널만 허용한다. 비어 있거나 잘못된 제한 목록은 전체 공개로 취급하지 않는다. Worker는 guild 모드에서만 Bridge 요청에 `guild_id`/`channel_id`를 추가한다. users 모드는 기본값이며 기존 계약을 유지한다.
+
+구현 검증: Worker 11개(실제 workerd 회귀 포함), Bridge 12개 테스트 통과. 모의 요청으로 비소유자의 허용 범위 접근, DM/다른 서버/채널 거절, 타인 상태 조회 거절을 확인했다. 실제 적용 범위(현재 서버 전체 또는 특정 채널)의 사용자 확인과 Discord 관리 화면 로그인은 아직 대기 중이다. 따라서 현재 운영 설정은 users/본인 한정으로 유지하며 Public Bot OFF 변경 완료로 보고하지 않는다. 설치 제한은 Discord Developer Portal의 Bot → Public Bot OFF로 설정하고 API 재조회로 검증한다.

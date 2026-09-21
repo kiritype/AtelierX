@@ -3,5 +3,6 @@
   "core_token_env": "ATELIERX_SERVICE_TOKEN",
   "bridge_token_env": "ATELIERX_DISCORD_BRIDGE_TOKEN",
   "application_id": "REPLACE_WITH_DISCORD_APPLICATION_ID",
+  "access_mode": "users",
   "allowed_user_ids": ["REPLACE_WITH_YOUR_DISCORD_USER_ID"]
 }
