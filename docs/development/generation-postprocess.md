@@ -64,12 +64,11 @@ Generation 서비스가 수집한 복사본은 서비스 `--data-dir` 아래
 `images[].url` (`GET /v1/images/{image_id}`)과 `media_type`을 사용한다. 원본
 ComfyUI 출력 보존·삭제 정책은 이 구현이 변경하지 않는다.
 
-## 현재 경계
+## 후속 독립 후처리 연결
 
-기존 Generation image ID만 받아 다시 후처리하는 별도 endpoint는 아직 제공하지
-않는다. Generation 저장소와 ComfyUI input/output이 분리되어 있어, 이를 안전하게
-하려면 ID 검증된 ComfyUI upload와 별도의 durable postprocess Job 복구 계약이
-필요하다. 임의 경로나 graph를 받는 우회는 추가하지 않는다.
+초기 구현 이후 Generation image ID 기반 `POST /v1/images/{image_id}/postprocess-jobs`를 추가했다. ID 검증된 ComfyUI upload와 별도 durable Job으로 원본을 보존한다. 현재 계약은 [REST API](../api/rest-api.md)의 저장 이미지 독립 후처리 절을 따른다.
+
+2026-09-21 후속 Core 접수·진행·파생 결과와 갤러리 연결 범위는 [Core 기존 이미지 후처리](core-image-postprocess.md)를 따른다. 임의 파일 경로·URL·graph는 받지 않는다.
 
 테스트는 mock ComfyUI HTTP에서 등록 모델 검사, 고정 graph 순서, PNG/WebP 수집과
 미디어 타입과 미지정 graph 거절을 확인한다.

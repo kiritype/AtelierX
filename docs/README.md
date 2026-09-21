@@ -1,5 +1,7 @@
 # 문서 목차와 관리 범위
 
+[Core 기존 이미지 후처리](development/core-image-postprocess.md): 갤러리 원본에서 후처리 접수·진행·파생 결과 확인과 원본/그룹 이력 보존.
+
 [남은 작업 분류·개인 사용 우선순위 제안](development/remaining-work-priorities.md): Discord 최신 상태를 반영한 기능·오류/복구·품질·운영 분류.
 
 [개인용 Discord 봇 구현·연결](development/discord-personal-bot.md): 그룹 없는 자연어/원문 생성, Workers와 로컬 전달 서비스, 응답 대기·권한·설정.

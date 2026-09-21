@@ -54,6 +54,13 @@ export function groupRunDisplay(run) {
   };
 }
 
+export function postprocessJobDisplay(job) {
+  return {id: job?.id || "unknown", state: job?.state || "unknown", sourceImageId: job?.source_image_id || null,
+    cancelRequested: Boolean(job?.cancel_requested), images: Array.isArray(job?.images) ? job.images : [], error: job?.error || null};
+}
+
+export function postprocessListFallback(error) { return error?.status === 404; }
+
 function initialBatchDraft() {
   return { groupId: "", generationPreset: "", postprocessPreset: "", singleProfile: "", singleProvider: "", groupProfile: "", groupProvider: "",
     rows: [{ framing: "upper_body", expression: "", action: "", situation: "" }], previews: null, previewFingerprint: null, submitting: false, requestKey: null };
@@ -178,19 +185,21 @@ function referencePanel(detail, state, ctx, batch, group, candidate, refresh, mu
 
 export async function mount(container, ctx) {
   const state = ctx.state;
-  state.taskState ||= ""; state.batchState ||= ""; state.selectedTask ||= null; state.selectedBatch ||= null; state.mutationKeys ||= {}; state.referenceDrafts ||= {}; state.form ||= { groups: [], generation: [], postprocess: [], singleProfiles: [], groupProfiles: [], providers: [] }; state.batchDraft ||= initialBatchDraft();
-  if (state.selectedId) { state.selectedTask = state.selectedId; state.selectedId = null; }
+  state.taskState ||= ""; state.batchState ||= ""; state.postprocessState ||= ""; state.selectedTask ||= null; state.selectedBatch ||= null; state.selectedPostprocess ||= null; state.mutationKeys ||= {}; state.referenceDrafts ||= {}; state.form ||= { groups: [], generation: [], postprocess: [], singleProfiles: [], groupProfiles: [], providers: [] }; state.batchDraft ||= initialBatchDraft();
+  if (state.selectedId) { if (String(state.selectedId).startsWith("postprocess:")) { state.selectedPostprocess = String(state.selectedId).slice("postprocess:".length); state.selectedTask = null; state.selectedBatch = null; } else { state.selectedTask = state.selectedId; state.selectedPostprocess = null; state.selectedBatch = null; } state.selectedId = null; }
   let disposed = false, timer = null, inFlight = false, delay = 5000, detailVersion = 0;
+  const postprocessUrls = new Set(); const revokePostprocessUrls = () => { for (const url of postprocessUrls) URL.revokeObjectURL(url); postprocessUrls.clear(); };
   state.pendingMutations ||= {};
-  const root = el("section", "", "panel"), toolbar = el("div", "", "toolbar"), message = el("p", "", "error"), batchHost = el("div"), lists = el("div", "", "jobs-lists"), tasks = el("section", "", "panel"), batches = el("section", "", "panel"), detail = el("section", "작업을 선택하세요.", "panel");
+  const root = el("section", "", "panel"), toolbar = el("div", "", "toolbar"), message = el("p", "", "error"), batchHost = el("div"), lists = el("div", "", "jobs-lists"), tasks = el("section", "", "panel"), batches = el("section", "", "panel"), postprocessJobs = el("section", "", "panel"), detail = el("section", "작업을 선택하세요.", "panel");
   const taskState = document.createElement("input"); taskState.placeholder = "Task 상태 filter"; taskState.setAttribute("aria-label", "Task 상태 필터"); taskState.value = state.taskState;
   const plansHost = el("section", "", "panel");
   state.planOffset ||= 0;
   const batchState = document.createElement("input"); batchState.placeholder = "Batch 상태 filter"; batchState.setAttribute("aria-label", "일괄 작업 상태 필터"); batchState.value = state.batchState;
+  const postprocessState = document.createElement("input"); postprocessState.placeholder = "후처리 상태 filter"; postprocessState.setAttribute("aria-label", "후처리 작업 상태 필터"); postprocessState.value = state.postprocessState;
   const legacyForm = el("details");
   legacyForm.append(el("summary", "기존 일괄 생성 양식 (호환용)"), batchHost);
-  toolbar.append(taskState, batchState, button("새로고침", () => refresh()), button("조각으로 제작하기", () => ctx.navigate("production")));
-  lists.append(tasks, batches); root.append(toolbar, message, legacyForm, lists, detail); container.replaceChildren(root);
+  toolbar.append(taskState, batchState, postprocessState, button("새로고침", () => refresh()), button("조각으로 제작하기", () => ctx.navigate("production")));
+  lists.append(tasks, batches, postprocessJobs); root.append(toolbar, message, legacyForm, lists, detail); container.replaceChildren(root);
   root.insertBefore(plansHost, lists);
   const path = (base, value) => value ? `${base}?${new URLSearchParams({ state: value, limit: "30", offset: "0" })}` : `${base}?limit=30&offset=0`;
   async function mutate(scope, action) {
@@ -208,7 +217,7 @@ export async function mount(container, ctx) {
   }
   function renderTasks(page) {
     tasks.replaceChildren(el("h2", "Task")); if (!items(page).length) tasks.append(el("p", "작업이 없습니다.", "muted"));
-    for (const task of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${task.state} · ${task.id}`, "badge"), button("상세", () => { state.selectedTask = task.id; state.selectedBatch = null; showTask(task.id); })); tasks.append(row); }
+    for (const task of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${task.state} · ${task.id}`, "badge"), button("상세", () => { state.selectedTask = task.id; state.selectedBatch = null; state.selectedPostprocess = null; showTask(task.id); })); tasks.append(row); }
   }
   function renderPlans(page) {
     plansHost.replaceChildren(el("h2", "조각 기반 제작 계획"));
@@ -226,7 +235,24 @@ export async function mount(container, ctx) {
   }
   function renderBatches(page) {
     batches.replaceChildren(el("h2", "일괄 작업")); if (!items(page).length) batches.append(el("p", "일괄 작업이 없습니다.", "muted"));
-    for (const batch of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${batch.state} · ${batch.id}`, "badge"), button("상세", () => { state.selectedBatch = batch.id; state.selectedTask = null; showBatch(batch.id); })); batches.append(row); }
+    for (const batch of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${batch.state} · ${batch.id}`, "badge"), button("상세", () => { state.selectedBatch = batch.id; state.selectedTask = null; state.selectedPostprocess = null; showBatch(batch.id); })); batches.append(row); }
+  }
+  function renderPostprocessJobs(page) {
+    postprocessJobs.replaceChildren(el("h2", "독립 후처리")); if (page?.unavailable) { postprocessJobs.append(el("p", "후처리 기능을 사용하려면 Core 업데이트/재시작이 필요합니다.", "muted")); return; } if (!items(page).length) postprocessJobs.append(el("p", "후처리 작업이 없습니다.", "muted"));
+    for (const job of items(page)) { const row = el("div", "", "row"); row.append(el("span", `${job.state} · ${job.id}`, "badge"), el("span", `원본: ${job.source_image_id}`, "muted"), button("상세", () => { state.selectedPostprocess = job.id; state.selectedTask = null; state.selectedBatch = null; showPostprocess(job.id); })); postprocessJobs.append(row); }
+  }
+  async function showPostprocess(id) {
+    const version = ++detailVersion; revokePostprocessUrls(); detail.replaceChildren(el("p", "후처리 상세를 불러오는 중…", "muted"));
+    try {
+      const job = await ctx.api.get(`/v1/postprocess-jobs/${id}`); if (disposed || version !== detailVersion || state.selectedPostprocess !== id) return;
+      const display = postprocessJobDisplay(job); detail.replaceChildren(el("h2", "독립 후처리 상세"), el("p", `상태: ${display.state}${display.cancelRequested ? " · 취소 요청됨" : ""}`), el("p", `원본 이미지: ${display.sourceImageId || "알 수 없음"}`), el("pre", JSON.stringify(job.postprocess || job.requested_postprocess || {}, null, 2)));
+      if (display.sourceImageId) detail.append(button("원본 이미지 보기", () => ctx.navigate("gallery", display.sourceImageId)));
+      if (display.error) detail.append(el("p", `${display.error.code || "POSTPROCESS_ERROR"}: ${display.error.message || "후처리 오류"}`, "error"));
+      for (const image of display.images) { const preview = document.createElement("img"); preview.alt = `파생 이미지 ${image.image_id}`; preview.style.maxHeight = "260px"; preview.style.maxWidth = "100%"; ctx.api.imageBlob(image.content_url).then((blob) => { const url = URL.createObjectURL(blob); if (disposed || version !== detailVersion || state.selectedPostprocess !== id) { URL.revokeObjectURL(url); return; } postprocessUrls.add(url); preview.src = url; }).catch(() => { preview.alt = "파생 이미지를 불러올 수 없음"; }); detail.append(el("p", `${image.image_id} · ${image.media_type} · ${image.bytes} bytes`, "muted"), preview); }
+      const terminal = ["completed", "failed", "cancelled"].includes(display.state);
+      const cancel = button("후처리 취소", async () => { cancel.disabled = true; try { await mutate(`postprocess-cancel:${id}`, () => ctx.api.post(`/v1/postprocess-jobs/${id}/cancel`)); await refresh(); } catch (error) { ctx.notify(errorText(error), true); cancel.disabled = false; } }, terminal || Boolean(state.pendingMutations[`postprocess-cancel:${id}`]));
+      detail.append(cancel);
+    } catch (error) { if (!disposed && version === detailVersion && state.selectedPostprocess === id) detail.replaceChildren(el("p", errorText(error), "error")); }
   }
   async function showTask(id) {
     const version = ++detailVersion;
@@ -281,10 +307,11 @@ export async function mount(container, ctx) {
   }
   async function refresh() {
     if (disposed || inFlight || document.hidden) return;
-    inFlight = true; message.textContent = ""; state.taskState = taskState.value.trim(); state.batchState = batchState.value.trim();
+    inFlight = true; message.textContent = ""; state.taskState = taskState.value.trim(); state.batchState = batchState.value.trim(); state.postprocessState = postprocessState.value.trim();
     try {
-      const [taskPage, batchPage, planPage] = await Promise.all([ctx.api.get(path("/v1/tasks", state.taskState)), ctx.api.get(path("/v1/group-batches", state.batchState)), ctx.api.get(`/v1/production-plans?limit=20&offset=${state.planOffset}`)]);
-      if (disposed) return; renderTasks(taskPage); renderBatches(batchPage); renderPlans(planPage); if (state.selectedTask) await showTask(state.selectedTask); if (state.selectedBatch) await showBatch(state.selectedBatch); delay = 5000;
+      const postprocessLoad = ctx.api.get(path("/v1/postprocess-jobs", state.postprocessState)).catch((error) => { if (postprocessListFallback(error)) return {unavailable: true, items: []}; throw error; });
+      const [taskPage, batchPage, postprocessPage, planPage] = await Promise.all([ctx.api.get(path("/v1/tasks", state.taskState)), ctx.api.get(path("/v1/group-batches", state.batchState)), postprocessLoad, ctx.api.get(`/v1/production-plans?limit=20&offset=${state.planOffset}`)]);
+      if (disposed) return; renderTasks(taskPage); renderBatches(batchPage); renderPostprocessJobs(postprocessPage); renderPlans(planPage); if (state.selectedTask) await showTask(state.selectedTask); if (state.selectedBatch) await showBatch(state.selectedBatch); if (state.selectedPostprocess) await showPostprocess(state.selectedPostprocess); delay = 5000;
     } catch (error) { message.textContent = errorText(error); delay = Math.min(delay * 2, 30000); }
     finally { inFlight = false; schedule(); }
   }
@@ -292,5 +319,5 @@ export async function mount(container, ctx) {
   const visibility = () => { if (document.hidden) clearTimeout(timer); else { delay = 0; refresh(); } };
   document.addEventListener("visibilitychange", visibility);
   try { await loadFormOptions(); renderBatchForm(batchHost, state, ctx, refresh); await refresh(); } catch (error) { message.textContent = errorText(error); }
-  return () => { disposed = true; clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
+  return () => { disposed = true; revokePostprocessUrls(); clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
 }

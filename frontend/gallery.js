@@ -55,6 +55,32 @@ export function classificationFilters(filters, kind, id) {
   return next;
 }
 
+export function postprocessRequest(draft) {
+  if (draft.preset) {
+    const [id, revision] = String(draft.preset).split("@");
+    if (!id || !Number.isInteger(Number(revision)) || Number(revision) < 1) throw new Error("후처리 Preset을 선택하세요.");
+    return {preset: {id, revision: Number(revision)}};
+  }
+  let postprocess;
+  if (draft.advanced) {
+    try { postprocess = JSON.parse(draft.advanced); } catch { throw new Error("고급 후처리 JSON 형식이 올바르지 않습니다."); }
+  } else {
+    postprocess = {};
+    if (draft.upscaleEnabled) {
+      const scale = Number(draft.upscaleScale), model = String(draft.upscaleModel || "").trim();
+      if (!model || !Number.isFinite(scale) || scale <= 0) throw new Error("Upscale 모델과 양의 배율을 입력하세요.");
+      postprocess.upscale = {upscale_model: model, scale};
+    }
+    if (draft.encodeEnabled) {
+      const quality = Number(draft.webpQuality);
+      if (!Number.isSafeInteger(quality) || quality < 1 || quality > 100) throw new Error("WebP 품질은 1..100 정수여야 합니다.");
+      postprocess.encode = {webp_enabled: Boolean(draft.webpEnabled), webp_quality: quality};
+    }
+  }
+  if (!postprocess || typeof postprocess !== "object" || Array.isArray(postprocess) || !Object.keys(postprocess).length) throw new Error("실행할 후처리 stage를 하나 이상 선택하세요.");
+  return {postprocess};
+}
+
 function field(label, value = "", type = "text") {
   const wrap = el("label", "", "field");
   wrap.append(el("span", label));
@@ -244,6 +270,8 @@ export async function mount(container, ctx) {
           } catch (error) { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) ctx.notify(errorText(error), true); }
         })); detail.append(row);
       }
+      await addPostprocessActions(image, epoch);
+      if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
       void addSingleActions(image, epoch); addRegenerationAction(image); await addGroupActions(image, epoch);
     } catch (error) { if (!disposed && epoch === detailEpoch) { detail.replaceChildren(); detail.append(el("p", errorText(error), "error")); } }
   }
@@ -280,6 +308,83 @@ export async function mount(container, ctx) {
       const body = {};
       try { const task = await mutate(submit, `manual:${image.task_id}`, body, (requestKey) => ctx.api.post(`/v1/tasks/${image.task_id}/regenerations`, body, requestKey)); ctx.notify(`새 Task ${task.id}`); ctx.navigate("jobs", task.id); } catch (error) { ctx.notify(errorText(error), true); }
     }); section.append(submit); detail.append(section);
+  }
+  async function addPostprocessActions(image, expectedEpoch) {
+    const section = el("section", "", "panel"); section.append(el("h3", "독립 후처리"), el("p", "원본과 그룹 판정·기준은 바꾸지 않고, 파생 결과를 별도 작업으로 만듭니다.", "muted"));
+    const draft = state.postprocessDrafts ??= {};
+    const value = draft[image.id] ??= {preset: "", upscaleEnabled: false, upscaleModel: "4x-UltraSharp.safetensors", upscaleScale: "1.5", encodeEnabled: false, webpEnabled: true, webpQuality: "90", advanced: ""};
+    try {
+      const presets = await ctx.api.get("/v1/presets/postprocess?archived=false");
+      if (!activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id)) return;
+      const options = [["", "직접 설정"]].concat((presets.items || []).map((preset) => [`${preset.id}@${preset.revision}`, `${preset.name} · r${preset.revision}`]));
+      const [presetWrap, preset] = select("저장 후처리 Preset", options); preset.value = value.preset;
+      preset.addEventListener("change", () => { value.preset = preset.value; renderPostprocessControls(); });
+      const controls = el("div", "", "grid");
+      const renderPostprocessControls = () => {
+        controls.replaceChildren();
+        if (value.preset) { controls.append(el("p", "선택한 저장 Preset revision을 그대로 고정해 접수합니다.", "muted")); return; }
+        const [upscaleWrap, upscale] = field("Upscale 사용", "", "checkbox"); upscale.checked = value.upscaleEnabled;
+        upscale.addEventListener("change", () => { value.upscaleEnabled = upscale.checked; renderPostprocessControls(); }); controls.append(upscaleWrap);
+        if (value.upscaleEnabled) {
+          const [modelWrap, model] = field("Upscale 모델", value.upscaleModel); model.addEventListener("input", () => { value.upscaleModel = model.value; });
+          const [scaleWrap, scale] = field("최종 배율", value.upscaleScale, "number"); scale.min = "0.01"; scale.step = "0.1"; scale.addEventListener("input", () => { value.upscaleScale = scale.value; }); controls.append(modelWrap, scaleWrap);
+        }
+        const [encodeWrap, encode] = field("WebP Encode 사용", "", "checkbox"); encode.checked = value.encodeEnabled;
+        encode.addEventListener("change", () => { value.encodeEnabled = encode.checked; renderPostprocessControls(); }); controls.append(encodeWrap);
+        if (value.encodeEnabled) {
+          const [webpWrap, webp] = field("WebP 출력", "", "checkbox"); webp.checked = value.webpEnabled; webp.addEventListener("change", () => { value.webpEnabled = webp.checked; });
+          const [qualityWrap, quality] = field("WebP 품질", value.webpQuality, "number"); quality.min = "1"; quality.max = "100"; quality.step = "1"; quality.addEventListener("input", () => { value.webpQuality = quality.value; }); controls.append(webpWrap, qualityWrap);
+        }
+        const advanced = document.createElement("details"); advanced.append(el("summary", "고급 stage JSON"), el("p", "고급 JSON에 값이 있으면 위 일반 설정 대신 그 JSON으로 접수합니다. 비우면 일반 설정으로 돌아갑니다.", "muted"));
+        const json = document.createElement("textarea"); json.value = value.advanced; json.placeholder = '{"detailer": {...}, "alpha": {...}}'; json.setAttribute("aria-label", "독립 후처리 고급 JSON"); json.addEventListener("input", () => { value.advanced = json.value; });
+        advanced.append(json, button("고급 JSON 사용", () => { try { value.advanced = json.value; postprocessRequest(value); renderPostprocessControls(); ctx.notify("고급 JSON을 사용할 수 있습니다."); } catch (error) { ctx.notify(errorText(error), true); } }));
+        if (value.advanced) advanced.append(button("고급 JSON 지우고 일반 설정으로", () => { value.advanced = ""; renderPostprocessControls(); }));
+        controls.append(advanced);
+      };
+      renderPostprocessControls();
+      const submit = button("독립 후처리 접수", async () => {
+        try {
+          const body = postprocessRequest(value);
+          const scope = `postprocess:${image.id}`, fingerprint = `${scope}:${JSON.stringify(body)}`;
+          const job = await mutate(submit, scope, body, (requestKey) => ctx.api.post(`/v1/images/${image.id}/postprocess-jobs`, body, requestKey));
+          delete state.mutationKeys[fingerprint];
+          ctx.notify(`후처리 작업 ${job.id} (${job.state})`); await loadPostprocessJobs();
+        } catch (error) { ctx.notify(errorText(error), true); }
+      });
+      section.append(presetWrap, controls, submit);
+      const history = el("section", "", "panel"); history.append(el("h3", "파생 후처리 작업"));
+      const rows = el("div", "", "grid");
+      const historyUrls = new Set(); let historyEpoch = 0;
+      const revokeHistoryUrls = () => { for (const url of historyUrls) { URL.revokeObjectURL(url); detailUrls.delete(url); } historyUrls.clear(); };
+      state.postprocessHistoryOffsets ??= {}; state.postprocessHistoryOffsets[image.id] ??= 0;
+      const loadPostprocessJobs = async () => {
+        const historyVersion = ++historyEpoch; revokeHistoryUrls();
+        rows.replaceChildren(el("p", "불러오는 중…", "muted"));
+        try {
+          const offset = state.postprocessHistoryOffsets[image.id];
+          const page = await ctx.api.get(`/v1/postprocess-jobs?${new URLSearchParams({source_image_id: image.id, limit: "20", offset: String(offset)})}`);
+          if (!activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id) || historyVersion !== historyEpoch) return;
+          rows.replaceChildren();
+          for (const job of page.items || []) {
+            const row = el("div", "", "panel"); row.append(el("p", `${job.state} · ${job.id}`), el("pre", JSON.stringify(job.postprocess || job.requested_postprocess || {}, null, 2)));
+            if (job.error) row.append(el("p", `${job.error.code || "POSTPROCESS_ERROR"}: ${job.error.message || "후처리 오류"}`, "error"));
+            for (const output of job.images || []) {
+              const imageNode = document.createElement("img"); imageNode.alt = `파생 이미지 ${output.image_id}`; imageNode.style.maxHeight = "240px"; imageNode.style.maxWidth = "100%";
+              ctx.api.imageBlob(output.content_url).then((blob) => { const url = URL.createObjectURL(blob); if (!activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id) || historyVersion !== historyEpoch) { URL.revokeObjectURL(url); return; } detailUrls.add(url); historyUrls.add(url); imageNode.src = url; }).catch(() => { if (historyVersion === historyEpoch) imageNode.alt = "파생 이미지를 불러올 수 없음"; });
+              row.append(el("p", `${output.media_type} · ${output.bytes} bytes`, "muted"), imageNode);
+            }
+            row.append(button("작업 현황 보기", () => ctx.navigate("jobs", `postprocess:${job.id}`)));
+            rows.append(row);
+          }
+          if (!rows.childNodes.length) rows.append(el("p", "이 이미지의 독립 후처리 기록이 없습니다.", "muted"));
+          const pager = el("div", "", "toolbar"), previous = button("이전", () => { state.postprocessHistoryOffsets[image.id] = Math.max(0, offset - page.limit); loadPostprocessJobs(); }), next = button("다음", () => { state.postprocessHistoryOffsets[image.id] = offset + page.limit; loadPostprocessJobs(); });
+          previous.disabled = offset === 0; next.disabled = offset + page.limit >= page.total; pager.append(previous, next);
+          rows.append(pager);
+        } catch (error) { if (activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id) && historyVersion === historyEpoch) rows.replaceChildren(el("p", errorText(error), "error")); }
+      };
+      history.append(button("후처리 기록 새로고침", loadPostprocessJobs), rows); section.append(history); detail.append(section); await loadPostprocessJobs();
+    } catch (error) { if (activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id)) section.append(el("p", errorText(error), "error")); }
+    if (activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id) && !section.parentNode) detail.append(section);
   }
   async function addGroupActions(image, expectedEpoch) {
     const section = el("section", "", "panel"); section.append(el("h3", "현재 그룹 검토"));

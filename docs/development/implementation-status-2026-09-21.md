@@ -28,7 +28,7 @@
 | Alpha 출력 조건의 Core 자동 연결 | 부분 | Validation 자체에는 채널/투명도 검사가 있지만 Core 검증 요청은 `alpha: not_required`로 고정한다. Alpha 생성 성공과 자동 투명도 요구 검증을 구분해야 한다. [Core 검증 요청](../../src/atelierx/core_validation.py), [Validation](../../src/atelierx/validation.py). |
 | Provider별 실행·동시성 | 부분 | 등록/선택과 큐는 존재하나 단일 worker가 전체 후보 중 하나씩 실행한다. Provider별 독립 실행 제어는 남아 있다. 구체 동시성 수치는 미정이며 공유 GPU 직렬화는 유지해야 한다. [worker](../../src/atelierx/validation.py), [ADR-0016](../architecture/adr/0016-validation-execution-and-gpu-sharing.md). |
 | Python Client·CLI API 범위 | 부분 | 작업 생성·검증·재생성·취소·그룹 검사·설정 명령은 있다. 제작 계획·전역 조각·분류·Preset·Profile/Provider 관리의 전용 메서드/명령은 없다. Client의 범용 `request`로 REST 호출은 가능하다. [Client](../../src/atelierx/api_client.py), [CLI](../../src/atelierx/cli.py). |
-| 독립 후처리의 Core 제작 흐름 편입 | 부분 | Generation API에서 기존 저장 이미지 후처리는 가능하다. Core 접수·결과 카탈로그 등록·외부 이미지 입력을 포함하는 제품 흐름은 별도다. [Generation](../../src/atelierx/generation.py), [Core](../../src/atelierx/core.py). |
+| 독립 후처리의 Core 제작 흐름 편입 | 기존 등록 이미지 연결 구현 | 후속 변경으로 Core 접수·취소·Preset 고정·작업별 파생 결과와 갤러리/작업 현황을 연결했다. 원본·그룹 판정은 유지하며 외부 이미지 입력·파생 결과 그룹 편입은 남음. [검증·운영 상태](core-image-postprocess.md). |
 | Prompt/설정 이력의 사용자 기능 | 부분·상세 미정 | revision과 실행 snapshot은 존재한다. 전역 설정 전체 이력, Prompt diff·복원 제품 기능은 없다. [Core 저장](../../src/atelierx/core_store.py), [요구 대조표 C-14](../requirements/module-feature-comparison.md). |
 | 파일 Metadata·수명주기 | 부분·정책 미정 | DB의 생성 snapshot·이미지 참조·해시 조회는 구현됐다. EXIF/파일 내 Metadata 읽기·보존, 삭제·정리·용량 관리의 전체 흐름은 남아 있다. 보관 정책과 정본 선택은 임의로 확정하지 않는다. [Encode](../../custom_nodes/atelierx_encode/), [저장 경로](output-paths.md). |
 | Import/Export·백업/복원 | 미구현·상세 미정 | SQLite 초기화·schema version은 제품 이동/백업 기능이 아니다. DB와 이미지·계획·검증 이력을 함께 복원하는 도구·정책·시험이 필요하다. [Core 저장](../../src/atelierx/core_store.py), [운영 게이트](practical-readiness.md). |
