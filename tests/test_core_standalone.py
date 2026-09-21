@@ -45,6 +45,32 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "completed")
         self.assertEqual(self.calls[0][2]["json"]["inputs"]["positive_prompt"], "literal, prompt")
 
+    async def test_optional_mode_is_normalized_without_changing_legacy_fingerprint(self):
+        direct, created = self.jobs.create("legacy-direct", {"prompt": "literal", "mode": "direct"})
+        defaulted, repeated = self.jobs.create("legacy-direct", {"prompt": "literal"})
+        self.assertTrue(created); self.assertFalse(repeated); self.assertEqual(direct["id"], defaulted["id"])
+        natural, _ = self.jobs.create("normalized-natural", {"prompt": "literal", "mode": " Natural "})
+        self.assertEqual(natural["request"]["mode"], "natural")
+
+    async def test_optional_negative_is_snapshotted_and_combined_by_core(self):
+        negative = "  low quality,  watermark\n"
+        job, _ = self.jobs.create("negative", {"prompt": "literal", "negative_prompt": negative})
+        self.assertEqual(job["request"], {"prompt": "literal", "mode": "direct", "negative_prompt": negative})
+        self.assertEqual(job["generation_inputs"]["negative_prompt"], "bad, " + negative)
+        omitted, _ = self.jobs.create("default-negative", {"prompt": "literal"})
+        whitespace, _ = self.jobs.create("whitespace-negative", {"prompt": "literal", "negative_prompt": " \n "})
+        self.assertEqual(omitted["generation_inputs"]["negative_prompt"], "bad")
+        self.assertEqual(whitespace["generation_inputs"]["negative_prompt"], "bad")
+        self.jobs.config["generation_inputs"]["negative_prompt"] = ""
+        no_base, _ = self.jobs.create("no-base-negative", {"prompt": "literal", "negative_prompt": negative})
+        self.assertEqual(no_base["generation_inputs"]["negative_prompt"], negative)
+        for invalid in (123, "x" * 20001):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.jobs.create("invalid-negative-" + str(type(invalid)), {"prompt": "literal", "negative_prompt": invalid})
+        with self.assertRaises(ApiError):
+            self.jobs.create("unknown-field", {"prompt": "literal", "unknown": "value"})
+
     async def test_random_seed_is_safe_once_per_job_and_fixed_mode_remains_compatible(self):
         self.jobs.config["seed_mode"] = "random"
         with patch("atelierx.core_standalone.secrets.randbelow", return_value=9007199254740991) as random_seed:

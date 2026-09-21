@@ -6,8 +6,9 @@ if (!isSnowflake(applicationId) || !isNonEmptyString(botToken) || (guildId && !i
 const commands = [
   { name: "draw", description: "Create an AtelierX image", type: 1, options: [
     { name: "prompt", description: "What to create", type: 3, required: true, max_length: 4000 },
-    { name: "mode", description: "Interpret the prompt or use it directly", type: 3, required: false, choices: [
-      { name: "Natural", value: "natural" }, { name: "Direct", value: "direct" }
+    { name: "negative", description: "Optional negative prompt", type: 3, required: false, max_length: 4000 },
+    { name: "mode", description: "Use prompt directly by default, or interpret it", type: 3, required: false, choices: [
+      { name: "Direct", value: "direct" }, { name: "Natural", value: "natural" }
     ] }
   ] },
   { name: "status", description: "Get the saved result for an AtelierX request", type: 1, options: [

@@ -69,8 +69,22 @@ class StandaloneJobs:
             raise ApiError("CORE_STANDALONE_DISABLED", "Standalone jobs are not configured", 503)
         if not key or len(key) > 200:
             raise ApiError("CORE_INVALID_INPUT", "Idempotency-Key of 1..200 characters is required")
-        if not isinstance(body, dict) or set(body) != {"prompt", "mode"} or body["mode"] not in ("natural", "direct") or not isinstance(body["prompt"], str) or not body["prompt"].strip() or len(body["prompt"]) > 20000:
-            raise ApiError("CORE_INVALID_INPUT", "Body requires nonempty prompt and mode natural or direct")
+        allowed = {"prompt", "mode", "negative_prompt"}
+        if not isinstance(body, dict) or set(body) - allowed or "prompt" not in body:
+            raise ApiError("CORE_INVALID_INPUT", "Body requires a prompt and optional mode or negative_prompt")
+        mode = body.get("mode", "direct")
+        if not isinstance(mode, str):
+            raise ApiError("CORE_INVALID_INPUT", "Mode must be natural or direct")
+        mode = mode.strip().lower()
+        if (mode not in ("natural", "direct") or not isinstance(body["prompt"], str)
+                or not body["prompt"].strip() or len(body["prompt"]) > 20000
+                or ("negative_prompt" in body and (not isinstance(body["negative_prompt"], str)
+                                                    or len(body["negative_prompt"]) > 20000))):
+            raise ApiError("CORE_INVALID_INPUT", "Body requires a nonempty prompt, supported mode, and optional negative_prompt")
+        # Keep the legacy fingerprint for explicit lowercase direct requests
+        # without a Negative, while making omitted and case-insensitive modes
+        # semantically idempotent.
+        body = {**body, "mode": mode}
         fingerprint = hashlib.sha256(canonical(body).encode()).hexdigest()
         old = self.by_key(key)
         if old:
@@ -78,6 +92,11 @@ class StandaloneJobs:
                 raise ApiError("CORE_IDEMPOTENCY_CONFLICT", "Request key already has different content", 409)
             return old[1], False
         inputs = dict(self.config["generation_inputs"])
+        requested_negative = body.get("negative_prompt")
+        if isinstance(requested_negative, str) and requested_negative.strip():
+            default_negative = inputs["negative_prompt"]
+            inputs["negative_prompt"] = (default_negative + ", " + requested_negative
+                                         if default_negative.strip() else requested_negative)
         if self.config.get("seed_mode", "fixed") == "random":
             # Keep random bot seeds exactly representable by Worker/Discord JavaScript clients.
             inputs["seed"] = secrets.randbelow(2**53)

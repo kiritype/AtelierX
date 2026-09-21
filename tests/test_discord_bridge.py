@@ -93,6 +93,22 @@ class DiscordBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bridge.records["100"]["token"])
         self.assertTrue(all(h == "Bearer core-secret" for h in self.core_headers))
 
+    async def test_optional_mode_and_negative_are_normalized_and_forwarded_verbatim(self):
+        negative = "  low quality,  watermark\n"
+        body = self.body()
+        body.pop("mode")
+        body["negative_prompt"] = negative
+        public, created = self.bridge.accept(body)
+        self.assertTrue(created); self.assertEqual(public["state"], "queued")
+        duplicate = self.body(mode=" DIRECT ", negative_prompt=negative)
+        self.assertFalse(self.bridge.accept(duplicate)[1])
+        await self.bridge.advance(self.bridge.records["100"])
+        self.assertEqual(self.last_body, {"prompt": "a blue bird", "mode": "direct", "negative_prompt": negative})
+        for invalid in (123, "x" * 4001):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ApiError):
+                    self.bridge.accept(self.body(str(200 + len(str(invalid))), negative_prompt=invalid))
+
     async def test_restart_after_dispatch_intent_uses_lookup_without_post(self):
         self.bridge.accept(self.body())
         record = self.bridge.records["100"]

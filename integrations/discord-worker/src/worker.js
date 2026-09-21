@@ -96,10 +96,11 @@ function normalizeCommand(interaction, receivedAt, access) {
   const base = { interaction_id: interaction.id, application_id: interaction.application_id, interaction_token: interaction.token, user_id: access.userId, attachment_size_limit: normalizeAttachmentLimit(interaction.attachment_size_limit), received_at: receivedAt, ...(access.mode === "guild" ? { guild_id: access.guildId, channel_id: access.channelId } : {}) };
   if (interaction.data?.name === "draw") {
     const prompt = option("prompt");
+    const negative = option("negative");
     const requestedMode = option("mode");
-    const mode = requestedMode === undefined ? "natural" : requestedMode;
-    if (!isBoundedString(prompt, MAX_PROMPT_CODE_POINTS) || (mode !== "natural" && mode !== "direct")) return { ok: false, error: "invalid_draw" };
-    return { ok: true, payload: { ...base, prompt, mode }, bridgePath: "/v1/discord/jobs", kind: "draw" };
+    const mode = requestedMode === undefined ? "direct" : normalizeMode(requestedMode);
+    if (!isBoundedString(prompt, MAX_PROMPT_CODE_POINTS) || !isOptionalBoundedString(negative, MAX_PROMPT_CODE_POINTS) || (mode !== "natural" && mode !== "direct")) return { ok: false, error: "invalid_draw" };
+    return { ok: true, payload: { ...base, prompt, mode, ...(negative === undefined ? {} : { negative_prompt: negative }) }, bridgePath: "/v1/discord/jobs", kind: "draw" };
   }
   if (interaction.data?.name === "status") {
     const requestId = option("request_id");
@@ -224,6 +225,8 @@ function validateBridgeUrl(value, allowInsecureLocal) {
 function isFreshTimestamp(timestamp, now) { return typeof timestamp === "string" && /^\d{10}$/.test(timestamp) && Math.abs(now - Number(timestamp)) <= SIGNATURE_MAX_AGE_SECONDS; }
 function normalizeAttachmentLimit(value) { return Number.isSafeInteger(value) && value >= 0 ? value : DEFAULT_ATTACHMENT_SIZE_LIMIT; }
 function isBoundedString(value, max) { return typeof value === "string" && value.trim().length > 0 && Array.from(value).length <= max; }
+function isOptionalBoundedString(value, max) { return value === undefined || (typeof value === "string" && Array.from(value).length <= max); }
+function normalizeMode(value) { return typeof value === "string" ? value.trim().toLowerCase() : value; }
 function isNonEmptyString(value) { return typeof value === "string" && value.length > 0; }
 function isSnowflake(value) { return typeof value === "string" && /^\d{17,20}$/.test(value); }
 function parseSnowflakeList(value) {
