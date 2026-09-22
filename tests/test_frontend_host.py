@@ -22,6 +22,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
                                    ("/ui/production.js", "text/javascript"), ("/ui/gallery.js", "text/javascript"),
                                    ("/ui/jobs.js", "text/javascript"), ("/ui/settings.js", "text/javascript"), ("/ui/connection.js", "text/javascript"),
                                    ("/ui/fragments.js", "text/javascript"), ("/ui/fragment-picker.js", "text/javascript"),
+                                   ("/ui/studio-tree.js", "text/javascript"),
                                    ("/ui/styles.css", "text/css")):
             response = await self.client.get(path)
             self.assertEqual(response.status, 200, path)
@@ -31,3 +32,15 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/v1/settings")).status, 401)
         self.assertEqual((await self.client.get("/health")).status, 401)
         self.assertEqual((await self.client.get("/ui/core.py")).status, 404)
+
+    async def test_entry_redirects_are_relative_and_do_not_open_api_auth(self):
+        for path in ("/", "/ui", "/ui?next=https://example.invalid/"):
+            for method in ("GET", "HEAD"):
+                response = await self.client.request(method, path, allow_redirects=False)
+                self.assertEqual(response.status, 302)
+                self.assertEqual(response.headers["Location"], "/ui/")
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual((await self.client.get("/")).status, 200)
+        self.assertEqual((await self.client.get("/ui")).status, 200)
+        self.assertEqual((await self.client.get("/v1/works")).status, 401)
+        self.assertEqual((await self.client.post("/ui", json={})).status, 401)

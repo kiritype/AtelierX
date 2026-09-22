@@ -3,6 +3,7 @@
  * responsible for prompt composition, frozen groups, and task orchestration.
  */
 import {fragmentKey, fragmentListPath, fragmentReference, preserveSelection} from "./fragment-picker.js";
+import {mountStudioTree} from "./studio-tree.js";
 
 const EMPTY_COMPONENTS = Object.freeze({ appearance: "", upper: "", lower: "" });
 const DEFAULT_GENERATION = Object.freeze({
@@ -182,18 +183,35 @@ function query(path, parameters) {
   return values.length ? `${path}?${new URLSearchParams(values)}` : path;
 }
 
+/** Current selection is deliberately not an input: a new draft must POST even
+ * when an older tree row remains selected in another panel. */
+export function entityMutationRequest(editor) {
+  const {kind, mode, targetId, revision, value} = editor;
+  const body = {name: value.name};
+  if (mode === "edit") body.revision = revision;
+  else if (kind !== "works") body.parent_id = value.parent_id;
+  if (kind === "characters") body.negative_prompt = value.negative_prompt || "";
+  if (kind === "outfits") body.components = {...EMPTY_COMPONENTS, ...value.components};
+  return {method: mode === "edit" ? "patch" : "post", path: mode === "edit" ? `/v1/${kind}/${targetId}` : `/v1/${kind}`, body};
+}
+
 function entityEditor(state, api, rerender, notify) {
   const selection = state.selection;
-  const work = entityById(state.entities.works, selection.workId);
-  const character = entityById(state.entities.characters, selection.characterId);
-  const outfit = entityById(state.entities.outfits, selection.outfitId);
-  const existing = outfit || character || work;
-  const kind = existing?.kind || state.editor?.kind;
-  if (!kind) return node("section", { class: "panel" }, [node("h2", { text: "저장할 Prompt" }), node("p", { class: "muted", text: "왼쪽에서 작품, 캐릭터 또는 의상을 선택하세요." })]);
-
-  const fresh = existing ? { ...existing, components: { ...EMPTY_COMPONENTS, ...existing.components } } : state.editor;
-  state.editor ||= fresh;
-  const draft = state.editor;
+  const editor = state.editor;
+  const kind = editor?.kind;
+  if (!kind) return node("section", { class: "panel" }, [node("h2", { text: "캐릭터·의상 준비" }), node("p", { class: "muted", text: "분류에서 작품, 캐릭터 또는 의상을 선택하거나 새로 만드세요." })]);
+  const draft = editor.value;
+  const isEdit = editor.mode === "edit";
+  const names = {works: "작품", characters: "캐릭터", outfits: "의상"};
+  const parents = [];
+  if (kind !== "works") {
+    const work = entityById(state.entities.works, editor.workId);
+    if (work) parents.push(work.name);
+  }
+  if (kind === "outfits") {
+    const character = entityById(state.entities.characters, editor.characterId);
+    if (character) parents.push(character.name);
+  }
   const edit = (apply) => (value) => { apply(value); state.dirty = true; };
   const controls = [field("이름", textInput(draft.name, edit((value) => { draft.name = value; })), "분류 이름은 생성 Prompt에 자동으로 들어가지 않습니다.")];
   if (kind === "characters") controls.push(field("캐릭터 Negative", textArea(draft.negative_prompt || "", edit((value) => { draft.negative_prompt = value; })), "이 캐릭터에만 적용되는 제외 조건입니다."));
@@ -203,34 +221,34 @@ function entityEditor(state, api, rerender, notify) {
     controls.push(field("하의", textArea(draft.components.lower, edit((value) => { draft.components.lower = value; })), "하의와 풋웨어"));
   }
   const save = async () => {
+    if (state.entityPending) return;
+    state.entityPending = true;
+    rerender();
     try {
-      let result;
-      if (existing) {
-        const body = { revision: existing.revision, name: draft.name };
-        if (kind === "characters") body.negative_prompt = draft.negative_prompt || "";
-        if (kind === "outfits") body.components = { ...draft.components };
-        result = await api.patch(`/v1/${kind}/${existing.id}`, body);
-      } else {
-        const body = { name: draft.name };
-        if (kind !== "works") body.parent_id = draft.parent_id;
-        if (kind === "characters") body.negative_prompt = draft.negative_prompt || "";
-        if (kind === "outfits") body.components = { ...draft.components };
-        result = await api.post(`/v1/${kind}`, body);
-      }
-      state.editor = null;
+      const request = entityMutationRequest(editor);
+      const result = await api[request.method](request.path, request.body);
       state.dirty = false;
-      if (result.kind === "works") selection.workId = result.id;
-      if (result.kind === "characters") selection.characterId = result.id;
-      if (result.kind === "outfits") selection.outfitId = result.id;
-      notify("원본을 저장했습니다.");
+      state.entityPending = false;
+      if (result.kind === "works") { selection.workId = result.id; selection.characterId = null; selection.outfitId = null; state.loaded.works = false; }
+      if (result.kind === "characters") { selection.workId = editor.workId; selection.characterId = result.id; selection.outfitId = null; state.expanded.works[editor.workId] = true; delete state.loaded?.characters?.[editor.workId]; }
+      if (result.kind === "outfits") { selection.workId = editor.workId; selection.characterId = editor.characterId; selection.outfitId = result.id; state.expanded.works[editor.workId] = true; state.expanded.characters[editor.characterId] = true; delete state.loaded?.outfits?.[editor.characterId]; }
+      state.editor = {mode: "edit", kind: result.kind, targetId: result.id, revision: result.revision, archived: Boolean(result.archived), workId: selection.workId, characterId: selection.characterId, value: {...result, components: {...EMPTY_COMPONENTS, ...result.components}}};
+      notify(isEdit ? "분류를 수정했습니다." : "새 분류를 만들었습니다.");
       await rerender(true);
-    } catch (error) { state.error = requestError(error); rerender(); }
+    } catch (error) { state.entityPending = false; state.error = requestError(error); rerender(); }
   };
-  return node("section", { class: "panel" }, [node("h2", { text: existing ? "저장할 Prompt" : "새 분류" }),
+  const archive = async () => {
+    if (!isEdit || state.entityPending) return;
+    state.archiveConfirm = {kind, id: editor.targetId, revision: editor.revision, archived: editor.archived, workId: editor.workId, characterId: editor.characterId};
+    rerender();
+  };
+  return node("section", { class: "panel" }, [node("h2", { text: isEdit ? `${names[kind]} 수정` : `새 ${names[kind]} 만들기` }),
+    parents.length ? node("p", {class: "muted", text: `상위 분류: ${parents.join(" › ")}`}) : null,
     state.dirty ? node("p", { class: "error", text: "원본에 저장하지 않은 변경이 있습니다." }) : null,
-    node("div", { class: "grid" }, controls), node("div", { class: "row" }, [button("저장", save),
-      button("취소", () => { state.editor = null; state.dirty = false; rerender(); }, { secondary: true })]),
-    existing?.kind === "outfits" ? node("p", { class: "muted", text: "저장해도 기존 그룹과 과거 Task의 고정 구성은 바뀌지 않습니다." }) : null]);
+    node("div", { class: "grid" }, controls), node("div", { class: "row" }, [button(isEdit ? `${names[kind]} 변경 저장` : `새 ${names[kind]} 저장`, save, {disabled: state.entityPending}),
+      button("취소", () => { if (state.entityPending) return; state.editor = null; state.dirty = false; rerender(); }, { secondary: true, disabled: state.entityPending }),
+      isEdit ? button(editor.archived ? "복원" : "보관", archive, {secondary: true, disabled: state.entityPending}) : null]),
+    isEdit ? node("p", { class: "muted", text: "보관은 삭제나 연쇄 변경이 아닙니다. 기존 고정 그룹과 과거 이력은 유지됩니다." }) : null]);
 }
 
 function invalidatePreview(draft, clearTask = false) {
@@ -584,7 +602,7 @@ function multiPlanSetupPanel(state, api, rerender, notify) {
       plan ? button("계획 미리보기", () => { clearProductionPlanSelection(state); state.productionPlanId = plan.id; state.productionPlan = plan; rerender(true); }, { secondary: true }) : null,
     ]);
   });
-  return node("details", { class: "panel production-multi-plan" }, [node("summary", { text: "여러 캐릭터·의상에 같은 조각 적용" }),
+  return node("details", { class: "panel production-multi-plan", open: state.multiCatalogOpen ? "" : null, ontoggle: (event) => { if (event.currentTarget.open && !state.multiCatalogOpen) { state.multiCatalogOpen = true; rerender(true); } } }, [node("summary", { text: "여러 캐릭터·의상에 같은 조각 적용" }),
     node("p", { class: "muted", text: "선택한 각 고정 그룹에 같은 전역 조각과 생성 설정을 적용합니다. 그룹마다 별도 계획을 고정한 뒤 Prompt를 확인하고 시작합니다." }),
     node("ul", { class: "fragment-list" }, groups.map((group) => node("li", { class: "row" }, [
       node("input", { type: "checkbox", checked: selected.has(group.id), "aria-label": `${groupLabel(state, group)} 그룹 선택`, onchange: (event) => toggle(group.id, event.target.checked) }),
@@ -683,6 +701,7 @@ function groupPanel(state, api, rerender, notify) {
       const group = await api.post("/v1/groups", { outfit_id: outfit.id });
       state.selection.groupId = group.id;
       state.catalogLoaded = false;
+      delete state.loaded?.groups?.[outfit.id];
       notify("새 고정 그룹을 만들었습니다.");
       await rerender(true);
     } catch (error) { state.error = requestError(error); rerender(); }
@@ -752,106 +771,139 @@ function previewView(preview) {
 
 function treePanel(state, rerender) {
   const selection = state.selection;
-  const expanded = state.expanded;
-  const select = (kind, item) => {
-    if (state.dirty) { state.error = "미저장 원본을 먼저 저장하거나 취소하세요."; rerender(); return; }
+  const blockDirty = () => {
+    if (!state.dirty && !state.entityPending) return false;
+    state.error = state.entityPending ? "저장 또는 보관 요청이 끝날 때까지 기다리세요." : "미저장 원본을 먼저 저장하거나 취소하세요.";
+    rerender(); return true;
+  };
+  const select = (item) => {
+    if (blockDirty()) return;
+    state.archiveConfirm = null;
+    const kind = `${item.type}s`;
     if (kind === "works") {
       selection.workId = item.id; selection.characterId = null; selection.outfitId = null; selection.groupId = null;
-      expanded.works[item.id] = true;
     }
     if (kind === "characters") {
       selection.workId = item.parent_id; selection.characterId = item.id; selection.outfitId = null; selection.groupId = null;
-      expanded.works[item.parent_id] = true; expanded.characters[item.id] = true;
     }
     if (kind === "outfits") {
       const character = entityById(state.entities.characters, item.parent_id);
       selection.characterId = item.parent_id; selection.workId = character?.parent_id || selection.workId;
       selection.outfitId = item.id; selection.groupId = null;
-      if (selection.workId) expanded.works[selection.workId] = true;
-      expanded.characters[item.parent_id] = true;
     }
-    state.editor = { ...item, components: { ...EMPTY_COMPONENTS, ...item.components } };
+    state.editor = {mode: "edit", kind, targetId: item.id, revision: item.revision, archived: Boolean(item.archived),
+      workId: selection.workId, characterId: selection.characterId,
+      value: {...item, components: {...EMPTY_COMPONENTS, ...item.components}}};
     state.mobilePreparationPanel = "editor";
     rerender(true);
   };
-  const toggle = (kind, id) => {
-    expanded[kind][id] = !expanded[kind][id];
-    rerender(true);
-  };
-  const create = (kind, parentId = null) => {
-    if (state.dirty) { state.error = "미저장 원본을 먼저 저장하거나 취소하세요."; rerender(); return; }
-    state.editor = { kind, name: "", parent_id: parentId, negative_prompt: "", components: { ...EMPTY_COMPONENTS } };
+  const create = (type, parent = null) => {
+    if (blockDirty()) return;
+    state.archiveConfirm = null;
+    const kind = `${type}s`;
+    const parentId = parent?.id || null;
+    const workId = kind === "characters" ? parentId : kind === "outfits" ? parent?.parent_id : null;
+    state.editor = {mode: "create", kind, targetId: null, parentId, workId, characterId: kind === "outfits" ? parentId : null,
+      value: {name: "", parent_id: parentId, negative_prompt: "", components: {...EMPTY_COMPONENTS}}};
     state.mobilePreparationPanel = "editor";
     rerender();
   };
-  const selectButton = (label, selected, action) => node("button", {
-    type: "button", class: selected ? "tree-select selected" : "tree-select", "aria-current": selected ? "true" : null,
-    onclick: action, text: label,
-  });
-  const toggleButton = (kind, id, isOpen, label) => node("button", {
-    type: "button", class: "tree-toggle", "aria-expanded": isOpen ? "true" : "false",
-    "aria-label": `${label} ${isOpen ? "접기" : "펼치기"}`, onclick: () => toggle(kind, id), text: isOpen ? "˅" : ">",
-  });
-  const works = state.entities.works.map((work) => {
-    const workOpen = Boolean(expanded.works[work.id]);
-    const characters = state.entities.characters.filter((character) => character.parent_id === work.id).map((character) => {
-      const characterOpen = Boolean(expanded.characters[character.id]);
-      const outfits = state.entities.outfits.filter((outfit) => outfit.parent_id === character.id).map((outfit) =>
-        node("li", { role: "treeitem", class: "tree-row" }, [selectButton(outfit.name, selection.outfitId === outfit.id, () => select("outfits", outfit))]));
-      return node("li", { role: "treeitem", "aria-expanded": characterOpen ? "true" : "false" }, [
-        node("div", { class: "tree-row" }, [toggleButton("characters", character.id, characterOpen, character.name), selectButton(character.name, selection.characterId === character.id && !selection.outfitId, () => select("characters", character))]),
-        characterOpen ? node("ul", { class: "tree-children", role: "group" }, outfits) : null,
-      ]);
+  const host = node("div", {class: "studio-tree-host"});
+  queueMicrotask(() => {
+    state.tree?.dispose?.();
+    const items = [...state.entities.works, ...state.entities.characters, ...state.entities.outfits].map((item) => {
+      const type = item.kind?.slice(0, -1) || item.type;
+      const childrenLoaded = type === "work" ? Boolean(state.loaded?.characters?.[item.id]) : type === "character" ? Boolean(state.loaded?.outfits?.[item.id]) : true;
+      return {...item, type, children_loaded: childrenLoaded};
     });
-    return node("li", { role: "treeitem", "aria-expanded": workOpen ? "true" : "false" }, [
-      node("div", { class: "tree-row" }, [toggleButton("works", work.id, workOpen, work.name), selectButton(work.name, selection.workId === work.id && !selection.characterId, () => select("works", work))]),
-      workOpen ? node("ul", { class: "tree-children", role: "group" }, characters) : null,
-    ]);
+    const selectedId = selection.outfitId || selection.characterId || selection.workId;
+    const expandedIds = new Set([...Object.entries(state.expanded.works).filter(([, value]) => value).map(([id]) => id), ...Object.entries(state.expanded.characters).filter(([, value]) => value).map(([id]) => id)]);
+    const archive = async (item) => {
+      if (blockDirty()) return;
+      state.archiveConfirm = {kind: `${item.type}s`, id: item.id, revision: item.revision, archived: Boolean(item.archived), workId: item.type === "work" ? item.id : item.parent_id, characterId: item.type === "character" ? item.id : item.parent_id};
+      rerender();
+    };
+    state.tree = mountStudioTree(host, {items, selectedId, expandedIds, onSelect: select, onEdit: select, onCreate: create,
+      onArchive: archive, onExpandedChange: (next) => { if (blockDirty()) return; state.expanded.works = {}; state.expanded.characters = {}; for (const id of next) { if (entityById(state.entities.works, id)) state.expanded.works[id] = true; else state.expanded.characters[id] = true; } rerender(true); }});
   });
-  return node("section", { class: "panel" }, [node("h2", { text: "분류" }), node("ul", { class: "classification-tree", role: "tree", "aria-label": "작품, 캐릭터, 의상" }, works),
-    node("div", { class: "toolbar" }, [button("+ 작품", () => create("works"), { secondary: true }), button("+ 캐릭터", () => {
-      if (selection.workId) create("characters", selection.workId); else { state.error = "먼저 작품을 선택하세요."; rerender(); }
-    }, { secondary: true }), button("+ 의상", () => {
-      if (selection.characterId) create("outfits", selection.characterId); else { state.error = "먼저 캐릭터를 선택하세요."; rerender(); }
-    }, { secondary: true })])]);
+  return node("section", {class: "panel"}, [host]);
 }
-async function load(state, api) {
-  const [works, generation, postprocess, profiles, providers, fragments, groupProfiles, fragmentCategories] = await Promise.all([
-    api.get("/v1/works?limit=200&offset=0"), api.get("/v1/presets/generation?archived=false"), api.get("/v1/presets/postprocess?archived=false"),
-    api.get("/v1/validation-settings/single-profiles"), api.get("/v1/validation-settings/providers"),
-    api.get(fragmentPickerQuery(state)),
-    api.get("/v1/validation-settings/group-profiles"),
-    api.get("/v1/prompt-fragment-categories?archived=false&limit=200&offset=0"),
+
+function archiveConfirmationPanel(state, rerender) {
+  const target = state.archiveConfirm;
+  if (!target) return null;
+  const names = {works: "작품", characters: "캐릭터", outfits: "의상"};
+  const confirm = async () => {
+    if (state.entityPending) return;
+    state.entityPending = true; rerender();
+    try {
+      const result = await state.api.patch(`/v1/${target.kind}/${target.id}`, {revision: target.revision, archived: !target.archived});
+      if (target.kind === "works") state.loaded.works = false;
+      if (target.kind === "characters") delete state.loaded?.characters?.[target.workId];
+      if (target.kind === "outfits") delete state.loaded?.outfits?.[target.characterId];
+      state.archiveConfirm = null; state.entityPending = false; state.dirty = false;
+      if (state.editor?.mode === "edit" && state.editor.targetId === target.id && state.editor.kind === target.kind) {
+        state.editor = {...state.editor, revision: result.revision, archived: Boolean(result.archived), value: {...result, components: {...EMPTY_COMPONENTS, ...result.components}}};
+      }
+      state.notify?.(target.archived ? "분류를 복원했습니다." : "분류를 보관했습니다. 기존 고정 그룹과 과거 이력은 유지됩니다.");
+      await rerender(true);
+    } catch (error) { state.entityPending = false; state.error = requestError(error); rerender(); }
+  };
+  return node("section", {class: "panel archive-confirmation", role: "alertdialog", "aria-label": "보관 확인"}, [
+    node("h2", {text: target.archived ? `${names[target.kind]} 복원` : `${names[target.kind]} 보관`}),
+    node("p", {text: target.archived ? "이 분류를 다시 사용할 수 있게 할까요?" : "이 분류를 보관할까요?"}),
+    node("p", {class: "muted", text: "기존 고정 그룹과 과거 이력은 유지됩니다."}),
+    node("div", {class: "toolbar"}, [button(target.archived ? "복원 확인" : "보관 확인", confirm, {disabled: state.entityPending}), button("취소", () => { if (!state.entityPending) { state.archiveConfirm = null; rerender(); } }, {secondary: true, disabled: state.entityPending})]),
   ]);
-  state.entities.works = collection(works);
-  state.presets.generation = collection(generation); state.presets.postprocess = collection(postprocess);
-  state.presets.profiles = collection(profiles); state.presets.providers = collection(providers);
-  state.presets.groupProfiles = collection(groupProfiles);
-  state.fragments = collection(fragments);
-  state.fragmentTotal = Number.isInteger(fragments?.total) ? fragments.total : state.fragments.length;
-  state.fragmentCategories = collection(fragmentCategories);
+}
+export async function loadProductionData(state, api, isCurrent = () => true) {
+  const compose = state.productionSection === "compose" || Boolean(state.productionPlanId);
+  state.loaded ||= {works: false, characters: {}, outfits: {}, compose: false, groups: {}};
+  if (!state.loaded.works) {
+    const works = await api.get("/v1/works?limit=200&offset=0"); if (!isCurrent()) return;
+    state.entities.works = collection(works); state.loaded.works = true;
+  }
   const workIds = [...new Set([state.selection.workId, ...Object.entries(state.expanded.works).filter(([, open]) => open).map(([id]) => id)].filter(Boolean))];
-  const characterLists = await Promise.all(workIds.map((parentId) => api.get(query("/v1/characters", { parent_id: parentId, limit: 200, offset: 0 }))));
-  state.entities.characters = characterLists.flatMap(collection);
+  const missingWorks = workIds.filter((id) => !state.loaded.characters[id]);
+  const characterLists = await Promise.all(missingWorks.map(async (parentId) => [parentId, await api.get(query("/v1/characters", {parent_id: parentId, limit: 200, offset: 0}))])); if (!isCurrent()) return;
+  for (const [parentId, result] of characterLists) { state.entities.characters = [...state.entities.characters.filter((item) => item.parent_id !== parentId), ...collection(result)]; state.loaded.characters[parentId] = true; }
   const characterIds = [...new Set([state.selection.characterId, ...Object.entries(state.expanded.characters).filter(([, open]) => open).map(([id]) => id)].filter(Boolean))];
-  const outfitLists = await Promise.all(characterIds.map((parentId) => api.get(query("/v1/outfits", { parent_id: parentId, limit: 200, offset: 0 }))));
-  state.entities.outfits = outfitLists.flatMap(collection);
-  if (state.selection.outfitId) state.entities.groups = collection(await api.get(query("/v1/groups", { outfit_id: state.selection.outfitId, limit: 200, offset: 0 })));
-  else state.entities.groups = [];
-  if (!state.catalogLoaded) {
+  const missingCharacters = characterIds.filter((id) => !state.loaded.outfits[id]);
+  const outfitLists = await Promise.all(missingCharacters.map(async (parentId) => [parentId, await api.get(query("/v1/outfits", {parent_id: parentId, limit: 200, offset: 0}))])); if (!isCurrent()) return;
+  for (const [parentId, result] of outfitLists) { state.entities.outfits = [...state.entities.outfits.filter((item) => item.parent_id !== parentId), ...collection(result)]; state.loaded.outfits[parentId] = true; }
+  if (!compose) return;
+  if (!state.loaded.compose) {
+    const [generation, postprocess, profiles, providers, groupProfiles, fragmentCategories] = await Promise.all([
+      api.get("/v1/presets/generation?archived=false"), api.get("/v1/presets/postprocess?archived=false"), api.get("/v1/validation-settings/single-profiles"), api.get("/v1/validation-settings/providers"), api.get("/v1/validation-settings/group-profiles"), api.get("/v1/prompt-fragment-categories?archived=false&limit=200&offset=0"),
+    ]); if (!isCurrent()) return;
+    state.presets.generation = collection(generation); state.presets.postprocess = collection(postprocess); state.presets.profiles = collection(profiles); state.presets.providers = collection(providers); state.presets.groupProfiles = collection(groupProfiles);
+    state.fragmentCategories = collection(fragmentCategories); state.loaded.compose = true;
+  }
+  const fragmentPath = fragmentPickerQuery(state);
+  if (state.loaded.fragmentPath !== fragmentPath) {
+    const fragments = await api.get(fragmentPath); if (!isCurrent()) return;
+    state.fragments = collection(fragments); state.fragmentTotal = Number.isInteger(fragments?.total) ? fragments.total : state.fragments.length; state.loaded.fragmentPath = fragmentPath;
+  }
+  const selectedOutfitId = state.selection.outfitId;
+  if (selectedOutfitId && !state.loaded.groups[selectedOutfitId]) {
+    const groups = await api.get(query("/v1/groups", {outfit_id: selectedOutfitId, limit: 200, offset: 0})); if (!isCurrent()) return;
+    state.loaded.groups[selectedOutfitId] = collection(groups);
+  }
+  state.entities.groups = state.selection.outfitId ? (state.loaded.groups[state.selection.outfitId] || []) : [];
+  if (state.multiCatalogOpen && !state.catalogLoaded) {
     const page = async (path, parameters = {}) => {
       const all = [];
       for (let offset = 0; ; offset += 200) {
-        const result = await api.get(query(path, { ...parameters, limit: 200, offset }));
+        const result = await api.get(query(path, {...parameters, limit: 200, offset}));
         const values = collection(result); all.push(...values);
         if (values.length < 200 || (Number.isInteger(result?.total) && all.length >= result.total)) return all;
       }
     };
     const catalogWorks = await page("/v1/works");
-    const catalogCharacters = (await Promise.all(catalogWorks.map((work) => page("/v1/characters", { parent_id: work.id })))).flat();
-    const catalogOutfits = (await Promise.all(catalogCharacters.map((character) => page("/v1/outfits", { parent_id: character.id })))).flat();
-    state.catalog = { works: catalogWorks, characters: catalogCharacters, outfits: catalogOutfits, groups: await page("/v1/groups") };
-    state.catalogLoaded = true;
+    const catalogCharacters = (await Promise.all(catalogWorks.map((work) => page("/v1/characters", {parent_id: work.id})))).flat();
+    const catalogOutfits = (await Promise.all(catalogCharacters.map((character) => page("/v1/outfits", {parent_id: character.id})))).flat();
+    const catalogGroups = await page("/v1/groups"); if (!isCurrent()) return;
+    state.catalog = {works: catalogWorks, characters: catalogCharacters, outfits: catalogOutfits, groups: catalogGroups}; state.catalogLoaded = true;
   }
   if (state.productionPlanId) await refreshProductionPlan(state, api);
 }
@@ -859,17 +911,19 @@ async function load(state, api) {
 export async function mount(container, ctx) {
   const state = pageState(ctx);
   state.navigate = ctx.navigate;
+  state.api = ctx.api;
   let disposed = false;
   let loading = 0;
   const notify = (message, error = false) => ctx.notify?.(message, error);
+  state.notify = notify;
   const rerender = async (refresh = false) => {
     const current = ++loading;
     if (refresh) {
-      try { await load(state, ctx.api); }
+      try { await loadProductionData(state, ctx.api, () => current === loading && !disposed && ctx.isActive?.() !== false); }
       catch (error) { state.error = requestError(error); }
     }
     if (disposed || current !== loading) return;
-    const chooseSection = (section) => { state.productionSection = section; rerender(); };
+    const chooseSection = (section) => { state.productionSection = section; rerender(section === "compose"); };
     const navigation = state.productionPlanId ? null : node("nav", {class: "production-sections", "aria-label": "제작 단계"}, [
       button("1. 캐릭터·의상 준비", () => chooseSection("prepare"), {secondary: state.productionSection !== "prepare"}),
       button("2. 조각 선택·생성 확인", () => chooseSection("compose"), {secondary: state.productionSection !== "compose"}),
@@ -893,10 +947,14 @@ export async function mount(container, ctx) {
     ]);
     const main = node("div", { class: "production-layout production-workflow" }, [navigation,
       state.productionPlanId ? composition : state.productionSection === "compose" ? composition : preparation]);
-    const children = state.error ? [node("p", { class: "error", role: "alert", text: state.error }), main] : [main];
-    container.replaceChildren(...children);
+    const confirmation = archiveConfirmationPanel(state, rerender);
+    const children = state.error ? [node("p", { class: "error", role: "alert", text: state.error }), confirmation, main] : [confirmation, main];
+    container.replaceChildren(...children.filter(Boolean));
     state.error = null;
   };
-  await rerender(true);
-  return () => { disposed = true; };
+  const hadCachedTree = Boolean(state.loaded?.works);
+  if (hadCachedTree) { state.loaded.works = false; state.loaded.characters = {}; state.loaded.outfits = {}; state.loaded.groups = {}; state.loaded.compose = false; state.loaded.fragmentPath = null; }
+  await rerender(!hadCachedTree);
+  if (hadCachedTree) rerender(true);
+  return () => { disposed = true; state.tree?.dispose?.(); state.tree = null; };
 }

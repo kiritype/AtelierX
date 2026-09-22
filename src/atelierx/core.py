@@ -360,7 +360,7 @@ class Core:
 
 @web.middleware
 async def errors(request, handler):
-    if request.method == "GET" and request.path.startswith("/ui/"):
+    if request.method in {"GET", "HEAD"} and (request.path in {"/", "/ui"} or request.path.startswith("/ui/")):
         return await handler(request)
     core = request.app[CORE]
     try:

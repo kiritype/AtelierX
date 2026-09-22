@@ -1,5 +1,13 @@
 # 고정 Cloudflare Tunnel과 Access 점검 — 2026-09-21
 
+## Google 로그인 전환 완료 — 2026-09-22
+
+사용자가 Google OAuth 자격 증명을 Cloudflare 대시보드에 직접 입력해 Google IdP를 등록했다. AtelierX 앱의 허용 공급자를 Google로 변경하고 기존 `kiritype@gmail.com` 단일 이메일 Allow 규칙을 확인했다. 초기 IdP 테스트에서는 Google `400 redirect_uri_mismatch`가 발생했다. 아래의 웹 애플리케이션 유형 교체와 `https://cftmz.cloudflareaccess.com/cdn-cgi/access/callback` 등록 후 해소됐다.
+
+수정 중에는 Google과 기존 One-time PIN을 함께 허용했다. 사용자가 데스크톱 유형 대신 웹 애플리케이션 OAuth 클라이언트를 만들어 자격 증명을 교체했고, Google 로그인 화면 정상 진입을 확인했다. 이후 사용자가 IdP 테스트의 `kiritype@gmail.com` 반환과 `https://atelier.cftm.net/ui/` 접속 성공을 확인했다. 이에 따라 AtelierX 앱의 PIN 선택을 제거하고 Google만 허용하도록 저장했다. Discord Bridge의 service-token 정책과 Tunnel은 변경하지 않았다. Client Secret은 읽거나 저장소에 기록하지 않았다. 아래 OTP 전용 구성은 최초 적용 시점 기록이다.
+
+사용자는 `https://atelier.cftm.net/` 및 `/ui`에서 404, `/ui/`에서는 정상 접속을 보고했다. 이후 사용자가 작업실 수정과 함께 처리하도록 지시하여 두 진입 주소의 GET/HEAD를 고정 상대 경로 `/ui/`로 리디렉션하도록 구현했다. 검증·운영 반영 결과는 [작업실 개선 기록](studio-tree-navigation.md)을 따른다.
+
 ## 확정 구성
 
 다음 구성은 사용자 승인에 따라 2026-09-21에 적용했다. Core·Bridge의 기존 loopback 서비스는 재시작하지 않았다.

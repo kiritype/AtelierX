@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, fragmentPickerQuery, freezeMultiProductionPlanRequests, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from "../frontend/production.js";
+import { buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, entityMutationRequest, fragmentPickerQuery, freezeMultiProductionPlanRequests, loadProductionData, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS } from "../frontend/production.js";
 
 function state(overrides = {}) {
   return {
@@ -178,4 +178,34 @@ test("returning from a frozen plan clears navigation only and preserves the draf
   assert.deepEqual(current.productionPlanItems, []);
   assert.equal(current.planItemsOffset, 0);
   assert.equal(current.draft, draft);
+});
+
+test("prepare defers compose catalogs and cached branches avoid repeated API calls", async () => {
+  const calls = [];
+  const api = {get: async (path) => { calls.push(path); return {items: []}; }};
+  const current = {selection: {workId: null, characterId: null, outfitId: null}, expanded: {works: {}, characters: {}}, entities: {works: [], characters: [], outfits: [], groups: []}, presets: {}, productionSection: "prepare", fragmentSearch: "", fragmentCategoryId: "", fragmentLimit: 25, fragmentOffset: 0};
+  await loadProductionData(current, api);
+  assert.deepEqual(calls, ["/v1/works?limit=200&offset=0"]);
+  await loadProductionData(current, api);
+  assert.equal(calls.length, 1);
+  current.productionSection = "compose";
+  await loadProductionData(current, api);
+  assert.equal(calls.includes("/v1/presets/generation?archived=false"), true);
+  assert.equal(calls.includes("/v1/validation-settings/providers"), true);
+  assert.equal(calls.filter((path) => path.startsWith("/v1/groups")).length, 0);
+});
+
+test("stale production loads do not apply a late catalog response", async () => {
+  const current = {selection: {workId: null, characterId: null, outfitId: null}, expanded: {works: {}, characters: {}}, entities: {works: [{id: "kept"}], characters: [], outfits: [], groups: []}, presets: {}, productionSection: "prepare", fragmentSearch: "", fragmentCategoryId: "", fragmentLimit: 25, fragmentOffset: 0};
+  await loadProductionData(current, {get: async () => ({items: [{id: "late"}]})}, () => false);
+  assert.deepEqual(current.entities.works, [{id: "kept"}]);
+});
+
+test("explicit editor mode keeps a new child as POST despite an old selected target", () => {
+  assert.deepEqual(entityMutationRequest({mode: "create", kind: "works", value: {name: "새 작품"}}), {method: "post", path: "/v1/works", body: {name: "새 작품"}});
+  assert.deepEqual(entityMutationRequest({mode: "create", kind: "characters", value: {name: "새 캐릭터", parent_id: "work-new"}}), {method: "post", path: "/v1/characters", body: {name: "새 캐릭터", parent_id: "work-new", negative_prompt: ""}});
+  const created = entityMutationRequest({mode: "create", kind: "outfits", targetId: null, value: {name: "새 의상", parent_id: "character-new", components: {upper: "shirt"}}});
+  assert.deepEqual(created, {method: "post", path: "/v1/outfits", body: {name: "새 의상", parent_id: "character-new", components: {appearance: "", upper: "shirt", lower: ""}}});
+  const edited = entityMutationRequest({mode: "edit", kind: "characters", targetId: "character-old", revision: 7, value: {name: "변경", negative_prompt: "glasses"}});
+  assert.deepEqual(edited, {method: "patch", path: "/v1/characters/character-old", body: {name: "변경", revision: 7, negative_prompt: "glasses"}});
 });

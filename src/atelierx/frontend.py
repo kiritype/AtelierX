@@ -16,6 +16,7 @@ _ASSETS = {
     "connection.js": "text/javascript; charset=utf-8",
     "fragments.js": "text/javascript; charset=utf-8",
     "fragment-picker.js": "text/javascript; charset=utf-8",
+    "studio-tree.js": "text/javascript; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
 }
 
@@ -34,4 +35,8 @@ def attach(app):
     async def index(request):
         return response("index.html")
 
-    app.add_routes([web.get("/ui/", index), web.get("/ui/{asset}", asset)])
+    async def entry(request):
+        # Fixed relative target: never derive a redirect from Host or user input.
+        raise web.HTTPFound(location="/ui/", headers={"Cache-Control": "no-store"})
+
+    app.add_routes([web.get("/", entry), web.get("/ui", entry), web.get("/ui/", index), web.get("/ui/{asset}", asset)])
