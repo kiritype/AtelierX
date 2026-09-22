@@ -171,10 +171,24 @@ export async function mount(container, ctx) {
     catch (error) { state.error = errorText(error); render(); }
   };
   const categoryPanel = () => {
-    const rows = state.categories.map((category) => el("li", {class: "fragment-category-row"}, [
-      button(category.name, () => guarded(() => { state.categoryId = category.id; state.categoryOpen = false; state.offset = 0; state.mobilePanel = "list"; refresh(); }), {secondary: state.categoryId !== category.id}),
-      button("수정", () => { state.categoryEditor = {...category}; render(); }, {secondary: true}), button(category.archived ? "복원" : "보관", () => archiveCategory(category), {secondary: true}),
-    ]));
+    const rows = state.categories.map((category) => {
+      const selectCategory = button(category.name, () => guarded(() => { state.categoryId = category.id; state.categoryOpen = false; state.offset = 0; state.mobilePanel = "list"; refresh(); }), {secondary: state.categoryId !== category.id});
+      selectCategory.title = category.name;
+      selectCategory.setAttribute("aria-current", String(state.categoryId === category.id));
+      const actions = el("details", {class: "fragment-category-actions", ontoggle: (event) => {
+        if (event.currentTarget.open) container.querySelectorAll(".fragment-category-actions[open]").forEach((other) => { if (other !== event.currentTarget) other.open = false; });
+      }, onkeydown: (event) => {
+        if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary").focus(); }
+      }}, [
+        el("summary", {text: "⋯", "aria-label": `${category.name} 관리`, title: "카테고리 관리"}),
+        el("div", {class: "fragment-category-action-list"}, [
+          button("이름 수정", () => { state.categoryEditor = {...category}; render(); }, {secondary: true}),
+          button(category.archived ? "복원" : "보관", () => archiveCategory(category), {secondary: true}),
+          el("small", {class: "muted", text: "보관해도 안의 조각은 삭제되지 않습니다."}),
+        ]),
+      ]);
+      return el("li", {class: "fragment-category-row"}, [selectCategory, actions]);
+    });
     const categoryForm = state.categoryEditor ? el("form", {class: "fragment-category-form", onsubmit: (event) => { event.preventDefault(); saveCategory(); }}, [
       field("카테고리 이름", input(state.categoryEditor.name, (value) => { state.categoryEditor.name = value; state.categoryEditor.dirty = true; })),
       button("카테고리 저장", saveCategory, {disabled: state.categorySaving}), button("취소", () => { state.categoryEditor = null; render(); }, {secondary: true, disabled: state.categorySaving}),

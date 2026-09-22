@@ -127,7 +127,8 @@ export function mountStudioTree(container, initial = {}) {
     row.append(element("span", {class: `studio-tree-icon studio-tree-icon-${item.type}`, "aria-hidden": "true"}));
     row.append(element("span", {class: "studio-tree-type", text: TYPE[item.type]}));
     if (item.archived) row.append(element("span", {class: "studio-tree-archived", text: "보관됨"}));
-    row.append(element("button", {type: "button", class: "studio-tree-select", "aria-current": options.selectedId === item.id ? "true" : null, text: item.name || "이름 없음", onclick: () => options.onSelect?.(item)}));
+    const name = item.name || "이름 없음";
+    row.append(element("button", {type: "button", class: "studio-tree-select", title: name, "aria-label": `${TYPE[item.type]}: ${name}`, "aria-current": options.selectedId === item.id ? "true" : null, text: name, onclick: () => options.onSelect?.(item)}));
     row.append(element("button", {type: "button", class: "studio-tree-more", "data-tree-action": "menu", "aria-label": `${item.name || TYPE[item.type]} 메뉴 열기`, "aria-haspopup": "menu", "aria-expanded": "false", text: "⋯", onclick: (event) => openMenu(event, item)}));
     const result = element("li", {class: "studio-tree-item"}, [row]);
     if (canExpand && open) result.append(element("ul", {class: "studio-tree-children", role: "group"}, children.map((child) => renderNode(child, depth + 1))));
