@@ -447,3 +447,17 @@ Task/preview는 `presets:{generation:{id,revision},postprocess:{id,revision}}`�
 
 
 선택 재생성의 보완: 접수 당시 실제 생성 snapshot과 단일/묶음 profile·provider·endpoint를 record에 고정한다. 일반 단일 검증의 자동 재생성 cycle이 후속 Task를 만들면 그 최종 시도를 추적하며, cycle이 끝난 뒤 선택한 순번·형식의 단일 통과 출력만 묶음 검사에 연결한다. 이는 묶음 불일치에 의한 자동 재생성을 허용하는 것이 아니다. 대체 작업의 비선택 PNG/WebP 출력 및 과거 자동 시도는 현재 그룹 대상에서 제외하고 원래 Task의 비선택 형제 이미지는 유지한다. 실제 Task를 만들지 못한 접수 실패는 기존 대상을 유지한다.
+
+
+## 2026-09-22 캐릭터 외형·의상 액세서리와 자원 조회
+
+현재 계약은 캐릭터 `appearance_prompt` 문자열, 의상 `components:{upper,lower,accessories}`다. 캐릭터 POST/PATCH에 appearance_prompt를 지원한다. 과거 의상 `components:{appearance,upper,lower}`는 호환 입력으로 처리하고 기존 스냅샷을 유지한다. 조각 include의 accessories는 선택 입력이며 과거 데이터에서 생략되면 true로 합성한다.
+
+Core 시작 시 현재 의상들의 외형이 동일하면 캐릭터 외형으로 이전하고 새 revision을 추가한다. 빈 외형과 비어 있지 않은 외형 또는 기존 캐릭터 외형과 불일치하면 충돌을 기록한다. 캐릭터 상세의 `appearance_migration.status=conflict`와 `candidates:[{appearance_prompt,outfit_ids}]`를 확인하고, 현재 캐릭터 revision과 선택한 appearance_prompt로 PATCH하여 해소한다. 충돌이 남은 상태의 신규 그룹 생성 및 의상 components 변경은 `CORE_APPEARANCE_MIGRATION_RESOLUTION_REQUIRED`(409)다. 기존 history/group/task/plan은 이전 대상이 아니다.
+
+| 서비스 | 경로 | 응답 |
+| --- | --- | --- |
+| Core | `GET /v1/generation/resources` | Generation의 등록 자원 목록을 인증된 동일 출처로 중계 |
+| Generation | `GET /v1/resources` | ComfyUI의 현재 Anima 노드 입력 목록 조회 |
+
+응답은 `{family:"anima",diffusion_models:[],text_encoders:[],vaes:[],samplers:[],schedulers:[],loras:[],upscale_models:[]}`이며 각 배열은 등록된 이름 문자열이다. GPU 추론·다운로드를 수행하지 않고 파일 시스템 경로를 임의 탐색하지 않는다. 자원이 없으면 빈 배열, ComfyUI/노드에 접근할 수 없으면 503이며 기존 파일명으로 자동 대체하지 않는다. 목록에 있다는 사실은 모든 모델 조합의 호환성 보장이 아니며 실행 시 기존 검증을 유지한다. Core의 기존 Bearer/Access 인증 경계를 유지한다.

@@ -89,6 +89,26 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
     def payload(self, group):
         return dict(group_id=group["id"], framing="upper_body", expression="smiling", generation_inputs=GEN)
 
+    async def test_character_appearance_is_always_composed_and_fragment_accessories_are_conditional(self):
+        _, work = await self.request("POST", "/v1/works", {"name": "work"})
+        _, character = await self.request("POST", "/v1/characters", {"name": "character", "parent_id": work["id"], "appearance_prompt": "silver hair"})
+        _, outfit = await self.request("POST", "/v1/outfits", {"name": "outfit", "parent_id": character["id"], "components": {"upper": "white shirt", "lower": "boots", "accessories": "gold brooch"}})
+        _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        _, without = await self.request("POST", "/v1/prompt-fragments", {"name": "without", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": False}})
+        _, with_accessories = await self.request("POST", "/v1/prompt-fragments", {"name": "with", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": True}})
+        base = {"group_id": group["id"], "generation_inputs": GEN}
+        _, hidden = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": without["id"], "revision": 1}})
+        _, shown = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": with_accessories["id"], "revision": 1}})
+        hidden_prompt = hidden["snapshot"]["generation_inputs"]["positive_prompt"]
+        shown_prompt = shown["snapshot"]["generation_inputs"]["positive_prompt"]
+        self.assertIn("silver hair", hidden_prompt)
+        self.assertNotIn("gold brooch", hidden_prompt)
+        self.assertIn("gold brooch", shown_prompt)
+        _, changed = await self.request("PATCH", f"/v1/characters/{character['id']}", {"revision": 1, "appearance_prompt": "black hair"})
+        self.assertEqual(changed["appearance_prompt"], "black hair")
+        _, frozen = await self.request("GET", f"/v1/groups/{group['id']}")
+        self.assertEqual(frozen["character_appearance_prompt"], "silver hair")
+
     async def wait_task(self, task_id, state):
         for _ in range(200):
             _, task = await self.request("GET", "/v1/tasks/" + task_id)

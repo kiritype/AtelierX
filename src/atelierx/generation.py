@@ -445,6 +445,23 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
         return web.json_response(service.public(job), status=202 if created else 200,
                                  headers={"Location": f'/v1/jobs/{job["job_id"]}'})
 
+    async def resources(request):
+        # ComfyUI's registered node inputs are authoritative, including external
+        # model search paths. Do not enumerate arbitrary local directories.
+        info = await service.node_info()
+        anima = info.get(NODE)
+        if not anima:
+            raise ApiError("GEN_NODE_UNAVAILABLE", "Anima node is not registered", 503)
+        result = {"family": "anima"}
+        for public, field in (("diffusion_models", "diffusion_model"), ("text_encoders", "text_encoder"),
+                              ("vaes", "vae"), ("samplers", "sampler"), ("schedulers", "scheduler")):
+            result[public] = [item for item in service._options(anima, field) if isinstance(item, str)]
+        stack = anima.get("input", {}).get("optional", {}).get("lora_stack", [])
+        metadata = stack[1] if len(stack) > 1 and isinstance(stack[1], dict) else {}
+        result["loras"] = [item for item in metadata.get("atelierx_lora_stack", {}).get("options", []) if isinstance(item, str)]
+        result["upscale_models"] = [item for item in service._options(info.get("AtelierXUpscale", {}), "upscale_model") if isinstance(item, str)]
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+
     async def independent_postprocess(request):
         payload=await request.json()
         if not isinstance(payload,dict) or set(payload)!={"postprocess"} or not isinstance(payload["postprocess"],dict):
@@ -486,7 +503,7 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
             service.save(job)
         return web.json_response(service.public(job), status=200 if job["state"] in TERMINAL else 202)
 
-    app.add_routes([web.post("/v1/jobs/{job_id}/cancel", cancel), web.get("/health", health), web.get("/v1/nodes", nodes),
+    app.add_routes([web.post("/v1/jobs/{job_id}/cancel", cancel), web.get("/health", health), web.get("/v1/nodes", nodes), web.get("/v1/resources", resources),
                     web.post("/v1/nodes/anima/jobs", submit), web.post("/v1/images/{image_id}/postprocess-jobs", independent_postprocess), web.get("/v1/jobs/by-key", by_key),
                     web.get("/v1/jobs/{job_id}", get_job), web.get("/v1/images/{image_id}", image)])
     return app

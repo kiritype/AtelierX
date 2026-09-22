@@ -54,14 +54,15 @@ export function prepareNewRouteState(state, routeId) {
 }
 export function fragmentDraft(item = null) {
   return item ? {id: item.id, revision: item.revision, number: item.number, name: item.name, body: item.body,
-    category_id: item.category_id ?? null, include: {upper: Boolean(item.include?.upper), lower: Boolean(item.include?.lower)}} :
-    {name: "", body: "", category_id: null, include: {upper: true, lower: false}};
+    category_id: item.category_id ?? null, include: {upper: Boolean(item.include?.upper), lower: Boolean(item.include?.lower), accessories: item.include?.accessories !== false}} :
+    {name: "", body: "", category_id: null, include: {upper: true, lower: false, accessories: true}};
 }
 export function draftChanged(draft, item) {
   if (!draft) return false;
   if (!item) return Boolean(draft.name || draft.body || draft.category_id);
   return draft.name !== item.name || draft.body !== item.body || (draft.category_id ?? null) !== (item.category_id ?? null) ||
-    Boolean(draft.include.upper) !== Boolean(item.include?.upper) || Boolean(draft.include.lower) !== Boolean(item.include?.lower);
+    Boolean(draft.include.upper) !== Boolean(item.include?.upper) || Boolean(draft.include.lower) !== Boolean(item.include?.lower) ||
+    Boolean(draft.include.accessories) !== (item.include?.accessories !== false);
 }
 
 async function load(state, api) {
@@ -128,7 +129,7 @@ export async function mount(container, ctx) {
     if (state.saving) return;
     state.saving = true; render();
     try {
-      const body = {name: value.name.trim(), body: value.body.trim(), category_id: value.category_id || null, include: {upper: Boolean(value.include.upper), lower: Boolean(value.include.lower)}};
+      const body = {name: value.name.trim(), body: value.body.trim(), category_id: value.category_id || null, include: {upper: Boolean(value.include.upper), lower: Boolean(value.include.lower), accessories: value.include.accessories !== false}};
       const saved = value.id ? await ctx.api.patch(`/v1/prompt-fragments/${value.id}`, {revision: value.revision, ...body}) : await ctx.api.post("/v1/prompt-fragments", body);
       state.selected = saved; state.selectedId = saved.id; state.editor = fragmentDraft(saved); state.dirty = false; state.history = null; state.offset = value.id ? state.offset : 0;
       ctx.onDetailChange?.(saved.id);
@@ -223,7 +224,7 @@ export async function mount(container, ctx) {
     return el("aside", {class: "fragment-detail panel"}, [el("div", {class: "toolbar"}, [button("목록으로", () => guarded(() => { state.selectedId = null; state.mobilePanel = "list"; ctx.onDetailChange?.(null); render(); }), {secondary: true})]), el("h2", {text: editor.id ? `#${editor.number ?? "–"} 조각 편집` : "새 전역 조각"}),
       el("p", {class: "muted", text: "표시 번호는 Core가 전체 조각에 자동으로 부여하며 수정할 수 없습니다."}),
       field("이름", input(editor.name, (value) => { editor.name = value; state.dirty = true; })), field("카테고리", category), field("Prompt 본문", textarea(editor.body, (value) => { editor.body = value; state.dirty = true; })),
-      field("상의 포함", el("input", {type: "checkbox", checked: editor.include.upper, onchange: (event) => { editor.include.upper = event.target.checked; state.dirty = true; }})), field("하의 포함", el("input", {type: "checkbox", checked: editor.include.lower, onchange: (event) => { editor.include.lower = event.target.checked; state.dirty = true; }})),
+      field("상의 포함", el("input", {type: "checkbox", checked: editor.include.upper, onchange: (event) => { editor.include.upper = event.target.checked; state.dirty = true; }})), field("하의 포함", el("input", {type: "checkbox", checked: editor.include.lower, onchange: (event) => { editor.include.lower = event.target.checked; state.dirty = true; }})), field("액세서리 포함", el("input", {type: "checkbox", checked: editor.include.accessories !== false, onchange: (event) => { editor.include.accessories = event.target.checked; state.dirty = true; }})),
       el("div", {class: "toolbar"}, [button("저장", saveFragment, {disabled: state.saving}), button("취소", () => { state.editor = state.selected ? fragmentDraft(state.selected) : null; state.selectedId = state.selected?.id || null; state.dirty = false; state.mobilePanel = "list"; ctx.onDetailChange?.(null); render(); }, {secondary: true}), editor.id ? button(state.selected?.archived ? "복원" : "보관", archiveFragment, {secondary: true, disabled: state.saving}) : null]), historyPanel]);
   };
   function render() {

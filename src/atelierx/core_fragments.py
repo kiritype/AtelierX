@@ -83,9 +83,13 @@ class CoreFragments:
         name = _name(name)
         if not isinstance(body, str) or not body.strip() or len(body) > 20000:
             invalid("body must be non-empty text up to 20000 characters")
-        if not isinstance(include, dict) or set(include) != {"upper", "lower"} or any(type(value) is not bool for value in include.values()):
-            invalid("include requires upper and lower booleans")
-        return {"name": name, "body": body, "include": dict(include)}
+        if not isinstance(include, dict) or set(include) not in ({"upper", "lower"}, {"upper", "lower", "accessories"}) or any(type(value) is not bool for value in include.values()):
+            invalid("include requires upper, lower and optional accessories booleans")
+        # Keep legacy revision documents byte-compatible; Core composition
+        # supplies accessories=True when this optional key is absent.
+        normalized = {"upper": include["upper"], "lower": include["lower"]}
+        if "accessories" in include: normalized["accessories"] = include["accessories"]
+        return {"name": name, "body": body, "include": normalized}
 
     def _get(self, fragment_id):
         row = self.db.execute("SELECT document FROM prompt_fragments WHERE id=?", (fragment_id,)).fetchone()

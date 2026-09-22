@@ -86,6 +86,9 @@ def _ordered(items):
 
 def _group_item(group):
     result = {name: group[name] for name in ("id", "outfit_id", "character_id", "work_id", "outfit_revision", "components", "created_at")}
+    for name in ("character_revision", "character_appearance_prompt"):
+        if name in group:
+            result[name] = group[name]
     if "reference" in group:
         result["reference"] = group["reference"]
     return result

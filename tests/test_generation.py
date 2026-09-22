@@ -104,6 +104,24 @@ class GenerationTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.01)
         self.fail(f"Expected {state}, last job {job}")
 
+    async def test_resource_catalog_uses_live_registration_without_submitting(self):
+        self.assertEqual((await self.client.get("/v1/resources")).status, 401)
+        headers = {"Authorization": "Bearer test-token"}
+        response = await self.client.get("/v1/resources", headers=headers)
+        self.assertEqual(response.status, 200)
+        data = await response.json()
+        self.assertEqual(data["diffusion_models"], ["anima"])
+        self.assertEqual(data["text_encoders"], ["encoder"])
+        self.assertEqual(data["vaes"], ["vae"])
+        self.assertEqual(data["loras"], ["a", "b"])
+        self.assertEqual(data["upscale_models"], [])
+        self.schema["input"]["required"]["diffusion_model"] = [["new.safetensors"], {}]
+        refreshed = await (await self.client.get("/v1/resources", headers=headers)).json()
+        self.assertEqual(refreshed["diffusion_models"], ["new.safetensors"])
+        self.registered = False
+        self.assertEqual((await self.client.get("/v1/resources", headers=headers)).status, 503)
+        self.assertEqual(self.posts, [])
+
     async def test_auth_invalid_inputs_and_missing_node_do_not_submit(self):
         self.assertEqual((await self.client.get("/health")).status, 401)
         for field, value in [("width", 513), ("seed", True), ("diffusion_model", "missing"),

@@ -35,11 +35,13 @@ from .core_standalone import StandaloneJobs
 from .core_postprocess import CorePostprocess
 from .queue_api import attach_queue_api
 from .frontend import attach as attach_frontend
+from .core_resources import attach as attach_generation_resources
 from .frontend_connection import FrontendConnection
 
 CORE = web.AppKey("core", object)
 FRONTEND_CONNECTION = web.AppKey("frontend_connection", FrontendConnection)
-COMPONENTS = {"appearance", "upper", "lower"}
+COMPONENTS = {"upper", "lower", "accessories"}
+LEGACY_COMPONENTS = {"appearance", "upper", "lower"}
 GEN_FIELDS = {"diffusion_model", "text_encoder", "vae", "width", "height", "seed", "steps", "cfg", "sampler", "scheduler"}
 TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
 
@@ -60,6 +62,10 @@ def text(value, label, nonempty=False):
 
 
 def components(value):
+    # Existing snapshots remain readable; only new entity writes use the
+    # character-owned appearance schema.
+    if isinstance(value, dict) and set(value) == LEGACY_COMPONENTS:
+        return {name: text(value[name], name) for name in sorted(LEGACY_COMPONENTS)}
     fields(value, COMPONENTS, COMPONENTS)
     return {name: text(value[name], name) for name in sorted(COMPONENTS)}
 
@@ -133,7 +139,7 @@ class Core:
             invalid("fragment cannot be combined with framing, prompt inputs, or include")
         framing = None if fragment else payload.get("framing")
         if fragment:
-            framing_prompt, include = "", {"appearance": True, **fragment["include"]}
+            framing_prompt, include = "", {"upper": True, "lower": True, "accessories": True, **fragment["include"]}
         else:
             if not isinstance(framing, str) or framing not in {"upper_body", "full_body", "custom"}:
                 invalid("framing supports upper_body, full_body or custom")
@@ -141,9 +147,11 @@ class Core:
             if framing == "custom": framing_prompt = text(payload.get("framing_prompt"), "framing_prompt", True)
             elif "framing_prompt" in payload: invalid("framing_prompt requires custom framing")
             include = payload.get("include", {})
+            if isinstance(include, dict) and set(include) == LEGACY_COMPONENTS:
+                include = {"upper": include["upper"], "lower": include["lower"], "accessories": True}
             fields(include, COMPONENTS)
             if any(type(value) is not bool for value in include.values()): invalid("include values must be boolean")
-            if framing == "custom" and set(include) != set(COMPONENTS): invalid("Custom framing requires explicit appearance, upper and lower inclusion")
+            if framing == "custom" and set(include) != set(COMPONENTS): invalid("Custom framing requires explicit upper, lower and accessories inclusion")
         framing_terms = {entry["requirement"].strip().casefold()
                          for part in clauses(fragment["body"] if fragment else framing_prompt) for entry in expanded_clause(part)}
         if {"upper body", "full body"}.issubset(framing_terms):
@@ -153,14 +161,16 @@ class Core:
             raise ApiError("CORE_PROMPT_CONFLICT", "upper_body cannot require lower/footwear")
         settings = self.store.settings()
         source = group["components"]
+        appearance = group.get("character_appearance_prompt", source.get("appearance", ""))
         chunks = [settings["positive_quality"]]
-        decisions = {}
-        for name in ("appearance", "upper", "lower"):
+        decisions = {"appearance": {"included": True, "reason": "character"}}
+        chunks.append(appearance)
+        for name in ("upper", "lower", "accessories"):
             active = include.get(name, True) and not (name == "lower" and framing == "upper_body")
             decisions[name] = {"included": active, "reason": "fragment" if fragment and active else "included" if active else
                                ("framing" if name == "lower" and framing == "upper_body" else "user_excluded")}
             if active:
-                chunks.append(source[name])
+                chunks.append(source.get(name, ""))
         chunks.append(framing_prompt)
         for name in ("expression", "action", "situation"): chunks.append(text(payload.get(name, ""), name))
         if fragment: chunks.append(fragment["body"])
@@ -391,6 +401,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     app = web.Application(middlewares=[errors], client_max_size=2 * 1024 * 1024)
     attach_frontend(app)
     core = Core(db_path, generation_url, token, generation_token or token, poll)
+    attach_generation_resources(app, core)
     app[FRONTEND_CONNECTION] = FrontendConnection(frontend_connection_path, token)
     core.presets.attach(app)
     core.fragments.attach(app)
@@ -485,19 +496,20 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                                       "limit": limit, "offset": offset})
         body = await request.json()
         required = {"name"} | ({"parent_id"} if KINDS[kind] else set()) | ({"components"} if kind == "outfits" else set())
-        fields(body, required | ({"negative_prompt"} if kind == "characters" else set()), required)
+        fields(body, required | ({"negative_prompt", "appearance_prompt"} if kind == "characters" else set()), required)
         result = core.store.create_entity(kind, text(body["name"], "name", True),
                                           text(body["parent_id"], "parent_id", True) if KINDS[kind] else None,
                                           components(body["components"]) if kind == "outfits" else None,
-                                          character_negative(body.get("negative_prompt", "")) if kind == "characters" else "")
+                                          character_negative(body.get("negative_prompt", "")) if kind == "characters" else "",
+                                          text(body.get("appearance_prompt", ""), "appearance_prompt") if kind == "characters" else "")
         return web.json_response(result, status=201)
 
     async def entity_detail(request):
         kind, entity_id = request.match_info["kind"], request.match_info["id"]
         if request.method == "GET":
-            return web.json_response(core.store.entity(entity_id, kind))
+            return web.json_response(core.store.entity_response(entity_id, kind))
         body = await request.json()
-        allowed = {"revision", "name", "archived"} | ({"components"} if kind == "outfits" else set()) | ({"negative_prompt"} if kind == "characters" else set())
+        allowed = {"revision", "name", "archived"} | ({"components"} if kind == "outfits" else set()) | ({"negative_prompt", "appearance_prompt"} if kind == "characters" else set())
         fields(body, allowed, {"revision"})
         changes = {key: value for key, value in body.items() if key != "revision"}
         if not changes:
@@ -510,7 +522,10 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
             components(changes["components"])
         if "negative_prompt" in changes:
             character_negative(changes["negative_prompt"])
-        return web.json_response(core.store.update_entity(entity_id, kind, revision(body["revision"]), changes))
+        if "appearance_prompt" in changes:
+            text(changes["appearance_prompt"], "appearance_prompt")
+        result = core.store.update_entity(entity_id, kind, revision(body["revision"]), changes)
+        return web.json_response(core.store.entity_response(result["id"], kind))
 
     async def history(request):
         limit, offset = paging(request)

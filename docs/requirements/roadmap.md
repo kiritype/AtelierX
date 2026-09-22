@@ -77,3 +77,35 @@ Discord ← Workers ← Core 작업 상태·이미지 조회
 ## 체크포인트별 Natural 변환 보완 — 후속 과제
 
 2026-09-21 사용자 지적: 현재 Core Natural은 간단한 Positive 문장 재작성이며 체크포인트가 이해하는 어휘·태그·자연어 조합을 고려하지 않는다. 모델별 작성 규칙, 사용자 의도 보존, Direct 대비 실제 이미지 평가를 포함해 나중에 보완한다. Discord/F/E에 변환 로직을 복제하지 않고 Core가 담당한다. 구현된 기본 경로를 모델별 프롬프트 최적화 완료로 보고하지 않는다. 구체 우선순위는 [남은 작업 제안](../development/remaining-work-priorities.md)에서 사용자와 결정한다.
+
+
+## 개인 사용 UI 안정화 이후 설치 배포 준비 — 2026-09-22 요청
+
+현재 구현과 이후 준비를 구분한다. UI 개편의 실제 흐름 검증 전에 릴리즈 준비 완료로 표시하지 않는다.
+
+| 순서 | 범위 | 완료 기준 |
+| --- | --- | --- |
+| 현재 | 캐릭터/생성, 검토/갤러리 분리 및 설정 UI | 안전한 외형 이전, 액세서리 포함, 생성 체크 트리, 자원 드롭다운, 작은 체크박스와 모바일 배치 |
+| 다음 | 사용자 실제 흐름 테스트 | 대상/조각 선택부터 생성·단일/묶음 검사·검토·갤러리까지 소규모 실제 실행. 자동/모의/실행/미검증 구분 |
+| 다음 | 문서 정비·README·웹 매뉴얼 | 현행 기준과 역사 실행 기록 분리, 링크 유지, README는 짧은 소개+설치/실행/첫 생성/매뉴얼 진입점, 안정된 화면의 단계별 캡처 |
+| 다음 | 전체 소스 검토 | 결함·책임 혼재·중복을 먼저 목록화하고 위험/효과 순으로 작은 리팩토링. 검토를 전면 재작성으로 취급하지 않음 |
+| 릴리즈 후보 | 설치·배포 | 깨끗한 Windows 환경에서 설치/연결/자원 진단/실행/업데이트/사용자 데이터 보존을 검증. 패키지에 모델·토큰·DB·개인 이미지를 포함하지 않음 |
+
+### GitHub About
+
+현재 description/homepage는 비어 있다(2026-09-22 조회). 문구 초안: `ComfyUI 기반 캐릭터 이미지 제작 도구 — 프롬프트 조각을 조합한 일괄 생성, 로컬 VLM 검증, 결과 관리.` 릴리즈 준비 과정에서 저장소 About에 반영한다. 개인 Access 보호 앱 주소를 공개 홈페이지로 자동 지정하지 않으며 웹 매뉴얼 공개 범위와 주소가 확정된 뒤 링크한다.
+
+### 릴리즈 브랜치와 설치 경험
+
+사용자는 UI/UX 완료와 실제 테스트를 마친 버전을 릴리즈 브랜치로 옮기고 설치 배포 기능을 만들도록 후속 요청했다. 기존 CONTRIBUTING의 `develop → main` merge commit / `main` 릴리즈 기준은 유지한다. `release/<version>` 후보 브랜치에서 검증·수정한 뒤 main으로 통합하는 구체 흐름, 버전/태그/설치 형식은 릴리즈 착수 때 확정한다. 현재 후보 브랜치·태그·릴리즈를 만들지 않는다.
+
+첫 설치는 기존 ComfyUI 경로 또는 URL을 지정하고 AtelierX 노드 등록·Generation 연결·Validation Provider·모델 목록을 검사하는 경험이 필요하다. 기존 ComfyUI 설치/워크플로/모델을 덮어쓰지 않으며 실행 중인 큐를 중단하지 않는다. 소스 실행만 성공한 것을 설치 배포 완료로 간주하지 않는다.
+
+### 모델·의존성 안내에 반드시 포함할 내용
+
+- 현재 제품 생성 경로는 `AtelierXAnimaGenerate` 기반 Anima다. SDXL/Illustrious는 요구/로드맵과 현재 구현 지원을 구분하며 일반 checkpoint 파일을 Anima로 사용 가능하다고 안내하지 않는다. 파일 목록 등록은 실제 모델 호환성 검증과 다르다.
+- 기본 생성 필수: 호환 Anima diffusion model, text encoder, VAE 및 ComfyUI/AtelierX Anima 노드. 기본 업스케일을 사용하면 해당 upscale 모델도 필요하다. 검증을 켜면 별도 VLM Provider와 모델이 필요하다.
+- 선택 기능: LoRA, Detailer 검출 모델·노드, 검열 segmentation 모델·라벨/런타임, Alpha segmentation 모델. 기능별로 없을 때 비활성/오류를 설명하고 모든 모델을 기본 설치 필수로 묶지 않는다.
+- 표준 폴더 예시는 ComfyUI의 `models/diffusion_models`, `models/text_encoders`, `models/vae`, `models/loras`, `models/upscale_models`로 안내하되 Stability Matrix 공유 경로/extra_model_paths 사용을 함께 설명한다. 검열·Alpha의 `ultralytics_segm`은 등록된 검색 경로를 확인해야 하며 임의의 물리 경로 하나로 고정하지 않는다. Detailer의 bbox/segm은 설치된 detector 노드 설정을 따른다.
+- 모델의 출처·버전/해시·호환성·라이선스·용량을 기능별 지원 표에 기록한다. 다운로드 링크는 작성 시 공식 원문을 확인하며, 재배포나 자동 다운로드 동의는 별개다. 이번 작업에서 모델 다운로드·재배포는 하지 않는다.
+- ComfyUI 연결은 Generation이 REST로 담당한다. F/E는 Core 주소만 사용하고, Core/Generation/Validation/ComfyUI의 연결 설정과 정상 확인 방법을 매뉴얼에 포함한다. 현재 PC에 남은 로컬 파일과 새 clone에 없는 파일을 명시한다.
