@@ -128,6 +128,10 @@ class StandaloneJobs:
         if self.config.get("seed_mode", "fixed") == "random":
             # Keep random bot seeds exactly representable by Worker/Discord JavaScript clients.
             inputs["seed"] = secrets.randbelow(2**53)
+        elif inputs.get("seed") == -1:
+            # A standalone job has no Task row, so it must freeze the sentinel
+            # before its own durable job record is written.
+            inputs["seed"] = secrets.randbelow(2**53)
         job = {"id": str(uuid.uuid4()), "state": "queued", "created_at": time.time(), "request": body, "config": self.config, "generation_endpoint": self.core.generation_url,
                "generation_job_id": None, "generation_inputs": inputs, "seed": inputs["seed"], "images": [], "error": None,
                "validation": {"state": "not_requested", "outcome": None}}

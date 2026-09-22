@@ -99,7 +99,7 @@ def generation_settings(value):
     value = {"width": 1024, "height": 1024, **value}
     for name in ("diffusion_model", "text_encoder", "vae", "sampler", "scheduler"):
         text(value[name], name, True)
-    ranges = {"width": (256, 1920), "height": (256, 1920), "seed": (0, 2**64-1), "steps": (1, 100)}
+    ranges = {"width": (256, 1920), "height": (256, 1920), "seed": (-1, 2**64-1), "steps": (1, 100)}
     for name, (low, high) in ranges.items():
         if type(value[name]) is not int or not low <= value[name] <= high:
             invalid(f"{name} must be an integer in {low}..{high}")

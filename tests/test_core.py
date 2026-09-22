@@ -193,6 +193,23 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history["total"], 2)
         self.assertEqual((await self.request("POST", path, {"generation_inputs": {"positive_prompt": "removed"}}, "bad-regen"))[0], 400)
 
+    async def test_random_seed_is_resolved_once_after_preview_and_survives_reopen(self):
+        *_, group = await self.setup_group()
+        body = dict(self.payload(group), generation_inputs=dict(GEN, seed=-1))
+        status, preview = await self.request("POST", "/v1/prompts/preview", body)
+        self.assertEqual((status, preview["snapshot"]["generation_inputs"]["seed"]), (200, -1))
+        status, task = await self.request("POST", "/v1/tasks", dict(body, preview_hash=preview["preview_hash"]), "random-seed")
+        self.assertEqual(status, 202)
+        seed = task["snapshot"]["generation_inputs"]["seed"]
+        self.assertIsInstance(seed, int)
+        self.assertGreaterEqual(seed, 0)
+        await self.client.close()
+        self.client = await self.new_client()
+        status, restored = await self.request("GET", "/v1/tasks/" + task["id"])
+        self.assertEqual((status, restored["snapshot"]["generation_inputs"]["seed"]), (200, seed))
+        status, repeated = await self.request("POST", "/v1/tasks", dict(body, preview_hash=preview["preview_hash"]), "random-seed")
+        self.assertEqual((status, repeated["id"], repeated["snapshot"]["generation_inputs"]["seed"]), (200, task["id"], seed))
+
     async def test_category_hierarchy_revision_and_no_cascade_archive(self):
         work, character, outfit, group = await self.setup_group()
         self.assertEqual((await self.client.get("/health")).status, 401)

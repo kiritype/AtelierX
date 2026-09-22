@@ -48,6 +48,11 @@ export function activeDetail(disposed, currentEpoch, expectedEpoch, selectedId, 
   return !disposed && currentEpoch === expectedEpoch && selectedId === imageId;
 }
 
+export function resolvedSeed(snapshot) {
+  const seed = snapshot?.generation_inputs?.seed;
+  return Number.isSafeInteger(seed) && seed >= 0 ? seed : null;
+}
+
 export function classificationFilters(filters, kind, id) {
   const next = {...filters};
   if (kind === "works") { next.work_id = id; delete next.character_id; delete next.outfit_id; }
@@ -159,6 +164,12 @@ export async function mount(container, ctx) {
   toolbar.append(button(reviewMode ? "통과 결과 보기" : "통과 결과만", () => {
     single.value = "passed"; group.value = "matched"; state.offset = 0; clearDetail(); refresh();
   }), el("span", "단일 통과 + 현재 기준 그룹 일치", "muted"));
+  if (!reviewMode) toolbar.append(button("미검증 보기", () => {
+    single.value = "unvalidated"; group.value = ""; state.offset = 0; clearDetail(); refresh();
+  }), button("전체 결과", () => {
+    for (const input of [single, group, media]) input.value = "";
+    state.filters = {}; state.offset = 0; clearDetail(); renderClassification(); refresh();
+  }));
   toolbar.append(button("필터 적용", () => { state.offset = 0; refresh(); }), button("초기화", () => {
     for (const input of [single, group, media]) input.value = ""; state.filters = {}; state.offset = 0; clearDetail(); renderClassification(); refresh();
   }));
@@ -277,7 +288,8 @@ export async function mount(container, ctx) {
       const task = await ctx.api.get(`/v1/tasks/${image.task_id}`);
       const history = await ctx.api.get(`/v1/images/${imageId}/validations`);
       if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
-      detail.replaceChildren(el("h2", "이미지 상세"), el("p", `형식: ${image.media_type} · ${image.bytes} bytes`), el("p", `Task: ${image.task_id}`, "muted"));
+      const seed = resolvedSeed(task.snapshot);
+      detail.replaceChildren(el("h2", "이미지 상세"), el("p", `형식: ${image.media_type} · ${image.bytes} bytes`), el("p", `Task: ${image.task_id}`, "muted"), ...(seed === null ? [] : [el("p", `Seed: ${seed}`)]));
       detail.prepend(button("← 이미지 목록", backToList, "button mobile-only"));
       if (task.snapshot?.fragment?.id) {
         const fragmentInfo = el("p", "조각 번호 확인 중…", "muted"); detail.append(fragmentInfo);

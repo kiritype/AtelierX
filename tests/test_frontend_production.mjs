@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appearanceMigrationChoiceRequired, buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, creationPreviewPage, entityMutationRequest, fragmentPickerQuery, freezeMultiProductionPlanRequests, loadProductionData, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, toggleTreeSelection, treeSelectionState } from "../frontend/production.js";
+import { appearanceMigrationChoiceRequired, buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, creationPreviewPage, entityMutationRequest, estimatedUpscaleResolution, fragmentPickerQuery, freezeMultiProductionPlanRequests, loadProductionData, postprocessResolutionEstimate, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, toggleTreeSelection, treeSelectionState } from "../frontend/production.js";
 
 function state(overrides = {}) {
   return {
@@ -31,6 +31,25 @@ test("production request requires a nonempty free framing prompt and explicit al
   assert.throws(() => buildGenerationBody(state({ framingPrompt: "\n  " })), /구도 Prompt/);
   const body = buildGenerationBody(state({ include: { upper: false, lower: true, accessories: false } }));
   assert.deepEqual(body.include, { upper: false, lower: true, accessories: false });
+});
+
+test("random seed sentinel and optional plan validation preserve the Core contract", () => {
+  const generated = buildGenerationBody(state({generationPreset: "", generation: {diffusion_model: "model", text_encoder: "encoder", vae: "vae", width: 1024, height: 1024, seed: -1, steps: 20, cfg: 4, sampler: "euler", scheduler: "normal"}, validationMode: "generation"}));
+  assert.equal(generated.generation_inputs.seed, -1);
+  const plan = buildProductionPlanBody(state({compositionMode: "fragment", fragmentSelections: ["fragment-a@2"], validationMode: "generation", validationEnabled: false}), 1);
+  assert.equal("validation" in plan, false);
+  assert.equal("group_validation" in plan, false);
+});
+
+test("final resolution uses the explicit final factor with half-up rounding", () => {
+  assert.deepEqual(estimatedUpscaleResolution(1024, 768, 1.5), {width: 1536, height: 1152, factor: 1.5});
+  assert.equal(estimatedUpscaleResolution(1008, 1008, 1.0625).width, 1071);
+  assert.equal(estimatedUpscaleResolution(1008, 1008, 1.0005).width, 1009);
+  assert.throws(() => estimatedUpscaleResolution(1, 1, 0), /0보다/);
+  assert.deepEqual(estimatedUpscaleResolution(1, 1, 0.1), {width: 1, height: 1, factor: 0.1});
+  const draft = {generationPreset: "generation@2", postprocessPreset: "postprocess@3", postprocessMode: "default", generation: {width: 1, height: 1}};
+  assert.deepEqual(postprocessResolutionEstimate(draft, {generation: [{id: "generation", revision: 2, settings: {width: 1008, height: 1008}}], postprocess: [{id: "postprocess", revision: 3, settings: {upscale: {}}}]}), {width: 1512, height: 1512, factor: 1.5});
+  assert.deepEqual(postprocessResolutionEstimate({...draft, generationPreset: "", postprocessPreset: "", generation: {width: 1008, height: 1008}}, {}), {width: 1512, height: 1512, factor: 1.5});
 });
 
 test("tree parent selection includes every descendant and reports partial state", () => {

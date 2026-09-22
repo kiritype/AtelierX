@@ -8,7 +8,7 @@ import {mountStudioTree} from "./studio-tree.js";
 const EMPTY_COMPONENTS = Object.freeze({ upper: "", lower: "", accessories: "" });
 const DEFAULT_GENERATION = Object.freeze({
   diffusion_model: "", text_encoder: "", vae: "", width: 1024, height: 1024,
-  seed: 123456789, steps: 24, cfg: 4.5, sampler: "euler_ancestral", scheduler: "normal",
+  seed: -1, steps: 24, cfg: 4.5, sampler: "euler_ancestral", scheduler: "normal",
 });
 const KNOWN_ANIMA_LORAS = Object.freeze([
   "anima-base-1-masterpiece-v51.safetensors", "anima-highres-aesthetic-boost.safetensors",
@@ -86,6 +86,21 @@ export function randomSafeSeed(fill = (values) => globalThis.crypto?.getRandomVa
   return ((values[0] & 0x1fffff) * 0x100000000) + values[1];
 }
 
+export function estimatedUpscaleResolution(width, height, scale) {
+  const factor = finiteNumber(scale, "Upscale 배율");
+  if (factor <= 0) throw new Error("Upscale 배율은 0보다 커야 합니다.");
+  const roundHalfUp = (value) => Math.floor(value + 0.5);
+  return {width: Math.max(1, roundHalfUp(finiteNumber(width, "너비", {integer: true}) * factor)), height: Math.max(1, roundHalfUp(finiteNumber(height, "높이", {integer: true}) * factor)), factor};
+}
+
+export function postprocessResolutionEstimate(draft, presets = {}) {
+  const resolve = (value, items) => { const ref = value ? presetReference(value) : null; return ref && (items || []).find((item) => item.id === ref.id && item.revision === ref.revision)?.settings; };
+  const generation = resolve(draft.generationPreset, presets.generation) || draft.generation;
+  const postprocess = resolve(draft.postprocessPreset, presets.postprocess);
+  const scale = postprocess ? (postprocess.upscale ? postprocess.upscale.scale ?? 1.5 : 1) : draft.postprocessMode === "direct" ? draft.upscaleScale : draft.postprocessMode === "none" ? 1 : 1.5;
+  return estimatedUpscaleResolution(generation.width, generation.height, scale);
+}
+
 function makeKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `production-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -116,7 +131,7 @@ function initialDraft() {
     generation: deepCopy(DEFAULT_GENERATION), loras: [],
     generationPreset: "", postprocessPreset: "", postprocessMode: "default",
     upscaleModel: "4x-UltraSharp.safetensors", upscaleScale: 1.5, webpEnabled: true, webpQuality: 90,
-    validationEnabled: false, validationProfile: "", validationProvider: "",
+    validationMode: "generation", validationEnabled: false, validationProfile: "", validationProvider: "",
     groupValidationProfile: "", groupValidationProvider: "", planKey: null, planRequest: null, planPending: false,
     multiPlanRequests: {}, multiPlanPending: false,
     preview: null, previewRevision: 0, pendingKey: null, pending: false, task: null,
@@ -141,6 +156,8 @@ function pageState(ctx) {
   state.productionSection ||= "prepare";
   state.mobilePreparationPanel ||= "classification";
   state.draft ||= initialDraft();
+  state.draft.validationMode ||= state.draft.validationEnabled ? "single-group" : "generation";
+  state.draft.validationEnabled = state.draft.validationMode !== "generation";
   state.draft.include ||= { upper: true, lower: false, accessories: true };
   state.draft.fragmentSelections ||= [];
   // Older in-memory drafts used `id@revision` strings. Keep their frozen
@@ -175,6 +192,7 @@ function pageState(ctx) {
   state.selectedOutfitIds ||= [];
   state.creationPreviewOffset ||= 0;
   state.creationMobilePanel ||= "targets";
+  state.creationExpanded ||= {};
   return state;
 }
 
@@ -311,7 +329,7 @@ export function buildGenerationBody(state) {
   } else {
     const input = draft.generation;
     const seed = finiteNumber(input.seed, "Seed", { integer: true });
-    if (!Number.isSafeInteger(seed) || seed < 0) throw new Error("Seed는 0 이상의 안전 정수여야 합니다.");
+    if (!Number.isSafeInteger(seed) || seed < -1) throw new Error("Seed는 -1(랜덤) 또는 0 이상의 안전 정수여야 합니다.");
     body.generation_inputs = {
       diffusion_model: input.diffusion_model.trim(), text_encoder: input.text_encoder.trim(), vae: input.vae.trim(),
       width: finiteNumber(input.width, "너비", { integer: true }), height: finiteNumber(input.height, "높이", { integer: true }),
@@ -328,7 +346,7 @@ export function buildGenerationBody(state) {
     body.postprocess = { upscale: { upscale_model: draft.upscaleModel.trim(), scale: finiteNumber(draft.upscaleScale, "Upscale 배율") },
       encode: { webp_enabled: Boolean(draft.webpEnabled), webp_quality: finiteNumber(draft.webpQuality, "WebP 품질", { integer: true }) } };
   }
-  if (draft.validationEnabled) {
+  if (draft.validationMode === "single" || draft.validationMode === "single-group" || draft.validationEnabled) {
     if (!draft.validationProfile || !draft.validationProvider) throw new Error("검사 Profile과 Provider를 모두 선택하세요.");
     body.validation = { profile_id: draft.validationProfile, provider_id: draft.validationProvider };
   }
@@ -340,10 +358,9 @@ export function buildProductionPlanBody(state, minimumFragments = 2) {
   if (draft.compositionMode !== "fragment" || !Array.isArray(draft.fragmentSelections) || draft.fragmentSelections.length < minimumFragments) {
     throw new Error(`제작 계획에는 전역 조각을 ${minimumFragments === 2 ? "두 개" : "한 개"} 이상 선택하세요.`);
   }
-  if (!draft.validationEnabled || !draft.validationProfile || !draft.validationProvider) {
-    throw new Error("제작 계획에는 각 이미지의 Single 검사 Profile과 Provider가 필요합니다.");
-  }
-  if (!draft.groupValidationProfile || !draft.groupValidationProvider) {
+  const mode = draft.validationMode || (draft.validationEnabled ? "single-group" : "generation");
+  if ((mode === "single" || mode === "single-group") && (!draft.validationProfile || !draft.validationProvider)) throw new Error("Single 검사 Profile과 Provider를 모두 선택하세요.");
+  if (mode === "single-group" && (!draft.groupValidationProfile || !draft.groupValidationProvider)) {
     throw new Error("제작 계획에는 묶음 검사 Profile과 Provider가 필요합니다.");
   }
   // Reuse the exact common generation/postprocess/validation contract from a
@@ -351,7 +368,7 @@ export function buildProductionPlanBody(state, minimumFragments = 2) {
   const previewBody = buildGenerationBody({ ...state, draft: { ...draft, fragmentSelections: [draft.fragmentSelections[0]] } });
   delete previewBody.fragment;
   previewBody.fragments = draft.fragmentSelections.map(presetReference);
-  previewBody.group_validation = { profile_id: draft.groupValidationProfile, provider_id: draft.groupValidationProvider };
+  if (mode === "single-group") previewBody.group_validation = { profile_id: draft.groupValidationProfile, provider_id: draft.groupValidationProvider };
   return previewBody;
 }
 
@@ -411,34 +428,33 @@ export function creationPreviewPage(outfitIds, fragments, offset = 0, limit = 50
 }
 
 function resourceChoice(value, options, onChange, label) {
-  const values = Array.isArray(options) ? options : [];
+  const values = Array.isArray(options) ? [...options] : [];
+  if (value && !values.includes(value)) values.unshift(value);
   return node("select", { disabled: values.length ? null : "", onchange: (event) => onChange(event.target.value) }, [selectedOption("", values.length ? `${label} 선택` : "등록 자원 없음", !value),
     ...values.map((option) => selectedOption(option, option, value === option))]);
 }
 
-function seedField(value, onChange, pickRandom) {
-  const input = textInput(value, onChange, { type: "number", min: 0, step: 1 });
+function seedField(value, onChange) {
+  const input = textInput(value, onChange, { type: "number", min: -1, step: 1 });
   const id = `production-seed-${++fieldSequence}`;
   input.id = id;
-  return node("div", { class: "field" }, [node("label", { for: id, text: "Seed" }),
-    node("div", { class: "row" }, [input, button("랜덤 뽑기", pickRandom, { secondary: true })]),
-    node("small", { class: "muted", text: "안전 정수 범위에서 난수를 만들고 미리보기를 무효화합니다." })]);
+  return node("div", { class: "field" }, [node("label", { for: id, text: "Seed" }), input,
+    node("small", { class: "muted", text: "-1은 실행 시 Core가 항목별 랜덤 Seed를 고정합니다. 0 이상은 고정 Seed입니다." })]);
 }
 
 function generationPanel(state, api, rerender, notify) {
   const draft = state.draft;
-  const requiresValidation = Boolean(state.creationMode);
   const resources = state.resources || {};
-  const change = (callback) => (value) => { callback(value); invalidatePreview(draft, true); };
+  let estimateLabel = null;
+  const updateEstimate = () => { if (!estimateLabel) return; try { const value = postprocessResolutionEstimate(draft, state.presets); estimateLabel.textContent = value ? `예상 최종 해상도: ${value.width}×${value.height} (최종 ${value.factor}배; 모델 고유 배율과 별개)` : "예상 최종 해상도: 원본 크기"; } catch { estimateLabel.textContent = "예상 최종 해상도를 계산할 수 없습니다."; } };
+  const change = (callback) => (value) => { callback(value); invalidatePreview(draft, true); updateEstimate(); };
   const generationControls = draft.generationPreset ? [node("p", { class: "muted", text: "Generation preset을 선택했으므로 직접 모델 설정은 요청에 함께 보내지 않습니다." })] : [
     field("Diffusion model", resourceChoice(draft.generation.diffusion_model, resources.diffusion_models, change((value) => { draft.generation.diffusion_model = value; }), "모델"), state.resourcesError || "Core에 등록된 모델만 선택할 수 있습니다."),
     field("Text encoder", resourceChoice(draft.generation.text_encoder, resources.text_encoders, change((value) => { draft.generation.text_encoder = value; }), "Encoder")),
     field("VAE", resourceChoice(draft.generation.vae, resources.vaes, change((value) => { draft.generation.vae = value; }), "VAE")),
     field("너비", textInput(draft.generation.width, change((value) => { draft.generation.width = value; }), { type: "number", min: 256, max: 1920, step: 16 })),
     field("높이", textInput(draft.generation.height, change((value) => { draft.generation.height = value; }), { type: "number", min: 256, max: 1920, step: 16 })),
-    seedField(draft.generation.seed, change((value) => { draft.generation.seed = value; }), () => {
-      draft.generation.seed = randomSafeSeed(); invalidatePreview(draft, true); rerender();
-    }),
+    seedField(draft.generation.seed, change((value) => { draft.generation.seed = value; })),
     field("Steps", textInput(draft.generation.steps, change((value) => { draft.generation.steps = value; }), { type: "number", min: 1, max: 100, step: 1 })),
     field("CFG", textInput(draft.generation.cfg, change((value) => { draft.generation.cfg = value; }), { type: "number", min: 0, max: 20, step: 0.1 })),
     field("Sampler", resourceChoice(draft.generation.sampler, resources.samplers, change((value) => { draft.generation.sampler = value; }), "Sampler")),
@@ -454,23 +470,24 @@ function generationPanel(state, api, rerender, notify) {
   ]));
   const postprocess = node("div", { class: "grid" }, [
     field("후처리", node("select", { onchange: (event) => { draft.postprocessMode = event.target.value; draft.postprocessPreset = ""; invalidatePreview(draft); rerender(); } }, [
-      selectedOption("default", "기본 사용: 1024 → 1536, WebP", draft.postprocessMode === "default" && !draft.postprocessPreset),
+      selectedOption("default", "기본 사용: 최종 1.5배, WebP", draft.postprocessMode === "default" && !draft.postprocessPreset),
       selectedOption("none", "후처리 없음: {}", draft.postprocessMode === "none"),
       selectedOption("direct", "직접 Upscale/Encode 설정", draft.postprocessMode === "direct"),
     ]), "기본은 요청에서 postprocess를 생략합니다."),
     field("후처리 Preset", node("select", { onchange: (event) => { draft.postprocessPreset = event.target.value; invalidatePreview(draft); rerender(); } }, [selectedOption("", "선택 안 함", !draft.postprocessPreset),
       ...state.presets.postprocess.map((item) => selectedOption(`${item.id}@${item.revision}`, `${item.name} (r${item.revision})`, draft.postprocessPreset === `${item.id}@${item.revision}`))])),
-    draft.postprocessMode === "direct" && !draft.postprocessPreset ? field("Upscale model", textInput(draft.upscaleModel, change((value) => { draft.upscaleModel = value; }))) : null,
+    draft.postprocessMode === "direct" && !draft.postprocessPreset ? field("Upscale model", resourceChoice(draft.upscaleModel, resources.upscale_models, change((value) => { draft.upscaleModel = value; }), "Upscale model")) : null,
     draft.postprocessMode === "direct" && !draft.postprocessPreset ? field("최종 배율", textInput(draft.upscaleScale, change((value) => { draft.upscaleScale = value; }), { type: "number", min: 0.01, step: 0.1 })) : null,
+    (() => { estimateLabel = node("p", {class: "muted"}); updateEstimate(); return estimateLabel; })(),
     draft.postprocessMode === "direct" && !draft.postprocessPreset ? field("WebP 출력", node("input", { type: "checkbox", checked: draft.webpEnabled, onchange: (event) => { draft.webpEnabled = event.target.checked; invalidatePreview(draft); } })) : null,
     draft.postprocessMode === "direct" && !draft.postprocessPreset ? field("WebP 품질", textInput(draft.webpQuality, change((value) => { draft.webpQuality = value; }), { type: "number", min: 1, max: 100, step: 1 })) : null,
   ]);
   const validation = node("div", { class: "grid" }, [
-    field("생성 후 검사", node("input", { type: "checkbox", checked: requiresValidation || draft.validationEnabled, disabled: requiresValidation ? "" : null, onchange: (event) => { draft.validationEnabled = event.target.checked; invalidatePreview(draft); rerender(); } }), requiresValidation ? "제작 계획에는 단일·묶음 검사가 필수입니다." : null),
-    (requiresValidation || draft.validationEnabled) ? field("Single Profile", choice(draft.validationProfile, state.presets.profiles, (value) => { draft.validationProfile = value; invalidatePreview(draft); }), "등록된 설정만 선택합니다.") : null,
-    (requiresValidation || draft.validationEnabled) ? field("Single Provider", choice(draft.validationProvider, state.presets.providers, (value) => { draft.validationProvider = value; invalidatePreview(draft); })) : null,
-    requiresValidation ? field("묶음 검사 Profile", choice(draft.groupValidationProfile, state.presets.groupProfiles || [], (value) => { draft.groupValidationProfile = value; invalidatePreview(draft); })) : null,
-    requiresValidation ? field("묶음 검사 Provider", choice(draft.groupValidationProvider, state.presets.providers, (value) => { draft.groupValidationProvider = value; invalidatePreview(draft); })) : null,
+    field("검사", node("select", {onchange: (event) => { draft.validationMode = event.target.value; draft.validationEnabled = event.target.value !== "generation"; invalidatePreview(draft); rerender(); }}, [selectedOption("generation", "검사 없이 생성", draft.validationMode === "generation"), selectedOption("single", "Single 검사", draft.validationMode === "single"), selectedOption("single-group", "Single + 묶음 검사", draft.validationMode === "single-group")]), "검사 없이 생성한 결과는 통과가 아니라 미검사 상태입니다."),
+    (draft.validationMode === "single" || draft.validationMode === "single-group") ? field("Single Profile", choice(draft.validationProfile, state.presets.profiles, (value) => { draft.validationProfile = value; invalidatePreview(draft); }), "등록된 설정만 선택합니다.") : null,
+    (draft.validationMode === "single" || draft.validationMode === "single-group") ? field("Single Provider", choice(draft.validationProvider, state.presets.providers, (value) => { draft.validationProvider = value; invalidatePreview(draft); })) : null,
+    draft.validationMode === "single-group" ? field("묶음 검사 Profile", choice(draft.groupValidationProfile, state.presets.groupProfiles || [], (value) => { draft.groupValidationProfile = value; invalidatePreview(draft); })) : null,
+    draft.validationMode === "single-group" ? field("묶음 검사 Provider", choice(draft.groupValidationProvider, state.presets.providers, (value) => { draft.groupValidationProvider = value; invalidatePreview(draft); })) : null,
   ]);
   const directSettings = draft.generationPreset ? null : node("details", { class: "production-direct-settings", open: "" }, [
     node("summary", { text: "직접 생성 설정" }), node("div", { class: "grid" }, generationControls),
@@ -720,6 +737,7 @@ function productionPlanPanel(state, api, rerender, notify) {
     node("summary", { text: `${fragmentLabel} · 항목 ${item.index + 1} · ${item.state}` }),
     node("p", { class: "prompt-preview-text", text: `Positive: ${item.snapshot?.generation_inputs?.positive_prompt || ""}` }),
     node("p", { class: "prompt-preview-text", text: `Negative: ${item.snapshot?.generation_inputs?.negative_prompt || ""}` }),
+    Number.isSafeInteger(item.snapshot?.generation_inputs?.seed) ? node("p", {class: "muted", text: `실제 Seed: ${item.snapshot.generation_inputs.seed}`}) : null,
     node("details", { class: "production-advanced" }, [node("summary", { text: "고정된 조각·포함 정보" }), node("pre", { text: JSON.stringify({ fragment: item.fragment, inclusion: item.snapshot?.inclusion, error: item.error }, null, 2) })]),
     ])]);
   });
@@ -992,9 +1010,11 @@ function check(label, status, change, disabled = false) {
   input.indeterminate = status.indeterminate;
   return node("label", {class: "creation-check"}, [input, node("span", {text: label})]);
 }
+function treeToggle(label, open, action) { return node("button", {type: "button", class: "button secondary creation-tree-toggle", "aria-label": `${label} ${open ? "접기" : "펼치기"}`, "aria-expanded": String(open), text: open ? "⌄" : "›", onclick: action}); }
 
 function creationPanel(state, api, rerender, notify) {
   const locked = Boolean(state.creationFrozen || state.creationPending);
+  const toggleExpanded = (id) => { state.creationExpanded[id] = state.creationExpanded[id] === false; rerender(); };
   const selectedOutfits = new Set(state.selectedOutfitIds);
   const selectedFragments = new Set(state.draft.fragmentSelections.map(fragmentKey));
   const activeWorks = state.entities.works.filter((work) => !work.archived);
@@ -1005,11 +1025,12 @@ function creationPanel(state, api, rerender, notify) {
   const toggleFragments = (items, checked) => { state.draft.fragmentSelections = toggleTreeSelection(selectedFragments, items.map(fragmentKey), checked).map((key) => { const [id, revision] = key.split("@"); return {id, revision: Number(revision)}; }); changed(); invalidatePreview(state.draft); rerender(); };
   const outfitTree = node("section", {class: "panel creation-target-tree"}, [node("h2", {text: "작품 · 캐릭터 · 의상"}), ...activeWorks.map((work) => {
     const characters = charactersFor(work); const outfits = characters.flatMap(outfitsFor);
-    return node("div", {class: "creation-tree-work"}, [check(work.name, treeSelectionState(outfits.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(outfits.map((item) => item.id), checked), locked || !outfits.length), !outfits.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, ...characters.map((character) => { const children = outfitsFor(character); return node("div", {class: "creation-tree-character"}, [check(character.name, treeSelectionState(children.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(children.map((item) => item.id), checked), locked || !children.length), !children.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, ...children.map((outfit) => check(outfit.name, treeSelectionState([outfit.id], selectedOutfits), (checked) => toggleOutfits([outfit.id], checked), locked))]); })]);
+    const open = state.creationExpanded[work.id] !== false;
+    return node("div", {class: "creation-tree-work"}, [treeToggle(work.name, open, () => toggleExpanded(work.id)), check(`작품 · ${work.name}`, treeSelectionState(outfits.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(outfits.map((item) => item.id), checked), locked || !outfits.length), !outfits.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, open ? node("div", {class: "creation-tree-outfits"}, characters.map((character) => { const children = outfitsFor(character); const characterOpen = state.creationExpanded[character.id] !== false; return node("div", {class: "creation-tree-character"}, [treeToggle(character.name, characterOpen, () => toggleExpanded(character.id)), check(`캐릭터 · ${character.name}`, treeSelectionState(children.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(children.map((item) => item.id), checked), locked || !children.length), !children.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, characterOpen ? node("div", {class: "creation-tree-outfits"}, children.map((outfit) => node("div", {class: "creation-tree-outfit"}, [check(`의상 · ${outfit.name}`, treeSelectionState([outfit.id], selectedOutfits), (checked) => toggleOutfits([outfit.id], checked), locked)]))) : null]); })) : null]);
   })]);
   const fragments = (state.creationFragments || []).filter((item) => !item.archived);
   const categories = new Set(state.fragmentCategories.map((item) => item.id));
-  const categoryBranch = (name, items) => node("div", {class: "creation-tree-category"}, [check(name, treeSelectionState(items.map(fragmentKey), selectedFragments), (checked) => toggleFragments(items, checked), locked || !items.length), !items.length ? node("small", {class: "muted", text: "선택 가능한 활성 조각이 없습니다."}) : null, ...items.map((item) => check(`#${item.number} ${item.name}`, treeSelectionState([fragmentKey(item)], selectedFragments), (checked) => toggleFragments([item], checked), locked))]);
+  const categoryBranch = (name, items) => { const id = `category:${name}`; const open = state.creationExpanded[id] !== false; return node("div", {class: "creation-tree-category"}, [treeToggle(name, open, () => toggleExpanded(id)), check(`카테고리 · ${name}`, treeSelectionState(items.map(fragmentKey), selectedFragments), (checked) => toggleFragments(items, checked), locked || !items.length), !items.length ? node("small", {class: "muted", text: "선택 가능한 활성 조각이 없습니다."}) : null, open ? node("div", {class: "creation-tree-fragments"}, items.map((item) => node("div", {class: "creation-tree-fragment"}, [check(`#${item.number} ${item.name}`, treeSelectionState([fragmentKey(item)], selectedFragments), (checked) => toggleFragments([item], checked), locked)]))) : null]); };
   const fragmentTree = node("section", {class: "panel creation-fragment-tree"}, [node("h2", {text: "카테고리 · 조각"}), ...state.fragmentCategories.map((category) => categoryBranch(category.name, fragments.filter((item) => item.category_id === category.id))), categoryBranch("미분류", fragments.filter((item) => !item.category_id)), categoryBranch("보관된 카테고리", fragments.filter((item) => item.category_id && !categories.has(item.category_id)))]);
   const selectedFragmentRecords = fragments.filter((item) => selectedFragments.has(fragmentKey(item)));
   const preview = creationPreviewPage(state.selectedOutfitIds, selectedFragmentRecords, state.creationPreviewOffset);
@@ -1046,7 +1067,8 @@ function creationPanel(state, api, rerender, notify) {
   const planEntries = Object.values(state.draft.multiPlanRequests);
   const plansReady = planEntries.length > 0 && planEntries.every((entry) => entry.plan?.id);
   const resetFrozen = () => { state.creationCompletedPlans ||= []; state.creationCompletedPlans.push(...planEntries.filter((entry) => entry.plan?.id)); state.creationFrozen = null; state.creationPromptPreview = null; state.draft.multiPlanRequests = {}; rerender(); };
-  const planned = node("section", {class: "panel creation-preview"}, [node("h2", {text: `예정 항목 ${preview.total}개`}), node("p", {class: "muted", text: "모든 예정 항목은 단일 검사와 묶음 검사를 함께 고정합니다."}), node("ul", {class: "fragment-list"}, preview.items.map((item) => node("li", {class: "row"}, [node("span", {text: `${entityById(state.entities.outfits, item.outfitId)?.name || item.outfitId} × #${item.fragment.number} ${item.fragment.name}`}), state.creationFrozen ? button("Prompt", () => previewPrompt(item.outfitId, item.fragment), {secondary: true}) : null]))), node("div", {class: "toolbar"}, [button("이전 50개", () => { state.creationPreviewOffset = Math.max(0, state.creationPreviewOffset - 50); rerender(); }, {secondary: true, disabled: preview.offset === 0}), button("다음 50개", () => { state.creationPreviewOffset += 50; rerender(); }, {secondary: true, disabled: preview.offset + 50 >= preview.total})]), button("선택 확인", freeze, {disabled: state.creationPending || !preview.total || locked}), locked ? button("새 준비", resetFrozen, {secondary: true, disabled: state.creationPending}) : null, state.creationFrozen ? button("생성 준비", createPlans, {disabled: state.creationPending}) : null, plansReady ? button("생성 시작", startPlans, {disabled: state.creationPending}) : null, planEntries.length ? node("ul", {class: "fragment-list"}, planEntries.map((entry) => { const group = state.creationFrozen?.groups.find((item) => item.id === entry.plan?.group_id || item.id === entry.request?.group_id); const outfit = entityById(state.entities.outfits, group?.outfit_id); return node("li", {class: "row"}, [node("span", {text: `${outfit?.name || "선택 의상"} · ${state.draft.fragmentSelections.length}장 · ${entry.plan?.state || entry.error || "계획 준비 중"}`}), entry.plan ? button("계획 보기", () => { state.productionPlanId = entry.plan.id; state.productionPlan = entry.plan; rerender(true); }, {secondary: true}) : null, entry.plan ? button("작업 현황", () => state.navigate?.("jobs"), {secondary: true}) : null]); })) : null, state.creationPromptPreview ? previewView(state.creationPromptPreview) : null]);
+  const validationText = state.draft.validationMode === "generation" ? "검사 없이 생성합니다. 결과는 통과가 아니라 미검사 상태로 남습니다." : state.draft.validationMode === "single" ? "모든 예정 항목에 Single 검사를 고정합니다." : "모든 예정 항목에 Single 검사와 묶음 검사를 함께 고정합니다.";
+  const planned = node("section", {class: "panel creation-preview"}, [node("h2", {text: `예정 항목 ${preview.total}개`}), node("p", {class: "muted", text: validationText}), node("ul", {class: "fragment-list"}, preview.items.map((item) => node("li", {class: "row"}, [node("span", {text: `${entityById(state.entities.outfits, item.outfitId)?.name || item.outfitId} × #${item.fragment.number} ${item.fragment.name}`}), state.creationFrozen ? button("Prompt", () => previewPrompt(item.outfitId, item.fragment), {secondary: true}) : null]))), node("div", {class: "toolbar"}, [button("이전 50개", () => { state.creationPreviewOffset = Math.max(0, state.creationPreviewOffset - 50); rerender(); }, {secondary: true, disabled: preview.offset === 0}), button("다음 50개", () => { state.creationPreviewOffset += 50; rerender(); }, {secondary: true, disabled: preview.offset + 50 >= preview.total})]), button("선택 확인", freeze, {disabled: state.creationPending || !preview.total || locked}), locked ? button("새 준비", resetFrozen, {secondary: true, disabled: state.creationPending}) : null, state.creationFrozen ? button("생성 준비", createPlans, {disabled: state.creationPending}) : null, plansReady ? button("생성 시작", startPlans, {disabled: state.creationPending}) : null, planEntries.length ? node("ul", {class: "fragment-list"}, planEntries.map((entry) => { const group = state.creationFrozen?.groups.find((item) => item.id === entry.plan?.group_id || item.id === entry.request?.group_id); const outfit = entityById(state.entities.outfits, group?.outfit_id); return node("li", {class: "row"}, [node("span", {text: `${outfit?.name || "선택 의상"} · ${state.draft.fragmentSelections.length}장 · ${entry.plan?.state || entry.error || "계획 준비 중"}`}), entry.plan ? button("계획 보기", () => { state.productionPlanId = entry.plan.id; state.productionPlan = entry.plan; rerender(true); }, {secondary: true}) : null, entry.plan ? button("작업 현황", () => state.navigate?.("jobs"), {secondary: true}) : null]); })) : null, state.creationPromptPreview ? previewView(state.creationPromptPreview) : null]);
   const mobileNav = node("nav", {class: "creation-mobile-switch", "aria-label": "이미지 생성 단계"}, [
     button("의상", () => { state.creationMobilePanel = "targets"; rerender(); }, {secondary: state.creationMobilePanel !== "targets"}),
     button("조각", () => { state.creationMobilePanel = "fragments"; rerender(); }, {secondary: state.creationMobilePanel !== "fragments"}),
@@ -1058,7 +1080,7 @@ function creationPanel(state, api, rerender, notify) {
 export async function mount(container, ctx) {
   const state = pageState(ctx);
   const creationMode = ctx.mode === "creation";
-  if (creationMode) { state.productionSection = "compose"; state.creationMode = true; state.draft.validationEnabled = true; }
+  if (creationMode) { state.productionSection = "compose"; state.creationMode = true; if (!state.creationValidationInitialized) { state.draft.validationMode = "single-group"; state.draft.validationEnabled = true; state.creationValidationInitialized = true; } }
   state.navigate = ctx.navigate;
   state.api = ctx.api;
   let disposed = false;
