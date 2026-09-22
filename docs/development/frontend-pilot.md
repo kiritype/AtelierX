@@ -5,13 +5,16 @@
 ## 실행
 
 - 접속: 로컬은 `http://127.0.0.1:8190/ui/`, Access 운영 주소는 `https://atelier.cftm.net/ui/`.
-- 실행 명령: `.venv/Scripts/python.exe -B scripts/run_frontend_pilot.py`
-- 기본 Bearer 연결: `.atelierx/pilot/token.txt`의 값을 첫 연결 화면에 입력한다. 브라우저 메모리에만 보관하며 URL·HTML·localStorage에는 넣지 않는다.
+- 실행 명령: `scripts\start_frontend_pilot.bat` 또는 `.venv/Scripts/python.exe -B scripts/run_frontend_pilot.py`. 두 명령 모두 전경에서 실행하며 `Ctrl+C`는 이 실행기가 시작한 파일럿 서비스만 정상 종료한다.
+- 실행 전 Core 8190, Generation 8189, Validation 8191 포트를 함께 확인한다. 하나라도 사용 중이면 서비스나 GPU 작업을 시작·중단하지 않고 어느 포트가 사용 중인지 표시한다. 전경에는 `[core]`, `[generation]`, `[validation]`, `[launcher]` 태그를 붙인 상태 로그가 나오며 같은 내용은 `.atelierx/pilot/logs/`에도 저장한다. 토큰 값, Authorization 헤더, Prompt, URL query는 이 로그에 기록하지 않는다.
+- 독립 생성·Discord Bridge를 함께 쓸 때는 `scripts\start_frontend_pilot.bat -StandaloneConfig .atelierx\standalone-config.json -DiscordBridgeConfig .atelierx\discord-bridge-config.json`으로 명시한다. Bridge를 포함하면 8192도 실행 전에 확인한다.
+- 선택 원격 Backend: 개인 `.atelierx/`에 [예시](../../config/frontend-pilot-launcher.example.json)를 복사해 `scripts\start_frontend_pilot.bat -LauncherConfig .atelierx\frontend-pilot-launcher.json`으로 실행한다. `generation_url` 또는 `validation_url`을 생략하면 해당 로컬 서비스를 시작하고, 지정하면 해당 원격 서비스를 시작·중단하지 않은 채 Core만 연결한다. 토큰은 명시한 환경변수 이름에서만 읽으며 값은 명령행·설정·로그에 넣지 않는다. 원격 서비스는 Core callback에 도달할 수 있도록 별도 구성해야 하며 이 실행기로 자동 구성하거나 실제 원격 동작을 검증하지 않는다.
+- 기본 Bearer 연결: `설정 → Core 연결`에서 Core 실행 PC의 `.atelierx/pilot/token.txt` 값을 입력한다. 브라우저 메모리에만 보관하며 URL·HTML·localStorage에는 넣지 않는다. Access 서버 저장 연결과 달리 새로고침 후 다시 입력해야 한다.
 - Access 자동 연결: server-private `.atelierx/pilot/frontend-connection.json`이 있고 Core가 Cloudflare Access assertion을 검증하면, 허용된 Access 로그인 사용자는 브라우저에 Core Bearer를 다시 입력하지 않는다. 설정 파일 형식은 [비밀 없는 예시](../../config/frontend-connection.example.json)를 따르며 실제 `core_token`은 Git·Frontend asset·API GET 응답에 넣지 않는다. 미설정·로컬 실행은 기존 Bearer 연결을 유지한다.
 - 데이터: `.atelierx/pilot/core.sqlite3`, `.atelierx/pilot/generation`, `.atelierx/pilot/validation`.
 - 실제 최종 이미지: `.atelierx/pilot/generation/images/`. ComfyUI 중간 출력과 구분한다.
 
-실행기는 기존 Core/Generation/Validation app을 localhost 8190/8189/8191에 올린다. 각 서비스의 독립 실행 명령도 유지한다. 기존 ComfyUI 8188과 `.atelierx/validation-coordinated-config.json`, `.atelierx/gpu-config.json`을 사용한다. 해당 포트에 서비스가 이미 있다면 중복 실행하지 않는다. 파일럿 초기 작업으로 작품 ‘파일럿 스튜디오’ > 캐릭터 ‘루나’ > 의상 ‘화이트 셔츠’와 ‘파일럿 Anima · 1024’ Preset을 저장했다. 초기 데이터는 기존 작업 DB에서 가져오지 않았다.
+실행기는 기본으로 기존 Core/Generation/Validation app을 localhost 8190/8189/8191에 올린다. 각 서비스의 독립 실행 명령도 유지한다. 기존 ComfyUI 8188과 `.atelierx/validation-coordinated-config.json`, `.atelierx/gpu-config.json`을 사용한다. 해당 포트에 서비스가 이미 있다면 중복 실행하지 않는다. 원격 Core를 하나의 실행기로 조정하는 기능은 아직 구현하지 않았다. 파일럿 초기 작업으로 작품 ‘파일럿 스튜디오’ > 캐릭터 ‘루나’ > 의상 ‘화이트 셔츠’와 ‘파일럿 Anima · 1024’ Preset을 저장했다. 초기 데이터는 기존 작업 DB에서 가져오지 않았다.
 
 빌드 과정 없는 HTML/CSS/JavaScript ES module이다. Core는 `/ui/`의 명시된 정적 파일만 공개하고 REST Bearer 인증을 유지한다. 별도 BFF·SQL 접근·브라우저 오케스트레이션은 없다. Python Client와 브라우저 Client는 같은 REST를 각각 감싼 초기 adapter이며 Schema 기반 공용 코드 생성은 아직 도입하지 않았다.
 

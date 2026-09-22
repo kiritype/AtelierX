@@ -131,6 +131,16 @@ test("fragment mode sends one pinned fragment without direct composition fields"
   for (const key of ["framing", "framing_prompt", "expression", "action", "situation", "include"]) assert.equal(key in body, false);
 });
 
+test("common prompt selections are sent separately from image variants", () => {
+  const single = buildGenerationBody(state({compositionMode: "fragment", fragmentSelections: ["variant@2"], commonFragmentSelections: ["common-a@3", "common-b@4"]}));
+  assert.deepEqual(single.fragment, {id: "variant", revision: 2});
+  assert.deepEqual(single.common_fragments, [{id: "common-a", revision: 3}, {id: "common-b", revision: 4}]);
+  const plan = buildProductionPlanBody(state({compositionMode: "fragment", fragmentSelections: ["variant-a@2", "variant-b@3"], commonFragmentSelections: ["common-a@4"], validationMode: "generation"}));
+  assert.deepEqual(plan.fragments, [{id: "variant-a", revision: 2}, {id: "variant-b", revision: 3}]);
+  assert.deepEqual(plan.common_fragments, [{id: "common-a", revision: 4}]);
+  assert.throws(() => buildGenerationBody(state({compositionMode: "fragment", fragmentSelections: [], commonFragmentSelections: ["common-a@4"]})), /하나만/);
+});
+
 test("fragment mode rejects zero or multiple selections for a single preview", () => {
   assert.throws(() => buildGenerationBody(state({ compositionMode: "fragment", fragmentSelections: [] })), /하나만/);
   assert.throws(() => buildGenerationBody(state({ compositionMode: "fragment", fragmentSelections: ["a@1", "b@1"] })), /하나만/);

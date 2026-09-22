@@ -23,7 +23,7 @@ async function harness(loadPage) {
     history: {pushState: (...args) => pushes.push(args), replaceState() {}}, location: {hash: ""}};
   context.globalThis = context;
   vm.runInNewContext(source, context, {filename: "frontend/app.js"});
-  return {...context.__appTest, pushes, reloads: () => reloads};
+  return {...context.__appTest, pushes, reloads: () => reloads, elements};
 }
 
 test("navigation skips an active route, refreshes when forced, and remounts after a detail route", async () => {
@@ -82,4 +82,16 @@ test("a dynamic page import failure offers a user-triggered recovery without rel
   assert.equal(app.reloads(), 0);
   host.children[2].onclick();
   assert.equal(app.reloads(), 1);
+});
+
+test("the connection status opens Settings with an unauthenticated API client", async () => {
+  let received;
+  const app = await harness(async (page) => ({mount: async (_host, ctx) => { received = {page, api: ctx.api}; return () => {}; }}));
+  const anonymousApi = {get: async () => { throw {status: 401}; }};
+  app.setApi(anonymousApi);
+  await app.navigate("production");
+  app.elements.get("#connection-toggle").onclick();
+  await new Promise(setImmediate);
+  assert.equal(received.page, "settings");
+  assert.equal(received.api, anonymousApi);
 });

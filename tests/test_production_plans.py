@@ -101,6 +101,8 @@ class ProductionPlanTests(unittest.TestCase):
         }
         if "validation" in payload:
             snapshot["validation"] = self.validation.freeze(payload["validation"])
+        if "common_fragments" in payload:
+            snapshot["common_fragments"] = copy.deepcopy(payload["common_fragments"])
         return {"snapshot": snapshot, "preview_hash": hashlib.sha256(canonical(snapshot).encode()).hexdigest()}
 
     def body(self, count=2):
@@ -306,6 +308,13 @@ class ProductionPlanTests(unittest.TestCase):
         self.assertFalse(created)
         self.assertEqual([item["snapshot"]["generation_inputs"]["seed"]
                           for item in self.plans.items(same["id"], {"limit": 200, "offset": 0})["items"]], seeds)
+
+    def test_common_fragment_refs_are_frozen_for_each_variant_item(self):
+        body = self.body(2)
+        body["common_fragments"] = [{"id": "common", "revision": 3}]
+        plan, _ = self.plans.create("common-fragment-plan", body)
+        items = self.plans.items(plan["id"], {"limit": 200, "offset": 0})["items"]
+        self.assertEqual([item["snapshot"]["common_fragments"] for item in items], [body["common_fragments"], body["common_fragments"]])
 
 
 if __name__ == "__main__":

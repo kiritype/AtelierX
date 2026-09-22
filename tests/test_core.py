@@ -109,6 +109,29 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         _, frozen = await self.request("GET", f"/v1/groups/{group['id']}")
         self.assertEqual(frozen["character_appearance_prompt"], "silver hair")
 
+    async def test_common_fragments_are_frozen_and_do_not_change_variant_inclusion(self):
+        _, _, _, group = await self.setup_group()
+        _, variant = await self.request("POST", "/v1/prompt-fragments", {"name": "variant", "body": "standing pose", "include": {"upper": True, "lower": False, "accessories": False}})
+        _, common = await self.request("POST", "/v1/prompt-fragments", {"name": "common", "body": "warm rim light", "common": True, "include": {"upper": False, "lower": False, "accessories": False}})
+        base = {"group_id": group["id"], "generation_inputs": GEN}
+        status, preview = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": [{"id": common["id"], "revision": 1}]})
+        self.assertEqual(status, 200)
+        prompt, inclusion = preview["snapshot"]["generation_inputs"]["positive_prompt"], preview["snapshot"]["inclusion"]
+        self.assertIn("warm rim light", prompt)
+        self.assertNotIn(PARTS["lower"], prompt)
+        self.assertFalse(inclusion["accessories"]["included"])
+        self.assertEqual(preview["snapshot"]["common_fragments"][0]["body"], "warm rim light")
+        self.assertEqual((await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": common["id"], "revision": 1}}))[0], 400)
+        self.assertEqual((await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": [{"id": variant["id"], "revision": 1}]}))[0], 400)
+        self.assertEqual((await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": [{"id": common["id"], "revision": 1}, {"id": common["id"], "revision": 1}]}))[0], 400)
+        _, full_body = await self.request("POST", "/v1/prompt-fragments", {"name": "full", "body": "full body", "common": True, "include": {"upper": False, "lower": False}})
+        conflict, _ = await self.request("POST", "/v1/prompts/preview", {**base, "framing": "custom", "framing_prompt": "upper body", "include": {"upper": True, "lower": False, "accessories": True}, "common_fragments": [{"id": full_body["id"], "revision": 1}]})
+        self.assertEqual(conflict, 400)
+        _, changed = await self.request("PATCH", f"/v1/prompt-fragments/{common['id']}", {"revision": 1, "body": "changed light"})
+        self.assertEqual(changed["revision"], 2)
+        stale, response = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": [{"id": common["id"], "revision": 1}]})
+        self.assertEqual((stale, response["error"]["code"]), (409, "CORE_REVISION_CONFLICT"))
+
     async def wait_task(self, task_id, state):
         for _ in range(200):
             _, task = await self.request("GET", "/v1/tasks/" + task_id)

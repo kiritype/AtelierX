@@ -79,17 +79,19 @@ class CoreFragments:
             self.db.execute("CREATE INDEX IF NOT EXISTS prompt_fragments_category_number ON prompt_fragments(category_id, number)")
 
     @staticmethod
-    def _value(name, body, include):
+    def _value(name, body, include, common=False):
         name = _name(name)
         if not isinstance(body, str) or not body.strip() or len(body) > 20000:
             invalid("body must be non-empty text up to 20000 characters")
+        if type(common) is not bool:
+            invalid("common must be boolean")
         if not isinstance(include, dict) or set(include) not in ({"upper", "lower"}, {"upper", "lower", "accessories"}) or any(type(value) is not bool for value in include.values()):
             invalid("include requires upper, lower and optional accessories booleans")
         # Keep legacy revision documents byte-compatible; Core composition
         # supplies accessories=True when this optional key is absent.
         normalized = {"upper": include["upper"], "lower": include["lower"]}
         if "accessories" in include: normalized["accessories"] = include["accessories"]
-        return {"name": name, "body": body, "include": normalized}
+        return {"name": name, "body": body, "include": normalized, "common": common}
 
     def _get(self, fragment_id):
         row = self.db.execute("SELECT document FROM prompt_fragments WHERE id=?", (fragment_id,)).fetchone()
@@ -121,8 +123,8 @@ class CoreFragments:
         self.db.execute("UPDATE prompt_fragment_number_sequence SET next_number=? WHERE name='global'", (number + 1,))
         return number
 
-    def create(self, name, body, include, category_id=None):
-        value = self._value(name, body, include)
+    def create(self, name, body, include, category_id=None, common=False):
+        value = self._value(name, body, include, common)
         with self.db:
             number = self._next_number()
             category_id = self._category_id(category_id)
@@ -164,7 +166,7 @@ class CoreFragments:
         return {"items": [json.loads(row[0]) for row in rows], "total": total, "limit": limit, "offset": offset}
 
     def update(self, fragment_id, expected, changes):
-        if type(expected) is not int or expected < 1 or not isinstance(changes, dict) or not changes or set(changes) - {"name", "body", "include", "archived", "category_id"}:
+        if type(expected) is not int or expected < 1 or not isinstance(changes, dict) or not changes or set(changes) - {"name", "body", "include", "common", "archived", "category_id"}:
             invalid("revision and one or more supported changes are required")
         with self.db:
             if not self.db.in_transaction:
@@ -172,7 +174,7 @@ class CoreFragments:
             current = self.get(fragment_id)
             if current["revision"] != expected:
                 raise ApiError("CORE_REVISION_CONFLICT", "Prompt fragment changed; refresh before editing", 409)
-            value = self._value(changes.get("name", current["name"]), changes.get("body", current["body"]), changes.get("include", current["include"]))
+            value = self._value(changes.get("name", current["name"]), changes.get("body", current["body"]), changes.get("include", current["include"]), changes.get("common", current.get("common", False)))
             category_id = current.get("category_id")
             if "category_id" in changes and changes["category_id"] != category_id:
                 category_id = self._category_id(changes["category_id"])
@@ -231,7 +233,9 @@ class CoreFragments:
             invalid("fragment requires id and revision")
         current = self.get(selection["id"], active=True)
         if current["revision"] != selection["revision"]: raise ApiError("CORE_REVISION_CONFLICT", "Prompt fragment changed; refresh preview", 409)
-        return copy.deepcopy({key: current[key] for key in ("id", "revision", "body", "include")})
+        frozen = {key: current[key] for key in ("id", "revision", "body", "include")}
+        if current.get("common", False): frozen["common"] = True
+        return copy.deepcopy(frozen)
 
     def attach(self, app):
         def page(request):
@@ -246,8 +250,8 @@ class CoreFragments:
                 limit, offset = page(request)
                 return web.json_response(self.list(limit, offset, archived_query(request), request.query.get("category_id"), request.query.get("q")))
             body = await request.json()
-            if not isinstance(body, dict) or set(body) - {"name", "body", "include", "category_id"} or not {"name", "body", "include"} <= set(body): invalid("name, body and include are required; category_id is optional")
-            return web.json_response(self.create(body["name"], body["body"], body["include"], body.get("category_id")), status=201)
+            if not isinstance(body, dict) or set(body) - {"name", "body", "include", "category_id", "common"} or not {"name", "body", "include"} <= set(body): invalid("name, body and include are required; category_id and common are optional")
+            return web.json_response(self.create(body["name"], body["body"], body["include"], body.get("category_id"), body.get("common", False)), status=201)
         async def item(request):
             if request.method == "GET": return web.json_response(self.get(request.match_info["id"]))
             body = await request.json()

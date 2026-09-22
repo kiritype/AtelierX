@@ -58,6 +58,14 @@ class FragmentStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ApiError, "supported changes"):
             self.fragments.update(created["id"], 1, {"appearance": True})
 
+    def test_common_flag_is_revisioned_without_rewriting_older_history(self):
+        created = self.fragments.create("Lighting", "warm rim light", {"upper": False, "lower": False}, common=True)
+        self.assertTrue(created["common"])
+        self.assertTrue(self.fragments.snapshot({"id": created["id"], "revision": 1})["common"])
+        revised = self.fragments.update(created["id"], 1, {"common": False})
+        self.assertFalse(revised["common"])
+        self.assertTrue(self.fragments.history(created["id"], 10, 0)[1]["common"])
+
     def test_category_filters_archive_rules_and_visible_numbers(self):
         poses = self.fragments.create_category("Poses")
         first = self.fragments.create("Standing", "standing", {"upper": True, "lower": True}, poses["id"])

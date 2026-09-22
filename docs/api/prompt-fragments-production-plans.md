@@ -10,6 +10,10 @@ Positive는 전역 품질 → 캐릭터 외형 → 선택한 상의/하의/액�
 
 ## 프롬프트 조각
 
+2026-09-22 공통 적용 확장: 조각의 선택적 `common` boolean은 기본 false(이미지별 생성)다. true이면 공통 적용 프롬프트이며 의상 포함 체크를 UI에서 숨긴다. 저장된 `include`는 보존하지만 공통 합성에는 사용하지 않는다. 기존 조각·과거 revision/snapshot은 자동 변환하지 않는다.
+
+Core preview/Task/제작 계획에 선택적 `common_fragments: [{id, revision}]`을 지정한다. 각 참조는 활성 공통 조각이어야 하고 중복을 허용하지 않는다. 이미지별 `fragment` 또는 계획의 `fragments`는 공통 조각을 받을 수 없다. 공통 본문은 지정 순서대로 전역 품질·외형·의상 뒤, 이미지별 조각 본문 앞에 포함되며 revision과 본문을 snapshot에 고정한다. 공통 적용은 장수를 늘리지 않으며 제작 계획에는 이미지별 조각을 적어도 하나 선택해야 한다. 상의/하의/액세서리 포함은 이미지별 조각에서 결정한다. Negative·검사·재생성 정책은 유지한다.
+
 - `GET /v1/prompt-fragment-categories`: 사용자 관리 단일 단계 분류 목록을 `archived`, `limit`(최대 200), `offset`으로 조회한다. 응답은 `{items, total, limit, offset}`이다.
 - `POST /v1/prompt-fragment-categories`: `{name}`으로 분류를 만든다. `GET`/`PATCH /v1/prompt-fragment-categories/{id}`는 현재 분류 조회와 revision 기반 이름 변경·보관 처리를 제공한다. 분류는 `{id, name, revision, archived, created_at, updated_at}`이다.
 - `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q`는 이름·본문 부분 검색이며 숫자 또는 `#` 뒤 숫자는 표시 번호 정확 검색이다.
