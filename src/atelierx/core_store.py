@@ -1,9 +1,11 @@
 """Core-owned SQLite state. No consumer receives a SQL execution API."""
+import copy
 import json
 from pathlib import Path
 import sqlite3
 import time
 import uuid
+import secrets
 
 from .common import ApiError, ProcessLock, canonical
 
@@ -226,6 +228,11 @@ class Store:
         return (row[0], self.task(json.loads(row[1])["id"])) if row else None
 
     def create_task(self, key, fingerprint, group_id, snapshot, regeneration=None):
+        # ``-1`` is a request for randomness, not a value Generation may see.
+        # Keep previews stable with that sentinel, then freeze one concrete value
+        # at the same durable boundary as the Task.  Reopening or retrying a
+        # request returns this document, so it cannot silently choose again.
+        snapshot = self.execution_snapshot(snapshot)
         document = dict(id=str(uuid.uuid4()), group_id=group_id, state="queued", created_at=time.time(),
                         snapshot=snapshot, generation_job_id=None, images=[], error=None,
                         validation={"state": "not_requested", "outcome": None}, automatic_attempts_used=0)
@@ -250,6 +257,17 @@ class Store:
             self.db.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?,?)", (
                 document["id"], group_id, key, fingerprint, "queued", document["created_at"], canonical(document)))
         return document
+
+    @staticmethod
+    def execution_snapshot(snapshot):
+        """Copy a preview snapshot and replace its random-seed sentinel once."""
+        frozen = copy.deepcopy(snapshot)
+        inputs = frozen.get("generation_inputs") if isinstance(frozen, dict) else None
+        if isinstance(inputs, dict) and inputs.get("seed") == -1:
+            # API consumers include JavaScript clients, so generated values
+            # must remain exactly representable when returned as JSON numbers.
+            inputs["seed"] = secrets.randbelow(2**53)
+        return frozen
 
     def cycle(self, cycle_id):
         row = self.db.execute("SELECT document FROM regeneration_cycles WHERE id=?", (cycle_id,)).fetchone()

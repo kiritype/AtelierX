@@ -9,7 +9,7 @@ from aiohttp import web
 from .common import ApiError, canonical
 
 TERMINAL = {"completed", "failed", "cancelled", "insufficient_images"}
-ITEM_DONE = {"passed", "single_failed", "generation_failed", "cancelled"}
+ITEM_DONE = {"passed", "single_failed", "generation_failed", "cancelled", "generation_only"}
 WINDOW = 8
 TARGET_CHUNK = 32
 
@@ -80,8 +80,14 @@ class ProductionPlans:
         if not isinstance(key, str) or not 1 <= len(key) <= 200:
             bad("Idempotency-Key required")
         allowed = {"group_id", "fragments", "generation_inputs", "presets", "postprocess", "validation", "group_validation"}
-        if not isinstance(body, dict) or set(body) - allowed or not {"group_id", "fragments", "validation", "group_validation"} <= set(body):
-            bad("group_id, fragments, single and group validation are required")
+        if not isinstance(body, dict) or set(body) - allowed or not {"group_id", "fragments"} <= set(body):
+            bad("group_id and fragments are required")
+        if ("validation" in body and not isinstance(body["validation"], dict)) or (
+                "group_validation" in body and not isinstance(body["group_validation"], dict)):
+            bad("validation selections must be objects")
+        has_single, has_group = "validation" in body, "group_validation" in body
+        if has_group and not has_single:
+            bad("group_validation requires single-image validation")
         fingerprint = hashlib.sha256(canonical(body).encode()).hexdigest()
         old = self.db.execute("SELECT id,fingerprint FROM production_plans WHERE request_key=?", (key,)).fetchone()
         if old:
@@ -95,14 +101,19 @@ class ProductionPlans:
             bad("Each fragment requires id and revision")
         if len({s["id"] for s in selections}) != len(selections):
             bad("Select each fragment once")
-        frozen_validation = self.core.validation.freeze_group(body["group_validation"])
-        if frozen_validation["profile"].get("consistency") is not True:
-            bad("Select a group consistency profile")
+        validation_mode = "single_group" if has_group else "single" if has_single else "none"
+        frozen_validation = None
+        if has_group:
+            frozen_validation = self.core.validation.freeze_group(body["group_validation"])
+            if frozen_validation["profile"].get("consistency") is not True:
+                bad("Select a group consistency profile")
         group = self.core.store.group(body["group_id"])
         plan = {"id": str(uuid.uuid4()), "state": "draft", "total": len(selections), "created_at": time.time(),
                 "group_id": group["id"], "accepted_reference": group.get("reference"), "reference": None,
-                "sequence": 0, "group_validation": body["group_validation"], "group_validation_frozen": frozen_validation,
+                "sequence": 0, "validation_mode": validation_mode,
                 "cancel_requested": False, "error": None, "outcome": None, "confirmations": {}}
+        if has_group:
+            plan.update(group_validation=body["group_validation"], group_validation_frozen=frozen_validation)
         base = {k: v for k, v in body.items() if k not in {"fragments", "group_validation"}}
         digest = hashlib.sha256(canonical({"request": body, "group_validation": frozen_validation}).encode())
         # All selected items are accepted durably, without creating GPU tasks.
@@ -110,9 +121,11 @@ class ProductionPlans:
         with self.db:
             for index, selection in enumerate(selections):
                 preview = self.core.preview(dict(base, fragment=selection))
-                digest.update(preview["preview_hash"].encode())
-                item = {"index": index, "state": "queued", "snapshot": preview["snapshot"],
-                        "preview_hash": preview["preview_hash"], "fragment": selection,
+                snapshot = self.core.store.execution_snapshot(preview["snapshot"])
+                preview_hash = hashlib.sha256(canonical(snapshot).encode()).hexdigest()
+                digest.update(preview_hash.encode())
+                item = {"index": index, "state": "queued", "snapshot": snapshot,
+                        "preview_hash": preview_hash, "fragment": selection,
                         "task_id": None, "active_task_id": None, "passed_image_ids": [], "error": None}
                 self.db.execute("INSERT INTO production_plan_items VALUES(?,?,?,?)",
                                 (plan["id"], index, "queued", canonical(item)))
@@ -184,6 +197,8 @@ class ProductionPlans:
 
     def confirm(self, plan_id, key, body):
         plan = self.get(plan_id)
+        if self.validation_mode(plan) != "single_group":
+            bad("Plan does not use group validation", "CORE_BATCH_STATE", 409)
         if not isinstance(key, str) or not 1 <= len(key) <= 200 or not isinstance(body, dict) or set(body) != {"reference_revision"} or type(body["reference_revision"]) is not int:
             bad("Confirmation key and reference_revision required")
         old = plan["confirmations"].get(key)
@@ -223,6 +238,17 @@ class ProductionPlans:
                 if any(run["state"] not in {"completed", "failed", "cancelled"} for image in task["images"] for run in self.core.store.image_validations(image["id"])):
                     continue
                 item["state"] = "cancelled"
+            elif self.validation_mode(plan) == "none":
+                task = self.core.store.task(item["active_task_id"])
+                if task["state"] == "generated":
+                    item["state"] = "generation_only"
+                elif task["state"] in {"failed", "cancelled"}:
+                    if task["state"] == "failed":
+                        item.update(state="generation_failed", error=task.get("error"))
+                    else:
+                        item["state"] = "cancelled"
+                else:
+                    continue
             else:
                 self.core.batches._observe_item(item)
             self.item_save(pid, item)
@@ -257,7 +283,22 @@ class ProductionPlans:
             self.item_save(pid, item)
         if queued or pending or counts.get("queued", 0):
             return
-        self.advance_comparisons(plan)
+        mode = self.validation_mode(plan)
+        if mode == "none":
+            failed = sum(counts.get(state, 0) for state in ("generation_failed", "cancelled"))
+            plan.update(state="failed" if failed else "completed", outcome="error" if failed else "unvalidated")
+            self.save(plan)
+        elif mode == "single":
+            failed = sum(counts.get(state, 0) for state in ("single_failed", "generation_failed", "cancelled"))
+            plan.update(state="completed", outcome="incomplete" if failed else "passed")
+            self.save(plan)
+        else:
+            self.advance_comparisons(plan)
+
+    @staticmethod
+    def validation_mode(plan):
+        # Plans stored before modes were introduced always required both.
+        return plan.get("validation_mode", "single_group")
 
     def advance_comparisons(self, plan):
         reference = self.core.store.group(plan["group_id"]).get("reference")

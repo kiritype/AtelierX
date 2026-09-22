@@ -206,7 +206,7 @@ framing은 `upper_body|full_body|custom`. 기존 두 값의 include는 `appearan
 
 `expression`, `action`, `situation` 역시 여러 줄 문자열(각 최대 20,000자)을 허용한다. 각 필드의 여러 줄은 하나의 이미지 Prompt를 구성한다. 줄마다 Task를 만들지 않는다. custom snapshot은 `composition_version:3`과 `prompt_inputs`에 구도·표정·동작·상황 원문을 보존한다. preview_hash는 원문·포함 영역 변경 시 달라진다. 이 계약은 단일 preview/Task와 기존 Batch의 각 item에 동일하게 적용된다.
 
-generation_inputs: 모델/encoder/VAE/sampler/scheduler 이름 문자열, width/height 256~1920의 16배수, seed 0~2^64−1 정수, steps 1~100 정수, cfg 0~20 유한수. loras는 선택 배열 `[{"name":"등록 파일명","strength":0.35}]`, strength −100~100 유한수. 실제 등록/지원 범위는 Generation이 추가 검사한다. JavaScript의 정수 정밀도 한계에 유의하며 현재 문자열 seed는 지원하지 않는다.
+generation_inputs: 모델/encoder/VAE/sampler/scheduler 이름 문자열, width/height 256~1920의 16배수, seed는 Core 입력에서 -1(이미지별 무작위) 또는 0~2^64−1 정수, steps 1~100 정수, cfg 0~20 유한수. Core는 무작위 Seed를 실행 전 고정·저장하며 Generation에는 0 이상의 실제 값만 보낸다. loras는 선택 배열 `[{"name":"등록 파일명","strength":0.35}]`, strength −100~100 유한수. 실제 등록/지원 범위는 Generation이 추가 검사한다. JavaScript의 정수 정밀도 한계에 유의하며 현재 문자열 seed는 지원하지 않는다.
 
 snapshot에는 `composition_version=2`, `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`, `character_revision`, `negative_sources` 및 선택 `postprocess`가 저장된다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
 

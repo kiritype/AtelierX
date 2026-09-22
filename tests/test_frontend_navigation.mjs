@@ -16,13 +16,14 @@ async function harness(loadPage) {
   source = source.replace(/^import .*?\r?\n/gm, "").replace("import(`./${page}.js`)", "globalThis.__loadPage(page)").replace(/\r?\nstart\(\);\s*$/, "\nglobalThis.__appTest={navigate,setApi:(value)=>api=value,main};");
   const elements = new Map(["#workspace", "#notice", "#page-title", "#page-description", ".skip-link", ".brand", "#connection-toggle", "#connection-panel", "#connection-form", "#core-token", "#connection-status"].map((key) => [key, new Element()]));
   const pushes = [];
+  let reloads = 0;
   const context = {AbortController, ApiClient: class {}, __loadPage: loadPage, console,
     document: {querySelector: (selector) => elements.get(selector), querySelectorAll: () => [], createElement: () => new Element()},
-    window: {scrollY: 0, confirm: () => true, scrollTo() {}, addEventListener() {}, location: {origin: "http://studio.test"}},
+    window: {scrollY: 0, confirm: () => true, scrollTo() {}, addEventListener() {}, location: {origin: "http://studio.test", reload: () => { reloads += 1; }}},
     history: {pushState: (...args) => pushes.push(args), replaceState() {}}, location: {hash: ""}};
   context.globalThis = context;
   vm.runInNewContext(source, context, {filename: "frontend/app.js"});
-  return {...context.__appTest, pushes};
+  return {...context.__appTest, pushes, reloads: () => reloads};
 }
 
 test("navigation skips an active route, refreshes when forced, and remounts after a detail route", async () => {
@@ -66,4 +67,19 @@ test("a slow mount is aborted and disposed after a faster navigation replaces it
   await pending;
   assert.equal(slowDisposed, 1);
   assert.equal(app.main.children[0].textContent, "gallery ready");
+});
+
+test("a dynamic page import failure offers a user-triggered recovery without reloading", async () => {
+  const app = await harness(async (page) => {
+    if (page === "creation") throw new SyntaxError("unexpected token <");
+    return {mount: async () => () => {}};
+  });
+  app.setApi({});
+  await app.navigate("creation");
+  const host = app.main.children[0];
+  assert.equal(host.children[0].textContent, "화면 파일을 불러오지 못했습니다.");
+  assert.match(host.children[1].textContent, /Cloudflare Access 로그인/);
+  assert.equal(app.reloads(), 0);
+  host.children[2].onclick();
+  assert.equal(app.reloads(), 1);
 });

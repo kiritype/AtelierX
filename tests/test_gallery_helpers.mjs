@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
 const source = await readFile(new URL("../frontend/gallery.js", import.meta.url), "utf8");
-const {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, classificationFilters, postprocessRequest} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+const {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, resolvedSeed, classificationFilters, postprocessRequest} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 assert.deepEqual(eligibleIds({eligible_image_ids: ["passed-a", "passed-b", "passed-a"]}), ["passed-a", "passed-b"]);
 assert.deepEqual(eligibleIds({eligible_image_ids: null}), []);
@@ -34,6 +34,9 @@ assert.throws(() => replacementRequest(consistency, "target-a", {validation: {pr
 assert.equal(activeDetail(false, 8, 8, "image", "image"), true);
 assert.equal(activeDetail(false, 9, 8, "image", "image"), false);
 assert.equal(activeDetail(true, 8, 8, "image", "image"), false);
+assert.equal(resolvedSeed({generation_inputs: {seed: 42}}), 42);
+assert.equal(resolvedSeed({generation_inputs: {seed: -1}}), null);
+assert.equal(resolvedSeed({generation_inputs: {seed: "42"}}), null);
 
 const initialFilters = {work_id: "work-a", character_id: "character-a", outfit_id: "outfit-a", media_type: "image/png"};
 assert.deepEqual(classificationFilters(initialFilters, "works", "work-b"), {work_id: "work-b", media_type: "image/png"});

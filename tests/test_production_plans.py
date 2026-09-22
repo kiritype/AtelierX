@@ -95,10 +95,12 @@ class ProductionPlanTests(unittest.TestCase):
             raise ApiError("CORE_REVISION_CONFLICT", "fragment changed", 409)
         snapshot = {
             "generation_endpoint": "http://generation.fixture",
-            "generation_inputs": {"positive_prompt": "portrait " + selection["id"], "negative_prompt": "", "seed": 7},
-            "validation": self.validation.freeze(payload["validation"]),
+            "generation_inputs": {"positive_prompt": "portrait " + selection["id"], "negative_prompt": "",
+                                  "seed": payload.get("generation_inputs", {}).get("seed", 7)},
             "fragment": {"id": selection["id"], "revision": selection["revision"], "body": "frozen " + selection["id"], "include": {"upper": True, "lower": False}},
         }
+        if "validation" in payload:
+            snapshot["validation"] = self.validation.freeze(payload["validation"])
         return {"snapshot": snapshot, "preview_hash": hashlib.sha256(canonical(snapshot).encode()).hexdigest()}
 
     def body(self, count=2):
@@ -230,6 +232,80 @@ class ProductionPlanTests(unittest.TestCase):
         # the terminal group Run before closing the parent plan.
         self.plans.advance(self.plans.get(plan["id"]))
         self.assertEqual(self.plans.get(plan["id"])["state"], "cancelled")
+
+    def test_validation_modes_allow_generation_only_and_single_without_group_comparison(self):
+        generation_only = self.body()
+        generation_only.pop("validation")
+        generation_only.pop("group_validation")
+        plan, _ = self.plans.create("generation-only", generation_only)
+        self.assertEqual(plan["validation_mode"], "none")
+        self.plans.start(plan["id"], {"plan_hash": plan["plan_hash"]})
+        self.plans.advance(self.plans.get(plan["id"]))
+        for item in self.plans.items(plan["id"], {"limit": 200, "offset": 0})["items"]:
+            task = self.store.task(item["task_id"])
+            task["state"] = "generated"
+            self.store.update_task(task)
+        self.plans.advance(self.plans.get(plan["id"]))
+        saved = self.plans.get(plan["id"])
+        self.assertEqual((saved["state"], saved["outcome"], saved["counts"]), ("completed", "unvalidated", {"generation_only": 2}))
+        self.assertEqual(self.groups.calls, [])
+
+        single = self.body()
+        single.pop("group_validation")
+        plan, _ = self.plans.create("single-only", single)
+        self.assertEqual(plan["validation_mode"], "single")
+        self.mark_passed(plan)
+        self.plans.start(plan["id"], {"plan_hash": plan["plan_hash"]})
+        self.plans.advance(self.plans.get(plan["id"]))
+        self.assertEqual((self.plans.get(plan["id"])["state"], self.plans.get(plan["id"])["outcome"], self.groups.calls),
+                         ("completed", "passed", []))
+
+        invalid = self.body()
+        invalid.pop("validation")
+        with self.assertRaisesRegex(ApiError, "group_validation requires") as raised:
+            self.plans.create("invalid-group-only", invalid)
+        self.assertEqual(raised.exception.code, "CORE_INVALID_INPUT")
+        with self.assertRaisesRegex(ApiError, "validation selections") as raised:
+            self.plans.create("null-validation", dict(generation_only, validation=None))
+        self.assertEqual(raised.exception.code, "CORE_INVALID_INPUT")
+
+    def test_generation_only_failure_and_cancel_are_explicit_terminal_outcomes(self):
+        body = self.body(1)
+        body.pop("validation")
+        body.pop("group_validation")
+        failed, _ = self.plans.create("generation-only-failure", body)
+        self.plans.start(failed["id"], {"plan_hash": failed["plan_hash"]})
+        self.plans.advance(self.plans.get(failed["id"]))
+        item = self.plans.items(failed["id"], {})["items"][0]
+        task = self.store.task(item["task_id"])
+        task.update(state="failed", error={"code": "CORE_GENERATION_FAILED", "message": "fixture failure"})
+        self.store.update_task(task)
+        self.plans.advance(self.plans.get(failed["id"]))
+        self.assertEqual((self.plans.get(failed["id"])["state"], self.plans.get(failed["id"])["outcome"]), ("failed", "error"))
+        self.assertEqual(self.plans.items(failed["id"], {})["items"][0]["error"]["code"], "CORE_GENERATION_FAILED")
+
+        cancelled, _ = self.plans.create("generation-only-cancel", body)
+        self.plans.start(cancelled["id"], {"plan_hash": cancelled["plan_hash"]})
+        self.plans.advance(self.plans.get(cancelled["id"]))
+        self.plans.cancel(cancelled["id"])
+        self.plans.advance(self.plans.get(cancelled["id"]))
+        self.assertEqual((self.plans.get(cancelled["id"])["state"], self.plans.get(cancelled["id"])["counts"]),
+                         ("cancelled", {"cancelled": 1}))
+
+    def test_random_seed_is_distinct_per_plan_item_and_idempotently_frozen(self):
+        body = self.body(2)
+        body["generation_inputs"] = {"seed": -1}
+        plan, created = self.plans.create("random-plan", body)
+        self.assertTrue(created)
+        seeds = [item["snapshot"]["generation_inputs"]["seed"]
+                 for item in self.plans.items(plan["id"], {"limit": 200, "offset": 0})["items"]]
+        self.assertTrue(all(type(seed) is int and seed >= 0 for seed in seeds))
+        self.assertNotEqual(*seeds)
+        self.plans = ProductionPlans(self.core)  # reload uses stored execution snapshots
+        same, created = self.plans.create("random-plan", body)
+        self.assertFalse(created)
+        self.assertEqual([item["snapshot"]["generation_inputs"]["seed"]
+                          for item in self.plans.items(same["id"], {"limit": 200, "offset": 0})["items"]], seeds)
 
 
 if __name__ == "__main__":
