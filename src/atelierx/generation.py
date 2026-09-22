@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import time
 import uuid
+from .runtime_info import RUNTIME_INFO
 
 import aiohttp
 from aiohttp import web
@@ -414,7 +415,7 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
     app.cleanup_ctx.append(lifecycle)
 
     async def health(request):
-        return web.json_response({"service": "generation", "status": "ok"})
+        return web.json_response({**RUNTIME_INFO, "service": "generation", "status": "ok"})
 
     async def nodes(request):
         info = await service.node_info()

@@ -79,7 +79,7 @@ class ProductionPlans:
     def create(self, key, body):
         if not isinstance(key, str) or not 1 <= len(key) <= 200:
             bad("Idempotency-Key required")
-        allowed = {"group_id", "fragments", "generation_inputs", "presets", "postprocess", "validation", "group_validation"}
+        allowed = {"group_id", "fragments", "common_fragments", "generation_inputs", "presets", "postprocess", "validation", "group_validation"}
         if not isinstance(body, dict) or set(body) - allowed or not {"group_id", "fragments"} <= set(body):
             bad("group_id and fragments are required")
         if ("validation" in body and not isinstance(body["validation"], dict)) or (

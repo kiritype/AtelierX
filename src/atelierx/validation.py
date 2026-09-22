@@ -12,6 +12,7 @@ import asyncio
 import base64
 import contextlib
 import hashlib
+from .runtime_info import RUNTIME_INFO
 import hmac
 import io
 import json
@@ -391,7 +392,8 @@ def create_app(directory, token, providers=None, generation_sources=None, profil
             with contextlib.suppress(asyncio.CancelledError): await worker
         service.owner.close()
     app.cleanup_ctx.append(lifecycle)
-    async def health(request): return web.json_response({"service":"validation","status":"ok"})
+    async def health(request):
+        return web.json_response({**RUNTIME_INFO, "service":"validation","status":"ok"})
     async def registry(request):
         service.registry.apply(await request.json())
         return web.json_response({"status":"ok"})

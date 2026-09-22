@@ -1,5 +1,7 @@
 # AtelierX REST API 명세 — 현재 구현
 
+2026-09-22: 세 Backend의 인증된 `/health` 응답에 `version`, `build`를 추가한다. build는 프로세스가 Python 모듈을 로드할 때 캡처한 소스 식별값이며 서비스 실행 후 파일만 바꿔도 갱신되지 않는다. 토큰·설정·저장 경로는 포함하지 않는다. 공통 적용 프롬프트의 `common` 및 `common_fragments` 계약은 [조각/제작 계획 API](prompt-fragments-production-plans.md)를 따른다.
+
 ## 그룹 없는 독립 생성 — 2026-09-21
 
 개인용 Discord 봇을 위한 Core 경로다. 기존 그룹 기반 Task/제작 계획은 변경하지 않는다. `--standalone-config`로 서버 설정을 등록해야 새 접수를 허용하며 미설정은 `CORE_STANDALONE_DISABLED`(503)다. 모든 경로에 기존 Core Bearer 인증이 필요하다.

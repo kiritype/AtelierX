@@ -54,13 +54,13 @@ export function prepareNewRouteState(state, routeId) {
 }
 export function fragmentDraft(item = null) {
   return item ? {id: item.id, revision: item.revision, number: item.number, name: item.name, body: item.body,
-    category_id: item.category_id ?? null, include: {upper: Boolean(item.include?.upper), lower: Boolean(item.include?.lower), accessories: item.include?.accessories !== false}} :
-    {name: "", body: "", category_id: null, include: {upper: true, lower: false, accessories: true}};
+    category_id: item.category_id ?? null, common: Boolean(item.common), include: {upper: Boolean(item.include?.upper), lower: Boolean(item.include?.lower), accessories: item.include?.accessories !== false}} :
+    {name: "", body: "", category_id: null, common: false, include: {upper: true, lower: false, accessories: true}};
 }
 export function draftChanged(draft, item) {
   if (!draft) return false;
   if (!item) return Boolean(draft.name || draft.body || draft.category_id);
-  return draft.name !== item.name || draft.body !== item.body || (draft.category_id ?? null) !== (item.category_id ?? null) ||
+  return draft.name !== item.name || draft.body !== item.body || (draft.category_id ?? null) !== (item.category_id ?? null) || Boolean(draft.common) !== Boolean(item.common) ||
     Boolean(draft.include.upper) !== Boolean(item.include?.upper) || Boolean(draft.include.lower) !== Boolean(item.include?.lower) ||
     Boolean(draft.include.accessories) !== (item.include?.accessories !== false);
 }
@@ -129,7 +129,7 @@ export async function mount(container, ctx) {
     if (state.saving) return;
     state.saving = true; render();
     try {
-      const body = {name: value.name.trim(), body: value.body.trim(), category_id: value.category_id || null, include: {upper: Boolean(value.include.upper), lower: Boolean(value.include.lower), accessories: value.include.accessories !== false}};
+      const body = {name: value.name.trim(), body: value.body.trim(), category_id: value.category_id || null, common: Boolean(value.common), include: {upper: Boolean(value.include.upper), lower: Boolean(value.include.lower), accessories: value.include.accessories !== false}};
       const saved = value.id ? await ctx.api.patch(`/v1/prompt-fragments/${value.id}`, {revision: value.revision, ...body}) : await ctx.api.post("/v1/prompt-fragments", body);
       state.selected = saved; state.selectedId = saved.id; state.editor = fragmentDraft(saved); state.dirty = false; state.history = null; state.offset = value.id ? state.offset : 0;
       ctx.onDetailChange?.(saved.id);
@@ -201,7 +201,7 @@ export async function mount(container, ctx) {
       el("ul", {class: "fragment-category-list"}, rows), categoryForm || button("+ 카테고리", () => { state.categoryEditor = {name: ""}; render(); }, {secondary: true})]);
   };
   const listPanel = () => {
-    const rows = state.fragments.map((item) => el("li", {class: `fragment-row${state.selected?.id === item.id ? " selected" : ""}`}, [button(`#${item.number ?? "–"} ${item.name}`, () => select(item, true), {secondary: true}), el("p", {class: "muted", text: String(item.body || "").slice(0, 120)})]));
+    const rows = state.fragments.map((item) => el("li", {class: `fragment-row${state.selected?.id === item.id ? " selected" : ""}`}, [button(`#${item.number ?? "–"} ${item.name}`, () => select(item, true), {secondary: true}), el("span", {class: "badge", text: item.common ? "공통 적용" : "이미지별"}), el("p", {class: "muted", text: String(item.body || "").slice(0, 120)})]));
     const from = state.total ? state.offset + 1 : 0;
     return el("section", {class: "fragment-list-panel panel"}, [el("h2", {text: "전역 조각"}),
       field("검색", input(state.query, (value) => { state.query = value; }, {placeholder: "이름 또는 Prompt 검색"})),
@@ -222,9 +222,10 @@ export async function mount(container, ctx) {
       state.historyError ? el("p", {class: "error", text: state.historyError}) : null,
       state.history ? el("ul", {}, history.length ? history : [el("li", {class: "muted", text: "기록된 이력이 없습니다."})]) : button(state.historyLoading ? "이력 불러오는 중…" : "이력 보기", loadHistory, {secondary: true, disabled: state.historyLoading})]) : null;
     return el("aside", {class: "fragment-detail panel"}, [el("div", {class: "toolbar"}, [button("목록으로", () => guarded(() => { state.selectedId = null; state.mobilePanel = "list"; ctx.onDetailChange?.(null); render(); }), {secondary: true})]), el("h2", {text: editor.id ? `#${editor.number ?? "–"} 조각 편집` : "새 전역 조각"}),
-      el("p", {class: "muted", text: "표시 번호는 Core가 전체 조각에 자동으로 부여하며 수정할 수 없습니다."}),
+      el("p", {class: "muted", text: "표시 번호는 Core가 전체 조각에 자동으로 부여하며 수정할 수 없습니다."}), el("p", {class: "badge", text: editor.common ? "공통 적용 프롬프트" : "이미지별 조각"}),
       field("이름", input(editor.name, (value) => { editor.name = value; state.dirty = true; })), field("카테고리", category), field("Prompt 본문", textarea(editor.body, (value) => { editor.body = value; state.dirty = true; })),
-      field("상의 포함", el("input", {type: "checkbox", checked: editor.include.upper, onchange: (event) => { editor.include.upper = event.target.checked; state.dirty = true; }})), field("하의 포함", el("input", {type: "checkbox", checked: editor.include.lower, onchange: (event) => { editor.include.lower = event.target.checked; state.dirty = true; }})), field("액세서리 포함", el("input", {type: "checkbox", checked: editor.include.accessories !== false, onchange: (event) => { editor.include.accessories = event.target.checked; state.dirty = true; }})),
+      field("공통 적용 프롬프트로 사용", el("input", {type: "checkbox", checked: editor.common, onchange: (event) => { editor.common = event.target.checked; state.dirty = true; render(); }}), "모든 선택 이미지에 본문만 덧붙입니다."),
+      editor.common ? el("p", {class: "muted", text: "공통 조각은 의상 상의·하의·액세서리 포함 여부를 바꾸지 않습니다."}) : el("div", {class: "grid"}, [field("상의 포함", el("input", {type: "checkbox", checked: editor.include.upper, onchange: (event) => { editor.include.upper = event.target.checked; state.dirty = true; }})), field("하의 포함", el("input", {type: "checkbox", checked: editor.include.lower, onchange: (event) => { editor.include.lower = event.target.checked; state.dirty = true; }})), field("액세서리 포함", el("input", {type: "checkbox", checked: editor.include.accessories !== false, onchange: (event) => { editor.include.accessories = event.target.checked; state.dirty = true; }}))]),
       el("div", {class: "toolbar"}, [button("저장", saveFragment, {disabled: state.saving}), button("취소", () => { state.editor = state.selected ? fragmentDraft(state.selected) : null; state.selectedId = state.selected?.id || null; state.dirty = false; state.mobilePanel = "list"; ctx.onDetailChange?.(null); render(); }, {secondary: true}), editor.id ? button(state.selected?.archived ? "복원" : "보관", archiveFragment, {secondary: true, disabled: state.saving}) : null]), historyPanel]);
   };
   function render() {

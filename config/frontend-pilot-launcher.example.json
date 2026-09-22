@@ -1,0 +1,7 @@
+{
+  "mode": "local",
+  "generation_url": "https://generation.example.com",
+  "generation_token_env": "ATELIERX_REMOTE_GENERATION_TOKEN",
+  "validation_url": "https://validation.example.com",
+  "validation_token_env": "ATELIERX_REMOTE_VALIDATION_TOKEN"
+}

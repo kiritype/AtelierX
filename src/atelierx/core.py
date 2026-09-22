@@ -17,6 +17,7 @@ import uuid
 
 import aiohttp
 from aiohttp import web
+from .runtime_info import RUNTIME_INFO
 
 from .common import ApiError, canonical
 from .core_batches import CoreBatches
@@ -43,7 +44,7 @@ FRONTEND_CONNECTION = web.AppKey("frontend_connection", FrontendConnection)
 COMPONENTS = {"upper", "lower", "accessories"}
 LEGACY_COMPONENTS = {"appearance", "upper", "lower"}
 GEN_FIELDS = {"diffusion_model", "text_encoder", "vae", "width", "height", "seed", "steps", "cfg", "sampler", "scheduler"}
-TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
+TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "common_fragments", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
 
 
 def invalid(message):
@@ -135,6 +136,16 @@ class Core:
         group = self.store.group(group_id)
         self.store.active_chain(group["outfit_id"], "outfits")
         fragment = self.fragments.snapshot(payload["fragment"]) if "fragment" in payload else None
+        common_selections = payload.get("common_fragments", [])
+        if not isinstance(common_selections, list): invalid("common_fragments must be an array")
+        common_fragments = [self.fragments.snapshot(selection) for selection in common_selections]
+        references = [item["id"] for item in common_fragments]
+        if len(references) != len(set(references)):
+            invalid("common_fragments cannot contain duplicates")
+        if any(not item.get("common", False) for item in common_fragments):
+            invalid("common_fragments must reference common prompt fragments")
+        if fragment and fragment.get("common", False):
+            invalid("fragment must reference an image-variant prompt fragment")
         if fragment and any(field in payload for field in ("framing", "framing_prompt", "expression", "action", "situation", "include")):
             invalid("fragment cannot be combined with framing, prompt inputs, or include")
         framing = None if fragment else payload.get("framing")
@@ -152,8 +163,9 @@ class Core:
             fields(include, COMPONENTS)
             if any(type(value) is not bool for value in include.values()): invalid("include values must be boolean")
             if framing == "custom" and set(include) != set(COMPONENTS): invalid("Custom framing requires explicit upper, lower and accessories inclusion")
+        framing_context = ", ".join([fragment["body"] if fragment else framing_prompt, *(item["body"] for item in common_fragments)])
         framing_terms = {entry["requirement"].strip().casefold()
-                         for part in clauses(fragment["body"] if fragment else framing_prompt) for entry in expanded_clause(part)}
+                         for part in clauses(framing_context) for entry in expanded_clause(part)}
         if {"upper body", "full body"}.issubset(framing_terms):
             raise ApiError("CORE_PROMPT_CONFLICT", "Choose one body crop; upper body and full body conflict")
         upper_body = framing == "upper_body" or ((framing == "custom" or fragment is not None) and "upper body" in framing_terms)
@@ -171,6 +183,8 @@ class Core:
                                ("framing" if name == "lower" and framing == "upper_body" else "user_excluded")}
             if active:
                 chunks.append(source.get(name, ""))
+        for common in common_fragments:
+            chunks.append(common["body"])
         chunks.append(framing_prompt)
         for name in ("expression", "action", "situation"): chunks.append(text(payload.get(name, ""), name))
         if fragment: chunks.append(fragment["body"])
@@ -205,6 +219,7 @@ class Core:
         if selected_presets:
             snapshot["preset_sources"] = {kind: selected_presets[kind]["preset"] for kind in sorted(selected_presets)}
         if fragment: snapshot["fragment"] = fragment
+        if common_fragments: snapshot["common_fragments"] = common_fragments
         if postprocess:
             snapshot["postprocess"] = postprocess
         if payload.get("validation") is not None:
@@ -448,7 +463,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     app.cleanup_ctx.append(lifecycle)
 
     async def health(request):
-        return web.json_response({"service": "core", "status": "ok", "database_version": 2,
+        return web.json_response({**RUNTIME_INFO, "service": "core", "status": "ok", "database_version": 2,
                                   "validation_configured": bool(core.validation.url)})
 
     async def frontend_connection(request):
