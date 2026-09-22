@@ -106,7 +106,12 @@ function button(title, action, className = "button") {
 
 export async function mount(container, ctx) {
   const state = ctx.state;
+  const reviewMode = ctx.mode === "review";
   state.filters ??= {}; state.offset ??= 0; state.mutationKeys ??= {}; state.inflight ??= {};
+  if (!reviewMode && !state.galleryInitialFilterApplied && !Object.keys(state.filters).length) {
+    state.filters.single_outcome = "passed";
+    state.galleryInitialFilterApplied = true;
+  }
   state.classification ??= {works: [], characters: {}, outfits: {}, expanded: {}, loading: {}, error: null};
   if (state.selectedId) { state.selected = state.selectedId; state.selectedId = null; }
   const cardUrls = new Set(); const detailUrls = new Set();
@@ -136,6 +141,7 @@ export async function mount(container, ctx) {
   const message = el("p", "", "error");
   const browser = el("aside", "", "classification-tree panel");
   const layout = el("div", "", "gallery-browser-layout");
+  layout.classList.toggle("gallery-review", reviewMode);
   layout.classList.toggle("detail-open", Boolean(state.mobileDetail));
   const treeToggle = button("작품·캐릭터 선택", () => {
     const open = layout.classList.toggle("tree-open"); treeToggle.setAttribute("aria-expanded", String(open));
@@ -143,13 +149,14 @@ export async function mount(container, ctx) {
   treeToggle.setAttribute("aria-expanded", "false");
   toolbar.append(treeToggle);
   layout.append(browser, cards, detail); root.append(toolbar, message, layout); container.append(root);
+  root.prepend(el("p", reviewMode ? "이미지별 검사 이력과 현재 그룹 일관성을 검토합니다." : "단일 검사 통과 결과를 탐색하고 원본을 내려받습니다. 그룹 일관성 상태는 카드에서 별도로 확인하세요.", "muted"));
 
   const [singleWrap, single] = select("단일 검사", [["", "전체"], ["passed", "통과"], ["failed", "불합격"], ["pending", "대기"], ["error", "오류"], ["unvalidated", "미검증"], ["cancelled", "취소"]]);
   const [groupWrap, group] = select("묶음 검사", [["", "전체"], ["matched", "일치"], ["mismatch", "불일치"], ["reference", "기준"], ["stale", "이전 기준"], ["insufficient", "부족"], ["reference_conflict", "기준 충돌"], ["not_eligible", "대상 제외"], ["error", "오류"], ["unvalidated", "미검증"]]);
   const [mediaWrap, media] = select("형식", [["", "전체"], ["image/png", "PNG"], ["image/webp", "WebP"]]);
   single.value = state.filters.single_outcome || ""; group.value = state.filters.group_status || ""; media.value = state.filters.media_type || "";
   toolbar.append(singleWrap, groupWrap, mediaWrap);
-  toolbar.append(button("검증 통과 이미지", () => {
+  toolbar.append(button(reviewMode ? "통과 결과 보기" : "통과 결과만", () => {
     single.value = "passed"; group.value = "matched"; state.offset = 0; clearDetail(); refresh();
   }), el("span", "단일 통과 + 현재 기준 그룹 일치", "muted"));
   toolbar.append(button("필터 적용", () => { state.offset = 0; refresh(); }), button("초기화", () => {
@@ -294,7 +301,16 @@ export async function mount(container, ctx) {
         });
       };
       enlarged.addEventListener("error", () => { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) retryImage.hidden = false; });
-      detail.append(enlarged, retryImage); loadImage();
+      detail.append(enlarged, retryImage);
+      if (!reviewMode) detail.append(button("원본 내려받기", async () => {
+        try {
+          const blob = await ctx.api.imageBlob(image.content_url || `/v1/images/${image.id}/content`);
+          const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
+          anchor.href = url; anchor.download = `${image.id}.${image.media_type === "image/webp" ? "webp" : "png"}`;
+          anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+        } catch (error) { ctx.notify(errorText(error), true); }
+      }));
+      loadImage();
       const inputs = task.snapshot?.generation_inputs || {};
       const prompt = { positive_prompt: inputs.positive_prompt ?? "", negative_prompt: inputs.negative_prompt ?? "" };
       const inputsDetail = el("details"); inputsDetail.append(el("summary", "생성 당시 프롬프트·설정"), el("h3", "당시 Prompt"), el("pre", JSON.stringify(prompt, null, 2)), el("h3", "당시 후처리 설정"), el("pre", JSON.stringify(task.snapshot?.postprocess ?? {}, null, 2))); detail.append(inputsDetail);
@@ -308,9 +324,13 @@ export async function mount(container, ctx) {
           } catch (error) { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) ctx.notify(errorText(error), true); }
         })); detail.append(row);
       }
-      await addPostprocessActions(image, epoch);
-      if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
-      void addSingleActions(image, epoch); addRegenerationAction(image); await addGroupActions(image, epoch);
+      if (reviewMode) {
+        void addSingleActions(image, epoch); await addGroupActions(image, epoch);
+      } else {
+        await addPostprocessActions(image, epoch);
+        if (!activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) return;
+        addRegenerationAction(image);
+      }
     } catch (error) { if (!disposed && epoch === detailEpoch) { detail.replaceChildren(); detail.append(button("← 이미지 목록", backToList, "button mobile-only"), el("p", errorText(error), "error")); } }
   }
   async function registry(kind) {

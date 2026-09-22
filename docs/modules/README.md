@@ -1,5 +1,7 @@
 # 모듈 책임과 상세 문서 안내
 
+2026-09-22 후속 확정: 캐릭터 외형, 의상 상의·하의·액세서리로 편집 모델을 변경한다. Core가 이전 충돌 확인·프롬프트 합성·스냅샷을 소유하고 Frontend는 관리/생성/검토/갤러리 역할을 분리한다. 아래 과거 의상 외형 표현은 이 정정으로 대체한다.
+
 Core가 요청 시 선택한 검증 설정을 고정하고 생성 완료 후 검증을 접수하도록 구현했다. 공유 GPU·취소·Queue의 현재 범위는 [실행 기록](../development/core-orchestration-validation.md), 경로/필드는 [API 명세](../api/rest-api.md)를 따른다.
 
 [ADR-0023](../architecture/adr/0023-negative-prompt-sources.md): Core가 전역·캐릭터 Negative 저장·합성·출처 고정을 담당한다. Generation은 합성 문구를 실행하고 Validation은 캐릭터 금지 요소만 검사한다.

@@ -199,7 +199,7 @@ export async function mount(container, ctx) {
   const postprocessState = document.createElement("input"); postprocessState.placeholder = "후처리 상태 filter"; postprocessState.setAttribute("aria-label", "후처리 작업 상태 필터"); postprocessState.value = state.postprocessState;
   const legacyForm = el("details");
   legacyForm.append(el("summary", "기존 일괄 생성 양식 (호환용)"), batchHost);
-  toolbar.append(taskState, batchState, postprocessState, button("새로고침", () => refresh()), button("조각으로 제작하기", () => ctx.navigate("production")));
+  toolbar.append(taskState, batchState, postprocessState, button("새로고침", () => refresh()), button("이미지 생성으로", () => ctx.navigate("creation")));
   lists.append(tasks, batches, postprocessJobs); root.append(toolbar, message, legacyForm, lists, detail); container.replaceChildren(root);
   root.insertBefore(plansHost, lists);
   const path = (base, value) => value ? `${base}?${new URLSearchParams({ state: value, limit: "30", offset: "0" })}` : `${base}?limit=30&offset=0`;
@@ -226,7 +226,7 @@ export async function mount(container, ctx) {
     for (const plan of items(page)) {
       const row = el("div", "", "row");
       row.append(el("span", `${plan.total}장 · ${jobLabel(plan.state)} · 판정: ${jobLabel(plan.outcome)}`),
-        button("제작 계획 열기", () => ctx.navigate("production", `plan:${plan.id}`)));
+        button("제작 계획 열기", () => ctx.navigate("creation", `plan:${plan.id}`)));
       plansHost.append(row, el("p", Object.entries(plan.counts || {}).map(([status, count]) => `${jobLabel(status)}: ${count}`).join(" · "), "muted"));
     }
     const pager = el("div", "", "row");

@@ -19,7 +19,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_only_allowlisted_ui_assets_bypass_rest_authentication(self):
         for path, content_type in (("/ui/", "text/html"), ("/ui/api.js", "text/javascript"), ("/ui/app.js", "text/javascript"),
-                                   ("/ui/production.js", "text/javascript"), ("/ui/gallery.js", "text/javascript"),
+                                   ("/ui/production.js", "text/javascript"), ("/ui/creation.js", "text/javascript"), ("/ui/review.js", "text/javascript"), ("/ui/gallery.js", "text/javascript"),
                                    ("/ui/jobs.js", "text/javascript"), ("/ui/settings.js", "text/javascript"), ("/ui/connection.js", "text/javascript"),
                                    ("/ui/fragments.js", "text/javascript"), ("/ui/fragment-picker.js", "text/javascript"),
                                    ("/ui/studio-tree.js", "text/javascript"),
@@ -30,6 +30,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.headers["Cache-Control"], "no-store")
             self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual((await self.client.get("/v1/settings")).status, 401)
+        self.assertEqual((await self.client.get("/v1/generation/resources")).status, 401)
         self.assertEqual((await self.client.get("/health")).status, 401)
         self.assertEqual((await self.client.get("/ui/core.py")).status, 404)
 

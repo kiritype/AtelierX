@@ -3,6 +3,12 @@ import test from "node:test";
 import {draftChanged, fragmentDraft, initialFragmentState, prepareNewRouteState, routeFragmentId, shouldRestoreRouteDetail} from "../frontend/fragments.js";
 import {fragmentKey, fragmentListPath, preserveSelection, sameFragmentReference, pageOffsetForTotal} from "../frontend/fragment-picker.js";
 
+test("new fragments include accessories by default while older records stay compatible", () => {
+  assert.equal(fragmentDraft().include.accessories, true);
+  assert.equal(fragmentDraft({id: "old", revision: 1, name: "old", body: "x", include: {upper: true, lower: false}}).include.accessories, true);
+  assert.equal(fragmentDraft({id: "new", revision: 1, name: "new", body: "x", include: {accessories: false}}).include.accessories, false);
+});
+
 test("fragment list path preserves category, search and pagination", () => {
   const path = fragmentListPath({query: " smile ", categoryId: "expression", limit: 25, offset: 50});
   const url = new URL(path, "https://atelierx.test");

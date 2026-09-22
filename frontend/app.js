@@ -1,6 +1,6 @@
 import {ApiClient} from './api.js';
 import {autoConnection, connectionMessage} from './connection.js';
-const pages={fragments:['프롬프트 조각','카테고리별로 정리하고 모든 캐릭터에 함께 사용하세요.'],production:['캐릭터 작업실','외형과 의상을 준비하고 선택한 조각으로 이미지를 만드세요.'],gallery:['이미지셋','캐릭터별 결과와 단일·그룹 검사 판정을 확인하세요.'],jobs:['작업 현황','생성부터 검증까지, 진행 중인 작업을 확인하세요.'],settings:['설정','작업 방식에 맞게 스튜디오를 조정하세요.']};
+const pages={fragments:['조각 관리','전역 Prompt 조각을 카테고리별로 정리합니다.'],production:['캐릭터 관리','작품, 캐릭터, 의상을 준비합니다.'],creation:['이미지 생성','선택한 캐릭터와 조각으로 이미지 생성을 준비합니다.'],jobs:['작업 현황','생성부터 검증까지 작업 진행을 확인합니다.'],review:['검토','단일 검사와 그룹 일관성 검토를 진행합니다.'],gallery:['갤러리','단일 검사 통과 결과를 탐색하고 내려받습니다.'],settings:['설정','작업 방식과 연결을 조정합니다.']};
 const states=Object.fromEntries(Object.keys(pages).map(k=>[k,{}]));
 let api=null,serial=0,current='production';
 let activeRoute=null,activeLifecycle=null;

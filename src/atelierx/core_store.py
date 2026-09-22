@@ -50,6 +50,7 @@ class Store:
                 state TEXT NOT NULL, created_at REAL NOT NULL, document TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS validation_runs_image ON validation_runs(image_id,created_at);
             CREATE TABLE IF NOT EXISTS regeneration_cycles (id TEXT PRIMARY KEY, document TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS appearance_migration_conflicts (character_id TEXT PRIMARY KEY, document TEXT NOT NULL);
             PRAGMA user_version=2;
         """)
         if not self.db.execute("SELECT 1 FROM settings LIMIT 1").fetchone():
@@ -57,10 +58,39 @@ class Store:
                 self.db.execute("INSERT INTO settings VALUES(?,?)", (1, canonical({
                     "revision": 1, "positive_quality": "", "negative": "",
                     "auto_regeneration_enabled": True, "max_auto_regenerations": 5})))
+        self._migrate_existing_outfit_appearance()
 
     def close(self):
         self.db.close()
         self.owner.close()
+
+    def _migrate_existing_outfit_appearance(self):
+        """Move only unambiguous legacy current documents; revisions/groups stay immutable."""
+        rows = [(row[0], json.loads(row[1])) for row in self.db.execute("SELECT id,document FROM entities WHERE kind='outfits'")]
+        by_character = {}
+        for outfit_id, outfit in rows:
+            appearance = outfit.get("components", {}).get("appearance")
+            if appearance is not None:
+                by_character.setdefault(outfit["parent_id"], []).append((outfit_id, outfit, appearance))
+        with self.db:
+            for character_id, outfits in by_character.items():
+                character = self.entity(character_id, "characters")
+                values = {appearance for _, _, appearance in outfits}
+                if character.get("appearance_prompt"):
+                    values.add(character["appearance_prompt"])
+                if len(values) > 1:
+                    self.db.execute("INSERT OR REPLACE INTO appearance_migration_conflicts VALUES(?,?)", (character_id, canonical({"character_id": character_id, "appearances": sorted(values), "outfit_ids": [item[0] for item in outfits], "appearances_by_outfit": [item[2] for item in outfits]})))
+                    continue
+                appearance = next(iter(values), "")
+                if not character.get("appearance_prompt") and appearance:
+                    character.update(appearance_prompt=appearance, revision=character["revision"] + 1)
+                    self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (character["revision"], canonical(character), character_id))
+                    self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (character_id, character["revision"], canonical(character)))
+                for outfit_id, outfit, _ in outfits:
+                    parts = outfit["components"]
+                    outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", "")}, revision=outfit["revision"] + 1)
+                    self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (outfit["revision"], canonical(outfit), outfit_id))
+                    self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (outfit_id, outfit["revision"], canonical(outfit)))
 
     def entity(self, entity_id, kind=None, active=False):
         row = self.db.execute("SELECT * FROM entities WHERE id=?", (entity_id,)).fetchone()
@@ -70,6 +100,19 @@ class Store:
             raise ApiError("CORE_ARCHIVED", "Category entry is archived", 409)
         return json.loads(row["document"])
 
+    def entity_response(self, entity_id, kind=None):
+        document = self.entity(entity_id, kind)
+        if document["kind"] == "characters":
+            document.setdefault("appearance_prompt", "")
+            row = self.db.execute("SELECT document FROM appearance_migration_conflicts WHERE character_id=?", (entity_id,)).fetchone()
+            if row:
+                conflict = json.loads(row[0]); candidates = {}
+                for outfit_id, appearance in zip(conflict["outfit_ids"], conflict["appearances_by_outfit"]): candidates.setdefault(appearance, []).append(outfit_id)
+                for appearance in conflict["appearances"]: candidates.setdefault(appearance, [])
+                document["appearance_migration"] = {"status": "conflict", "candidates": [{"appearance_prompt": value, "outfit_ids": ids} for value, ids in sorted(candidates.items())]}
+            else: document["appearance_migration"] = {"status": "complete"}
+        return document
+
     def active_chain(self, entity_id, kind):
         entry = self.entity(entity_id, kind, active=True)
         parent_kind = KINDS[kind]
@@ -77,7 +120,7 @@ class Store:
             self.active_chain(entry["parent_id"], parent_kind)
         return entry
 
-    def create_entity(self, kind, name, parent_id, components=None, negative_prompt=""):
+    def create_entity(self, kind, name, parent_id, components=None, negative_prompt="", appearance_prompt=""):
         with self.db:
             if KINDS[kind]:
                 self.active_chain(parent_id, KINDS[kind])
@@ -87,6 +130,7 @@ class Store:
                 document["components"] = components
             if kind == "characters":
                 document["negative_prompt"] = negative_prompt
+                document["appearance_prompt"] = appearance_prompt
             self.db.execute("INSERT INTO entities VALUES(?,?,?,?,?,?)",
                             (document["id"], kind, parent_id, 1, 0, canonical(document)))
             self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (document["id"], 1, canonical(document)))
@@ -97,6 +141,20 @@ class Store:
             document = self.entity(entity_id, kind)
             if document["revision"] != revision:
                 raise ApiError("CORE_REVISION_CONFLICT", "Category entry changed; refresh before editing", 409)
+            conflict = self.db.execute("SELECT document FROM appearance_migration_conflicts WHERE character_id=?", (entity_id,)).fetchone() if kind == "characters" else None
+            if conflict and "appearance_prompt" in changes:
+                detail = json.loads(conflict[0])
+                if changes["appearance_prompt"] not in detail["appearances"]:
+                    raise ApiError("CORE_APPEARANCE_MIGRATION_RESOLUTION_REQUIRED", "Choose one listed legacy appearance before editing", 409)
+                for outfit_id in detail["outfit_ids"]:
+                    outfit = self.entity(outfit_id, "outfits"); parts = outfit.get("components", {})
+                    if "appearance" in parts:
+                        outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", "")}, revision=outfit["revision"] + 1)
+                        self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (outfit["revision"], canonical(outfit), outfit_id))
+                        self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (outfit_id, outfit["revision"], canonical(outfit)))
+                self.db.execute("DELETE FROM appearance_migration_conflicts WHERE character_id=?", (entity_id,))
+            if kind == "outfits" and "components" in changes and self.db.execute("SELECT 1 FROM appearance_migration_conflicts WHERE character_id=?", (document["parent_id"],)).fetchone():
+                raise ApiError("CORE_APPEARANCE_MIGRATION_RESOLUTION_REQUIRED", "Resolve the character appearance migration before editing outfits", 409)
             document.update(changes, revision=revision + 1)
             cursor = self.db.execute("UPDATE entities SET document=?,revision=?,archived=? WHERE id=? AND revision=?",
                                      (canonical(document), revision + 1, int(document["archived"]), entity_id, revision))
@@ -108,7 +166,8 @@ class Store:
     def list_entities(self, kind, parent_id, limit, offset):
         rows = self.db.execute("SELECT document FROM entities WHERE kind=? AND (? IS NULL OR parent_id=?) ORDER BY id LIMIT ? OFFSET ?",
                                (kind, parent_id, parent_id, limit, offset)).fetchall()
-        return [json.loads(row[0]) for row in rows]
+        values = [json.loads(row[0]) for row in rows]
+        return [self.entity_response(item["id"], kind) for item in values] if kind == "characters" else values
 
     def history(self, entity_id, kind, limit, offset):
         self.entity(entity_id, kind)
@@ -135,10 +194,13 @@ class Store:
         with self.db:
             outfit = self.active_chain(outfit_id, "outfits")
             character = self.entity(outfit["parent_id"], "characters")
+            if self.db.execute("SELECT 1 FROM appearance_migration_conflicts WHERE character_id=?", (character["id"],)).fetchone():
+                raise ApiError("CORE_APPEARANCE_MIGRATION_RESOLUTION_REQUIRED", "Resolve the character appearance migration before creating a group", 409)
             work = self.entity(character["parent_id"], "works")
             document = dict(id=str(uuid.uuid4()), outfit_id=outfit_id,
                             character_id=character["id"], work_id=work["id"],
                             outfit_revision=outfit["revision"], components=outfit["components"],
+                            character_revision=character["revision"], character_appearance_prompt=character.get("appearance_prompt") or outfit.get("components", {}).get("appearance", ""),
                             created_at=time.time())
             self.db.execute("INSERT INTO groups VALUES(?,?,?)", (document["id"], outfit_id, canonical(document)))
         return document
