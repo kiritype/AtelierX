@@ -1,5 +1,7 @@
 # ADR-0021: 작품·캐릭터·외형·의상 관계와 이미지 그룹
 
+> 2026-09-23: [ADR-0026](0026-fragment-numbers-output-names-hands.md)로 일부 변경되었다. 해당 부분은 그 ADR을 따른다.
+
 - 상태: Accepted
 - 작성일 / 확정일: 2026-09-13
 - Supersedes / Superseded by: 없음

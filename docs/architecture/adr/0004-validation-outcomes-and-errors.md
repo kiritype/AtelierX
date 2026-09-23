@@ -1,5 +1,7 @@
 # ADR-0004: Validation 판정과 실행 오류·재생성 경계
 
+> 2026-09-23: [ADR-0025](0025-validation-check-scope.md)로 일부 변경되었다. 해당 부분은 그 ADR을 따른다.
+
 - 상태: Accepted
 - 작성일 / 확정일: 2026-09-12
 - Supersedes: 없음. ADR-0003에서 미정으로 남긴 Validation 판정과 실행 오류 경계를 구체화한다.
