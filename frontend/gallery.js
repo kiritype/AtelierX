@@ -1,3 +1,5 @@
+import {openLightbox} from "./lightbox.js";
+
 const el = (tag, text = "", className = "") => {
   const node = document.createElement(tag);
   node.textContent = text;
@@ -162,6 +164,22 @@ export async function mount(container, ctx) {
   const cardUrls = new Set(); const detailUrls = new Set();
   let disposed = false;
   let refreshEpoch = 0; let detailEpoch = 0;
+  let pageImages = [];
+  let activeLightbox = null;
+  const lightboxEntry = (image) => ({
+    id: image.id,
+    title: `이미지 ${image.id}`,
+    caption: `${image.media_type} · 단일: ${verdictLabel(image.single_outcome)} · 그룹: ${verdictLabel(image.group_status)}`,
+    loadSrc: () => ctx.api.imageBlob(image.content_url || `/v1/images/${image.id}/content`).then((blob) => URL.createObjectURL(blob)),
+  });
+  const openImageLightbox = (imageId, fallbackImage) => {
+    let source = pageImages;
+    let index = source.findIndex((item) => item.id === imageId);
+    if (index < 0) { source = fallbackImage ? [fallbackImage] : []; index = 0; }
+    if (!source.length) return;
+    activeLightbox?.close();
+    activeLightbox = openLightbox(source.map(lightboxEntry), index, {signal: ctx.signal, onClose: () => { activeLightbox = null; }});
+  };
   const mutationKey = (scope, body) => {
     const fingerprint = `${scope}:${JSON.stringify(body)}`;
     return [fingerprint, state.mutationKeys[fingerprint] ??= key()];
@@ -290,6 +308,7 @@ export async function mount(container, ctx) {
       if (disposed || epoch !== refreshEpoch) return;
       revoke(cardUrls);
       cards.replaceChildren();
+      pageImages = page.items;
       if (!page.items.length) cards.append(el("p", "조건에 맞는 이미지가 없습니다.", "muted"));
       for (const image of page.items) cards.append(card(image));
       const pager = el("div", "", "toolbar");
@@ -303,6 +322,9 @@ export async function mount(container, ctx) {
     const item = el("article", "", "panel");
     const preview = document.createElement("img"); preview.alt = "생성 이미지"; preview.loading = "lazy";
     item.append(preview, el("strong", image.media_type), el("span", `단일: ${verdictLabel(image.single_outcome)}`, "badge"), el("span", `그룹: ${verdictLabel(image.group_status)}`, "badge"));
+    const enlarge = button("크게 보기", (event) => { event.stopPropagation(); openImageLightbox(image.id, image); }, "button secondary");
+    enlarge.setAttribute("aria-label", `이미지 크게 보기: ${image.id}`);
+    item.append(enlarge);
     item.append(el("small", image.id, "muted"));
     item.setAttribute("role", "button"); item.tabIndex = 0; item.setAttribute("aria-label", `이미지 상세 열기: ${image.id}`);
     const openDetail = () => { ctx.onDetailChange?.(image.id); showDetail(image.id); };
@@ -355,7 +377,9 @@ export async function mount(container, ctx) {
         });
       };
       enlarged.addEventListener("error", () => { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) retryImage.hidden = false; });
-      detail.append(enlarged, retryImage);
+      const openBig = button("이미지 확대", () => openImageLightbox(image.id, image));
+      openBig.setAttribute("aria-label", `이미지 확대해서 보기: ${image.id}`);
+      detail.append(enlarged, openBig, retryImage);
       if (!reviewMode) detail.append(button("원본 내려받기", async () => {
         try {
           const blob = await ctx.api.imageBlob(image.content_url || `/v1/images/${image.id}/content`);
@@ -627,5 +651,5 @@ export async function mount(container, ctx) {
     if (activeDetail(disposed, detailEpoch, expectedEpoch, state.selected, image.id)) detail.append(section);
   }
   await loadWorks(); await refresh(); if (state.selected) showDetail(state.selected);
-  return () => { disposed = true; imageQueue = []; observeImages?.disconnect(); revoke(cardUrls); revoke(detailUrls); };
+  return () => { disposed = true; imageQueue = []; observeImages?.disconnect(); revoke(cardUrls); revoke(detailUrls); activeLightbox?.close(); };
 }

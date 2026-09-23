@@ -20,6 +20,7 @@ _ASSETS = {
     "fragment-picker.js": "text/javascript; charset=utf-8",
     "fragment-rules.js": "text/javascript; charset=utf-8",
     "studio-tree.js": "text/javascript; charset=utf-8",
+    "lightbox.js": "text/javascript; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
 }
 
