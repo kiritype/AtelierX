@@ -41,3 +41,6 @@ artifacts/frontend-pilot/
 
 # Local-only work history (summarized into tracked docs first)
 docs/history/
+
+# Agent worktrees (local only)
+.claude/worktrees/
