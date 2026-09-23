@@ -6,6 +6,7 @@ import {fragmentKey, fragmentListPath, fragmentReference, preserveSelection} fro
 import {mountStudioTree} from "./studio-tree.js";
 import {OUTFIT_PARTS, checkFeaturesError, defaultFragmentInclude, fragmentIncludeSummary, fragmentLabel, inclusionLabels, parseCheckFeatures} from "./fragment-rules.js";
 import {consistencyFormValues, consistencyMethodChoices, estimatedSecondsWithConsistency, mountReferenceSetPanel, referenceMismatchDiffRows, referenceStatusLabel} from "./reference-sets.js";
+import {sortByName} from "./name-sort.js";
 
 const EMPTY_COMPONENTS = Object.freeze({ upper: "", lower: "", accessories: "", hands: "" });
 const DEFAULT_GENERATION = Object.freeze({
@@ -1140,9 +1141,9 @@ function creationPanel(state, api, rerender, notify) {
   const selectedOutfits = new Set(state.selectedOutfitIds);
   const selectedFragments = new Set(state.draft.fragmentSelections.map(fragmentKey));
   const selectedCommonFragments = new Set((state.draft.commonFragmentSelections || []).map(fragmentKey));
-  const activeWorks = state.entities.works.filter((work) => !work.archived);
-  const charactersFor = (work) => state.entities.characters.filter((character) => character.parent_id === work.id && !character.archived);
-  const outfitsFor = (character) => state.entities.outfits.filter((outfit) => outfit.parent_id === character.id && !outfit.archived);
+  const activeWorks = sortByName(state.entities.works.filter((work) => !work.archived));
+  const charactersFor = (work) => sortByName(state.entities.characters.filter((character) => character.parent_id === work.id && !character.archived));
+  const outfitsFor = (character) => sortByName(state.entities.outfits.filter((outfit) => outfit.parent_id === character.id && !outfit.archived));
   const changed = () => { state.creationFrozen = null; state.creationPromptPreview = null; state.draft.multiPlanRequests = {}; state.creationPreviewOffset = 0; };
   const toggleOutfits = (ids, checked) => { state.selectedOutfitIds = toggleTreeSelection(state.selectedOutfitIds, ids, checked); changed(); rerender(); };
   const toggleFragments = (items, checked, common = false) => { const selected = common ? selectedCommonFragments : selectedFragments; const fieldName = common ? "commonFragmentSelections" : "fragmentSelections"; state.draft[fieldName] = toggleTreeSelection(selected, items.map(fragmentKey), checked).map((key) => { const [id, revision] = key.split("@"); return {id, revision: Number(revision)}; }); changed(); invalidatePreview(state.draft); rerender(); };
@@ -1162,9 +1163,9 @@ function creationPanel(state, api, rerender, notify) {
   const categoryBranch = (name, items, common = false) => { const id = `${common ? "common:" : "variant:"}category:${name}`; const open = state.creationExpanded[id] !== false; const selected = common ? selectedCommonFragments : selectedFragments; return node("div", {class: "creation-tree-category"}, [treeToggle(name, open, () => toggleExpanded(id)), check(`카테고리 · ${name}`, treeSelectionState(items.map(fragmentKey), selected), (checked) => toggleFragments(items, checked, common), locked), open ? node("div", {class: "creation-tree-fragments"}, items.map((item) => node("div", {class: "creation-tree-fragment"}, [check(common ? item.name : fragmentLabel(item), treeSelectionState([fragmentKey(item)], selected), (checked) => toggleFragments([item], checked, common), locked), common ? null : node("small", {class: "muted creation-fragment-include", text: fragmentIncludeSummary(item.include)})]))) : null]); };
   const branches = (items, common) => {
     const values = [
-      ...state.fragmentCategories.map((category) => [category.name, items.filter((item) => item.category_id === category.id)]),
-      ["미분류", items.filter((item) => !item.category_id)],
-      ["보관된 카테고리", items.filter((item) => item.category_id && !categories.has(item.category_id))],
+      ...state.fragmentCategories.map((category) => [category.name, sortByName(items.filter((item) => item.category_id === category.id))]),
+      ["미분류", sortByName(items.filter((item) => !item.category_id))],
+      ["보관된 카테고리", sortByName(items.filter((item) => item.category_id && !categories.has(item.category_id)))],
     ];
     const visible = values.filter(([, entries]) => entries.length);
     return visible.length ? visible.map(([name, entries]) => categoryBranch(name, entries, common)) : [node("p", {class: "muted", text: common ? "등록한 공통 적용 프롬프트가 없습니다." : "등록한 이미지별 조각이 없습니다."})];

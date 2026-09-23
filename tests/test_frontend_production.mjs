@@ -149,7 +149,7 @@ test("fragment mode rejects zero or multiple selections for a single preview", (
 
 test("fragment picker uses Core category and query filters without placing selection in the request", () => {
   const path = fragmentPickerQuery({fragmentSearch: "미소", fragmentCategoryId: "expression", fragmentLimit: 25, fragmentOffset: 50});
-  assert.equal(path, "/v1/prompt-fragments?archived=false&limit=25&offset=50&q=%EB%AF%B8%EC%86%8C&category_id=expression");
+  assert.equal(path, "/v1/prompt-fragments?archived=false&limit=25&offset=50&sort=name&q=%EB%AF%B8%EC%86%8C&category_id=expression");
 });
 
 

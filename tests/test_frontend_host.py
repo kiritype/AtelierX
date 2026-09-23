@@ -25,6 +25,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
                                    ("/ui/studio-tree.js", "text/javascript"),
                                    ("/ui/lightbox.js", "text/javascript"),
                                    ("/ui/reference-sets.js", "text/javascript"),
+                                   ("/ui/name-sort.js", "text/javascript"),
                                    ("/ui/styles.css", "text/css")):
             response = await self.client.get(path)
             self.assertEqual(response.status, 200, path)

@@ -126,12 +126,63 @@ export function sampleGenerationInputs(generation) {
   };
 }
 
-export function sampleRequestBody(generation, commonFragments, count = 1) {
+/** Validates optional per-role `{full?, face?}` size overrides against the
+ * same range/multiple-of-16 rule Core enforces for generation_inputs
+ * width/height (256..1920). Returns undefined when there is nothing to send. */
+export function sampleSizesBody(sizes) {
+  if (!sizes || typeof sizes !== "object") return undefined;
+  const role = (value, label) => {
+    if (!value) return undefined;
+    const width = Number(value.width);
+    const height = Number(value.height);
+    for (const [name, n] of [["너비", width], ["높이", height]]) {
+      if (!Number.isInteger(n) || n < 256 || n > 1920) throw new Error(`${label} ${name}는 256~1920의 정수여야 합니다.`);
+      if (n % 16) throw new Error(`${label} ${name}는 16의 배수여야 합니다.`);
+    }
+    return { width, height };
+  };
+  const result = {};
+  const full = role(sizes.full, "전신 크기");
+  const face = role(sizes.face, "얼굴 크기");
+  if (full) result.full = full;
+  if (face) result.face = face;
+  return Object.keys(result).length ? result : undefined;
+}
+
+export function sampleRequestBody(generation, commonFragments, count = 1, sizes = null) {
   const body = { generation_inputs: sampleGenerationInputs(generation) };
   if (commonFragments?.length) body.common_fragments = commonFragments;
+  const sizesBody = sampleSizesBody(sizes);
+  if (sizesBody) body.sizes = sizesBody;
   const requests = [];
   for (let index = 0; index < Math.max(1, Math.min(4, Number(count) || 1)); index += 1) requests.push({ ...body });
   return requests;
+}
+
+/** Generation preset field names copied into the sample-form draft when a
+ * preset is chosen (matches production.js's direct generation controls). */
+export const GENERATION_PRESET_FIELDS = Object.freeze(["diffusion_model", "text_encoder", "vae", "sampler", "scheduler", "steps", "cfg", "width", "height"]);
+
+/** Fills sample-form generation fields from a chosen generation preset's
+ * `settings`; unset fields keep their current value and the result stays
+ * editable (this does not lock the form the way production.js's preset
+ * selection does). */
+export function generationFromPreset(current, preset) {
+  const settings = preset?.settings || {};
+  const next = { ...current };
+  for (const key of GENERATION_PRESET_FIELDS) if (settings[key] !== undefined) next[key] = settings[key];
+  if (Array.isArray(settings.loras)) next.loras = settings.loras.map((item) => ({ name: item.name, strength: item.strength }));
+  return next;
+}
+
+/** Normalizes a resource dropdown's options against the currently selected
+ * value: keeps the current value visible (marked missing) even when the
+ * resource list no longer contains it. Mirrors production.js's resourceChoice. */
+export function resourceSelectValues(value, options) {
+  const values = Array.isArray(options) ? [...options] : [];
+  const missing = Boolean(value) && !values.includes(value);
+  if (missing) values.unshift(value);
+  return { values, missing };
 }
 
 /** Reference sample templates (settings.reference_templates) <-> form draft. */
@@ -165,7 +216,21 @@ const button = (text, onclick, { secondary = false, disabled = false } = {}) => 
 const field = (label, control, hint) => el("div", { class: "field" }, [el("label", { text: label }), control, hint ? el("small", { class: "muted", text: hint }) : null]);
 const errorText = (error) => error?.code ? `${error.code}: ${error.message || "요청을 완료하지 못했습니다."}` : (error?.message || "요청을 완료하지 못했습니다.");
 const makeKey = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `ref-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-const DEFAULT_GENERATION = { diffusion_model: "", text_encoder: "", vae: "", width: 1024, height: 1024, seed: -1, steps: 24, cfg: 4.5, sampler: "euler_ancestral", scheduler: "normal" };
+const DEFAULT_GENERATION = { diffusion_model: "", text_encoder: "", vae: "", width: 1024, height: 1024, seed: -1, steps: 24, cfg: 4.5, sampler: "euler_ancestral", scheduler: "normal", loras: [] };
+const DEFAULT_SIZES = { full: { width: 896, height: 1152 }, face: { width: 1024, height: 1024 } };
+
+// Recently-used generation/size values for this browser tab session only
+// (module-level, resets on reload; never persisted). Used to prefill the
+// sample form for the next outfit worked on in the same session.
+let sessionDefaults = null;
+
+function resourceSelect(value, options, onChange, label) {
+  const { values, missing } = resourceSelectValues(value, options);
+  return el("select", { disabled: values.length ? null : "", onchange: (event) => onChange(event.target.value) }, [
+    el("option", { value: "", selected: value ? null : "", text: values.length ? `${label} 선택` : "등록 자원 없음" }),
+    ...values.map((option) => el("option", { value: option, selected: value === option ? "" : null, text: option === value && missing ? `${option} (목록에 없음)` : option })),
+  ]);
+}
 
 function imageThumb(ctx, imageId, label, onOpen) {
   const img = el("img", { class: "reference-set-thumb", alt: label });
@@ -187,7 +252,10 @@ function imageThumb(ctx, imageId, label, onOpen) {
 export function mountReferenceSetPanel(container, ctx) {
   const state = {
     status: null, pairs: [], loading: true, error: null,
-    generation: { ...DEFAULT_GENERATION }, seedMode: "random", pairCount: 1,
+    generation: { ...DEFAULT_GENERATION, loras: [], ...(sessionDefaults?.generation ? { ...sessionDefaults.generation, loras: sessionDefaults.generation.loras.map((item) => ({ ...item })) } : {}) },
+    sizes: sessionDefaults?.sizes ? { full: { ...sessionDefaults.sizes.full }, face: { ...sessionDefaults.sizes.face } } : { full: { ...DEFAULT_SIZES.full }, face: { ...DEFAULT_SIZES.face } },
+    generationPreset: sessionDefaults?.generationPreset || "", presetOptions: [],
+    seedMode: "random", pairCount: 1,
     commonFragments: [], selectedCommon: [],
     selection: {}, multiSelect: [], pending: false, pendingKeys: {}, templates: null,
     historyOpen: false, history: null,
@@ -216,8 +284,17 @@ export function mountReferenceSetPanel(container, ctx) {
       if (!ctx.resources) ctx.resources = await ctx.api.get("/v1/generation/resources").catch(() => null);
       const settings = await ctx.api.get("/v1/settings");
       state.templates = settings?.reference_templates || null;
-      const fragments = await ctx.api.get("/v1/prompt-fragments?archived=false&limit=200&offset=0").catch(() => ({ items: [] }));
+      const fragments = await ctx.api.get("/v1/prompt-fragments?archived=false&limit=200&offset=0&sort=name").catch(() => ({ items: [] }));
       state.commonFragments = (fragments.items || []).filter((item) => item.common);
+      const presets = await ctx.api.get("/v1/presets/generation?archived=false").catch(() => ({ items: [] }));
+      state.presetOptions = presets.items || [];
+      // Sensible default when nothing was chosen yet in this session: use the
+      // first available preset so the form starts with a known-good model.
+      if (!sessionDefaults && !state.generationPreset && state.presetOptions.length) {
+        const preset = state.presetOptions[0];
+        state.generationPreset = `${preset.id}@${preset.revision}`;
+        state.generation = generationFromPreset(state.generation, preset);
+      }
     } catch { /* best effort: sample form still works with manual model names */ }
     if (!disposed) render();
   };
@@ -236,11 +313,13 @@ export function mountReferenceSetPanel(container, ctx) {
       if (state.seedMode === "random") generation.seed = -1;
       const commonFragments = state.selectedCommon.map((item) => ({ id: item.id, revision: item.revision }));
       state.pending = true; render();
-      const requests = sampleRequestBody(generation, commonFragments, state.pairCount);
+      const requests = sampleRequestBody(generation, commonFragments, state.pairCount, state.sizes);
       for (const body of requests) {
         const key = makeKey();
         await ctx.api.post(`/v1/outfits/${ctx.outfitId}/reference-samples`, body, key);
       }
+      sessionDefaults = { generation: { ...state.generation, loras: state.generation.loras.map((item) => ({ ...item })) },
+        sizes: { full: { ...state.sizes.full }, face: { ...state.sizes.face } }, generationPreset: state.generationPreset };
       ctx.notify?.("참조 샘플 생성을 접수했습니다.");
       await load(false); schedulePoll();
     } catch (error) { ctx.notify?.(errorText(error), true); } finally { state.pending = false; render(); }
@@ -255,7 +334,16 @@ export function mountReferenceSetPanel(container, ctx) {
         const gen = pair.full_task?.snapshot?.generation_inputs || state.generation;
         const generation = { ...gen, seed: -1 };
         const commonFragments = (pair.full_task?.snapshot?.common_fragments || []).map((item) => ({ id: item.id, revision: item.revision }));
-        const body = sampleRequestBody(generation, commonFragments, 1)[0];
+        // Reapply each role's actual width/height from its own snapshot, since
+        // the base `generation` above only carries the full role's dimensions
+        // and the two roles may have used different sizes.
+        const fullInputs = pair.full_task?.snapshot?.generation_inputs;
+        const faceInputs = pair.face_task?.snapshot?.generation_inputs;
+        const sizes = (fullInputs || faceInputs) ? {
+          full: fullInputs ? { width: fullInputs.width, height: fullInputs.height } : null,
+          face: faceInputs ? { width: faceInputs.width, height: faceInputs.height } : null,
+        } : null;
+        const body = sampleRequestBody(generation, commonFragments, 1, sizes)[0];
         await ctx.api.post(`/v1/outfits/${ctx.outfitId}/reference-samples`, body, makeKey());
       }
       state.multiSelect = [];
@@ -339,11 +427,36 @@ export function mountReferenceSetPanel(container, ctx) {
       el("p", { class: "muted", text: `전신: ${state.templates.full?.framing_prompt || ""}` }), el("p", { class: "muted", text: `얼굴: ${state.templates.face?.framing_prompt || ""}` }),
       el("p", { class: "muted", text: "구도 문구는 설정 > 참조 템플릿에서 바꿀 수 있습니다." })]) : null;
 
-    const generationFields = ["diffusion_model", "text_encoder", "vae", "sampler", "scheduler"].map((key) => field(key, el("input", { type: "text", value: state.generation[key], oninput: (event) => { state.generation[key] = event.target.value; } })));
+    const resources = ctx.resources || {};
+    const presetSelect = el("select", { onchange: (event) => {
+      state.generationPreset = event.target.value;
+      const preset = state.presetOptions.find((item) => `${item.id}@${item.revision}` === event.target.value);
+      if (preset) state.generation = generationFromPreset(state.generation, preset);
+      render();
+    } }, [
+      el("option", { value: "", selected: state.generationPreset ? null : "", text: "직접 입력" }),
+      ...state.presetOptions.map((item) => el("option", { value: `${item.id}@${item.revision}`, selected: state.generationPreset === `${item.id}@${item.revision}` ? "" : null, text: `${item.name} (r${item.revision})` })),
+    ]);
+    const resourceFields = [
+      field("Diffusion model", resourceSelect(state.generation.diffusion_model, resources.diffusion_models, (value) => { state.generation.diffusion_model = value; }, "모델")),
+      field("Text encoder", resourceSelect(state.generation.text_encoder, resources.text_encoders, (value) => { state.generation.text_encoder = value; }, "Encoder")),
+      field("VAE", resourceSelect(state.generation.vae, resources.vaes, (value) => { state.generation.vae = value; }, "VAE")),
+      field("Sampler", resourceSelect(state.generation.sampler, resources.samplers, (value) => { state.generation.sampler = value; }, "Sampler")),
+      field("Scheduler", resourceSelect(state.generation.scheduler, resources.schedulers, (value) => { state.generation.scheduler = value; }, "Scheduler")),
+    ];
     const numberFields = [["steps", 1, 100, 1], ["cfg", 0, 20, 0.1]].map(([key, min, max, step]) => field(key, el("input", { type: "number", value: state.generation[key], min, max, step, oninput: (event) => { state.generation[key] = event.target.value; } })));
     const seedControl = el("div", { class: "field" }, [el("label", { text: "Seed" }),
       el("select", { onchange: (event) => { state.seedMode = event.target.value; render(); } }, [el("option", { value: "random", selected: state.seedMode === "random", text: "-1: 이미지별 무작위" }), el("option", { value: "fixed", selected: state.seedMode === "fixed", text: "고정값" })]),
       state.seedMode === "fixed" ? el("input", { type: "number", min: 0, step: 1, value: state.generation.seed === -1 ? "" : state.generation.seed, oninput: (event) => { state.generation.seed = event.target.value; } }) : null]);
+    const sizeFields = (role, label) => [
+      field(`${label} 너비`, el("input", { type: "number", min: 256, max: 1920, step: 16, value: state.sizes[role].width, oninput: (event) => { state.sizes[role].width = event.target.value; } })),
+      field(`${label} 높이`, el("input", { type: "number", min: 256, max: 1920, step: 16, value: state.sizes[role].height, oninput: (event) => { state.sizes[role].height = event.target.value; } })),
+    ];
+    const loraRows = state.generation.loras.map((item, index) => el("div", { class: "row" }, [
+      el("input", { type: "text", value: item.name, list: "reference-sample-known-loras", placeholder: "등록된 LoRA 파일명", oninput: (event) => { item.name = event.target.value; } }),
+      el("input", { type: "number", value: item.strength, min: -100, max: 100, step: 0.05, oninput: (event) => { item.strength = event.target.value; } }),
+      button("−", () => { state.generation.loras.splice(index, 1); render(); }, { secondary: true }),
+    ]));
     const commonFragmentList = el("ul", { class: "fragment-list" }, state.commonFragments.map((item) => {
       const key = `${item.id}@${item.revision}`;
       const checked = state.selectedCommon.some((selected) => `${selected.id}@${selected.revision}` === key);
@@ -351,8 +464,18 @@ export function mountReferenceSetPanel(container, ctx) {
     }));
     const sampleForm = el("section", { class: "panel reference-sample-form" }, [
       el("h3", { text: "참조 샘플 생성" }), templateInfo,
-      el("div", { class: "grid" }, [...generationFields, ...numberFields, seedControl,
+      field("생성 Preset", presetSelect, "Preset을 고르면 아래 설정을 채웁니다. 선택 후에도 값은 직접 바꿀 수 있습니다."),
+      el("div", { class: "grid" }, [...resourceFields, ...numberFields, seedControl,
         field("생성할 쌍 수 (1~4)", el("input", { type: "number", min: 1, max: 4, step: 1, value: state.pairCount, oninput: (event) => { state.pairCount = Math.max(1, Math.min(4, Number(event.target.value) || 1)); } }), "각 쌍은 같은 Seed의 전신·얼굴 2개 Task로, 서로 다른 Seed로 별도 요청합니다.")]),
+      el("h4", { text: "역할별 해상도" }),
+      el("p", { class: "muted", text: "전신·얼굴을 각각 다른 크기로 생성합니다(256~1920, 16의 배수)." }),
+      el("div", { class: "grid" }, [...sizeFields("full", "전신"), ...sizeFields("face", "얼굴")]),
+      resources.loras?.length || state.generation.loras.length ? el("div", {}, [
+        el("h4", { text: "LoRA" }),
+        el("datalist", { id: "reference-sample-known-loras" }, (resources.loras || []).map((name) => el("option", { value: name }))),
+        ...loraRows,
+        button("+ LoRA", () => { state.generation.loras.push({ name: "", strength: 1 }); render(); }, { secondary: true }),
+      ]) : null,
       state.commonFragments.length ? el("div", {}, [el("h4", { text: "공통 적용 프롬프트" }), commonFragmentList]) : null,
       el("div", { class: "toolbar" }, [button("샘플 쌍 생성", submitSamples, { disabled: state.pending })]),
     ]);

@@ -22,3 +22,13 @@ test("only valid work character outfit links become tree descendants", () => {
   assert.equal(model[0].children[0].item.id, "c");
   assert.equal(model[0].children[0].children[0].item.id, "o");
 });
+
+test("siblings at every depth are sorted by name ascending, numeric-aware", () => {
+  const mixed = [
+    {id: "w2", type: "work", name: "C010 작품"}, {id: "w1", type: "work", name: "C002 작품"},
+    {id: "c2", type: "character", parent_id: "w1", name: "B 캐릭터"}, {id: "c1", type: "character", parent_id: "w1", name: "A 캐릭터"},
+  ];
+  const model = studioTreeModel(mixed);
+  assert.deepEqual(model.map((entry) => entry.item.id), ["w1", "w2"]);
+  assert.deepEqual(model[0].children.map((entry) => entry.item.id), ["c1", "c2"]);
+});

@@ -168,10 +168,30 @@ class ReferenceSets:
     def _templates(self):
         return self.core.store.settings().get("reference_templates", DEFAULT_REFERENCE_TEMPLATES)
 
+    @staticmethod
+    def _role_size(sizes, role):
+        """Validates an optional per-role {width,height} override: same range
+        and multiple-of-16 rule as ordinary generation_inputs dimensions."""
+        if sizes is None:
+            return None
+        if not isinstance(sizes, dict) or set(sizes) - {"full", "face"}:
+            bad("sizes must have only 'full' and/or 'face' entries")
+        value = sizes.get(role)
+        if value is None:
+            return None
+        if not isinstance(value, dict) or set(value) != {"width", "height"}:
+            bad(f"sizes.{role} must be an object with width and height")
+        for name in ("width", "height"):
+            if type(value[name]) is not int or not 256 <= value[name] <= 1920:
+                bad(f"sizes.{role}.{name} must be an integer in 256..1920")
+            if value[name] % 16:
+                bad(f"sizes.{role}.{name} must be a multiple of 16")
+        return {"width": value["width"], "height": value["height"]}
+
     def create_sample_pair(self, outfit_id, key, body):
         if not isinstance(key, str) or not 1 <= len(key) <= 200:
             bad("Idempotency-Key of 1..200 characters is required")
-        _fields(body, {"generation_inputs", "common_fragments", "postprocess"}, {"generation_inputs"})
+        _fields(body, {"generation_inputs", "common_fragments", "postprocess", "sizes"}, {"generation_inputs"})
         fingerprint = hashlib.sha256(canonical({"outfit_id": outfit_id, "body": body}).encode()).hexdigest()
         old = self.db.execute("SELECT fingerprint,document FROM reference_sample_pairs WHERE request_key=?", (key,)).fetchone()
         if old:
@@ -181,6 +201,7 @@ class ReferenceSets:
         gen_input = body["generation_inputs"]
         if not isinstance(gen_input, dict):
             bad("generation_inputs must be an object")
+        role_sizes = {role: self._role_size(body.get("sizes"), role) for role in ("full", "face")}
         group = self.core.store.find_or_create_group(outfit_id)
         templates = self._templates()
         seed = gen_input.get("seed", -1)
@@ -190,8 +211,11 @@ class ReferenceSets:
         task_ids = {}
         for role in ("full", "face"):
             template = templates[role]
+            role_generation_inputs = dict(gen_input, seed=seed)
+            if role_sizes[role]:
+                role_generation_inputs.update(role_sizes[role])
             payload = {"group_id": group["id"], "framing": "custom", "framing_prompt": template["framing_prompt"],
-                       "include": dict(template["include"]), "generation_inputs": dict(gen_input, seed=seed),
+                       "include": dict(template["include"]), "generation_inputs": role_generation_inputs,
                        "consistency": None}
             if "common_fragments" in body:
                 payload["common_fragments"] = body["common_fragments"]

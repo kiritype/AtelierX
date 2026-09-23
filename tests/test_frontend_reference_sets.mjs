@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   consistencyFormValues, consistencyMethodChoices, estimatedSecondsWithConsistency,
-  pairSelectionReady, referenceMismatchDiffRows, referenceSettingsSummaryRows,
+  generationFromPreset, pairSelectionReady, referenceMismatchDiffRows, referenceSettingsSummaryRows,
   referenceStaleText, referenceStatusLabel, referenceTemplatesDraft, referenceTemplatesFromDraft,
-  sampleGenerationInputs, sampleRequestBody, selectPairImage, togglePairMultiSelect,
+  resourceSelectValues, sampleGenerationInputs, sampleRequestBody, sampleSizesBody,
+  selectPairImage, togglePairMultiSelect,
 } from "../frontend/reference-sets.js";
 
 test("reference status and stale text use the ADR-0027 Korean labels", () => {
@@ -100,6 +101,41 @@ test("sample request body builds 1..4 independent pair requests sharing settings
   }
   assert.equal(sampleRequestBody(generation, [], 0).length, 1);
   assert.equal(sampleRequestBody(generation, [], 99).length, 4);
+});
+
+test("sample sizes body validates per-role width/height like Core (256..1920, multiple of 16)", () => {
+  assert.equal(sampleSizesBody(null), undefined);
+  assert.equal(sampleSizesBody({}), undefined);
+  assert.deepEqual(sampleSizesBody({ full: { width: 896, height: 1152 } }), { full: { width: 896, height: 1152 } });
+  assert.deepEqual(sampleSizesBody({ full: { width: 896, height: 1152 }, face: { width: 1024, height: 1024 } }),
+    { full: { width: 896, height: 1152 }, face: { width: 1024, height: 1024 } });
+  assert.throws(() => sampleSizesBody({ full: { width: 900, height: 1152 } }), /16의 배수/);
+  assert.throws(() => sampleSizesBody({ full: { width: 100, height: 1152 } }), /256~1920/);
+});
+
+test("sample request body includes sizes only when given and keeps prior 3-arg calls working", () => {
+  const generation = { diffusion_model: "m", text_encoder: "e", vae: "v", width: 1024, height: 1024, seed: -1, steps: 24, cfg: 4.5, sampler: "euler", scheduler: "normal", loras: [] };
+  const withoutSizes = sampleRequestBody(generation, [], 1);
+  assert.equal("sizes" in withoutSizes[0], false);
+  const withSizes = sampleRequestBody(generation, [], 1, { full: { width: 896, height: 1152 }, face: { width: 1024, height: 1024 } });
+  assert.deepEqual(withSizes[0].sizes, { full: { width: 896, height: 1152 }, face: { width: 1024, height: 1024 } });
+});
+
+test("generation preset fills known fields but leaves the rest of the draft untouched", () => {
+  const current = { diffusion_model: "old", text_encoder: "old-e", vae: "old-v", sampler: "euler", scheduler: "normal", steps: 20, cfg: 4, width: 512, height: 512, seed: -1, loras: [] };
+  const preset = { id: "p1", revision: 2, name: "Anima base", settings: { diffusion_model: "anima.safetensors", text_encoder: "clip.safetensors", vae: "vae.safetensors", sampler: "euler_ancestral", scheduler: "karras", steps: 28, cfg: 5, width: 832, height: 1216, loras: [{ name: "style.safetensors", strength: 0.6 }] } };
+  const filled = generationFromPreset(current, preset);
+  assert.equal(filled.diffusion_model, "anima.safetensors");
+  assert.equal(filled.steps, 28);
+  assert.deepEqual(filled.loras, [{ name: "style.safetensors", strength: 0.6 }]);
+  assert.equal(filled.seed, -1); // untouched field kept
+  assert.deepEqual(generationFromPreset(current, null), current);
+});
+
+test("resource select values keep the current value visible and flagged when missing from the list", () => {
+  assert.deepEqual(resourceSelectValues("anima.safetensors", ["anima.safetensors", "other.safetensors"]), { values: ["anima.safetensors", "other.safetensors"], missing: false });
+  assert.deepEqual(resourceSelectValues("removed.safetensors", ["anima.safetensors"]), { values: ["removed.safetensors", "anima.safetensors"], missing: true });
+  assert.deepEqual(resourceSelectValues("", null), { values: [], missing: false });
 });
 
 test("reference templates draft round-trips through the settings PATCH shape", () => {

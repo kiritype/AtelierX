@@ -22,6 +22,7 @@ _ASSETS = {
     "studio-tree.js": "text/javascript; charset=utf-8",
     "lightbox.js": "text/javascript; charset=utf-8",
     "reference-sets.js": "text/javascript; charset=utf-8",
+    "name-sort.js": "text/javascript; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
 }
 
