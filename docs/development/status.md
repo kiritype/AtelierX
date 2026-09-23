@@ -62,6 +62,7 @@
 | F13 | 진행 중(확정 순서) | 참조 세트·In-Context 참조 조건 | 미구현. [ADR-0027](../architecture/adr/0027-reference-sets-and-consistency-methods.md) 확정. 제작 계획·신규 Task는 확정 참조 세트 필수 |
 | F14 | 구현(서비스 재시작 후 적용) | 라이트박스(확대·이동·2장 비교) | PR #21. 실제 브라우저·모바일 미검증 |
 | F15 | 확정·비긴급 | 단일 이미지 생성 화면 | standalone 경로 재사용 검토, 출력 `AtelierX\single\<날짜>\` |
+| F17 | 후속(2026-09-24 방향 결정, ADR 후속) | 이미지 삭제·휴지통 API·UI | 미구현. [roadmap](../requirements/roadmap.md) 참조 이미지 절 하위 |
 | F16 | 완료 | 조각 Negative(이미지별·공통 모두) | 생성 전용, VLM 검사 제외. [조각 API](../api/prompt-fragments-production-plans.md) 맨 위 절 |
 
 ### B. 복구·연결
