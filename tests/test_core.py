@@ -113,9 +113,7 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         return confirmed
 
     def payload(self, group):
-        # consistency=None opts most fixtures out of ADR-0027 default consistency
-        # composition, which is exercised by its own dedicated tests below.
-        return dict(group_id=group["id"], framing="upper_body", expression="smiling", generation_inputs=GEN, consistency=None)
+        return dict(group_id=group["id"], framing="upper_body", expression="smiling", generation_inputs=GEN)
 
     async def test_character_appearance_is_always_composed_and_fragment_accessories_are_conditional(self):
         _, work = await self.request("POST", "/v1/works", {"name": "work"})
@@ -400,10 +398,15 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         # Only the per-image fragment Negative remains when commons have none.
         _, variant_only = await self.request("POST", "/v1/prompts/preview", dict(base, common_fragments=[{"id": empty["id"], "revision": 1}]))
         self.assertEqual(variant_only["snapshot"]["negative_sources"]["fragment"], "sitting")
-        # Without fragment Negatives the snapshot keeps its previous two-key shape.
+        # Without fragment Negatives the snapshot keeps its previous two-key shape (plus
+        # default consistency, since a valid reference set is confirmed for this outfit).
         _, legacy = await self.request("POST", "/v1/prompts/preview", self.payload(group))
-        self.assertEqual(legacy["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard"})
-        status, task = await self.request("POST", "/v1/tasks", dict(base, preview_hash=preview["preview_hash"], accept_reference_settings_mismatch=True), "fragment-negative")
+        self.assertEqual(legacy["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard", "consistency": "white background, simple background"})
+        # A valid reference set always uses a consistency method for real Task creation
+        # (ADR-0027); drop the preview-only opt-out before submitting (this also changes
+        # the frozen preview_hash, so this submission does not replay the disabled one).
+        real_task_body = {k: v for k, v in base.items() if k != "consistency"}
+        status, task = await self.request("POST", "/v1/tasks", dict(real_task_body, accept_reference_settings_mismatch=True), "fragment-negative")
         self.assertIn(status, (200, 201, 202), task)
         self.assertEqual(task["snapshot"]["negative_sources"]["fragment"], "text, logo, lens flare, sitting")
 
@@ -414,8 +417,9 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         await self.confirm_reference_set(outfit["id"], key="reference-samples:" + outfit["id"] + ":r2")
         _, preview = await self.request("POST", "/v1/prompts/preview", self.payload(group))
-        self.assertEqual(preview["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard"})
-        self.assertEqual(preview["snapshot"]["generation_inputs"]["negative_prompt"], "low quality, beard")
+        # A valid reference set is confirmed above, so default consistency composes too (ADR-0027 P4).
+        self.assertEqual(preview["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard", "consistency": "white background, simple background"})
+        self.assertEqual(preview["snapshot"]["generation_inputs"]["negative_prompt"], "low quality, beard, white background, simple background")
         _, task = await self.request("POST", "/v1/tasks", self.payload(group), "negative-snapshot")
         await self.request("PATCH", "/v1/characters/" + character["id"], {"revision": 2, "negative_prompt": "hat"})
         status, _ = await self.request("POST", "/v1/tasks", dict(self.payload(group), preview_hash=preview["preview_hash"]), "stale-negative")

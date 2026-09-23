@@ -412,6 +412,10 @@ class Core:
         if getattr(self, "reference_sets", None) is not None:
             # ADR-0027 P5: new individual Tasks require a valid reference set for their outfit.
             reference_set = self.require_reference_set(self.store.group(payload["group_id"]))
+            # A valid reference set always uses a consistency method here; only
+            # reference-sample generation and pre-ADR-0027 regeneration run without one.
+            if "consistency" in payload and payload["consistency"] is None:
+                invalid("consistency cannot be disabled once a valid reference set is required")
         preview = self.preview(payload)
         if "preview_hash" in payload and payload["preview_hash"] != preview["preview_hash"]:
             raise ApiError("CORE_PREVIEW_STALE", "Prompt or settings changed; review the updated preview", 409)

@@ -113,6 +113,10 @@ class ProductionPlans:
         reference_set = None
         if getattr(self.core, "reference_sets", None) is not None:
             reference_set = self.core.require_reference_set(group)
+            # A valid reference set always uses a consistency method for the plan;
+            # only reference-sample generation and pre-ADR-0027 regeneration opt out.
+            if "consistency" in body and body["consistency"] is None:
+                bad("consistency cannot be disabled once a valid reference set is required")
         plan = {"id": str(uuid.uuid4()), "state": "draft", "total": len(selections), "created_at": time.time(),
                 "group_id": group["id"], "accepted_reference": group.get("reference"), "reference": None,
                 "sequence": 0, "validation_mode": validation_mode,

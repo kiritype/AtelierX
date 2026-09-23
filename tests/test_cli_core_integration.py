@@ -27,7 +27,7 @@ class CliCoreIntegrationTests(unittest.IsolatedAsyncioTestCase):
                                     {"appearance": "blue eyes", "upper": "white shirt", "lower": "boots"})
         self.outfit = outfit
         self.group = store.create_group(outfit["id"])
-        self.payload = {"group_id": self.group["id"], "framing": "upper_body", "postprocess": {}, "consistency": None,
+        self.payload = {"group_id": self.group["id"], "framing": "upper_body", "postprocess": {},
                         "generation_inputs": {"diffusion_model": "fixture", "text_encoder": "fixture", "vae": "fixture",
                                               "seed": 1, "steps": 24, "cfg": 4.5, "sampler": "euler", "scheduler": "normal"}}
         self.confirm_reference_set_fixture(outfit)

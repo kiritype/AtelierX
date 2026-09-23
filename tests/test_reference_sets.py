@@ -114,8 +114,8 @@ class ReferenceSetTests(unittest.IsolatedAsyncioTestCase):
         _, valid_again = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-set")
         self.assertEqual(valid_again["status"], "valid")
         status, allowed = await self.request("POST", "/v1/tasks",
-            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": GEN, "consistency": None}, "allowed-task")
-        self.assertIn(status, (200, 201, 202))
+            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": GEN}, "allowed-task")
+        self.assertIn(status, (200, 201, 202), allowed)
 
     async def test_reconfirm_stale_revision_conflicts(self):
         _, outfit, group = await self.setup_group()
@@ -168,6 +168,22 @@ class ReferenceSetTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("consistency", opted_out["snapshot"])
         self.assertNotIn("consistency", opted_out["snapshot"]["negative_sources"])
 
+    async def test_consistency_cannot_be_disabled_for_real_task_or_plan_creation(self):
+        """ADR-0027: once a valid reference set exists, real Task/plan creation always
+        uses a consistency method; only reference samples and old-snapshot regeneration
+        run without one. Unlike bare preview, this is rejected outright (400)."""
+        _, outfit, group = await self.setup_group()
+        await confirm_reference_set(self.request, outfit["id"], GEN)
+        status, error = await self.request("POST", "/v1/tasks",
+            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": GEN, "consistency": None}, "no-consistency-task")
+        self.assertEqual((status, error["error"]["code"]), (400, "CORE_INVALID_INPUT"))
+        _, fragment = await self.request("POST", "/v1/prompt-fragments",
+            {"name": "pose", "number": "1", "body": "standing", "include": {"upper": True, "lower": True}})
+        status, plan_error = await self.request("POST", "/v1/production-plans",
+            {"group_id": group["id"], "fragments": [{"id": fragment["id"], "revision": 1}],
+             "generation_inputs": GEN, "consistency": None}, "no-consistency-plan")
+        self.assertEqual((status, plan_error["error"]["code"]), (400, "CORE_INVALID_INPUT"))
+
     async def test_consistency_params_validated_against_ranges(self):
         _, outfit, group = await self.setup_group()
         await confirm_reference_set(self.request, outfit["id"], GEN)
@@ -184,12 +200,12 @@ class ReferenceSetTests(unittest.IsolatedAsyncioTestCase):
         await confirm_reference_set(self.request, outfit["id"], GEN)
         mismatched = dict(GEN, diffusion_model="other-model.safetensors")
         status, error = await self.request("POST", "/v1/tasks",
-            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": mismatched, "consistency": None}, "mismatch-task")
+            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": mismatched}, "mismatch-task")
         self.assertEqual(status, 409)
         self.assertEqual(error["error"]["code"], "CORE_REFERENCE_SETTINGS_MISMATCH")
         self.assertIn("diffusion_model", error["error"]["diff"])
         status, task = await self.request("POST", "/v1/tasks",
-            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": mismatched, "consistency": None,
+            {"group_id": group["id"], "framing": "upper_body", "generation_inputs": mismatched,
              "accept_reference_settings_mismatch": True}, "mismatch-accepted")
         self.assertIn(status, (200, 201, 202), task)
         self.assertTrue(task["snapshot"]["reference_settings_mismatch_accepted"]["accepted"])

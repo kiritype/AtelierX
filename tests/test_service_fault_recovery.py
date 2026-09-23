@@ -142,7 +142,7 @@ class ServiceFaultRecoveryTests(unittest.IsolatedAsyncioTestCase):
         return group["id"]
 
     def payload(self):
-        return {"group_id": self.group_id, "framing": "upper_body", "consistency": None, "generation_inputs": {
+        return {"group_id": self.group_id, "framing": "upper_body", "generation_inputs": {
             "diffusion_model": "mock", "text_encoder": "mock", "vae": "mock", "seed": 1,
             "steps": 2, "cfg": 1, "sampler": "euler", "scheduler": "normal"}}
 
