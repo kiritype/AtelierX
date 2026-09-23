@@ -189,6 +189,77 @@ class CoreValidationTests(unittest.IsolatedAsyncioTestCase):
         await self.client.app[CORE].validation.tick()
         self.assertEqual(len(self.posts), 1)
 
+    def attempt(self, key, media_types):
+        core = self.client.app[CORE]
+        snapshot = dict(self.task["snapshot"], validation=core.validation.freeze({"profile_id": "p", "provider_id": "v"}))
+        task = core.store.create_task(key, key, self.task["group_id"], snapshot)
+        images = [{"id": str(uuid.uuid4()), "task_id": task["id"], "group_id": task["group_id"],
+                   "generation_image_id": str(uuid.uuid4()) + "-" + str(index), "sha256": hashlib.sha256(media.encode()).hexdigest(),
+                   "media_type": media, "bytes": 5, "validation_state": "not_requested"} for index, media in enumerate(media_types)]
+        core.store.finish_generation(task, images)
+        return task, images
+
+    async def settle(self, task_id, count=1):
+        core = self.client.app[CORE]
+        for _ in range(200):
+            task = core.store.task(task_id)
+            if core.store.cycle(task["regeneration"]["cycle_id"])["state"] != "active" and len(self.posts) >= count:
+                return task
+            await asyncio.sleep(.01)
+        self.fail("attempt did not settle")
+
+    async def test_two_format_attempt_is_validated_once_and_shares_pass(self):
+        core = self.client.app[CORE]
+        task, (webp, png) = self.attempt("two-formats", ["image/webp", "image/png"])
+        task = await self.settle(task["id"])
+        await core.validation.tick()
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]["image"]["source"]["image_id"], png["generation_image_id"])
+        self.assertEqual(core.store.image_validations(webp["id"]), [])
+        run = core.store.image_validations(png["id"])[0]
+        self.assertEqual(run["shared_image_ids"], [webp["id"]])
+        self.assertEqual(task["validation"]["representative_image_id"], png["id"])
+        shared = core.store.image(webp["id"])["validation"]
+        self.assertEqual((shared["id"], shared["outcome"], shared["shared_from_image_id"]), (run["id"], "passed", png["id"]))
+        _, gallery = await self.request("GET", "/v1/images?task_id=" + task["id"] + "&single_outcome=passed")
+        items = {item["id"]: item for item in gallery["items"]}
+        self.assertEqual(set(items), {webp["id"], png["id"]})
+        self.assertEqual((items[webp["id"]]["single_validation_run_id"], items[webp["id"]]["single_validation_shared_from_image_id"]), (run["id"], png["id"]))
+        self.assertEqual((items[png["id"]]["single_validation_run_id"], items[png["id"]]["single_validation_shared_from_image_id"]), (run["id"], None))
+        self.assertTrue({webp["id"], png["id"]} <= set(core.groups.current_target_ids(task["group_id"])))
+        item = {"active_task_id": task["id"], "state": "single_validation_pending", "passed_image_ids": [], "error": None}
+        core.batches._observe_item(item)
+        self.assertEqual((item["state"], sorted(item["passed_image_ids"])), ("passed", sorted([webp["id"], png["id"]])))
+        self.outcome = "failed"
+        status, manual = await self.request("POST", "/v1/images/" + webp["id"] + "/validations", {"profile_id": "p", "provider_id": "v"}, "manual-webp")
+        self.assertEqual(status, 202)
+        self.assertEqual((await self.wait_run(manual))["outcome"], "failed")
+        self.assertEqual(self.posts[1]["image"]["source"]["image_id"], webp["generation_image_id"])
+        self.assertEqual(core.store.image(webp["id"])["validation"]["id"], manual["id"])
+        self.assertEqual(core.store.image(png["id"])["validation"]["outcome"], "passed")
+        await core.validation.tick()
+        self.assertEqual(len(self.posts), 2)
+
+    async def test_two_format_failure_is_shared_and_webp_only_attempt_validates_webp(self):
+        core = self.client.app[CORE]
+        core.regeneration.tick = lambda: None
+        self.outcome = "failed"
+        task, (png, webp) = self.attempt("two-failed", ["image/png", "image/webp"])
+        for _ in range(200):
+            if core.store.image(webp["id"]).get("validation", {}).get("state") == "completed": break
+            await asyncio.sleep(.01)
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual([core.store.image(image["id"])["validation"]["outcome"] for image in (png, webp)], ["failed", "failed"])
+        _, gallery = await self.request("GET", "/v1/images?task_id=" + task["id"] + "&single_outcome=failed")
+        self.assertEqual(gallery["total"], 2)
+        self.outcome = "passed"
+        only, (single,) = self.attempt("webp-only", ["image/webp"])
+        for _ in range(200):
+            if len(self.posts) == 2: break
+            await asyncio.sleep(.01)
+        self.assertEqual(self.posts[1]["image"]["source"]["image_id"], single["generation_image_id"])
+        self.assertNotIn("shared_image_ids", core.store.image_validations(single["id"])[0])
+
     async def test_cancel_queued_validation_and_late_result_guard(self):
         from unittest.mock import AsyncMock
         core = self.client.app[CORE]

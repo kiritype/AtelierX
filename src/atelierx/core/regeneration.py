@@ -5,6 +5,7 @@ import secrets
 
 from ..common import ApiError, canonical
 from ..regeneration_contract import validate_changes
+from .store import representative_image
 
 
 class Regeneration:
@@ -85,6 +86,17 @@ class Regeneration:
             for run in self.store.image_validations(image["id"]): self.core.validation.cancel(run["id"])
         return cycle
 
+    def seed_only(self, cycle, task, reason):
+        """ADR-0025 F: keep every saved setting and draw only a new seed."""
+        saved = cycle.get("last_change") or {}
+        if saved.get("kind") == "seed_only" and saved.get("parent_task_id") == task["id"]:
+            return {key: saved[key] for key in ("kind", "reason", "previous_seed", "seed")}
+        previous = task["snapshot"]["generation_inputs"]["seed"]
+        seed = previous
+        while seed == previous:
+            seed = secrets.randbelow(2**53)
+        return {"kind": "seed_only", "reason": reason, "previous_seed": previous, "seed": seed}
+
     def tick(self):
         for cycle in self.store.active_cycles():
             task = self.store.task(cycle["active_task_id"])
@@ -95,11 +107,12 @@ class Regeneration:
             if task["state"] != "generated": continue
             if not task["snapshot"].get("validation"):
                 self.store.update_cycle(cycle, state="generation_only", reason="Validation was not requested"); continue
-            runs = []
+            runs, representative = [], representative_image(task["images"])
             for image in task["images"]:
                 saved = self.store.validation_by_key("auto:" + task["id"] + ":" + image["id"])
                 if saved: runs.append(saved[1])
-            if len(runs) != len(task["images"]) or any(r["state"] not in {"completed", "failed", "cancelled"} for r in runs): continue
+            if representative is None or representative["id"] not in {r["image_id"] for r in runs}: continue
+            if any(r["state"] not in {"completed", "failed", "cancelled"} for r in runs): continue
             if any(r["state"] == "cancelled" for r in runs):
                 self.store.update_cycle(cycle, state="cancelled", reason="Validation cancelled"); continue
             if any(r["outcome"] == "error" for r in runs):
@@ -111,21 +124,33 @@ class Regeneration:
                 self.store.update_cycle(cycle, state="automatic_disabled", reason="Automatic regeneration disabled"); continue
             if cycle["used"] >= cycle["limit"]:
                 self.store.update_cycle(cycle, state="limit_reached", reason="Automatic attempt limit reached"); continue
-            if any(not (r.get("result") or {}).get("regeneration", {}).get("changes") for r in failed):
-                self.store.update_cycle(cycle, state="proposal_unavailable", reason="A failed validation has no supported change proposal"); continue
             try:
-                patch = {}
+                patch, missing = {}, None
                 for run in failed:
-                    result = run["result"]
-                    changes = validate_changes(result["regeneration"]["changes"], result.get("evidence", []), task["snapshot"]["generation_inputs"])
+                    result = run.get("result") or {}
+                    proposed = (result.get("regeneration") or {}).get("changes") if isinstance(result.get("regeneration"), dict) else None
+                    if not proposed:
+                        missing = missing or ("proposal_dropped" if (result.get("diagnostics") or {}).get("regeneration_proposal_dropped") else "proposal_unavailable")
+                        continue
+                    try:
+                        changes = validate_changes(proposed, result.get("evidence", []), task["snapshot"]["generation_inputs"])
+                    except ApiError:
+                        missing = missing or "proposal_invalid"
+                        continue
                     for change in changes:
                         field, value = change["field"], change["value"]
                         if field in patch and patch[field] != value:
                             raise ApiError("CORE_REGENERATION_CONFLICT", "Output validations propose conflicting changes", 422)
                         patch[field] = value
+                if missing:
+                    change = self.seed_only(cycle, task, missing)
+                    patch = {"seed": change["seed"]}
+                else:
+                    change = {"kind": "proposal", "fields": sorted(patch)}
                 snapshot = self.snapshot(task, {"generation_inputs": patch}, manual=False)
+                self.store.update_cycle(cycle, last_change=dict(change, parent_task_id=task["id"]))
                 link = {"kind": "automatic", "parent_task_id": task["id"], "lineage_id": cycle["lineage_id"],
-                        "cycle_id": cycle["id"], "source_run_ids": [run["id"] for run in failed]}
+                        "cycle_id": cycle["id"], "source_run_ids": [run["id"] for run in failed], "change": change}
                 key = "regenerate:auto:" + task["id"]
                 fingerprint = hashlib.sha256(canonical({"snapshot": snapshot, "link": link}).encode()).hexdigest()
                 previous = self.store.by_key(key)

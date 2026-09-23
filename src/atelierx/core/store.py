@@ -13,6 +13,11 @@ from ..output_names import build_output_name
 KINDS = {"works": None, "characters": "works", "outfits": "characters"}
 
 
+def representative_image(images):
+    """ADR-0025 E: one attempt is validated once, preferring its PNG output."""
+    return next((image for image in images if image.get("media_type") == "image/png"), images[0] if images else None)
+
+
 class Store:
     def __init__(self, path):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -387,13 +392,15 @@ class Store:
         return [json.loads(row[0]) for row in self.db.execute(
             "SELECT document FROM validation_runs WHERE image_id=? ORDER BY created_at DESC,id", (image_id,))]
 
-    def create_validation(self, image_id, key, fingerprint, payload, endpoint):
+    def create_validation(self, image_id, key, fingerprint, payload, endpoint, shared_image_ids=None):
         with self.db:
             self.image(image_id)
             if self.db.execute("SELECT 1 FROM validation_runs WHERE image_id=? AND state NOT IN ('completed','failed','cancelled')", (image_id,)).fetchone():
                 raise ApiError("CORE_VALIDATION_ACTIVE", "This image already has an active validation", 409)
             run = dict(id=str(uuid.uuid4()), image_id=image_id, state="queued", outcome=None,
                        request=payload, endpoint=endpoint, job_id=None, result=None, error=None, created_at=time.time())
+            if shared_image_ids:
+                run["shared_image_ids"] = list(shared_image_ids)
             self.db.execute("INSERT INTO validation_runs VALUES(?,?,?,?,?,?,?)", (
                 run["id"], image_id, key, fingerprint, run["state"], run["created_at"], canonical(run)))
             return run
@@ -425,12 +432,26 @@ class Store:
             if not changed.rowcount:
                 return
             image = self.image(run["image_id"])
-            image.update(validation_state=run["state"], validation={key: run[key] for key in ("id", "state", "outcome", "error", "result")})
+            summary = {key: run[key] for key in ("id", "state", "outcome", "error", "result")}
+            image.update(validation_state=run["state"], validation=summary)
             self.db.execute("UPDATE images SET document=? WHERE id=?", (canonical(image), image["id"]))
+            for sibling_id in run.get("shared_image_ids", []):
+                if self.db.execute("SELECT 1 FROM validation_runs WHERE image_id=?", (sibling_id,)).fetchone():
+                    continue
+                sibling = self.image(sibling_id)
+                sibling.update(validation_state=run["state"], validation=dict(summary, shared_from_image_id=image["id"]))
+                self.db.execute("UPDATE images SET document=? WHERE id=?", (canonical(sibling), sibling_id))
             task = self.task(image["task_id"])
             task["images"] = [self.image(item["id"]) for item in task["images"]]
-            task["validation"] = {"state": "per_image", "outcome": None,
-                                  "images": [{"image_id": item["id"], "state": item["validation_state"],
-                                              "outcome": item.get("validation", {}).get("outcome")} for item in task["images"]]}
+            validation = {"state": "per_image", "outcome": None, "images": []}
+            representative = image["id"] if run.get("shared_image_ids") else (task.get("validation") or {}).get("representative_image_id")
+            if representative:
+                validation["representative_image_id"] = representative
+            for item in task["images"]:
+                entry = {"image_id": item["id"], "state": item.get("validation_state", "not_requested"), "outcome": item.get("validation", {}).get("outcome")}
+                if item.get("validation", {}).get("shared_from_image_id"):
+                    entry["shared_from_image_id"] = item["validation"]["shared_from_image_id"]
+                validation["images"].append(entry)
+            task["validation"] = validation
             # Generation remains terminal; validation updates only the result metadata.
             self.db.execute("UPDATE tasks SET document=? WHERE id=?", (canonical(task), task["id"]))

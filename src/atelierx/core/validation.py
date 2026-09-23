@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import aiohttp
 
 from ..common import ApiError, canonical
+from .store import representative_image
 from .validation_settings import ValidationSettings
 from ..validation_registry import public_provider
 
@@ -49,7 +50,7 @@ class CoreValidation:
         frozen = self.settings.freeze_group(selection, self.config.get("providers", {}).get(selection["provider_id"]))
         return copy.deepcopy(dict(frozen, endpoint=self.url))
 
-    def submit(self, image_id, key, selection, frozen=None):
+    def submit(self, image_id, key, selection, frozen=None, shared_image_ids=None):
         if not key or len(key) > 200:
             raise ApiError("CORE_INVALID_INPUT", "Idempotency-Key of 1..200 characters is required")
         if not isinstance(selection, dict) or set(selection) != {"profile_id", "provider_id"} or any(
@@ -85,7 +86,7 @@ class CoreValidation:
             generation_attempt_id=task["id"], profile=profile, provider=provider,
             expected_output={"width": self.output_dimension(task, "width"), "height": self.output_dimension(task, "height"), "media_type": image["media_type"], "alpha": self.output_alpha(task)},
             generation_settings={key: gen[key] for key in ("seed", "steps", "cfg") if key in gen} or None)
-        return self.core.store.create_validation(image_id, key, fingerprint, payload, self.url), True
+        return self.core.store.create_validation(image_id, key, fingerprint, payload, self.url, shared_image_ids), True
 
     @staticmethod
     def output_alpha(task):
@@ -259,9 +260,12 @@ class CoreValidation:
     async def tick(self):
         for task in self.core.store.generated_for_validation():
             frozen = task["snapshot"]["validation"]
+            representative = representative_image(task["images"])
+            if representative is None:
+                continue
             try:
-                for image in task["images"]:
-                    self.submit(image["id"], "auto:" + task["id"] + ":" + image["id"], frozen["selection"], frozen)
+                self.submit(representative["id"], "auto:" + task["id"] + ":" + representative["id"], frozen["selection"], frozen,
+                            [image["id"] for image in task["images"] if image["id"] != representative["id"]])
             except ApiError as exc:
                 if exc.code != "CORE_VALIDATION_ACTIVE":
                     self.core.store.task_metadata(task["id"], automatic_validation_error={"code": exc.code, "message": exc.message})
