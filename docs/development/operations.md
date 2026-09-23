@@ -125,7 +125,7 @@ scripts\start_control_panel.bat          # 제어판 실행 후 기본 브라우
 
 | 항목 | 시작 | 종료 조건 | 준비 확인 |
 | --- | --- | --- | --- |
-| AtelierX 서비스 | `python -m atelierx.launcher` + 시작 옵션(Generation·Validation·Discord Bridge). 옵션 변경은 재시작 시 적용 | 종료 요청 파일로 실행기에 요청. 활성 작업이 있으면 실행기가 거절하고 화면에 개수를 표시. 강제 종료 없음 | `GET 127.0.0.1:8190/health`가 200 또는 401 |
+| AtelierX 서비스 | `python -m atelierx.launcher` + 시작 옵션(Generation·Validation·Discord Bridge). 옵션 변경은 재시작 시 적용 | 종료 요청 파일로 실행기에 요청. 활성 작업이 있으면 실행기가 거절하고 화면에 개수를 표시. 강제 종료 없음 | `GET 127.0.0.1:8190/health`가 5xx가 아닌 HTTP 응답(인증 설정에 따라 200·401·403) |
 | ComfyUI | Stability Matrix 설정(`C:\StabilityMatrix\settings.json`)의 ComfyUI 실행 인자로 `venv\Scripts\python.exe main.py`. `--listen 127.0.0.1 --port 8188`은 항상 강제 | 제어판이 띄운 경우만. `/queue` 비어 있음 + Core GPU owner/waiting 없음(Core 미응답이면 이 검사 생략) → 프로세스 트리 종료 | `GET /system_stats` 200 (최대 180초) |
 | LM Studio 서버 | `lms server start` | 제어판이 켠 경우만. `lms ps --json` idle + Core GPU owner 없음 → `lms server stop`. 모델 로드·언로드는 하지 않음 | 1234 포트 listen |
 | Cloudflare Tunnel | `cloudflared tunnel run --token-file .atelierx/cloudflare/tunnel-token.txt`, 로그·`tunnel.pid`는 기존 스크립트와 같은 위치 | `tunnel.pid` 프로세스가 실행 파일·`--token-file` 경로까지 일치할 때만(스크립트로 켠 Tunnel도 관리 대상으로 인식) | 식별 규칙에 맞는 프로세스 실행 중 |
@@ -137,7 +137,7 @@ scripts\start_control_panel.bat          # 제어판 실행 후 기본 브라우
 - 의존성 점검(읽기 전용, 약 30초 캐시): ComfyUI 응답, AtelierX Node 등록(`/object_info`), Anima Node 선택 목록, `lms` 설치와 `gpu-config.json`의 모델 존재(`lms ls`는 앱·서버를 깨우므로 LM Studio 서버가 이미 켜져 있을 때만 확인), cloudflared·Tunnel token 파일 존재(내용은 읽지 않음), Validation·GPU 설정 파일 존재, 8180–8192·1234 포트 사용 주체.
 - 보안: `127.0.0.1`에만 바인딩한다. 모든 `/api/*`는 Host가 `127.0.0.1:<포트>`/`localhost:<포트>`여야 하고, 변경 요청은 `X-AtelierX-Control: 1` 헤더와 같은 origin(Origin이 있을 때)을 요구한다. Core용 `GET /status`는 `control/token.txt` Bearer가 필요하며 상태·의존성 요약만 반환한다(로그·명령줄·비밀값 없음).
 - 설정 파일 `control/settings.json`의 경로 값(`comfyui.stability_matrix_settings`, `comfyui.root`, `lmstudio.lms`, `tunnel.cloudflared`, `services.python`, Bridge 설정 경로)은 직접 편집할 수 있다. 화면에서는 자동 켜기와 서비스 시작 옵션만 바꾼다.
-- 실제 ComfyUI·LM Studio·cloudflared를 제어판으로 켜고 끄는 흐름은 격리 테스트 외 실사용 확인이 필요하다. 특히 제어판으로 띄운 ComfyUI의 Node·모델 목록이 Stability Matrix 실행과 같은지 첫 실행에서 확인한다.
+- 실제 확인(2026-09-23): 제어판으로 ComfyUI를 켜면 약 25초 후 준비되며, AtelierX Node 9개·Impact Pack이 등록되고 Anima·Upscale 모델 목록이 `C:\StabilityMatrix\Models` 파일과 일치했다(모델 경로는 ComfyUI 폴더의 `extra_model_paths.yaml`을 ComfyUI가 직접 읽으므로 실행 방식과 무관). 서비스 묶음 시작, Core 경유 운영 현황, 제어판 재시작 후 ComfyUI·서비스 재인식, 외부 실행 LM Studio 종료 거부, 서비스 안전 종료(활성 작업 0 확인)·ComfyUI 종료를 확인했다. 제어판을 통한 Tunnel·LM Studio 켜기/끄기와 자동 켜기·로그인 바로가기는 실제 환경에서 아직 확인하지 않았다.
 
 ## 아직 없는 것
 
