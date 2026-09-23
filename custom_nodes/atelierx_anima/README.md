@@ -58,6 +58,42 @@ model strength, respectively; those are example values, not a model-default
 policy. The API uses the same ordered `lora_stack` JSON string that the visual
 control serializes; users of the ComfyUI node do not need to edit JSON.
 
+## Consistency methods (ADR-0027 P3/P7)
+
+The node has three optional inputs used only when a consistency method is
+selected: `reference_full` (IMAGE), `reference_face` (IMAGE), and
+`consistency` (STRING, default `""`). Leaving `consistency` empty — the
+default for every existing Workflow, saved preset, and API prompt — makes the
+node build exactly the same graph and produce the same result as before this
+change; the three inputs are additive and backward compatible.
+
+`consistency` is a JSON object `{"method":"...", "params":{...}}`. The only
+method today is `anima-incontext-character`, which applies the verified
+[comfyui-anima-incontext](https://github.com) recipe: it requires both
+`reference_full` and `reference_face`, applies the fixed model-only LoRA
+`anima-incontext-character.safetensors` at strength 1.0, encodes both
+references with the node's own VAE at the generation resolution (white-padded
+to the aspect ratio), batches them, and attaches them to the model before
+sampling. `params.strength` (default `1.0`, range `0.5`–`1.5`) and
+`params.end_percent` (default `0.5`, range `0.3`–`1.0`) are the only exposed
+knobs; `start_percent` (`0`), `cond_only` (`true`), `fit_mode` (`pad`), and
+`ref_timestep` (`0`) are fixed, matching the ADR-0027 decision.
+
+The three ComfyUI node classes the method needs
+(`AnimaRefEncode`, `AnimaRefLatentBatch`, `AnimaInContextApply`) are resolved
+at runtime from ComfyUI's own node registry — this package never imports the
+third-party `comfyui-anima-incontext` package by path. A missing install (or
+a missing `anima-incontext-character.safetensors` LoRA) raises a `ValueError`
+naming the exact missing node or file instead of failing in an unrelated way.
+
+An example using two `LoadImage` references is
+[examples/anima-incontext-character.workflow.json](examples/anima-incontext-character.workflow.json)
+(equivalent API prompt:
+[examples/anima-incontext-character.api.json](examples/anima-incontext-character.api.json)).
+Unlike the two example pairs above, this one is not yet covered by
+`scripts/validate_examples.py`'s strict widget-order static check; treat it as
+a manually reviewed reference pending that follow-up.
+
 Validate both JSON artifacts and, optionally, their installed ComfyUI registry
 and local model choices without running the GPU:
 

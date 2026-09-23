@@ -33,6 +33,16 @@ LEGACY_LORA_SLOT_COUNT = 3
 MIN_LORA_STRENGTH = -100.0
 MAX_LORA_STRENGTH = 100.0
 
+# ADR-0027 P7: consistency method registry. Only the ComfyUI node names and
+# the fixed LoRA filename are referenced; the third-party package is never
+# imported by path so a missing installation fails with a clear error
+# instead of an ImportError deep in module loading.
+CONSISTENCY_INCONTEXT_LORA_NAME = "anima-incontext-character.safetensors"
+CONSISTENCY_STRENGTH_MIN = 0.5
+CONSISTENCY_STRENGTH_MAX = 1.5
+CONSISTENCY_END_PERCENT_MIN = 0.3
+CONSISTENCY_END_PERCENT_MAX = 1.0
+
 
 def _registered_filename(kind: str, name: str) -> str:
     """Resolve only names exposed by ComfyUI's registered model folders."""
@@ -208,6 +218,136 @@ def _apply_anima_loras(
     return model
 
 
+def _validate_incontext_character_params(params: object) -> dict[str, float]:
+    if not isinstance(params, dict):
+        raise ValueError("consistency params must be an object.")
+    allowed = {"strength", "end_percent"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ValueError(f"Unsupported consistency param(s): {', '.join(sorted(unknown))}.")
+    strength = params.get("strength", 1.0)
+    end_percent = params.get("end_percent", 0.5)
+    if not isinstance(strength, (int, float)) or isinstance(strength, bool) or not math.isfinite(strength):
+        raise ValueError("consistency.strength must be a finite number.")
+    if not CONSISTENCY_STRENGTH_MIN <= strength <= CONSISTENCY_STRENGTH_MAX:
+        raise ValueError(
+            f"consistency.strength must be between {CONSISTENCY_STRENGTH_MIN} and "
+            f"{CONSISTENCY_STRENGTH_MAX}; got {strength}."
+        )
+    if not isinstance(end_percent, (int, float)) or isinstance(end_percent, bool) or not math.isfinite(end_percent):
+        raise ValueError("consistency.end_percent must be a finite number.")
+    if not CONSISTENCY_END_PERCENT_MIN <= end_percent <= CONSISTENCY_END_PERCENT_MAX:
+        raise ValueError(
+            f"consistency.end_percent must be between {CONSISTENCY_END_PERCENT_MIN} and "
+            f"{CONSISTENCY_END_PERCENT_MAX}; got {end_percent}."
+        )
+    return {"strength": float(strength), "end_percent": float(end_percent)}
+
+
+def _resolve_incontext_node(name: str) -> type:
+    """Resolve a comfyui-anima-incontext node class from ComfyUI's live registry.
+
+    The package is deliberately never imported by path; a missing install
+    (or a ComfyUI build without NODE_CLASS_MAPPINGS) fails here with a
+    message naming the exact required node instead of an import error.
+    """
+    mapping = getattr(nodes, "NODE_CLASS_MAPPINGS", None)
+    node_class = mapping.get(name) if isinstance(mapping, dict) else None
+    if node_class is None:
+        raise ValueError(
+            f"consistency method anima-incontext-character requires ComfyUI node "
+            f"{name!r}, which is not registered (install comfyui-anima-incontext)."
+        )
+    return node_class
+
+
+def _call_node(node_class: type, **kwargs: object):
+    """Invoke a ComfyUI node instance through its declared FUNCTION method.
+
+    ComfyUI nodes name their entry point via the class-level FUNCTION
+    attribute rather than a fixed method name, so this dispatches
+    generically instead of hard-coding third-party method names.
+    """
+    function_name = getattr(node_class, "FUNCTION", None)
+    if not isinstance(function_name, str) or not hasattr(node_class, function_name):
+        raise ValueError(f"{node_class.__name__} has no callable FUNCTION.")
+    return getattr(node_class(), function_name)(**kwargs)
+
+
+def _apply_incontext_character(
+    model: object,
+    vae_model: object,
+    reference_full: object,
+    reference_face: object,
+    width: int,
+    height: int,
+    params: dict[str, float],
+) -> object:
+    """Verified recipe: LoRA 1.0 -> encode both references -> batch -> apply.
+
+    Fixed (not exposed): start_percent 0, cond_only True, fit_mode "pad",
+    ref_timestep 0, In-Context LoRA strength 1.0. References are fit to the
+    generation resolution (white pad) by AnimaRefEncode's target size.
+    """
+    encode_cls = _resolve_incontext_node("AnimaRefEncode")
+    batch_cls = _resolve_incontext_node("AnimaRefLatentBatch")
+    apply_cls = _resolve_incontext_node("AnimaInContextApply")
+    model = _apply_anima_lora(model, CONSISTENCY_INCONTEXT_LORA_NAME, 1.0, "consistency")
+    ref_latent_full = _call_node(
+        encode_cls, vae=vae_model, image=reference_full, target_width=width, target_height=height
+    )[0]
+    ref_latent_face = _call_node(
+        encode_cls, vae=vae_model, image=reference_face, target_width=width, target_height=height
+    )[0]
+    ref_latent = _call_node(
+        batch_cls, ref_latent_1=ref_latent_full, ref_latent_2=ref_latent_face, fit_mode="pad"
+    )[0]
+    return _call_node(
+        apply_cls,
+        model=model,
+        ref_latent=ref_latent,
+        strength=params["strength"],
+        start_percent=0.0,
+        end_percent=params["end_percent"],
+        cond_only=True,
+        fit_mode="pad",
+        ref_timestep=0.0,
+    )[0]
+
+
+CONSISTENCY_METHODS = {
+    "anima-incontext-character": {
+        "validate_params": _validate_incontext_character_params,
+        "apply": _apply_incontext_character,
+        "requires_references": True,
+    },
+}
+
+
+def _parse_consistency(
+    consistency: str | None, reference_full: object, reference_face: object
+) -> dict[str, object] | None:
+    """Decode and validate the optional consistency JSON. Empty/None means none."""
+    if not consistency:
+        return None
+    if not isinstance(consistency, str):
+        raise ValueError("consistency must be a JSON string.")
+    try:
+        payload = json.loads(consistency)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"consistency must be valid JSON: {error.msg}.") from error
+    if not isinstance(payload, dict) or set(payload) - {"method", "params"} or "method" not in payload:
+        raise ValueError("consistency must be an object with a method and optional params.")
+    method = payload["method"]
+    if not isinstance(method, str) or method not in CONSISTENCY_METHODS:
+        raise ValueError(f"Unknown consistency method: {method!r}.")
+    spec = CONSISTENCY_METHODS[method]
+    params = spec["validate_params"](payload.get("params", {}))
+    if spec["requires_references"] and (reference_full is None or reference_face is None):
+        raise ValueError(f"consistency method {method!r} requires both reference_full and reference_face.")
+    return {"method": method, "params": params}
+
+
 def _empty_anima_latent(width: int, height: int) -> dict[str, torch.Tensor]:
     """Build the one-frame, 16-channel Wan21 latent Anima expects."""
     latent = torch.zeros(
@@ -242,6 +382,9 @@ class AtelierXAnimaGenerate(io.ComfyNode):
                 io.Combo.Input("sampler", options=comfy.samplers.KSampler.SAMPLERS, default="euler_ancestral"),
                 io.Combo.Input("scheduler", options=comfy.samplers.KSampler.SCHEDULERS, default="normal"),
                 io.String.Input("lora_stack", default="[]", optional=True, extra_dict={"atelierx_lora_stack": {"options": _lora_options()}}, tooltip="Ordered Anima LoRA stack controlled by the AtelierX LoRA widget."),
+                io.Image.Input("reference_full", optional=True, tooltip="Full-body reference image for a consistency method (e.g. anima-incontext-character)."),
+                io.Image.Input("reference_face", optional=True, tooltip="Face reference image for a consistency method (e.g. anima-incontext-character)."),
+                io.String.Input("consistency", default="", optional=True, tooltip='JSON {"method","params"}. Empty means no consistency method; existing graphs are unaffected.'),
             ],
             outputs=[io.Image.Output(display_name="image")],
             accept_all_inputs=True,
@@ -263,11 +406,15 @@ class AtelierXAnimaGenerate(io.ComfyNode):
         sampler: str,
         scheduler: str,
         lora_stack: str | None = None,
+        reference_full: object = None,
+        reference_face: object = None,
+        consistency: str | None = "",
         **legacy_inputs: object,
     ) -> io.NodeOutput:
         _validate_request(width, height, steps, cfg)
         _validate_sampling(seed, sampler, scheduler)
         _validate_prompts(positive_prompt, negative_prompt)
+        consistency_selection = _parse_consistency(consistency, reference_full, reference_face)
 
         model_path = _registered_filename("diffusion_models", diffusion_model)
         text_encoder_path = _registered_filename("text_encoders", text_encoder)
@@ -287,6 +434,12 @@ class AtelierXAnimaGenerate(io.ComfyNode):
         _validate_anima_text_encoder(clip, text_encoder)
         vae_model = nodes.VAELoader().load_vae(vae)[0]
         _validate_anima_vae(vae_model, vae)
+
+        if consistency_selection is not None:
+            spec = CONSISTENCY_METHODS[consistency_selection["method"]]
+            model = spec["apply"](
+                model, vae_model, reference_full, reference_face, width, height, consistency_selection["params"]
+            )
 
         positive = clip.encode_from_tokens_scheduled(clip.tokenize(positive_prompt))
         negative = clip.encode_from_tokens_scheduled(clip.tokenize(negative_prompt))

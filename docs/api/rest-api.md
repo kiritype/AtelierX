@@ -232,6 +232,7 @@ Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,ima
 |---|---|---|
 | GET | `/health` | 서비스 상태 |
 | GET | `/v1/nodes` | 등록 Node·입력 schema·후처리 지원 현황 |
+| GET | `/v1/resources` | ComfyUI의 현재 등록 자원 목록(`consistency_methods` 포함) |
 | POST | `/v1/nodes/anima/jobs` | `{inputs,postprocess?}` + 멱등 키 → Job |
 | GET | `/v1/jobs/by-key` | 멱등 키 header → Job |
 | GET | `/v1/jobs/{job_id}` | Job |
@@ -241,7 +242,17 @@ Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,ima
 
 `postprocess` 지원 키: `upscale,detailer,censor,alpha,encode`. 명시한 객체에서 생략한 단계는 실행하지 않는다. 순서는 Upscale → Detailer → Censor → Alpha → Encode로 고정한다. Core 요청 자체의 postprocess 생략 기본값은 문서 앞의 기본 이미지 크기 절을 따른다. stage별 필드·기본값은 아래 [후처리 stage와 독립 후처리 상세](#후처리-stage와-독립-후처리-상세)를 따른다. 기존 이미지 독립 후처리는 아래 절의 image-ID API를 사용하며 임의 graph API는 없다.
 
-Job 주요 응답: `job_id,prompt_id,state,inputs,requested_postprocess,postprocess,images,error,created_at,updated_at` 등. `requested_postprocess`는 원요청, `postprocess`는 정규화 설정이다. 내부 node_inputs·멱등 키·fingerprint는 공개하지 않는다.
+Job 주요 응답: `job_id,prompt_id,state,inputs,requested_postprocess,postprocess,requested_consistency,consistency,images,error,created_at,updated_at` 등. `requested_postprocess`/`requested_consistency`는 원요청, `postprocess`/`consistency`는 정규화 설정이다(둘 다 없으면 `null`). 내부 node_inputs·멱등 키·fingerprint는 공개하지 않는다.
+
+### 일관성 방식(`inputs.consistency`) — ADR-0027 P3/P7
+
+`inputs`는 선택 `consistency:{method,params:{strength,end_percent,suppress_reference_background},references:[{role,image_id,sha256}]}`를 받는다. `AtelierXAnimaGenerate` Custom Node 확장(`custom_nodes/atelierx_anima`)과 `src/atelierx/generation/consistency.py`의 단일 레지스트리가 실제 계약이다. 이 필드가 없으면 기존과 완전히 같은 graph를 만든다(하위 호환).
+
+- 현재 방식은 `anima-incontext-character` 하나다(`families:["anima"]`). `params`는 `strength`(기본 1.0, 0.5~1.5), `end_percent`(기본 0.5, 0.3~1.0, 0.5 미만이면 `warn_below`), `suppress_reference_background`(기본 true, bool)다. `suppress_reference_background`는 Generation이 검사만 하고 실제 배경 억제 Negative 합성은 Core가 한다(ADR-0027 P4); Generation Node로는 `method`와 `strength,end_percent`만 전달한다.
+- `references`는 정확히 `full`·`face` 두 항목이 필요하다(ADR-0027 P1). 각 항목은 `image_id,sha256`이 **같은 Generation 서버에 저장된 이미지**와 일치해야 한다. 접수 시 1차 검사하고 실행 직전 파일 bytes로 재검사한다.
+- 검사 실패는 `GEN_INVALID_INPUT`(400, 형식·범위·역할 오류), `GEN_IMAGE_NOT_FOUND`(404, 같은 서버에 없는 image_id), `GEN_IMAGE_INTEGRITY`(422, sha256 불일치)다. 필요 ComfyUI Node(`AnimaRefEncode,AnimaRefLatentBatch,AnimaInContextApply`) 또는 고정 LoRA(`anima-incontext-character.safetensors`)가 미등록이면 `GEN_NODE_UNAVAILABLE`(503)이다.
+- 고정값(노출하지 않음): `start_percent` 0, In-Context LoRA 강도 1.0, `cond_only` true, `fit_mode` pad, `ref_timestep` 0. 참조 이미지는 생성 해상도에 흰 여백으로 맞춘다.
+- `GET /v1/resources`의 `consistency_methods`는 `[{id,families,available,unavailable_reason?,params}]`이며 `params`는 위 필드별 `{type,default,min?,max?,warn_below?}`다. 참조 세트 확정·`needs_review`·제작 계획 강제(P1/P2/P5)와 Core의 Negative 합성(P4)은 Core 쪽 구현이며 이 응답에는 없다.
 
 Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠금을 기다린다. 접수 handler 내부의 저장 지연을 키 없음으로 오인하지 않으며, 조회 시간 초과는 Core가 기존 키로 다시 확인한다. Validation 연결의 bare HTTP 502/503/504도 접수 결과 재조회 대상으로 취급하되, 구조화된 `VAL_*` 오류 응답은 명시 오류로 보존한다. 완료된 Validation `outcome=error`의 자동 추론 재시도는 허용하지 않는다.
 
@@ -329,6 +340,7 @@ LM Studio는 현재 `json_schema`와 `image_format=png`를 사용한다. WebP는
 | Job outcome=error | VAL_PROVIDER_RESPONSE_INVALID / VAL_PROVIDER_INCONCLUSIVE | 잘못된/빠진 근거·판정 불확실 |
 | Job outcome=error | VAL_PROVIDER_CONFIG_CHANGED / VAL_EVALUATION_CHANGED / VAL_PROVIDER_ACCEPTANCE_UNKNOWN | 고정 설정/평가 변경·재시작 수락 불명 |
 | Generation failed | GEN_EXECUTION_UNKNOWN / GEN_COMFY_UNAVAILABLE / GEN_PROTOCOL_ERROR 등 | 실행 추적·ComfyUI 연결 오류 |
+| 400/404/422/503 | GEN_INVALID_INPUT / GEN_IMAGE_NOT_FOUND / GEN_IMAGE_INTEGRITY / GEN_NODE_UNAVAILABLE | `inputs.consistency` 형식·참조 이미지·필요 Node/LoRA 오류(ADR-0027 P3/P7) |
 
 이 표는 대표 코드이며 모든 내부 오류의 폐쇄 enum이 아니다. 실제 HTTP 접수 오류와 비동기 Job 결과를 혼동하지 않는다. Provider의 HTTP 400도 이미 접수한 Job 조회에서는 HTTP 200 + outcome=error로 반환된다.
 
@@ -478,7 +490,7 @@ Core 시작 시 현재 의상들의 외형이 동일하면 캐릭터 외형으�
 | Core | `GET /v1/generation/resources` | Generation의 등록 자원 목록을 인증된 동일 출처로 중계 |
 | Generation | `GET /v1/resources` | ComfyUI의 현재 Anima 노드 입력 목록 조회 |
 
-응답은 `{family:"anima",diffusion_models:[],text_encoders:[],vaes:[],samplers:[],schedulers:[],loras:[],upscale_models:[]}`이며 각 배열은 등록된 이름 문자열이다. GPU 추론·다운로드를 수행하지 않고 파일 시스템 경로를 임의 탐색하지 않는다. 자원이 없으면 빈 배열, ComfyUI/노드에 접근할 수 없으면 503이며 기존 파일명으로 자동 대체하지 않는다. 목록에 있다는 사실은 모든 모델 조합의 호환성 보장이 아니며 실행 시 기존 검증을 유지한다. Core의 기존 Bearer/Access 인증 경계를 유지한다.
+응답은 `{family:"anima",diffusion_models:[],text_encoders:[],vaes:[],samplers:[],schedulers:[],loras:[],upscale_models:[],consistency_methods:[]}`이며 각 배열은 등록된 이름 문자열이다(`consistency_methods`는 위 [일관성 방식](#일관성-방식inputsconsistency--adr-0027-p3p7) 절의 `{id,families,available,unavailable_reason?,params}` 객체 배열). GPU 추론·다운로드를 수행하지 않고 파일 시스템 경로를 임의 탐색하지 않는다. 자원이 없으면 빈 배열, ComfyUI/노드에 접근할 수 없으면 503이며 기존 파일명으로 자동 대체하지 않는다. 목록에 있다는 사실은 모든 모델 조합의 호환성 보장이 아니며 실행 시 기존 검증을 유지한다. Core의 기존 Bearer/Access 인증 경계를 유지한다. 현재 Core `GET /v1/generation/resources`는 Generation 응답을 그대로 중계하므로 `consistency_methods`도 함께 전달되지만, Core 쪽 참조 세트·확정·강제(ADR-0027 P1/P2/P5)와 Frontend 폼은 아직 구현되지 않았다.
 
 ## 2026-09-23 손 항목·검사 항목 출처·출력 파일명 — ADR-0025/0026
 

@@ -145,6 +145,7 @@ def fake_modules():
     standard_nodes = types.ModuleType("nodes")
     standard_nodes.common_ksampler = Mock(return_value=({"samples": "sampled-latent"},))
     standard_nodes.VAELoader = Mock(return_value=types.SimpleNamespace(load_vae=Mock(return_value=(FakeVAE(),))))
+    standard_nodes.NODE_CLASS_MAPPINGS = {}
 
     comfy_api = types.ModuleType("comfy_api")
     comfy_api.__path__ = []
@@ -310,6 +311,115 @@ class AtelierXAnimaGenerateTests(unittest.TestCase):
         self.assertNotIn("dynamic_prompts", schema.inputs[3])
         extension = self.node_module.AtelierXAnimaExtension()
         self.assertEqual(asyncio.run(extension.get_node_list()), [self.node_module.AtelierXAnimaGenerate])
+
+    def test_parse_consistency_treats_empty_as_none_and_validates_shape(self):
+        parse = self.node_module._parse_consistency
+        self.assertIsNone(parse("", None, None))
+        self.assertIsNone(parse(None, None, None))
+        with self.assertRaisesRegex(ValueError, "valid JSON"):
+            parse("not json", "full", "face")
+        with self.assertRaisesRegex(ValueError, "method and optional params"):
+            parse('{"params":{}}', "full", "face")
+        with self.assertRaisesRegex(ValueError, "Unknown consistency method"):
+            parse('{"method":"other"}', "full", "face")
+
+    def test_consistency_requires_both_references(self):
+        parse = self.node_module._parse_consistency
+        with self.assertRaisesRegex(ValueError, "requires both reference_full and reference_face"):
+            parse('{"method":"anima-incontext-character"}', "full-only", None)
+        with self.assertRaisesRegex(ValueError, "requires both reference_full and reference_face"):
+            parse('{"method":"anima-incontext-character"}', None, "face-only")
+
+    def test_consistency_param_validation_rejects_out_of_range_and_unknown_fields(self):
+        parse = self.node_module._parse_consistency
+        with self.assertRaisesRegex(ValueError, "consistency.strength"):
+            parse('{"method":"anima-incontext-character","params":{"strength":10}}', "full", "face")
+        with self.assertRaisesRegex(ValueError, "consistency.strength"):
+            parse('{"method":"anima-incontext-character","params":{"strength":true}}', "full", "face")
+        with self.assertRaisesRegex(ValueError, "consistency.end_percent"):
+            parse('{"method":"anima-incontext-character","params":{"end_percent":0.1}}', "full", "face")
+        with self.assertRaisesRegex(ValueError, "Unsupported consistency param"):
+            parse('{"method":"anima-incontext-character","params":{"extra":1}}', "full", "face")
+
+    def test_consistency_defaults_are_strength_one_and_end_percent_half(self):
+        selection = self.node_module._parse_consistency(
+            '{"method":"anima-incontext-character"}', "full", "face"
+        )
+        self.assertEqual(selection, {"method": "anima-incontext-character", "params": {"strength": 1.0, "end_percent": 0.5}})
+
+    def test_backward_compatible_generation_never_touches_node_registry(self):
+        self._generate()
+        self.assertEqual(self.mocks["nodes"].NODE_CLASS_MAPPINGS, {})
+        self.mocks["nodes"].common_ksampler.assert_called_once()
+
+    def test_missing_incontext_node_raises_clear_error_before_sampling(self):
+        with self.assertRaisesRegex(ValueError, "AnimaRefEncode.*not registered"):
+            self._generate(
+                reference_full="full-image",
+                reference_face="face-image",
+                consistency='{"method":"anima-incontext-character","params":{"strength":1.0,"end_percent":0.5}}',
+            )
+        self.mocks["nodes"].common_ksampler.assert_not_called()
+
+    def test_incontext_character_applies_lora_encodes_batches_and_wires_model_into_sampler(self):
+        encode_calls, batch_calls, apply_calls = [], [], []
+
+        class FakeRefEncode:
+            FUNCTION = "encode"
+
+            def encode(self, vae, image, mask=None, target_width=0, target_height=0):
+                encode_calls.append((vae, image, target_width, target_height))
+                return (f"latent:{image}",)
+
+        class FakeRefBatch:
+            FUNCTION = "batch"
+
+            def batch(self, ref_latent_1, ref_latent_2, fit_mode):
+                batch_calls.append((ref_latent_1, ref_latent_2, fit_mode))
+                return ("batched-latent",)
+
+        class FakeInContextApply:
+            FUNCTION = "apply"
+
+            def apply(self, model, ref_latent, strength, start_percent, end_percent,
+                      cond_only=True, fit_mode="pad", ref_timestep=0.0):
+                apply_calls.append((model, ref_latent, strength, start_percent, end_percent, cond_only, fit_mode, ref_timestep))
+                return ("model-with-reference",)
+
+        self.mocks["nodes"].NODE_CLASS_MAPPINGS = {
+            "AnimaRefEncode": FakeRefEncode,
+            "AnimaRefLatentBatch": FakeRefBatch,
+            "AnimaInContextApply": FakeInContextApply,
+        }
+        self.mocks["folder_paths"].get_filename_list.side_effect = lambda kind: {
+            "diffusion_models": ["anima.safetensors"],
+            "text_encoders": ["anima_te.safetensors"],
+            "vae": ["anima_vae.safetensors"],
+            "loras": ["first.safetensors", "second.safetensors", "anima-incontext-character.safetensors"],
+        }[kind]
+
+        self._generate(
+            reference_full="full-image",
+            reference_face="face-image",
+            consistency='{"method":"anima-incontext-character","params":{"strength":1.2,"end_percent":0.6}}',
+        )
+
+        vae_instance = self.mocks["nodes"].VAELoader.return_value.load_vae.return_value[0]
+        self.assertEqual(encode_calls, [
+            (vae_instance, "full-image", 512, 512),
+            (vae_instance, "face-image", 512, 512),
+        ])
+        self.assertEqual(batch_calls, [("latent:full-image", "latent:face-image", "pad")])
+        self.assertEqual(len(apply_calls), 1)
+        _, ref_latent, strength, start_percent, end_percent, cond_only, fit_mode, ref_timestep = apply_calls[0]
+        self.assertEqual(
+            (ref_latent, strength, start_percent, end_percent, cond_only, fit_mode, ref_timestep),
+            ("batched-latent", 1.2, 0.0, 0.6, True, "pad", 0.0),
+        )
+        loaded_paths = [call.args[0] for call in self.mocks["comfy.utils"].load_torch_file.call_args_list]
+        self.assertIn("C:/registered/loras/anima-incontext-character.safetensors", loaded_paths)
+        sampler_args = self.mocks["nodes"].common_ksampler.call_args.args
+        self.assertEqual(sampler_args[0], "model-with-reference")
 
     def _generate(self, **overrides):
         inputs = dict(
