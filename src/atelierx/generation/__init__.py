@@ -24,9 +24,41 @@ from aiohttp import web
 from ..common import ApiError, ProcessLock, canonical
 from ..gpu import permission
 from ..queue_api import attach_queue_api
+from ..output_names import validate_output_name
 from .pipeline import NODES as POSTPROCESS_NODES, build_anima_prompt, validate_pipeline
 
 NODE = "AtelierXAnimaGenerate"
+ENCODE = "AtelierXEncodeSave"
+
+
+def parse_output_name(value):
+    if value is None:
+        return None
+    try:
+        return validate_output_name(value)
+    except ValueError as exc:
+        raise ApiError("GEN_INVALID_INPUT", f"output_name is invalid: {exc}") from exc
+
+
+def require_named_encode(pipeline, info, output_name):
+    """A named output is always written by the Encode node, never SaveImage."""
+    if output_name is None:
+        return pipeline
+    schema = info.get(ENCODE)
+    inputs = schema.get("input", {}) if isinstance(schema, dict) else {}
+    if not isinstance(schema, dict) or "output_name" not in {**inputs.get("required", {}), **inputs.get("optional", {})}:
+        raise ApiError("GEN_NODE_UNAVAILABLE", "AtelierX Encode node with output_name is not registered", 503)
+    if "encode" not in pipeline:
+        pipeline = {**pipeline, "encode": {"webp_enabled": False, "webp_quality": 90}}
+    return pipeline
+
+
+def output_path(descriptor):
+    filename, subfolder = descriptor.get("filename"), descriptor.get("subfolder", "")
+    if descriptor.get("type", "output") != "output" or not isinstance(filename, str) or not filename or not isinstance(subfolder, str):
+        return None
+    subfolder = subfolder.replace("\\", "/").strip("/")
+    return f"{subfolder}/{filename}" if subfolder else filename
 TERMINAL = {"completed", "failed", "cancelled"}
 SERVICE = web.AppKey("generation", object)
 
@@ -44,10 +76,11 @@ def validate_inputs(value, schema):
     if not isinstance(value, dict):
         raise ApiError("GEN_INVALID_INPUT", "inputs must be an object")
     required = schema["input"]["required"]
-    allowed = set(required) | {"loras"}
+    allowed = set(required) | {"loras", "output_name"}
     if set(value) - allowed or set(required) - set(value):
         raise ApiError("GEN_INVALID_INPUT", "Missing or unknown Anima fields")
     result = dict(value)
+    result.pop("output_name", None)
     for name, definition in required.items():
         kind, options = definition[0], definition[1] if len(definition) > 1 else {}
         item = value[name]
@@ -154,16 +187,20 @@ class Generation:
                     return job, image, path
         raise ApiError("GEN_IMAGE_NOT_FOUND", "Image not found", 404)
 
-    async def submit_independent(self, key, image_id, postprocess):
+    async def submit_independent(self, key, image_id, postprocess, output_name=None):
         if not key or len(key) > 200:
             raise ApiError("GEN_INVALID_KEY", "Idempotency-Key (1..200 characters) is required")
-        fingerprint = hashlib.sha256(canonical({"kind": "postprocess", "image_id": image_id, "postprocess": postprocess}).encode()).hexdigest()
+        identity = {"kind": "postprocess", "image_id": image_id, "postprocess": postprocess}
+        if output_name is not None:
+            identity["output_name"] = output_name
+        fingerprint = hashlib.sha256(canonical(identity).encode()).hexdigest()
         async with self.lock:
             if key in self.keys:
                 job = self.jobs[self.keys[key]]
                 if job["fingerprint"] != fingerprint:
                     raise ApiError("GEN_IDEMPOTENCY_CONFLICT", "Key was used with different input", 409)
                 return job, False
+            output_name = parse_output_name(output_name)
             source, image, path = self.image_source(image_id)
             if not source.get("node_inputs"):
                 raise ApiError("GEN_POSTPROCESS_CONTEXT_MISSING", "Source image has no preserved Anima context", 409)
@@ -174,12 +211,14 @@ class Generation:
             pipeline = validate_pipeline(postprocess, info, bool(json.loads(source["node_inputs"].get("lora_stack", "[]"))))
             if not pipeline:
                 raise ApiError("GEN_INVALID_POSTPROCESS", "At least one postprocess stage is required")
+            pipeline = require_named_encode(pipeline, info, output_name)
             if "detailer" in pipeline:
                 for node, field, input_name in (("UNETLoader", "unet_name", "diffusion_model"), ("CLIPLoader", "clip_name", "text_encoder"), ("VAELoader", "vae_name", "vae")):
                     if source["node_inputs"].get(input_name) not in self._options(info[node], field):
                         raise ApiError("GEN_INVALID_POSTPROCESS", f"detailer {input_name} is not registered for {node}")
             job_id = str(uuid.uuid4())
             job = dict(job_id=job_id, prompt_id=job_id, kind="postprocess", state="queued", created_at=time.time(),
+                       **({"output_name": output_name} if output_name is not None else {}),
                        inputs=json.loads(canonical(source["inputs"])), node_inputs=json.loads(canonical(source["node_inputs"])),
                        source_image_id=image_id, source_sha256=image["sha256"], source_media_type=image["media_type"],
                        requested_postprocess=postprocess, postprocess=pipeline, fingerprint=fingerprint,
@@ -207,7 +246,9 @@ class Generation:
             if NODE not in info:
                 raise ApiError("GEN_NODE_UNAVAILABLE", "Anima node is not registered", 503)
             node_inputs = validate_inputs(inputs, info[NODE])
+            output_name = parse_output_name(inputs.get("output_name"))
             pipeline = validate_pipeline(postprocess, info, bool(json.loads(node_inputs["lora_stack"])))
+            pipeline = require_named_encode(pipeline, info, output_name)
             if "detailer" in pipeline:
                 loaders = (("UNETLoader", "unet_name", "diffusion_model"), ("CLIPLoader", "clip_name", "text_encoder"), ("VAELoader", "vae_name", "vae"))
                 for node, field, input_name in loaders:
@@ -215,7 +256,7 @@ class Generation:
                         raise ApiError("GEN_INVALID_POSTPROCESS", f"detailer {input_name} is not registered for {node}")
             job_id = str(uuid.uuid4())
             job = dict(job_id=job_id, prompt_id=job_id, state="queued", created_at=time.time(),
-                       inputs=inputs, requested_postprocess=postprocess or {}, postprocess=pipeline, node_inputs=node_inputs, fingerprint=fingerprint,
+                       **({"output_name": output_name} if output_name is not None else {}), inputs=inputs, requested_postprocess=postprocess or {}, postprocess=pipeline, node_inputs=node_inputs, fingerprint=fingerprint,
                        idempotency_key=key, images=[], error=None)
             self.save(job)
             self.jobs[job_id] = job
@@ -274,7 +315,8 @@ class Generation:
                 raise ApiError("GEN_OUTPUT_INVALID", f"Output is not {declared.upper()}", 502)
             tmp.replace(path)
             images.append(dict(image_id=image_id, sha256=digest.hexdigest(), bytes=size,
-                               url=f"/v1/images/{image_id}", media_type=f"image/{declared}"))
+                               url=f"/v1/images/{image_id}", media_type=f"image/{declared}",
+                               output_path=output_path(descriptor)))
         job.update(state="completed", images=images, error=None)
         self.save(job)
         return True
@@ -297,7 +339,7 @@ class Generation:
                 await self.node_schema()
             job["state"] = "submitting"
             self.save(job)
-            prompt, output_node = build_anima_prompt(job["node_inputs"], job.get("postprocess", {}), job["job_id"])
+            prompt, output_node = build_anima_prompt(job["node_inputs"], job.get("postprocess", {}), job["job_id"], job.get("output_name"))
             if job.get("source_image_id"):
                 _, image, path = self.image_source(job["source_image_id"])
                 data = path.read_bytes()
@@ -465,9 +507,9 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
 
     async def independent_postprocess(request):
         payload=await request.json()
-        if not isinstance(payload,dict) or set(payload)!={"postprocess"} or not isinstance(payload["postprocess"],dict):
-            raise ApiError("GEN_INVALID_INPUT", "Body must contain only postprocess")
-        job,created=await service.submit_independent(request.headers.get("Idempotency-Key"), request.match_info["image_id"], payload["postprocess"])
+        if not isinstance(payload,dict) or "postprocess" not in payload or set(payload)-{"postprocess","output_name"} or not isinstance(payload["postprocess"],dict):
+            raise ApiError("GEN_INVALID_INPUT", "Body must contain postprocess and optional output_name")
+        job,created=await service.submit_independent(request.headers.get("Idempotency-Key"), request.match_info["image_id"], payload["postprocess"], payload.get("output_name"))
         return web.json_response(service.public(job), status=202 if created else 200, headers={"Location": f'/v1/jobs/{job["job_id"]}'})
 
     async def get_job(request):

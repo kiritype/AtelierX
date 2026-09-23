@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import unicodedata
 from uuid import uuid4
 
 from PIL import Image
@@ -12,6 +13,31 @@ from PIL import Image
 
 OUTPUT_SUBFOLDER = "AtelierX"
 _SAFE_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
+# Mirrors src/atelierx/output_names.py; ComfyUI cannot import the AtelierX package.
+_FORBIDDEN = set('<>:"/\\|?*')
+_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"{p}{n}" for p in ("COM", "LPT") for n in range(1, 10)}
+
+
+def sanitize_segment(text: str) -> str:
+    if not isinstance(text, str):
+        raise ValueError("name segment must be text")
+    value = "".join("_" if ch in _FORBIDDEN or unicodedata.category(ch) == "Cc" else ch for ch in text)
+    value = re.sub(r"\s+", " ", value).strip(" ")
+    value = value[:80].rstrip(". ")
+    stem, dot, rest = value.partition(".")
+    if stem.rstrip(" ").upper() in _RESERVED:
+        value = (stem.rstrip(" ") + "_" + dot + rest)[:80].rstrip(". ")
+    return value or "_"
+
+
+def validate_output_name(output_name: str) -> str:
+    """Allow a relative '/'-separated name of 1-6 already sanitized segments."""
+    if not isinstance(output_name, str) or not output_name or len(output_name) > 240:
+        raise ValueError("output_name must be 1-240 characters of text.")
+    segments = output_name.split("/")
+    if len(segments) > 6 or any(s in ("", ".", "..") or sanitize_segment(s) != s for s in segments):
+        raise ValueError("output_name must be a relative path of at most 6 sanitized segments.")
+    return output_name
 
 
 def validate_filename_prefix(filename_prefix: str) -> str:
@@ -66,14 +92,50 @@ def _destination(output_directory: Path, filename: str) -> Path:
     return destination_directory / filename
 
 
-def save_images(images, output_directory: str | Path, filename_prefix: str, webp_enabled: bool, webp_quality: int) -> dict[str, list[dict[str, object]]]:
+def _inside(base: Path, path: Path) -> Path:
+    resolved = path.resolve()
+    if resolved == base or not resolved.is_relative_to(base):
+        raise RuntimeError("AtelierX output path escaped the configured ComfyUI output directory.")
+    return resolved
+
+
+def _save_named(image: Image.Image, output_root: Path, output_name: str, webp_enabled: bool, quality: int) -> list[dict[str, object]]:
+    """Save `<output_name>.png` (+ .webp), adding ` (n)` until neither extension exists."""
+    base = output_root.resolve()
+    parent, _, stem = output_name.rpartition("/")
+    directory = _inside(base, base / parent) if parent else base
+    directory.mkdir(parents=True, exist_ok=True)
+    directory = _inside(base, directory) if parent else base
+    subfolder = directory.relative_to(base).as_posix() if parent else ""
+    number = 1
+    while True:
+        candidate = stem if number == 1 else f"{stem} ({number})"
+        number += 1
+        png_path = _inside(base, directory / f"{candidate}.png")
+        webp_path = _inside(base, directory / f"{candidate}.webp")
+        if png_path.exists() or webp_path.exists():
+            continue
+        try:
+            _atomic_save(image, png_path, "PNG", compress_level=4)
+        except FileExistsError:
+            continue
+        files = [{"filename": png_path.name, "subfolder": subfolder, "type": "output", "format": "png"}]
+        if webp_enabled:
+            _atomic_save(image, webp_path, "WEBP", quality=quality, method=6)
+            files.append({"filename": webp_path.name, "subfolder": subfolder, "type": "output", "format": "webp"})
+        return files
+
+
+def save_images(images, output_directory: str | Path, filename_prefix: str, webp_enabled: bool, webp_quality: int,
+                output_name: str = "") -> dict[str, list[dict[str, object]]]:
     """Write PNGs and optional WebPs, returning preview and all-file descriptors.
 
     PNGs are committed atomically before optional WebP encoding. If a later WebP
     write fails the PNG remains available for recovery, while the caller receives
     the error and must not report a successful node result.
     """
-    prefix = validate_filename_prefix(filename_prefix)
+    named = validate_output_name(output_name) if output_name else ""
+    prefix = filename_prefix if named else validate_filename_prefix(filename_prefix)
     quality = validate_webp_quality(webp_quality)
     if not isinstance(webp_enabled, bool):
         raise ValueError("webp_enabled must be a boolean.")
@@ -88,6 +150,11 @@ def save_images(images, output_directory: str | Path, filename_prefix: str, webp
     files: list[dict[str, object]] = []
     for batch_number, tensor in enumerate(images):
         image = image_tensor_to_pil(tensor)
+        if named:
+            saved = _save_named(image, output_root, named, webp_enabled, quality)
+            previews.append({key: value for key, value in saved[0].items() if key != "format"})
+            files.extend(saved)
+            continue
         stem = f"{prefix}_{batch_number:05}_{uuid4().hex}"
         png_path = _destination(output_root, f"{stem}.png")
         _atomic_save(image, png_path, "PNG", compress_level=4)

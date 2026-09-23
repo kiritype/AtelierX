@@ -145,8 +145,10 @@ def validate_pipeline(value, info, has_loras=False):
     return result
 
 
-def build_anima_prompt(anima_inputs, pipeline, job_id):
+def build_anima_prompt(anima_inputs, pipeline, job_id, output_name=None):
     """Build the fixed Anima -> Upscale -> Detailer -> Censor -> Alpha -> Encode chain."""
+    if output_name is not None and "encode" not in pipeline:
+        raise ApiError("GEN_INVALID_POSTPROCESS", "output_name requires the encode stage")
     prompt = {"1": {"class_type": "AtelierXAnimaGenerate", "inputs": anima_inputs}}
     image = ["1", 0]
     next_id = 2
@@ -194,6 +196,8 @@ def build_anima_prompt(anima_inputs, pipeline, job_id):
         cfg = pipeline["encode"]
         prompt[output] = {"class_type": "AtelierXEncodeSave", "inputs": {"image": image,
             "filename_prefix": job_id, **cfg}}
+        if output_name is not None:
+            prompt[output]["inputs"]["output_name"] = output_name
     else:
         prompt[output] = {"class_type": "SaveImage", "inputs": {"images": image, "filename_prefix": f"AtelierX/{job_id}"}}
     return prompt, output

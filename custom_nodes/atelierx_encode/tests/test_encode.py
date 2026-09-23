@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,66 @@ class EncodeTests(unittest.TestCase):
             encode.save_images(torch.zeros((1, 2, 2, 2)), self.output, "safe", False, 90)
         with self.assertRaisesRegex(ValueError, "finite"):
             encode.save_images(torch.tensor([[[[float("nan"), 0, 0]]]]), self.output, "safe", False, 90)
+
+    def test_output_name_saves_exact_path_then_numbers_png_only(self):
+        name = "AtelierX/작품/캐릭터/복장/12"
+        folder = self.output / "AtelierX" / "작품" / "캐릭터" / "복장"
+        first = encode.save_images(self.rgb_batch(), self.output, "ignored", False, 90, name)
+        self.assertEqual(first["files"], [{"filename": "12.png", "subfolder": "AtelierX/작품/캐릭터/복장", "type": "output", "format": "png"}])
+        self.assertEqual(first["images"], [{"filename": "12.png", "subfolder": "AtelierX/작품/캐릭터/복장", "type": "output"}])
+        original = (folder / "12.png").read_bytes()
+        second = encode.save_images(self.rgb_batch().repeat((2, 1, 1, 1)), self.output, "image", False, 90, name)
+        self.assertEqual([f["filename"] for f in second["files"]], ["12 (2).png", "12 (3).png"])
+        self.assertEqual((folder / "12.png").read_bytes(), original)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["12 (2).png", "12 (3).png", "12.png"])
+
+    def test_output_name_png_and_webp_share_suffix(self):
+        name = "AtelierX/a/b/c/7"
+        encode.save_images(self.rgb_batch(), self.output, "image", True, 90, name)
+        second = encode.save_images(self.rgb_batch(), self.output, "image", True, 90, name)
+        self.assertEqual([(f["filename"], f["format"]) for f in second["files"]], [("7 (2).png", "png"), ("7 (2).webp", "webp")])
+        folder = self.output / "AtelierX/a/b/c"
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["7 (2).png", "7 (2).webp", "7.png", "7.webp"])
+
+    def test_output_name_existing_webp_only_advances_png(self):
+        folder = self.output / "AtelierX" / "x"
+        folder.mkdir(parents=True)
+        (folder / "3.webp").write_bytes(b"old")
+        (folder / "3 (2).png").write_bytes(b"old")
+        saved = encode.save_images(self.rgb_batch(), self.output, "image", False, 90, "AtelierX/x/3")
+        self.assertEqual(saved["files"][0]["filename"], "3 (3).png")
+        self.assertEqual((folder / "3.webp").read_bytes(), b"old")
+        self.assertFalse((folder / "3.png").exists())
+
+    def test_output_name_rejects_traversal_and_unsanitized_names(self):
+        for name in ("../escape", "AtelierX/../../x", "/abs/x", "C:/x", "a\\b", "a//b", "a/./b", "CON", "a/b.", " a",
+                     "a/b/c/d/e/f/g", "x" * 81, "a:b", "a\tb"):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "output_name"):
+                encode.save_images(self.rgb_batch(), self.output, "image", False, 90, name)
+        self.assertEqual(list(self.output.iterdir()), [])
+
+    def test_output_name_symlink_escape_is_refused(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        link = self.output / "AtelierX"
+        try:
+            link.symlink_to(outside.name, target_is_directory=True)
+        except OSError:
+            import subprocess
+            if subprocess.run(["cmd", "/c", "mklink", "/J", str(link), outside.name], capture_output=True).returncode:
+                self.skipTest("cannot create directory link")
+        try:
+            with self.assertRaisesRegex(RuntimeError, "escaped"):
+                encode.save_images(self.rgb_batch(), self.output, "image", False, 90, "AtelierX/escape")
+            self.assertEqual(list(Path(outside.name).iterdir()), [])
+        finally:
+            os.rmdir(link)
+
+    def test_sanitize_segment_rules(self):
+        self.assertEqual(encode.sanitize_segment('a<b>c:"d|e?f*g/h\\i'), "a_b_c__d_e_f_g_h_i")
+        self.assertEqual(encode.sanitize_segment("  한글   이름.. "), "한글 이름")
+        self.assertEqual(encode.sanitize_segment("con.txt"), "con_.txt")
+        self.assertEqual(encode.sanitize_segment("..."), "_")
 
     def test_webp_failure_keeps_png_and_raises(self):
         original = encode._atomic_save
