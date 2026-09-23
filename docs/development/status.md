@@ -61,8 +61,8 @@
 | F12 | 신규·P2(확정 로드맵) | 로고·favicon | 웹 매뉴얼 캡처 전 |
 | F13 | 진행 중(확정 순서) | 참조 세트·In-Context 참조 조건 | 미구현. [ADR-0027](../architecture/adr/0027-reference-sets-and-consistency-methods.md) 확정. 제작 계획·신규 Task는 확정 참조 세트 필수 |
 | F14 | 구현(서비스 재시작 후 적용) | 라이트박스(확대·이동·2장 비교) | PR #21. 실제 브라우저·모바일 미검증 |
-| F16 | 신규(2026-09-23 사용자 결정) | 조각 Negative(이미지별·공통 모두) | 미구현. [조각 API](../api/prompt-fragments-production-plans.md) 맨 위 절 |
 | F15 | 확정·비긴급 | 단일 이미지 생성 화면 | standalone 경로 재사용 검토, 출력 `AtelierX\single\<날짜>\` |
+| F16 | 완료 | 조각 Negative(이미지별·공통 모두) | 생성 전용, VLM 검사 제외. [조각 API](../api/prompt-fragments-production-plans.md) 맨 위 절 |
 
 ### B. 복구·연결
 

@@ -107,10 +107,13 @@ def request_body(value):
             if entry["source"] not in CHECK_SOURCES:
                 fail("positive_check source is not supported")
     negative_sources = image.get("negative_sources", {"global": image["negative_prompt"], "character": ""})
-    required_object(negative_sources, {"global", "character"})
+    # "fragment" (generation-only prompt fragment Negatives) is optional and is
+    # never a VLM check target; it only takes part in reproducing negative_prompt.
+    if not isinstance(negative_sources, dict) or set(negative_sources) - {"fragment"} != {"global", "character"}:
+        fail("Missing or unknown fields")
     if any(not isinstance(part, str) for part in negative_sources.values()):
         fail("negative_sources values must be text")
-    if ", ".join(negative_sources[key] for key in ("global", "character") if negative_sources[key].strip()) != image["negative_prompt"]:
+    if ", ".join(negative_sources[key] for key in ("global", "character", "fragment") if negative_sources.get(key, "").strip()) != image["negative_prompt"]:
         fail("negative_sources must reproduce the actual generation negative_prompt")
     value["image"] = dict(image, negative_sources=negative_sources)
     source = image["source"]

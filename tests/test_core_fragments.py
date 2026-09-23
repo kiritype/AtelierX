@@ -108,6 +108,42 @@ class FragmentStoreTests(unittest.TestCase):
         self.assertEqual(check, {"number": "A2", "duplicates": [{"id": second["id"], "number": "A2", "name": "Second", "archived": True}]})
         self.assertEqual(self.fragments.number_check("zzz")["duplicates"], [])
 
+    def test_negative_is_optional_generation_text_and_legacy_documents_stay_unchanged(self):
+        legacy = self.fragments.create("Legacy", "pose", {"upper": True, "lower": True}, number="1")
+        self.assertNotIn("negative", legacy)
+        self.assertNotIn("negative", self.fragments.snapshot({"id": legacy["id"], "revision": 1}))
+        blank = self.fragments.create("Blank", "pose", {"upper": True, "lower": True}, number="2", negative="   ")
+        self.assertNotIn("negative", blank)
+        variant = self.fragments.create("Variant", "pose", {"upper": True, "lower": True}, number="3", negative="hat, mask")
+        common = self.fragments.create("Common", "rim light", {"upper": False, "lower": False}, common=True, negative="lens flare")
+        self.assertEqual(self.fragments.snapshot({"id": variant["id"], "revision": 1})["negative"], "hat, mask")
+        self.assertEqual(self.fragments.snapshot({"id": common["id"], "revision": 1})["negative"], "lens flare")
+        for bad in (None, 3, "x" * 20001):
+            with self.assertRaisesRegex(ApiError, "negative must be text"):
+                self.fragments.create("Bad", "pose", {"upper": True, "lower": True}, number="4", negative=bad)
+        # Unrelated edits keep the Negative; clearing it removes the key again.
+        renamed = self.fragments.update(variant["id"], 1, {"name": "Renamed"})
+        self.assertEqual(renamed["negative"], "hat, mask")
+        cleared = self.fragments.update(variant["id"], 2, {"negative": ""})
+        self.assertNotIn("negative", cleared)
+        self.assertNotIn("negative", self.fragments.snapshot({"id": variant["id"], "revision": 3}))
+        history = self.fragments.history(variant["id"], 10, 0)
+        self.assertEqual([entry.get("negative") for entry in history], [None, "hat, mask", "hat, mask"])
+        added = self.fragments.update(legacy["id"], 1, {"negative": "watermark"})
+        self.assertEqual((added["negative"], self.fragments.history(legacy["id"], 10, 0)[1].get("negative")), ("watermark", None))
+        with self.assertRaisesRegex(ApiError, "negative must be text"):
+            self.fragments.update(legacy["id"], 2, {"negative": ["watermark"]})
+
+    def test_legacy_stored_document_without_negative_is_readable_and_editable(self):
+        created = self.fragments.create("Old", "pose", {"upper": True, "lower": True}, number="1")
+        stored = self.db.execute("SELECT document FROM prompt_fragment_revisions WHERE fragment_id=?", (created["id"],)).fetchone()[0]
+        self.assertNotIn("negative", json.loads(stored))
+        self.db.close()
+        self.db = sqlite3.connect(self.path)
+        self.fragments = CoreFragments(self.db)
+        self.assertEqual(self.db.execute("SELECT document FROM prompt_fragment_revisions WHERE fragment_id=?", (created["id"],)).fetchone()[0], stored)
+        self.assertEqual(self.fragments.update(created["id"], 1, {"body": "new pose"})["body"], "new pose")
+
     def test_category_filters_archive_rules_and_visible_numbers(self):
         poses = self.fragments.create_category("Poses")
         first = self.fragments.create("Standing", "standing", {"upper": True, "lower": True}, poses["id"], number="10")

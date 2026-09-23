@@ -112,7 +112,7 @@ class CoreFragments:
         return cls._number(number)
 
     @staticmethod
-    def _value(name, body, include, common=False):
+    def _value(name, body, include, common=False, negative=""):
         name = _name(name)
         if not isinstance(body, str) or not body.strip() or len(body) > 20000:
             invalid("body must be non-empty text up to 20000 characters")
@@ -123,7 +123,14 @@ class CoreFragments:
         # Keep legacy revision documents byte-compatible; Core composition
         # supplies accessories/hands=True when these optional keys are absent.
         normalized = {name: include[name] for name in ("upper", "lower", "accessories", "hands") if name in include}
-        return {"name": name, "body": body, "include": normalized, "common": common}
+        if not isinstance(negative, str) or len(negative) > 20000:
+            invalid("negative must be text up to 20000 characters")
+        value = {"name": name, "body": body, "include": normalized, "common": common}
+        # Generation-only Negative. Empty/whitespace is stored as an absent key so
+        # documents and Task snapshots without a Negative keep their prior bytes.
+        if negative.strip():
+            value["negative"] = negative
+        return value
 
     def _get(self, fragment_id):
         row = self.db.execute("SELECT document FROM prompt_fragments WHERE id=?", (fragment_id,)).fetchone()
@@ -164,8 +171,8 @@ class CoreFragments:
             invalid("exclude_id must be a fragment id")
         return {"number": number, "duplicates": [{key: item.get(key) for key in ("id", "number", "name", "archived")} for item in self.duplicates(number, exclude_id)]}
 
-    def create(self, name, body, include, category_id=None, common=False, number=None):
-        value = self._value(name, body, include, common)
+    def create(self, name, body, include, category_id=None, common=False, number=None, negative=""):
+        value = self._value(name, body, include, common, negative)
         number = self._numbered(common, number)
         with self.db:
             if not self.db.in_transaction:
@@ -206,7 +213,7 @@ class CoreFragments:
         return {"items": [json.loads(row[0]) for row in rows], "total": total, "limit": limit, "offset": offset}
 
     def update(self, fragment_id, expected, changes):
-        if type(expected) is not int or expected < 1 or not isinstance(changes, dict) or not changes or set(changes) - {"name", "body", "include", "common", "archived", "category_id", "number"}:
+        if type(expected) is not int or expected < 1 or not isinstance(changes, dict) or not changes or set(changes) - {"name", "body", "include", "common", "archived", "category_id", "number", "negative"}:
             invalid("revision and one or more supported changes are required")
         with self.db:
             if not self.db.in_transaction:
@@ -214,7 +221,7 @@ class CoreFragments:
             current = self.get(fragment_id)
             if current["revision"] != expected:
                 raise ApiError("CORE_REVISION_CONFLICT", "Prompt fragment changed; refresh before editing", 409)
-            value = self._value(changes.get("name", current["name"]), changes.get("body", current["body"]), changes.get("include", current["include"]), changes.get("common", current.get("common", False)))
+            value = self._value(changes.get("name", current["name"]), changes.get("body", current["body"]), changes.get("include", current["include"]), changes.get("common", current.get("common", False)), changes.get("negative", current.get("negative", "")))
             if value["common"]:
                 number = self._numbered(True, changes.get("number"))
             else:
@@ -225,6 +232,8 @@ class CoreFragments:
             archived = changes.get("archived", current["archived"])
             if type(archived) is not bool: invalid("archived must be boolean")
             document = dict(current, **value, number=number, category_id=category_id, archived=archived, revision=expected + 1, updated_at=time.time())
+            if "negative" not in value:
+                document.pop("negative", None)
             cursor = self.db.execute("UPDATE prompt_fragments SET revision=?,archived=?,category_id=?,number=?,document=? WHERE id=? AND revision=?",
                                      (document["revision"], int(archived), category_id, number, canonical(document), fragment_id, expected))
             if cursor.rowcount != 1: raise ApiError("CORE_REVISION_CONFLICT", "Concurrent prompt fragment edit", 409)
@@ -278,6 +287,7 @@ class CoreFragments:
         current = self.get(selection["id"], active=True)
         if current["revision"] != selection["revision"]: raise ApiError("CORE_REVISION_CONFLICT", "Prompt fragment changed; refresh preview", 409)
         frozen = {key: current[key] for key in ("id", "revision", "body", "include")}
+        if current.get("negative", "").strip(): frozen["negative"] = current["negative"]
         if current.get("common", False): frozen["common"] = True
         elif current.get("number") is not None: frozen["number"] = str(current["number"])
         return copy.deepcopy(frozen)
@@ -295,8 +305,8 @@ class CoreFragments:
                 limit, offset = page(request)
                 return web.json_response(self.list(limit, offset, archived_query(request), request.query.get("category_id"), request.query.get("q")))
             body = await request.json()
-            if not isinstance(body, dict) or set(body) - {"name", "body", "include", "category_id", "common", "number"} or not {"name", "body", "include"} <= set(body): invalid("name, body and include are required; category_id, common and number are optional")
-            created = self.create(body["name"], body["body"], body["include"], body.get("category_id"), body.get("common", False), body.get("number"))
+            if not isinstance(body, dict) or set(body) - {"name", "body", "include", "category_id", "common", "number", "negative"} or not {"name", "body", "include"} <= set(body): invalid("name, body and include are required; category_id, common, number and negative are optional")
+            created = self.create(body["name"], body["body"], body["include"], body.get("category_id"), body.get("common", False), body.get("number"), body.get("negative", ""))
             return web.json_response(dict(created, warnings=self.warnings(created)), status=201)
         async def item(request):
             if request.method == "GET": return web.json_response(self.get(request.match_info["id"]))

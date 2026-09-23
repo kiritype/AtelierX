@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import tempfile
 import unittest
@@ -246,6 +247,31 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("glasses", sent)
         body["image"]["negative_sources"]["character"] = "hat"
         self.assertEqual((await self.submit_body(body, "tampered"))[0], 400)
+
+    async def test_fragment_negative_source_reproduces_prompt_but_is_never_checked(self):
+        _, upload = await self.upload()
+        body = self.body(upload)
+        body["image"].update(negative_prompt="low quality, beard, lens flare, sitting",
+                             negative_sources={"global": "low quality", "character": "beard", "fragment": "lens flare, sitting"})
+        _, job = await self.submit_body(body, "fragment-negative")
+        result = await self.wait(job["job_id"])
+        self.assertEqual(result["outcome"], "passed")
+        sent = self.provider_bodies[-1]["messages"][1]["content"][0]["text"]
+        self.assertIn("beard", sent)
+        self.assertNotIn("lens flare", sent)
+        self.assertNotIn("sitting", sent)
+        mismatched = copy.deepcopy(body)
+        mismatched["image"]["negative_sources"]["fragment"] = "hat"
+        self.assertEqual((await self.submit_body(mismatched, "fragment-mismatch"))[0], 400)
+        reordered = copy.deepcopy(body)
+        reordered["image"]["negative_prompt"] = "low quality, lens flare, sitting, beard"
+        self.assertEqual((await self.submit_body(reordered, "fragment-order"))[0], 400)
+        unknown = copy.deepcopy(body)
+        unknown["image"]["negative_sources"]["common"] = ""
+        self.assertEqual((await self.submit_body(unknown, "fragment-unknown"))[0], 400)
+        empty = copy.deepcopy(body)
+        empty["image"].update(negative_prompt="low quality, beard", negative_sources={"global": "low quality", "character": "beard", "fragment": ""})
+        self.assertEqual((await self.submit_body(empty, "fragment-empty"))[0], 202)
 
     async def test_cancel_queued_job_never_calls_provider_and_queue_pages(self):
         from unittest.mock import AsyncMock
