@@ -42,7 +42,7 @@ Core preview/Task/제작 계획에 선택적 `common_fragments: [{id, revision}]
 
 - `GET /v1/prompt-fragment-categories`: 사용자 관리 단일 단계 분류 목록을 `archived`, `limit`(최대 200), `offset`으로 조회한다. 응답은 `{items, total, limit, offset}`이다.
 - `POST /v1/prompt-fragment-categories`: `{name}`으로 분류를 만든다. `GET`/`PATCH /v1/prompt-fragment-categories/{id}`는 현재 분류 조회와 revision 기반 이름 변경·보관 처리를 제공한다. 분류는 `{id, name, revision, archived, created_at, updated_at}`이다.
-- `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q` 검색 규칙은 위 ADR-0026 절을 따른다.
+- `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`, 선택 `sort`로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q` 검색 규칙은 위 ADR-0026 절을 따른다. **[구현, 2026-09-24]** `sort=name`은 번호(ADR-0026 기본 정렬) 대신 이름(대소문자 무시, 동률은 id)으로 정렬한다. 생략하면 기존 번호 기준 정렬을 유지한다(호환성). `sort`에 `name` 외 값을 보내면 400 `CORE_FRAGMENT_INVALID`다.
 - `POST /v1/prompt-fragments`: `{name, number, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)·`common`·`negative`(위 조각 Negative 절)를 더할 수 있다. 공통 조각은 `number`를 보내지 않는다.
 - `GET /v1/prompt-fragments/number-check`: 번호 중복 확인(위 절).
 - `GET /v1/prompt-fragments/{id}`: 현재 문서 조회.

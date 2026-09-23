@@ -191,11 +191,12 @@ class CoreFragments:
             raise ApiError("CORE_FRAGMENT_ARCHIVED", "Archived prompt fragment cannot be applied", 409)
         return document
 
-    def list(self, limit, offset, archived=None, category_id=None, search=None):
+    def list(self, limit, offset, archived=None, category_id=None, search=None, sort=None):
         _page(limit, offset)
         if archived not in (None, True, False): invalid("archived must be true or false")
         if category_id is not None and not isinstance(category_id, str): invalid("category_id must be a category id or uncategorized")
         if search is not None and (not isinstance(search, str) or len(search) > 200): invalid("q must be text up to 200 characters")
+        if sort not in (None, "name"): invalid("sort must be 'name' when given")
         clauses, values = [], []
         if archived is not None: clauses.append("archived=?"); values.append(int(archived))
         if category_id == "uncategorized": clauses.append("category_id IS NULL")
@@ -208,8 +209,9 @@ class CoreFragments:
                 clauses.append("(number=? COLLATE NOCASE OR json_extract(document,'$.name') LIKE ? COLLATE NOCASE OR json_extract(document,'$.body') LIKE ? COLLATE NOCASE)")
                 values.extend([search.strip(), f"%{search}%", f"%{search}%"])
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        order = "json_extract(document,'$.name') COLLATE NOCASE, id" if sort == "name" else ORDER
         total = self.db.execute("SELECT count(*) FROM prompt_fragments" + where, values).fetchone()[0]
-        rows = self.db.execute("SELECT document FROM prompt_fragments" + where + " ORDER BY " + ORDER + " LIMIT ? OFFSET ?", [*values, limit, offset]).fetchall()
+        rows = self.db.execute("SELECT document FROM prompt_fragments" + where + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*values, limit, offset]).fetchall()
         return {"items": [json.loads(row[0]) for row in rows], "total": total, "limit": limit, "offset": offset}
 
     def update(self, fragment_id, expected, changes):
@@ -303,7 +305,9 @@ class CoreFragments:
         async def collection(request):
             if request.method == "GET":
                 limit, offset = page(request)
-                return web.json_response(self.list(limit, offset, archived_query(request), request.query.get("category_id"), request.query.get("q")))
+                sort = request.query.get("sort")
+                if sort not in (None, "name"): invalid("sort must be 'name' when given")
+                return web.json_response(self.list(limit, offset, archived_query(request), request.query.get("category_id"), request.query.get("q"), sort))
             body = await request.json()
             if not isinstance(body, dict) or set(body) - {"name", "body", "include", "category_id", "common", "number", "negative"} or not {"name", "body", "include"} <= set(body): invalid("name, body and include are required; category_id, common, number and negative are optional")
             created = self.create(body["name"], body["body"], body["include"], body.get("category_id"), body.get("common", False), body.get("number"), body.get("negative", ""))

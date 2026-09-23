@@ -96,6 +96,40 @@ class ReferenceSetTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/reference/full-", full_task["snapshot"]["generation_inputs"]["output_name"])
         self.assertIn("/reference/face-", face_task["snapshot"]["generation_inputs"]["output_name"])
 
+    async def test_sample_pair_sizes_override_per_role_dimensions(self):
+        _, outfit, group = await self.setup_group()
+        sizes = {"full": {"width": 896, "height": 1152}, "face": {"width": 1024, "height": 1024}}
+        status, pair = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN, "sizes": sizes}, "sizes-1")
+        self.assertEqual(status, 201)
+        _, listed = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-samples")
+        full_task, face_task = listed["items"][0]["full_task"], listed["items"][0]["face_task"]
+        self.assertEqual((full_task["snapshot"]["generation_inputs"]["width"], full_task["snapshot"]["generation_inputs"]["height"]), (896, 1152))
+        self.assertEqual((face_task["snapshot"]["generation_inputs"]["width"], face_task["snapshot"]["generation_inputs"]["height"]), (1024, 1024))
+        # Same key + same sizes replays; a different sizes value on the same key conflicts (fingerprint includes sizes).
+        status2, pair2 = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN, "sizes": sizes}, "sizes-1")
+        self.assertEqual((status2, pair2), (200, pair))
+        status3, conflict = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples",
+            {"generation_inputs": GEN, "sizes": {"full": {"width": 800, "height": 1152}, "face": {"width": 1024, "height": 1024}}}, "sizes-1")
+        self.assertEqual((status3, conflict["error"]["code"]), (409, "CORE_IDEMPOTENCY_CONFLICT"))
+        # Omitted sizes keeps current behavior (generation_inputs width/height used as-is).
+        status4, unsized = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN}, "no-sizes")
+        self.assertEqual(status4, 201)
+        _, listed2 = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-samples")
+        default_full = next(item for item in listed2["items"] if item["id"] == unsized["id"])["full_task"]
+        self.assertEqual((default_full["snapshot"]["generation_inputs"]["width"], default_full["snapshot"]["generation_inputs"]["height"]), (GEN["width"], GEN["height"]))
+
+    async def test_sample_pair_sizes_validation(self):
+        _, outfit, group = await self.setup_group()
+        bad_cases = [
+            {"full": {"width": 801, "height": 1152}},  # not a multiple of 16
+            {"full": {"width": 100, "height": 1152}},  # below 256
+            {"full": {"width": 896}},  # missing height
+            {"nonsense": {"width": 896, "height": 1152}},  # unknown role key
+        ]
+        for sizes in bad_cases:
+            status, error = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN, "sizes": sizes}, str(sizes))
+            self.assertEqual(status, 400, sizes)
+
     async def test_needs_review_after_outfit_change_and_reconfirm(self):
         character, outfit, group = await self.setup_group()
         confirmed = await confirm_reference_set(self.request, outfit["id"], GEN)

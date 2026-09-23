@@ -158,6 +158,11 @@ class FragmentStoreTests(unittest.TestCase):
         self.assertEqual(self.fragments.list(50, 0, search="#10")["items"][0]["id"], first["id"])
         self.assertEqual([item["id"] for item in self.fragments.list(50, 0, search="b-1")["items"]], [named["id"]])
         self.assertEqual(self.fragments.list(50, 0, search="9" * 200)["total"], 0)
+        # sort="name" orders by name (case-insensitive) instead of number; default order is unchanged.
+        self.assertEqual([item["name"] for item in self.fragments.list(50, 0, sort="name")["items"]], ["Named", "No category", "Standing"])
+        self.assertEqual([item["number"] for item in self.fragments.list(50, 0)["items"]], ["2", "10", "B-1"])
+        with self.assertRaisesRegex(ApiError, "sort must be"):
+            self.fragments.list(50, 0, sort="bogus")
         archived = self.fragments.update_category(poses["id"], 1, {"archived": True})
         self.assertTrue(archived["archived"])
         self.assertEqual(self.fragments.get(first["id"])["category_id"], poses["id"])
@@ -317,6 +322,15 @@ class FragmentRestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((status, clash["warnings"][0]["fragment_ids"]), (200, [second["id"]]))
         status, common = await self.request("POST", "/v1/prompt-fragments", {"name": "L", "number": "1", "common": True, "body": "light", "include": include})
         self.assertEqual((status, common["error"]["code"]), (400, "CORE_FRAGMENT_NUMBER_INVALID"))
+
+    async def test_sort_by_name_query_param(self):
+        include = {"upper": True, "lower": True}
+        await self.request("POST", "/v1/prompt-fragments", {"name": "C001 - Zed", "number": "1", "body": "a", "include": include})
+        await self.request("POST", "/v1/prompt-fragments", {"name": "C002 - Amy", "number": "2", "body": "b", "include": include})
+        status, sorted_by_name = await self.request("GET", "/v1/prompt-fragments?archived=false&sort=name")
+        self.assertEqual((status, [item["name"] for item in sorted_by_name["items"]]), (200, ["C001 - Zed", "C002 - Amy"]))
+        status, bad = await self.request("GET", "/v1/prompt-fragments?archived=false&sort=bogus")
+        self.assertEqual((status, bad["error"]["code"]), (400, "CORE_FRAGMENT_INVALID"))
 
 
 if __name__ == "__main__":

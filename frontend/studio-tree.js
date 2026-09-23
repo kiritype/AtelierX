@@ -5,6 +5,8 @@
  * entity loading and mutations in their page module, then update this view with
  * the current flat entity list.
  */
+import {sortByName} from "./name-sort.js";
+
 const TYPE = Object.freeze({work: "작품", character: "캐릭터", outfit: "의상"});
 const CHILD_TYPE = Object.freeze({work: "character", character: "outfit"});
 
@@ -43,6 +45,7 @@ export function studioTreeModel(items = []) {
     if (!children.has(parent)) children.set(parent, []);
     children.get(parent).push(item);
   }
+  for (const [parent, items] of children) children.set(parent, sortByName(items));
   const nest = (item) => ({item, children: (children.get(item.id) || []).filter((child) => CHILD_TYPE[item.type] === child.type).map(nest)});
   return (children.get("") || []).filter((item) => item.type === "work").map(nest);
 }

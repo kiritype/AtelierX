@@ -17,6 +17,11 @@ test("fragment list path preserves category, search and pagination", () => {
   assert.equal(pageOffsetForTotal(50, 25, 42), 25);
 });
 
+test("fragment list path sorts by name by default; a caller can opt back into number order", () => {
+  assert.equal(new URL(fragmentListPath({}), "https://atelierx.test").searchParams.get("sort"), "name");
+  assert.equal(new URL(fragmentListPath({sort: null}), "https://atelierx.test").searchParams.has("sort"), false);
+});
+
 test("selection survives list changes and remains revision-specific", () => {
   const first = {id: "a", revision: 2}; const changed = {id: "a", revision: 3};
   const selected = preserveSelection([], first, true);

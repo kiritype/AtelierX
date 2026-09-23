@@ -16,8 +16,9 @@ export function sameFragmentReference(left, right) {
   return fragmentKey(left) === fragmentKey(right);
 }
 
-export function fragmentListPath({ query = "", categoryId = "", archived = false, limit = 25, offset = 0 } = {}) {
+export function fragmentListPath({ query = "", categoryId = "", archived = false, limit = 25, offset = 0, sort = "name" } = {}) {
   const params = new URLSearchParams({ archived: String(Boolean(archived)), limit: String(limit), offset: String(Math.max(0, offset)) });
+  if (sort) params.set("sort", sort);
   if (String(query).trim()) params.set("q", String(query).trim());
   if (categoryId) params.set("category_id", categoryId);
   return `/v1/prompt-fragments?${params}`;
