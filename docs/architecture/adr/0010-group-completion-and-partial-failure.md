@@ -5,6 +5,8 @@
 - Supersedes / Superseded by: 없음
 - 관련: [ADR-0003](0003-generation-execution-and-queue.md), [ADR-0007](0007-group-image-validation.md), [ADR-0008](0008-group-reference-selection.md), [ADR-0009](0009-group-validation-results.md)
 
+- 2026-09-23 [ADR-0027](0027-reference-sets-and-consistency-methods.md): 제작 계획의 검사 선택 기본값을 단일 검사로 바꾼다. 묶음 검사 옵션과 이 ADR의 묶음 검증 규칙은 유지한다.
+
 ## 결정 범위
 
 그룹의 생성 대상·묶음 검증 시작 시점·일부 실패와 취소 처리를 정한다. 생성 현황과 일관성 결과를 구분하고 비교 범위를 표시한다. 구체 Job 상태명·접수 및 동시성 Schema는 후속 정의한다.

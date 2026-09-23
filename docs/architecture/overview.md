@@ -234,6 +234,10 @@ N-14의 현재 목표는 Generation에서 캐릭터 일관성을 최대한 확�
 사용자는 제작 / 갤러리 / 작업 현황 / 설정의 상단 4개 메뉴, 제작의 분류 트리·편집·생성 설정 배치, 결과·작업·설정 간 이동 원칙을 승인했다. [전체 구성](../modules/frontend.md)에 보존했다. 이는 화면 구성 결정이며 Framework, 누락 API 구현 완료, Frontend 구현 착수를 뜻하지 않는다. Core 조정·REST canonical·Shared Client·별도 BFF 없음과 Backend→CLI→Frontend 개발 순서는 유지한다. 제작 상세와 메뉴별 API 공백은 일반 상세 초안으로 병행 정리한다.
 
 
+## 참조 세트·일관성 방식 — ADR-0027 (부분 확정 2026-09-23)
+
+의상 단위 참조 세트(전신+얼굴, 같은 Seed 쌍, 캐릭터 관리의 의상 화면에서 생성·확정)를 Core가 관리하고 캐릭터·의상 revision 변경 시 재확인 필요로 표시한다. 제작 계획과 신규 개별 Task는 유효한 확정 세트가 필요하다. 생성 설정의 일관성 방식(현재 `anima-incontext-character`: strength·end_percent·배경 억제)은 Generation 레지스트리로 교체 가능하며 snapshot에 고정한다. 참조 설정 불일치 처리는 Proposed다.
+
 ## Frontend 파일럿 구현 — 2026-09-13
 
 사용자의 파일럿 완성 지시에 따라 Core의 allowlist 정적 파일 제공과 same-origin 브라우저 REST Client를 구현했다. 네 메뉴를 연결하고 실제 생성·후처리·단일 검증을 브라우저에서 확인했다. 새 BFF 없이 Backend 책임을 유지하며 브라우저 token은 메모리에만 둔다. [파일럿 범위·제한](../modules/frontend.md)을 따른다. 프레임워크·배포 정책의 새 ADR 일괄 승인을 의미하지 않는다.
