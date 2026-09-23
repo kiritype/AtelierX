@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {readFile} from "node:fs/promises";
 import {duplicateNumberMessage, fragmentIncludeSummary, fragmentLabel, fragmentNumberError, inclusionLabels, normalizeFragmentInclude, parseCheckFeatures, saveWarningMessages} from "../frontend/fragment-rules.js";
 import {draftChanged, fragmentDraft, fragmentSaveBody, fragmentValidationError, numberCheckPath} from "../frontend/fragments.js";
 import {characterCheckFeatures, entityMutationRequest, plannedItemLabel} from "../frontend/production.js";
-
-const gallerySource = await readFile(new URL("../frontend/gallery.js", import.meta.url), "utf8");
-const {findingSourceLabel, outputPathText, singleValidationSummary} = await import(`data:text/javascript,${encodeURIComponent(gallerySource)}`);
+import {findingSourceLabel, outputPathText, singleValidationSummary} from "../frontend/gallery.js";
 
 test("fragment numbers accept any filename-safe text and reject unsafe names", () => {
   for (const value of ["12", "A-03", "표정 1", "x".repeat(32), "con1", "COM10"]) assert.equal(fragmentNumberError(value), null, value);

@@ -23,6 +23,7 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
                                    ("/ui/jobs.js", "text/javascript"), ("/ui/settings.js", "text/javascript"), ("/ui/connection.js", "text/javascript"),
                                    ("/ui/fragments.js", "text/javascript"), ("/ui/fragment-picker.js", "text/javascript"),
                                    ("/ui/studio-tree.js", "text/javascript"),
+                                   ("/ui/lightbox.js", "text/javascript"),
                                    ("/ui/styles.css", "text/css")):
             response = await self.client.get(path)
             self.assertEqual(response.status, 200, path)

@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
-import {readFile} from "node:fs/promises";
-
-const source = await readFile(new URL("../frontend/gallery.js", import.meta.url), "utf8");
-const {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, resolvedSeed, classificationFilters, postprocessRequest} = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+import {eligibleIds, referenceRequest, groupValidationRequest, replacementRequest, activeDetail, resolvedSeed, classificationFilters, postprocessRequest} from "../frontend/gallery.js";
 
 assert.deepEqual(eligibleIds({eligible_image_ids: ["passed-a", "passed-b", "passed-a"]}), ["passed-a", "passed-b"]);
 assert.deepEqual(eligibleIds({eligible_image_ids: null}), []);
