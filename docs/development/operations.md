@@ -85,16 +85,20 @@ Bridge → Core: 같은 PC loopback, Core Bearer
 - Frontend는 same-origin 전용이다. API·이미지 `content_url`은 상대 경로이며 CORS를 두지 않는다. UI를 다른 도메인에 두는 구성은 지원하지 않는다.
 - service token에는 만료일이 있다(1년). 만료 전 교체가 필요하다.
 
-Tunnel 시작:
+Tunnel 시작·중지·상태 확인(이 PC에는 PowerShell 7(`pwsh`)이 없으므로 Windows PowerShell로 실행한다):
 
 ```powershell
-pwsh -NoProfile -File scripts/start_remote_tunnel.ps1
+powershell -NoProfile -File scripts\start_remote_tunnel.ps1
+powershell -NoProfile -File scripts\stop_remote_tunnel.ps1
+powershell -NoProfile -File scripts\remote_tunnel_status.ps1
 ```
 
 - `cloudflare/tunnel-token.txt`가 필요하다. 토큰 값은 읽어 출력하지 않고 `--token-file`로 전달한다.
 - 같은 토큰 파일로 실행 중인 connector가 있으면 no-op. PID 파일이 다른 프로세스를 가리키거나 일치 프로세스가 둘 이상이면 시작을 거부한다.
 - 시작 전 8190/8192 도달 여부만 표시하며, 서비스가 없어도 Tunnel은 시작한다. 숨김 창 background 프로세스로 뜬다.
-- 종료 스크립트는 없다. `tunnel.pid`의 프로세스를 사용자가 직접 종료한다.
+- 중지 스크립트는 `tunnel.pid`가 가리키는 프로세스가 실행 파일·`--token-file` 경로까지 일치하는 관리 대상 connector일 때만 종료한다. 일치하지 않으면 종료하지 않고 오류로 거부한다. PID가 이미 종료된 상태면 오래된 PID 파일만 정리한다.
+- 상태 스크립트는 cloudflared 버전, PID 파일 상태(실행 중/오래됨/없음), 8190·8192 도달 여부, 최근 로그 파일 위치를 보여 준다.
+- cloudflared 버전은 2026.7.3이며 업데이트 권고가 있다(`cloudflared update`). 자동 업데이트는 하지 않으며 필요 시 사용자가 직접 실행한다.
 
 ## Access JWT 자동 연결
 
