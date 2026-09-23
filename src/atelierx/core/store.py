@@ -8,7 +8,7 @@ import uuid
 import secrets
 
 from ..common import ApiError, ProcessLock, canonical
-from ._output_names import build_output_name
+from ..output_names import build_output_name
 
 KINDS = {"works": None, "characters": "works", "outfits": "characters"}
 

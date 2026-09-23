@@ -13,7 +13,7 @@ import aiohttp
 
 from ..common import ApiError, canonical
 from .presets import _model_name
-from ._output_names import build_output_name
+from ..output_names import build_output_name
 
 
 class StandaloneJobs:

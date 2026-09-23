@@ -7,7 +7,7 @@ import uuid
 
 from ..common import ApiError, canonical
 from .presets import validate_postprocess_settings
-from ._output_names import build_output_name
+from ..output_names import build_output_name
 
 TERMINAL = {"completed", "failed", "cancelled"}
 OBSERVATION_SECONDS = 300  # Operator recovery bound; not a product retention policy.

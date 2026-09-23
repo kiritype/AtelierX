@@ -13,7 +13,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.core import CORE, Core, create_app
-from atelierx.core._output_names import build_output_name, sanitize_segment
+from atelierx.output_names import build_output_name, sanitize_segment
 from atelierx.core.store import Store
 
 GEN = dict(diffusion_model="anima", text_encoder="encoder", vae="vae", width=512, height=512,

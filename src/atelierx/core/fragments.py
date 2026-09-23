@@ -7,7 +7,7 @@ import uuid
 from aiohttp import web
 
 from ..common import ApiError, canonical
-from ._output_names import sanitize_segment
+from ..output_names import sanitize_segment
 
 INCLUDE = {"upper", "lower", "accessories", "hands"}
 ORDER = ("number IS NULL, CASE WHEN number GLOB '[0-9]*' AND number NOT GLOB '*[^0-9]*' THEN 0 ELSE 1 END, "

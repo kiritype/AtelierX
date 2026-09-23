@@ -20,7 +20,7 @@ from aiohttp import web
 from ..runtime_info import RUNTIME_INFO
 
 from ..common import ApiError, canonical
-from ._output_names import build_output_name
+from ..output_names import build_output_name
 from .batches import CoreBatches
 from .production_plans import ProductionPlans
 from .catalog import list_groups, list_images

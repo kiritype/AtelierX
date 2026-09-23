@@ -36,8 +36,7 @@ class OutputNameTests(unittest.TestCase):
         self.assertEqual(build_output_name("AtelierX", "..", "CON"), "AtelierX/_/CON_")
         with self.assertRaises(ValueError):
             build_output_name(*["a"] * 7)
-        with self.assertRaises(ValueError):
-            build_output_name(*["x" * 80] * 4)
+        self.assertLessEqual(len(build_output_name(*["x" * 80] * 4)), 240)
 
     def test_validate_rejects_traversal_absolute_and_unsanitized(self):
         self.assertEqual(validate_output_name("AtelierX/작품/캐릭터/복장/12"), "AtelierX/작품/캐릭터/복장/12")
@@ -72,3 +71,15 @@ class OutputNameTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LongNameTests(unittest.TestCase):
+    def test_long_middle_segments_are_trimmed_not_rejected(self):
+        name = build_output_name("AtelierX", "작" * 80, "캐" * 80, "복" * 80, "12")
+        self.assertLessEqual(len(name), 240)
+        parts = name.split("/")
+        self.assertEqual((parts[0], parts[-1]), ("AtelierX", "12"))
+        self.assertEqual(validate_output_name(name), name)
+
+    def test_non_text_segment_is_converted(self):
+        self.assertEqual(build_output_name("AtelierX", 12), "AtelierX/12")

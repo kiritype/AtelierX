@@ -42,4 +42,12 @@ def validate_output_name(value) -> str:
 
 
 def build_output_name(*segments) -> str:
-    return validate_output_name("/".join(sanitize_segment(segment) for segment in segments))
+    parts = [sanitize_segment(segment if isinstance(segment, str) else str(segment)) for segment in segments]
+    # Long work/character/outfit names must not make generation fail: trim the longest middle segment first.
+    while len("/".join(parts)) > NAME_MAX and len(parts) > 2:
+        index = max(range(1, len(parts) - 1), key=lambda i: len(parts[i]))
+        excess = len("/".join(parts)) - NAME_MAX
+        if len(parts[index]) <= 8:
+            break
+        parts[index] = parts[index][:max(8, len(parts[index]) - excess)].rstrip(". ") or "_"
+    return validate_output_name("/".join(parts))
