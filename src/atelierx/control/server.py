@@ -78,7 +78,7 @@ def asset_response(name):
 
 async def core_status(request):
     panel = request.app[PANEL]
-    return web.json_response(panel.status(await panel.dependency_checks()))
+    return web.json_response(panel.status(panel.cached_dependencies()))
 
 
 async def api_status(request):
@@ -164,6 +164,7 @@ async def serve(paths: ControlPaths, port: int, autostart: bool, open_browser: b
         await web.TCPSite(runner, "127.0.0.1", port).start()
         print(f"[control] AtelierX 제어판: http://127.0.0.1:{port}/ (종료: Ctrl+C, 관리 중인 프로그램은 계속 실행됩니다)", flush=True)
         panel.background(panel.monitor())
+        panel.cached_dependencies()
         if autostart:
             panel.background(panel.autostart())
         if open_browser:

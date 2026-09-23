@@ -99,7 +99,9 @@ class SecurityAndStatusTests(unittest.TestCase):
         self.temp = TempPanel()
         self.panel = self.temp.panel
         self.token = self.temp.paths.read_token()
-        self.panel.dependency_checks = mock.AsyncMock(return_value=[{"id": "tunnel_token", "label": "Tunnel token 파일", "status": "missing", "detail": "없음"}])
+        checks = [{"id": "tunnel_token", "label": "Tunnel token 파일", "status": "missing", "detail": "없음"}]
+        self.panel.dependency_checks = mock.AsyncMock(return_value=checks)
+        self.panel.dependencies, self.panel.dependencies_at = checks, float("inf")
         self.shortcut_dir = self.temp.root / "startup"
 
     def tearDown(self):
@@ -309,3 +311,40 @@ class AutostartTests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class StatusLatencyTests(unittest.TestCase):
+    def test_core_status_never_waits_for_dependency_checks(self):
+        temp = TempPanel()
+        panel = temp.panel
+        token = temp.paths.read_token()
+        started = asyncio.Event()
+
+        async def slow_collect(_panel):
+            started.set()
+            await asyncio.sleep(5)
+            return [{"id": "late", "label": "late", "status": "ok", "detail": ""}]
+
+        async def run():
+            app = create_app(panel, token, StartupShortcut(temp.root, temp.root / "startup"))
+            client = TestClient(TestServer(app, host="127.0.0.1", port=panel.port))
+            await client.start_server()
+            try:
+                with mock.patch.object(deps, "collect", slow_collect):
+                    loop = asyncio.get_running_loop()
+                    begin = loop.time()
+                    response = await client.get("/status", headers={"Host": f"127.0.0.1:{panel.port}", "Authorization": "Bearer " + token})
+                    elapsed = loop.time() - begin
+                    body = await response.json()
+                    await asyncio.wait_for(started.wait(), 1)
+                    return response.status, elapsed, body
+            finally:
+                await panel.close()
+                await client.close()
+        try:
+            status, elapsed, body = asyncio.run(run())
+        finally:
+            temp.directory.cleanup()
+        self.assertEqual(status, 200)
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(body["dependencies"], [])

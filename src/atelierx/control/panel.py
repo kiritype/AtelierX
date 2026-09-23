@@ -170,6 +170,13 @@ class Panel:
                 self.dependencies_at = time.monotonic()
             return self.dependencies
 
+    def cached_dependencies(self, ttl=30.0):
+        # Core polls /status with a 2 s timeout; checks take seconds, so never block on them here.
+        stale = not self.dependencies or time.monotonic() - self.dependencies_at > ttl
+        if stale and not self.dependency_lock.locked():
+            self.background(self.dependency_checks(ttl=ttl))
+        return self.dependencies
+
     def item_status(self, item_id) -> dict:
         item = self.items[item_id]
         observed = item.observed
