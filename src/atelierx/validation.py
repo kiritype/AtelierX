@@ -32,7 +32,7 @@ from .gpu import permission
 from .queue_api import attach_queue_api
 from .regeneration_contract import validate_changes, proposal_schema
 from .provider_response import diagnostics as provider_response_diagnostics, was_truncated
-from .validation_evidence import EVALUATION_VERSION, RUBRIC, evidence_schema, normalize_evidence, requirements
+from .validation_evidence import CHECK_SOURCES, EVALUATION_VERSION, RUBRIC, evidence_schema, normalize_evidence, requirements
 from .validation_registry import RevisionRegistry
 
 SERVICE = web.AppKey("validation", object)
@@ -92,10 +92,20 @@ def request_body(value):
     image = value["image"]
     if not isinstance(image, dict):
         fail("image must be an object")
-    required_object({key: item for key, item in image.items() if key != "negative_sources"}, {"ref", "source", "positive_prompt", "negative_prompt"})
+    required_object({key: item for key, item in image.items() if key not in {"negative_sources", "positive_check"}}, {"ref", "source", "positive_prompt", "negative_prompt"})
     identifier(image["ref"], "image.ref")
     if not isinstance(image["positive_prompt"], str) or not image["positive_prompt"].strip() or not isinstance(image["negative_prompt"], str):
         fail("image prompts are required text")
+    if "positive_check" in image:
+        entries = image["positive_check"]
+        if not isinstance(entries, list) or not 1 <= len(entries) <= 200:
+            fail("positive_check must be a list of 1..200 entries")
+        for entry in entries:
+            required_object(entry, {"text", "source"})
+            if not isinstance(entry["text"], str) or not entry["text"].strip() or len(entry["text"]) > 4000:
+                fail("positive_check text must be 1..4000 characters")
+            if entry["source"] not in CHECK_SOURCES:
+                fail("positive_check source is not supported")
     negative_sources = image.get("negative_sources", {"global": image["negative_prompt"], "character": ""})
     required_object(negative_sources, {"global", "character"})
     if any(not isinstance(part, str) for part in negative_sources.values()):
@@ -276,6 +286,9 @@ class Validation:
         visual_checks = [{key: check[key] for key in ("id", "kind", "requirement")} for check in checks]
         content = [{"type": "text", "text": "Required element checklist: " + canonical(visual_checks)},
                    {"type": "image_url", "image_url": {"url": "data:" + media_type + ";base64," + base64.b64encode(data).decode()}}]
+        if job["request"]["image"].get("positive_check") is not None and job["request"]["profile"]["positive_prompt"]:
+            content.append({"type": "text", "text": "Full generation prompt for framing and composition context only; it is not a checklist: "
+                            + canonical(job["request"]["image"]["positive_prompt"])})
         context = {key: value for key, value in (job["request"].get("generation_settings") or {}).items() if key in {"seed", "steps", "cfg"} and type(value) in (int, float)}
         rubric = RUBRIC
         if context:
@@ -310,7 +323,13 @@ class Validation:
             changes = answer.pop("regeneration_changes", []) if context and isinstance(answer, dict) else []
             result = normalize_evidence(answer, checks)
             if context:
-                result["regeneration"]["changes"] = validate_changes(changes, result["evidence"], context)
+                try:
+                    result["regeneration"]["changes"] = validate_changes(changes, result["evidence"], context)
+                except ApiError as exc:
+                    if exc.code != "VAL_REGENERATION_PROPOSAL_INVALID":
+                        raise
+                    changes = []
+                    result["diagnostics"] = {"regeneration_proposal_dropped": exc.message}
             if result["outcome"] == "failed" and not changes:
                 result["regeneration"]["proposal_unavailable_reason"] = "No justified supported changes were provided"
             return result
@@ -347,10 +366,13 @@ class Validation:
                 result = {"outcome": "passed", "findings": [], "regeneration": {"required": False, "reason": "Enabled local output checks passed", "changes": []}}
             else:
                 result = await self.provider(job, data, media)
-            job.update(state="completed", outcome=result["outcome"], result={"findings": result["findings"], "regeneration": result["regeneration"], "evidence": result.get("evidence", [])}, error=None)
+            stored = {"findings": result["findings"], "regeneration": result["regeneration"], "evidence": result.get("evidence", []), "not_assessable": result.get("not_assessable", [])}
+            if result.get("diagnostics"):
+                stored["diagnostics"] = result["diagnostics"]
+            job.update(state="completed", outcome=result["outcome"], result=stored, error=None)
         except ApiError as exc:
             if exc.code == "VAL_OUTPUT_CONDITIONS_FAILED":
-                job.update(state="completed", outcome="failed", result={"findings":[{"code":"output_conditions","feature":"output_conditions","expected":"Configured output conditions","observed":exc.message}],"regeneration":{"required":True,"reason":"Output conditions failed.","changes":[]}}, error=None)
+                job.update(state="completed", outcome="failed", result={"findings":[{"code":"output_conditions","feature":"output_conditions","expected":"Configured output conditions","observed":exc.message}],"regeneration":{"required":True,"reason":"Output conditions failed.","changes":[]},"not_assessable":[]}, error=None)
             else:
                 job.update(state="failed", outcome="error", result=None, error={"code": exc.code, "message": exc.message, "stage": "provider" if exc.code.startswith("VAL_PROVIDER") else "access"})
         self.save(job)
