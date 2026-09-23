@@ -51,6 +51,7 @@
 ### 설정
 - [구현] 섹션: Core 연결 / 전역 Prompt(Negative는 생성 전용) / 자동 재생성(새 최초·수동 요청부터 적용) / 생성 Preset / 후처리 Preset / 단일·묶음 검사 Profile / 검사 Provider / 실행 환경 상태.
 - [구현] 일반 폼+고급 JSON. 초안은 원래 revision과 보존, 409 자동 덮어쓰기 없음, 최신값 불러오기는 명시 동작. Preset에 Prompt·endpoint·secret·경로 미저장, API key 입력·표시 없음. 자원 목록 실패 시 현재값 유지. 체크박스는 작은 체크+별도 터치 레이블.
+- [구현] 실행 환경 상태에 운영 제어판 현황(`GET /v1/operations/status`)을 읽기 전용으로 표시: 항목별 상태·PID·시작 시각·포트·서비스 묶음 시작 옵션·최근 오류, 의존성 점검, 제어판 없음 사유 안내, 새로고침. 시작·종료 버튼과 로그는 없다(ADR-0024).
 
 ### 접근성·반응형
 - [구현] 본문 건너뛰기, `aria-current`, 알림 `aria-live`, `focus-visible`, 입력 label/aria-label, 트리 `aria-expanded`. 720px 이하 단일 열·패널 전환, 44px 터치, 안전 영역, 움직임 줄이기, 긴 ID·이름 줄바꿈/말줄임.
