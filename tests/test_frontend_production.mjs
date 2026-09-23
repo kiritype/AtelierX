@@ -19,7 +19,7 @@ function state(overrides = {}) {
 
 test("production request uses the custom framing contract and preserves multiline framing", () => {
   const body = buildGenerationBody(state());
-  assert.deepEqual(body.include, { upper: true, lower: false, accessories: true });
+  assert.deepEqual(body.include, { upper: true, lower: false, accessories: true, hands: true });
   assert.equal(body.framing, "custom");
   assert.equal(body.framing_prompt, "upper body, white background\ncalm portrait");
   assert.deepEqual(body.presets, { generation: { id: "generation-1", revision: 3 } });
@@ -30,7 +30,8 @@ test("production request uses the custom framing contract and preserves multilin
 test("production request requires a nonempty free framing prompt and explicit all-area inclusion", () => {
   assert.throws(() => buildGenerationBody(state({ framingPrompt: "\n  " })), /구도 Prompt/);
   const body = buildGenerationBody(state({ include: { upper: false, lower: true, accessories: false } }));
-  assert.deepEqual(body.include, { upper: false, lower: true, accessories: false });
+  assert.deepEqual(body.include, { upper: false, lower: true, accessories: false, hands: true });
+  assert.equal(buildGenerationBody(state({ include: { upper: true, lower: false, accessories: true, hands: false } })).include.hands, false);
 });
 
 test("random seed sentinel and optional plan validation preserve the Core contract", () => {
@@ -64,7 +65,7 @@ test("appearance migration requires an explicit candidate choice and strips lega
   editor.migrationChoiceConfirmed = true;
   assert.equal(appearanceMigrationChoiceRequired(editor), false);
   const request = entityMutationRequest({mode: "edit", kind: "outfits", targetId: "outfit-1", revision: 2, value: {name: "coat", components: {appearance: "legacy", upper: "coat", lower: "pants", accessories: "bag"}}});
-  assert.deepEqual(request.body.components, {upper: "coat", lower: "pants", accessories: "bag"});
+  assert.deepEqual(request.body.components, {upper: "coat", lower: "pants", accessories: "bag", hands: ""});
 });
 
 test("creation preview pages the outfit and fragment product without dropping combinations", () => {
@@ -253,9 +254,9 @@ test("stale production loads do not apply a late catalog response", async () => 
 
 test("explicit editor mode keeps a new child as POST despite an old selected target", () => {
   assert.deepEqual(entityMutationRequest({mode: "create", kind: "works", value: {name: "새 작품"}}), {method: "post", path: "/v1/works", body: {name: "새 작품"}});
-  assert.deepEqual(entityMutationRequest({mode: "create", kind: "characters", value: {name: "새 캐릭터", parent_id: "work-new"}}), {method: "post", path: "/v1/characters", body: {name: "새 캐릭터", parent_id: "work-new", appearance_prompt: "", negative_prompt: ""}});
+  assert.deepEqual(entityMutationRequest({mode: "create", kind: "characters", value: {name: "새 캐릭터", parent_id: "work-new"}}), {method: "post", path: "/v1/characters", body: {name: "새 캐릭터", parent_id: "work-new", appearance_prompt: "", negative_prompt: "", check_features: []}});
   const created = entityMutationRequest({mode: "create", kind: "outfits", targetId: null, value: {name: "새 의상", parent_id: "character-new", components: {upper: "shirt"}}});
-  assert.deepEqual(created, {method: "post", path: "/v1/outfits", body: {name: "새 의상", parent_id: "character-new", components: {upper: "shirt", lower: "", accessories: ""}}});
-  const edited = entityMutationRequest({mode: "edit", kind: "characters", targetId: "character-old", revision: 7, value: {name: "변경", appearance_prompt: "black hair", negative_prompt: "glasses"}});
-  assert.deepEqual(edited, {method: "patch", path: "/v1/characters/character-old", body: {name: "변경", revision: 7, appearance_prompt: "black hair", negative_prompt: "glasses"}});
+  assert.deepEqual(created, {method: "post", path: "/v1/outfits", body: {name: "새 의상", parent_id: "character-new", components: {upper: "shirt", lower: "", accessories: "", hands: ""}}});
+  const edited = entityMutationRequest({mode: "edit", kind: "characters", targetId: "character-old", revision: 7, value: {name: "변경", appearance_prompt: "black hair", negative_prompt: "glasses", check_features: []}});
+  assert.deepEqual(edited, {method: "patch", path: "/v1/characters/character-old", body: {name: "변경", revision: 7, appearance_prompt: "black hair", negative_prompt: "glasses", check_features: []}});
 });

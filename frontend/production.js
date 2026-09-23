@@ -4,8 +4,9 @@
  */
 import {fragmentKey, fragmentListPath, fragmentReference, preserveSelection} from "./fragment-picker.js";
 import {mountStudioTree} from "./studio-tree.js";
+import {OUTFIT_PARTS, checkFeaturesError, defaultFragmentInclude, fragmentIncludeSummary, fragmentLabel, inclusionLabels, parseCheckFeatures} from "./fragment-rules.js";
 
-const EMPTY_COMPONENTS = Object.freeze({ upper: "", lower: "", accessories: "" });
+const EMPTY_COMPONENTS = Object.freeze({ upper: "", lower: "", accessories: "", hands: "" });
 const DEFAULT_GENERATION = Object.freeze({
   diffusion_model: "", text_encoder: "", vae: "", width: 1024, height: 1024,
   seed: -1, steps: 24, cfg: 4.5, sampler: "euler_ancestral", scheduler: "normal",
@@ -127,7 +128,7 @@ function initialDraft() {
   return {
     compositionMode: "fragment", fragmentSelections: [], commonFragmentSelections: [],
     framing: "custom", framingPrompt: "upper body", expression: "", action: "", situation: "",
-    include: { upper: true, lower: false, accessories: true },
+    include: defaultFragmentInclude(),
     generation: deepCopy(DEFAULT_GENERATION), loras: [],
     generationPreset: "", postprocessPreset: "", postprocessMode: "default",
     upscaleModel: "4x-UltraSharp.safetensors", upscaleScale: 1.5, webpEnabled: true, webpQuality: 90,
@@ -158,7 +159,7 @@ function pageState(ctx) {
   state.draft ||= initialDraft();
   state.draft.validationMode ||= state.draft.validationEnabled ? "single-group" : "generation";
   state.draft.validationEnabled = state.draft.validationMode !== "generation";
-  state.draft.include ||= { upper: true, lower: false, accessories: true };
+  state.draft.include ||= defaultFragmentInclude();
   state.draft.fragmentSelections ||= [];
   state.draft.commonFragmentSelections ||= [];
   // Older in-memory drafts used `id@revision` strings. Keep their frozen
@@ -183,7 +184,7 @@ function pageState(ctx) {
     if (previous === "upper_body") state.draft.include.lower = false;
     state.draft.framing = "custom";
   }
-  for (const name of ["upper", "lower", "accessories"]) state.draft.include[name] = Boolean(state.draft.include[name]);
+  state.draft.include = {...state.draft.include, upper: Boolean(state.draft.include.upper), lower: Boolean(state.draft.include.lower), accessories: Boolean(state.draft.include.accessories), hands: state.draft.include.hands !== false};
   state.expanded ||= { works: {}, characters: {} };
   if (typeof state.selectedId === "string" && state.selectedId.startsWith("plan:")) {
     const selectedPlanId = state.selectedId.slice(5);
@@ -221,9 +222,18 @@ export function entityMutationRequest(editor) {
   if (kind === "characters") {
     body.appearance_prompt = value.appearance_prompt || "";
     body.negative_prompt = value.negative_prompt || "";
+    body.check_features = characterCheckFeatures(value);
   }
-  if (kind === "outfits") body.components = Object.fromEntries(["upper", "lower", "accessories"].map((key) => [key, String(value.components?.[key] || "")]));
+  if (kind === "outfits") body.components = Object.fromEntries(OUTFIT_PARTS.map((key) => [key, String(value.components?.[key] || "")]));
   return {method: mode === "edit" ? "patch" : "post", path: mode === "edit" ? `/v1/${kind}/${targetId}` : `/v1/${kind}`, body};
+}
+
+export function characterCheckFeatures(value) {
+  const features = typeof value?.check_features_text === "string" ? parseCheckFeatures(value.check_features_text)
+    : (Array.isArray(value?.check_features) ? value.check_features : []).map((item) => String(item).trim()).filter(Boolean);
+  const problem = checkFeaturesError(features);
+  if (problem) throw new Error(problem);
+  return features;
 }
 
 export function appearanceMigrationChoiceRequired(editor) {
@@ -253,6 +263,8 @@ function entityEditor(state, api, rerender, notify) {
     controls.push(field("외형 Prompt", textArea(draft.appearance_prompt || "", edit((value) => { draft.appearance_prompt = value; })), "머리·눈·신체 특징 등 캐릭터 고유 외형입니다."));
     const migration = draft.appearance_migration;
     if (migration?.status === "conflict") controls.push(node("fieldset", {class: "appearance-migration-conflict"}, [node("legend", {text: "기존 의상 외형 충돌 해결"}), node("p", {class: "error", text: "기존 의상에 서로 다른 외형이 있습니다. 아래 후보 하나를 명시적으로 선택해 저장하면 Core가 의상 외형을 캐릭터로 이전합니다."}), ...(migration.candidates || []).map((candidate) => node("label", {class: "row"}, [node("input", {type: "radio", name: `appearance-migration-${editor.targetId || "new"}`, checked: editor.migrationChoiceConfirmed && draft.appearance_prompt === candidate.appearance_prompt, onchange: () => { draft.appearance_prompt = candidate.appearance_prompt; editor.migrationChoiceConfirmed = true; state.dirty = true; rerender(); }}), node("span", {text: candidate.appearance_prompt || "(빈 외형)"}), node("small", {class: "muted", text: `의상 ${Array.isArray(candidate.outfit_ids) ? candidate.outfit_ids.length : 0}개`})]))]));
+    const featureText = typeof draft.check_features_text === "string" ? draft.check_features_text : (Array.isArray(draft.check_features) ? draft.check_features : []).join("\n");
+    controls.push(field("검사용 핵심 특징", textArea(featureText, edit((value) => { draft.check_features_text = value; }), "은발\n오드아이(왼쪽 호박색·오른쪽 파란색)\n아호게"), "한 줄에 하나씩 입력합니다. 단일 검증에서 외형 문장 대신 이 항목으로 확인합니다. 예: 은발, 오드아이(왼쪽 호박색·오른쪽 파란색), 아호게"));
     controls.push(field("캐릭터 Negative", textArea(draft.negative_prompt || "", edit((value) => { draft.negative_prompt = value; })), "이 캐릭터에만 적용되는 제외 조건입니다."));
   }
   if (kind === "outfits") {
@@ -261,6 +273,7 @@ function entityEditor(state, api, rerender, notify) {
     controls.push(field("상의", textArea(draft.components.upper, edit((value) => { draft.components.upper = value; })), "상의"));
     controls.push(field("하의", textArea(draft.components.lower, edit((value) => { draft.components.lower = value; })), "하의와 풋웨어"));
     controls.push(field("액세서리", textArea(draft.components.accessories, edit((value) => { draft.components.accessories = value; })), "가방·장신구 등 의상 액세서리"));
+    controls.push(field("손", textArea(draft.components.hands ?? "", edit((value) => { draft.components.hands = value; })), "장갑·손톱·반지 등 손 부분. 조각의 손 포함이 켜진 이미지에만 들어갑니다."));
   }
   const save = async () => {
     if (state.entityPending) return;
@@ -325,6 +338,7 @@ export function buildGenerationBody(state) {
       upper: Boolean(draft.include.upper),
       lower: Boolean(draft.include.lower),
       accessories: Boolean(draft.include.accessories),
+      hands: draft.include.hands !== false,
     };
     for (const name of ["expression", "action", "situation"]) {
       if (typeof draft[name] === "string" && draft[name].trim()) body[name] = draft[name].trim();
@@ -434,6 +448,10 @@ export function creationPreviewPage(outfitIds, fragments, offset = 0, limit = 50
   return {total, offset, limit, items};
 }
 
+export function plannedItemLabel(outfitName, fragment) {
+  return `${outfitName} × ${fragmentLabel(fragment)} (${fragmentIncludeSummary(fragment?.include)})`;
+}
+
 function resourceChoice(value, options, onChange, label) {
   const values = Array.isArray(options) ? [...options] : [];
   if (value && !values.includes(value)) values.unshift(value);
@@ -530,6 +548,7 @@ function directCompositionFields(draft, update) {
     field("상의 포함", node("input", { type: "checkbox", checked: draft.include.upper, onchange: (event) => { draft.include.upper = event.target.checked; invalidatePreview(draft); } })),
     field("하의 포함", node("input", { type: "checkbox", checked: draft.include.lower, onchange: (event) => { draft.include.lower = event.target.checked; invalidatePreview(draft); } }), "상반신 구도에서 하의를 켜면 Core가 구도와의 충돌을 검사합니다. 전신으로 바꾸면 하의를 명시적으로 켜세요."),
     field("액세서리 포함", node("input", { type: "checkbox", checked: draft.include.accessories, onchange: (event) => { draft.include.accessories = event.target.checked; invalidatePreview(draft); } })),
+    field("손 포함", node("input", { type: "checkbox", checked: draft.include.hands !== false, onchange: (event) => { draft.include.hands = event.target.checked; invalidatePreview(draft); } })),
   ]);
 }
 
@@ -552,12 +571,11 @@ function fragmentPicker(state, rerender) {
   if (draft.compositionMode === "direct") return node("div", { class: "grid" }, [field("구성 방식", mode), directCompositionFields(draft, (name) => (value) => { draft[name] = value; invalidatePreview(draft, true); })]);
   const rows = (common) => state.fragments.filter((item) => Boolean(item.common) === common).map((item) => {
     const ref = fragmentKey(item);
-    const number = item.number ?? item.display_number;
     const categoryName = state.fragmentCategories.find((category) => category.id === item.category_id)?.name || "미분류";
     return node("li", { class: "row production-fragment-row" }, [
       node("input", { type: "checkbox", checked: (common ? commonSelections : selections).has(ref), "aria-label": `${item.name} 조각 선택`, onchange: (event) => toggle(item, event.target.checked, common) }),
-      node("span", { text: `${number ? `#${number} · ` : ""}${item.name}` }),
-      node("small", { class: "muted", text: categoryName }),
+      node("span", { text: common ? item.name : fragmentLabel(item) }),
+      node("small", { class: "muted", text: common ? categoryName : `${categoryName} · ${fragmentIncludeSummary(item.include)}` }),
     ]);
   });
   const categoryOptions = state.fragmentCategories;
@@ -744,9 +762,9 @@ function productionPlanPanel(state, api, rerender, notify) {
   const next = () => { state.planItemsOffset += 20; refresh(); };
   const items = (state.productionPlanItems || []).map((item) => {
     const fragment = state.productionPlanFragments?.[item.fragment?.id];
-    const fragmentLabel = fragment?.number ? `조각 #${fragment.number}${fragment.name ? ` · ${fragment.name}` : ""}` : "조각 번호를 불러오는 중";
+    const itemLabel = fragment ? `조각 ${fragmentLabel(fragment)}` : "조각 번호를 불러오는 중";
     return node("li", {}, [node("details", {}, [
-    node("summary", { text: `${fragmentLabel} · 항목 ${item.index + 1} · ${item.state}` }),
+    node("summary", { text: `${itemLabel} · 항목 ${item.index + 1} · ${item.state}` }),
     node("p", { class: "prompt-preview-text", text: `Positive: ${item.snapshot?.generation_inputs?.positive_prompt || ""}` }),
     node("p", { class: "prompt-preview-text", text: `Negative: ${item.snapshot?.generation_inputs?.negative_prompt || ""}` }),
     Number.isSafeInteger(item.snapshot?.generation_inputs?.seed) ? node("p", {class: "muted", text: `실제 Seed: ${item.snapshot.generation_inputs.seed}`}) : null,
@@ -848,9 +866,9 @@ function ctxNavigate(state, tab, id) {
 function previewView(preview) {
   if (!preview) return node("p", { class: "muted", text: "미리보기를 갱신하면 Core가 합성한 Prompt와 포함 사유를 표시합니다." });
   const generation = preview.snapshot?.generation_inputs || {};
-  const accessories = preview.snapshot?.inclusion?.accessories;
+  const inclusion = inclusionLabels(preview.snapshot?.inclusion);
   return node("details", { open: "" }, [node("summary", { text: "Core 미리보기" }),
-    node("p", { class: "prompt-preview-text", text: `Positive: ${generation.positive_prompt || ""}` }), node("p", { class: "prompt-preview-text", text: `Negative: ${generation.negative_prompt || ""}` }), accessories !== undefined ? node("p", {class: "muted", text: `액세서리: ${accessories ? "포함" : "제외"}`}) : null,
+    node("p", { class: "prompt-preview-text", text: `Positive: ${generation.positive_prompt || ""}` }), node("p", { class: "prompt-preview-text", text: `Negative: ${generation.negative_prompt || ""}` }), inclusion.length ? node("p", {class: "muted", text: inclusion.join(" · ")}) : null,
     node("pre", { text: JSON.stringify(preview.snapshot?.inclusion || {}, null, 2) })]);
 }
 
@@ -889,7 +907,7 @@ function treePanel(state, rerender) {
     const parentId = parent?.id || null;
     const workId = kind === "characters" ? parentId : kind === "outfits" ? parent?.parent_id : null;
     state.editor = {mode: "create", kind, targetId: null, parentId, workId, characterId: kind === "outfits" ? parentId : null,
-      value: {name: "", parent_id: parentId, appearance_prompt: "", negative_prompt: "", components: {...EMPTY_COMPONENTS}}};
+      value: {name: "", parent_id: parentId, appearance_prompt: "", negative_prompt: "", check_features: [], components: {...EMPTY_COMPONENTS}}};
     state.mobilePreparationPanel = "editor";
     rerender();
   };
@@ -1043,7 +1061,7 @@ function creationPanel(state, api, rerender, notify) {
   })]);
   const fragments = (state.creationFragments || []).filter((item) => !item.archived);
   const categories = new Set(state.fragmentCategories.map((item) => item.id));
-  const categoryBranch = (name, items, common = false) => { const id = `${common ? "common:" : "variant:"}category:${name}`; const open = state.creationExpanded[id] !== false; const selected = common ? selectedCommonFragments : selectedFragments; return node("div", {class: "creation-tree-category"}, [treeToggle(name, open, () => toggleExpanded(id)), check(`카테고리 · ${name}`, treeSelectionState(items.map(fragmentKey), selected), (checked) => toggleFragments(items, checked, common), locked), open ? node("div", {class: "creation-tree-fragments"}, items.map((item) => node("div", {class: "creation-tree-fragment"}, [check(`#${item.number} ${item.name}`, treeSelectionState([fragmentKey(item)], selected), (checked) => toggleFragments([item], checked, common), locked)]))) : null]); };
+  const categoryBranch = (name, items, common = false) => { const id = `${common ? "common:" : "variant:"}category:${name}`; const open = state.creationExpanded[id] !== false; const selected = common ? selectedCommonFragments : selectedFragments; return node("div", {class: "creation-tree-category"}, [treeToggle(name, open, () => toggleExpanded(id)), check(`카테고리 · ${name}`, treeSelectionState(items.map(fragmentKey), selected), (checked) => toggleFragments(items, checked, common), locked), open ? node("div", {class: "creation-tree-fragments"}, items.map((item) => node("div", {class: "creation-tree-fragment"}, [check(common ? item.name : fragmentLabel(item), treeSelectionState([fragmentKey(item)], selected), (checked) => toggleFragments([item], checked, common), locked), common ? null : node("small", {class: "muted creation-fragment-include", text: fragmentIncludeSummary(item.include)})]))) : null]); };
   const branches = (items, common) => {
     const values = [
       ...state.fragmentCategories.map((category) => [category.name, items.filter((item) => item.category_id === category.id)]),
@@ -1090,7 +1108,7 @@ function creationPanel(state, api, rerender, notify) {
   const plansReady = planEntries.length > 0 && planEntries.every((entry) => entry.plan?.id);
   const resetFrozen = () => { state.creationCompletedPlans ||= []; state.creationCompletedPlans.push(...planEntries.filter((entry) => entry.plan?.id)); state.creationFrozen = null; state.creationPromptPreview = null; state.draft.multiPlanRequests = {}; rerender(); };
   const validationText = state.draft.validationMode === "generation" ? "검사 없이 생성합니다. 결과는 통과가 아니라 미검사 상태로 남습니다." : state.draft.validationMode === "single" ? "모든 예정 항목에 Single 검사를 고정합니다." : "모든 예정 항목에 Single 검사와 묶음 검사를 함께 고정합니다.";
-  const planned = node("section", {class: "panel creation-preview"}, [node("h2", {text: `예정 항목 ${preview.total}개`}), node("p", {class: "muted", text: validationText}), node("ul", {class: "fragment-list"}, preview.items.map((item) => node("li", {class: "row"}, [node("span", {text: `${entityById(state.entities.outfits, item.outfitId)?.name || item.outfitId} × #${item.fragment.number} ${item.fragment.name}`}), state.creationFrozen ? button("Prompt", () => previewPrompt(item.outfitId, item.fragment), {secondary: true}) : null]))), node("div", {class: "toolbar"}, [button("이전 50개", () => { state.creationPreviewOffset = Math.max(0, state.creationPreviewOffset - 50); rerender(); }, {secondary: true, disabled: preview.offset === 0}), button("다음 50개", () => { state.creationPreviewOffset += 50; rerender(); }, {secondary: true, disabled: preview.offset + 50 >= preview.total})]), button("선택 확인", freeze, {disabled: state.creationPending || !preview.total || locked}), locked ? button("새 준비", resetFrozen, {secondary: true, disabled: state.creationPending}) : null, state.creationFrozen ? button("생성 준비", createPlans, {disabled: state.creationPending}) : null, plansReady ? button("생성 시작", startPlans, {disabled: state.creationPending}) : null, planEntries.length ? node("ul", {class: "fragment-list"}, planEntries.map((entry) => { const group = state.creationFrozen?.groups.find((item) => item.id === entry.plan?.group_id || item.id === entry.request?.group_id); const outfit = entityById(state.entities.outfits, group?.outfit_id); return node("li", {class: "row"}, [node("span", {text: `${outfit?.name || "선택 의상"} · ${state.draft.fragmentSelections.length}장 · ${entry.plan?.state || entry.error || "계획 준비 중"}`}), entry.plan ? button("계획 보기", () => { state.productionPlanId = entry.plan.id; state.productionPlan = entry.plan; rerender(true); }, {secondary: true}) : null, entry.plan ? button("작업 현황", () => state.navigate?.("jobs"), {secondary: true}) : null]); })) : null, state.creationPromptPreview ? previewView(state.creationPromptPreview) : null]);
+  const planned = node("section", {class: "panel creation-preview"}, [node("h2", {text: `예정 항목 ${preview.total}개`}), node("p", {class: "muted", text: validationText}), node("ul", {class: "fragment-list"}, preview.items.map((item) => node("li", {class: "row"}, [node("span", {text: plannedItemLabel(entityById(state.entities.outfits, item.outfitId)?.name || item.outfitId, item.fragment)}), state.creationFrozen ? button("Prompt", () => previewPrompt(item.outfitId, item.fragment), {secondary: true}) : null]))), node("div", {class: "toolbar"}, [button("이전 50개", () => { state.creationPreviewOffset = Math.max(0, state.creationPreviewOffset - 50); rerender(); }, {secondary: true, disabled: preview.offset === 0}), button("다음 50개", () => { state.creationPreviewOffset += 50; rerender(); }, {secondary: true, disabled: preview.offset + 50 >= preview.total})]), button("선택 확인", freeze, {disabled: state.creationPending || !preview.total || locked}), locked ? button("새 준비", resetFrozen, {secondary: true, disabled: state.creationPending}) : null, state.creationFrozen ? button("생성 준비", createPlans, {disabled: state.creationPending}) : null, plansReady ? button("생성 시작", startPlans, {disabled: state.creationPending}) : null, planEntries.length ? node("ul", {class: "fragment-list"}, planEntries.map((entry) => { const group = state.creationFrozen?.groups.find((item) => item.id === entry.plan?.group_id || item.id === entry.request?.group_id); const outfit = entityById(state.entities.outfits, group?.outfit_id); return node("li", {class: "row"}, [node("span", {text: `${outfit?.name || "선택 의상"} · ${state.draft.fragmentSelections.length}장 · ${entry.plan?.state || entry.error || "계획 준비 중"}`}), entry.plan ? button("계획 보기", () => { state.productionPlanId = entry.plan.id; state.productionPlan = entry.plan; rerender(true); }, {secondary: true}) : null, entry.plan ? button("작업 현황", () => state.navigate?.("jobs"), {secondary: true}) : null]); })) : null, state.creationPromptPreview ? previewView(state.creationPromptPreview) : null]);
   const mobileNav = node("nav", {class: "creation-mobile-switch", "aria-label": "이미지 생성 단계"}, [
     button("의상", () => { state.creationMobilePanel = "targets"; rerender(); }, {secondary: state.creationMobilePanel !== "targets"}),
     button("조각", () => { state.creationMobilePanel = "fragments"; rerender(); }, {secondary: state.creationMobilePanel !== "fragments"}),
