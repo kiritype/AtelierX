@@ -234,7 +234,6 @@ function resourceSelect(value, options, onChange, label) {
 
 function imageThumb(ctx, imageId, label, onOpen) {
   const img = el("img", { class: "reference-set-thumb", alt: label });
-  img.style.maxHeight = "160px";
   ctx.api.imageBlob(`/v1/images/${imageId}/content`).then((blob) => {
     const url = URL.createObjectURL(blob);
     ctx.ownedUrls?.add(url);
@@ -381,6 +380,23 @@ export function mountReferenceSetPanel(container, ctx) {
     render();
   };
 
+  function roleEntries(role) {
+    const entries = [];
+    for (const pair of state.pairs) {
+      const task = role === "full" ? pair.full_task : pair.face_task;
+      if (task?.state !== "generated" || !task.images?.length) continue;
+      const item = task.images[0];
+      entries.push({ pairId: pair.id, id: item.id, title: `${role === "full" ? "전신" : "얼굴"} · Seed ${pair.seed}`, loadSrc: () => ctx.api.imageBlob(`/v1/images/${item.id}/content`).then((blob) => { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }) });
+    }
+    return entries;
+  }
+
+  function openRoleViewer(role, pairId) {
+    const entries = roleEntries(role);
+    if (!entries.length) return;
+    openLightbox(entries, Math.max(0, entries.findIndex((entry) => entry.pairId === pairId)), { signal: ctx.signal });
+  }
+
   function pairCard(pair) {
     const running = ["queued", "dispatching", "generation_pending", "generating"].includes(pair.full_task?.state) || ["queued", "dispatching", "generation_pending", "generating"].includes(pair.face_task?.state);
     const failed = pair.full_task?.state === "failed" || pair.face_task?.state === "failed";
@@ -388,14 +404,16 @@ export function mountReferenceSetPanel(container, ctx) {
       if (task?.state !== "generated" || !task.images?.length) return el("p", { class: "muted", text: running ? "생성 중…" : failed ? "생성 실패" : "이미지 없음" });
       const image = task.images[0];
       const selected = role === "full" ? state.selection.fullImageId === image.id : state.selection.faceImageId === image.id;
-      const openViewer = () => { const entries = task.images.map((item) => ({ id: item.id, title: `${role === "full" ? "전신" : "얼굴"} · Seed ${pair.seed}`, loadSrc: () => ctx.api.imageBlob(`/v1/images/${item.id}/content`).then((blob) => { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }) })); openLightbox(entries, 0, { signal: ctx.signal }); };
-      return el("div", {}, [imageThumb({ api: ctx.api, ownedUrls }, image.id, role === "full" ? "전신" : "얼굴", openViewer),
-        el("label", { class: "row" }, [el("input", { type: "radio", name: `reference-${role}`, checked: selected, onchange: () => { state.selection = selectPairImage(state.selection, role, pair.id, image.id); render(); } }), el("span", { text: role === "full" ? "전신으로 선택" : "얼굴로 선택" })])]);
+      const label = role === "full" ? "전신" : "얼굴";
+      const pick = () => { state.selection = selectPairImage(state.selection, role, pair.id, image.id); render(); };
+      const thumb = imageThumb({ api: ctx.api, ownedUrls }, image.id, `${label} 선택`, pick);
+      const zoom = el("button", { type: "button", class: "reference-pick-zoom", "aria-label": `${label} 크게 보기`, text: "⤢", onclick: (event) => { event.stopPropagation(); openRoleViewer(role, pair.id); } });
+      return el("figure", { class: `reference-pick${selected ? " selected" : ""}`, "aria-pressed": selected ? "true" : "false" }, [thumb, zoom, selected ? el("span", { class: "reference-pick-badge", text: `${label} ✓` }) : null]);
     };
     return el("li", { class: "panel reference-sample-pair" }, [
       el("div", { class: "row" }, [el("input", { type: "checkbox", "aria-label": `쌍 ${pair.seed} 선택`, checked: state.multiSelect.includes(pair.id), onchange: (event) => { state.multiSelect = togglePairMultiSelect(state.multiSelect, pair.id, event.target.checked); render(); } }),
         el("strong", { text: `Seed ${pair.seed}` }), running ? el("span", { class: "badge", text: "생성 중" }) : failed ? el("span", { class: "badge error", text: "실패" }) : el("span", { class: "badge", text: "완료" })]),
-      el("div", { class: "row" }, [roleImages("full", pair.full_task), roleImages("face", pair.face_task)]),
+      el("div", { class: "reference-pair-images" }, [roleImages("full", pair.full_task), roleImages("face", pair.face_task)]),
     ]);
   }
 
@@ -483,11 +501,12 @@ export function mountReferenceSetPanel(container, ctx) {
     const pairsSection = el("section", { class: "panel reference-sample-pairs" }, [
       el("h3", { text: `샘플 쌍 (${state.pairs.length})` }),
       state.pairs.length ? el("ul", { class: "reference-sample-pair-list" }, state.pairs.map(pairCard)) : el("p", { class: "muted", text: "아직 만든 샘플이 없습니다." }),
-      el("div", { class: "toolbar" }, [
+      el("div", { class: "reference-pair-actions" }, [
         button("참조 세트로 확정", confirmSet, { disabled: state.pending || !pairSelectionReady(state.selection) }),
         button("선택한 쌍 다시 생성", regenerateSelectedPairs, { secondary: true, disabled: state.pending || !state.multiSelect.length }),
+        button("전신 모아 보기", () => openRoleViewer("full"), { secondary: true, disabled: !roleEntries("full").length }),
+        button("얼굴 모아 보기", () => openRoleViewer("face"), { secondary: true, disabled: !roleEntries("face").length }),
       ]),
-      !pairSelectionReady(state.selection) ? el("p", { class: "muted", text: "각 카드에서 전신 하나·얼굴 하나를 골라야 확정할 수 있습니다(다른 쌍이어도 됩니다)." }) : null,
     ]);
 
     container.replaceChildren(header, sampleForm, pairsSection, state.error ? el("p", { class: "error", text: state.error }) : null);
