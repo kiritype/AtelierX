@@ -1,8 +1,8 @@
 # ADR-0027: 참조 세트와 생성 일관성 방식
 
-- 상태: Accepted — 확인 요청 1~3·5~10 확정, 4(생성 설정 불일치 처리)는 Proposed 유지
+- 상태: Accepted
 - 작성일: 2026-09-23
-- 확정일: 2026-09-23(부분)
+- 확정일: 2026-09-23
 - Supersedes: 없음
 - Superseded by: 없음
 - 관련 요구사항 / ADR: [roadmap 참조 이미지 절·실험 1~4](../../requirements/roadmap.md), [현행 정책 §3](../../policies.md), [ADR-0003](0003-generation-execution-and-queue.md), [ADR-0007](0007-group-image-validation.md), [ADR-0012](0012-validation-image-transfer-and-required-input.md), [ADR-0021](0021-core-domain-and-image-groups.md), [ADR-0022](0022-prompt-composition.md), [ADR-0023](0023-negative-prompt-sources.md), [ADR-0025](0025-validation-check-scope.md)
@@ -54,9 +54,9 @@
 | A. `AtelierXAnimaGenerate`에 선택 입력(참조 이미지·방식·설정) 추가, 방식별 처리 함수를 내부에서 호출 | 기존 Node·REST 계약 확장만으로 해결. 모델 1회 로드 | 외부 Node 팩 모듈을 import하는 결합 |
 | B. Node를 로더/샘플러로 분해해 Graph에 방식별 Node 체인 삽입 | 방식 교체가 Graph 수준에서 명확 | 기존 Node·Preset·Workflow 계약 전면 변경 |
 
-## 결정 (2026-09-23 사용자 확정, P1의 설정 불일치 처리 제외)
+## 결정 (2026-09-23 사용자 확정)
 
-아래 P1~P7을 확정한다. 단 P1 마지막 항목(생성 설정 불일치 시 경고만)은 확인 요청 4로 논의 중이며 Proposed로 남는다.
+아래 P1~P7을 확정한다.
 
 
 ### P1. 참조 세트 구성과 확정
@@ -65,7 +65,7 @@
 - 구성: **전신 1장 + 얼굴 1장(필수)**. 옆·뒷모습은 이번 범위에 두지 않는다(실험상 이점 없음, 뒷모습 템플릿 품질 낮음).
 - 샘플 생성·선택·확정은 **캐릭터 관리의 의상 화면**에서 수행한다(2026-09-23 사용자 확인). 샘플 생성은 Core의 참조 샘플 전용 Task로 수행한다. 고정 구도 템플릿(전신: `full body, standing, straight-on, front view, looking at viewer, arms at sides, white background, simple background` / 얼굴: `portrait, close-up, face focus, straight-on, looking at viewer, white background, simple background`)과 사용자가 고른 생성 설정·공통 조각을 쓴다. 같은 Seed로 전신·얼굴 **쌍**을 생성한다. 템플릿 문구는 설정에서 바꿀 수 있게 한다.
 - 사용자가 후보 중 전신·얼굴을 골라 확정하면 세트 revision이 올라가고 이전 확정 세트는 보관된다(삭제 없음).
-- 세트에는 샘플을 만든 생성 설정 요약(모델·인코더·공통 조각 revision)을 기록한다. [Proposed — 확인 요청 4] 제작 계획 설정과 다르면 **경고**한다(그림체 끌림 근거, 차단하지 않음).
+- 세트에는 샘플을 만든 생성 설정 요약을 기록한다: 모델, 텍스트 인코더, 공통 조각(ID·revision), 전역 품질 Positive, LoRA 목록(sampler·steps·CFG·해상도는 제외). 제작 계획의 설정과 다르면 다른 항목을 보여 주는 **경고**와 "그래도 진행" 확인을 요구하고, 확인 사실을 계획에 기록한다. 차단하지 않는다(그림체 실험 허용). 설정별 복수 참조 세트는 후속.
 
 ### P2. 재확인 필요 판정
 
@@ -134,7 +134,7 @@
 - ADR-0023: Negative 출처에 `consistency`를 추가한다(P4). global·character 규칙은 유지한다.
 - ADR-0025: 검사 범위 변경 없음.
 
-## 확인 요청 (한 번에 확인) — 2026-09-23 결과: 1~3·5~10 OK, 4 논의 중
+## 확인 요청 (한 번에 확인) — 2026-09-23 결과: 1~10 모두 확정(4는 초안대로 경고만)
 
 | # | 항목 | 제안 |
 | --- | --- | --- |
@@ -155,4 +155,4 @@
 - [x] ADR 목록 갱신(backlog 해당 없음)
 - [x] policies·status 갱신. 모듈·API 문서는 구현 시 갱신
 - [x] 기존 ADR 확인: ADR-0010(제작 계획 검사 기본값), ADR-0023(Negative 출처 추가)에 부분 변경 기록. supersede 없음
-- [x] 확인 요청 4는 Proposed로 구분
+- [x] 확인 요청 4 확정(2026-09-23, 초안대로)
