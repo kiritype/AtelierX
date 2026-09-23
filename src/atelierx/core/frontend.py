@@ -18,6 +18,7 @@ _ASSETS = {
     "connection.js": "text/javascript; charset=utf-8",
     "fragments.js": "text/javascript; charset=utf-8",
     "fragment-picker.js": "text/javascript; charset=utf-8",
+    "fragment-rules.js": "text/javascript; charset=utf-8",
     "studio-tree.js": "text/javascript; charset=utf-8",
     "styles.css": "text/css; charset=utf-8",
 }
