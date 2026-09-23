@@ -45,3 +45,11 @@ class FrontendHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.get("/ui")).status, 200)
         self.assertEqual((await self.client.get("/v1/works")).status, 401)
         self.assertEqual((await self.client.post("/ui", json={})).status, 401)
+
+
+class FrontendAssetListTests(unittest.TestCase):
+    def test_every_frontend_module_is_served(self):
+        from atelierx.core.frontend import _ASSETS
+        root = Path(__file__).resolve().parents[1] / "frontend"
+        shipped = {path.name for path in root.iterdir() if path.suffix in {".js", ".css", ".html"}}
+        self.assertEqual(shipped - set(_ASSETS), set(), "frontend files missing from the Core asset allowlist")
