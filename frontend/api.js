@@ -101,6 +101,7 @@ export class ApiClient {
   post(path, body = {}, key) { return this.request("POST", path, body, key); }
   patch(path, body) { return this.request("PATCH", path, body); }
   put(path, body) { return this.request("PUT", path, body); }
+  delete(path, key) { return this.request("DELETE", path, undefined, key); }
 
   async imageBlob(path) {
     const headers = this.token ? { Authorization: `Bearer ${this.token}` } : {};

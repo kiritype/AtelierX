@@ -1104,28 +1104,39 @@ async function pageAll(api, path, parameters = {}) {
   }
 }
 
-async function loadCreationData(state, api, isCurrent) {
-  await loadProductionData(state, api, isCurrent);
-  if (!isCurrent() || state.creationLoaded) return;
-  const works = await pageAll(api, "/v1/works"); if (!isCurrent()) return;
-  const characters = (await Promise.all(works.filter((item) => !item.archived).map((work) => pageAll(api, "/v1/characters", {parent_id: work.id})))).flat();
-  const outfits = (await Promise.all(characters.filter((item) => !item.archived).map((character) => pageAll(api, "/v1/outfits", {parent_id: character.id})))).flat();
-  const categories = await pageAll(api, "/v1/prompt-fragment-categories", {archived: false});
-  const fragments = await pageAll(api, "/v1/prompt-fragments", {archived: false});
-  if (!isCurrent()) return;
-  state.entities = {works, characters, outfits, groups: []};
-  state.fragmentCategories = categories; state.creationFragments = fragments;
-  // ADR-0027 P5: a production plan is rejected for any outfit without a valid
-  // reference set, so the target tree shows status up front instead of only
-  // surfacing it after a 409. Best effort: a fetch failure leaves the outfit
-  // unbadged rather than blocking the whole tree.
-  const statusEntries = await Promise.all(outfits.filter((item) => !item.archived).map(async (outfit) => {
+// ADR-0027 P5 + UX follow-up (2026-09-24): a production plan is rejected for
+// any outfit without a valid reference set, so the target tree shows status
+// up front instead of only surfacing it after a 409. Confirming a set
+// happens on a different screen (character management), so callers must
+// refresh this every time the creation screen mounts/refreshes -- not only on
+// the entities' very first load -- or a status confirmed elsewhere goes
+// stale here. Best effort: a fetch failure leaves the outfit unbadged rather
+// than blocking the whole tree.
+export async function refreshReferenceStatuses(state, api, isCurrent) {
+  const outfits = (state.entities?.outfits || []).filter((item) => !item.archived);
+  const statusEntries = await Promise.all(outfits.map(async (outfit) => {
     try { return [outfit.id, (await api.get(`/v1/outfits/${outfit.id}/reference-set`)).status]; }
     catch { return [outfit.id, null]; }
   }));
   if (!isCurrent()) return;
   state.referenceStatuses = Object.fromEntries(statusEntries);
-  state.creationLoaded = true;
+}
+
+export async function loadCreationData(state, api, isCurrent) {
+  await loadProductionData(state, api, isCurrent);
+  if (!isCurrent()) return;
+  if (!state.creationLoaded) {
+    const works = await pageAll(api, "/v1/works"); if (!isCurrent()) return;
+    const characters = (await Promise.all(works.filter((item) => !item.archived).map((work) => pageAll(api, "/v1/characters", {parent_id: work.id})))).flat();
+    const outfits = (await Promise.all(characters.filter((item) => !item.archived).map((character) => pageAll(api, "/v1/outfits", {parent_id: character.id})))).flat();
+    const categories = await pageAll(api, "/v1/prompt-fragment-categories", {archived: false});
+    const fragments = await pageAll(api, "/v1/prompt-fragments", {archived: false});
+    if (!isCurrent()) return;
+    state.entities = {works, characters, outfits, groups: []};
+    state.fragmentCategories = categories; state.creationFragments = fragments;
+    state.creationLoaded = true;
+  }
+  await refreshReferenceStatuses(state, api, isCurrent);
 }
 
 function check(label, status, change, disabled = false) {
@@ -1147,7 +1158,22 @@ function creationPanel(state, api, rerender, notify) {
   const changed = () => { state.creationFrozen = null; state.creationPromptPreview = null; state.draft.multiPlanRequests = {}; state.creationPreviewOffset = 0; };
   const toggleOutfits = (ids, checked) => { state.selectedOutfitIds = toggleTreeSelection(state.selectedOutfitIds, ids, checked); changed(); rerender(); };
   const toggleFragments = (items, checked, common = false) => { const selected = common ? selectedCommonFragments : selectedFragments; const fieldName = common ? "commonFragmentSelections" : "fragmentSelections"; state.draft[fieldName] = toggleTreeSelection(selected, items.map(fragmentKey), checked).map((key) => { const [id, revision] = key.split("@"); return {id, revision: Number(revision)}; }); changed(); invalidatePreview(state.draft); rerender(); };
-  const outfitTree = node("section", {class: "panel creation-target-tree"}, [node("h2", {text: "작품 · 캐릭터 · 의상"}), ...activeWorks.map((work) => {
+  // Confirming/reconfirming a reference set happens on the character-management
+  // screen, so this lets the user pull fresh status here without leaving/
+  // re-entering the creation screen (loadCreationData also refreshes this on
+  // every mount, but a set confirmed in another tab/session while this one
+  // stays open needs a manual nudge).
+  const refreshReferenceStatusesNow = async () => {
+    if (state.creationReferenceRefreshPending) return;
+    state.creationReferenceRefreshPending = true; rerender();
+    try { await refreshReferenceStatuses(state, api, () => true); notify("참조 상태를 새로고침했습니다."); }
+    catch (error) { state.error = requestError(error); }
+    finally { state.creationReferenceRefreshPending = false; rerender(); }
+  };
+  const outfitTree = node("section", {class: "panel creation-target-tree"}, [
+    node("div", {class: "row"}, [node("h2", {text: "작품 · 캐릭터 · 의상"}),
+      button("참조 상태 새로고침", refreshReferenceStatusesNow, {secondary: true, disabled: state.creationReferenceRefreshPending})]),
+    ...activeWorks.map((work) => {
     const characters = charactersFor(work); const outfits = characters.flatMap(outfitsFor);
     const open = state.creationExpanded[work.id] !== false;
     return node("div", {class: "creation-tree-work"}, [treeToggle(work.name, open, () => toggleExpanded(work.id)), check(`작품 · ${work.name}`, treeSelectionState(outfits.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(outfits.map((item) => item.id), checked), locked || !outfits.length), !outfits.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, open ? node("div", {class: "creation-tree-outfits"}, characters.map((character) => { const children = outfitsFor(character); const characterOpen = state.creationExpanded[character.id] !== false; return node("div", {class: "creation-tree-character"}, [treeToggle(character.name, characterOpen, () => toggleExpanded(character.id)), check(`캐릭터 · ${character.name}`, treeSelectionState(children.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(children.map((item) => item.id), checked), locked || !children.length), !children.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, characterOpen ? node("div", {class: "creation-tree-outfits"}, children.map((outfit) => {
@@ -1261,7 +1287,10 @@ export async function mount(container, ctx) {
     state.error = null;
   };
   const hadCachedTree = Boolean(state.loaded?.works);
-  if (creationMode) state.creationLoaded = false;
+  // Note: state.creationLoaded is intentionally NOT reset here (unlike the
+  // production tree's state.loaded.* flags below) -- entities/fragments stay
+  // cached across creation-screen visits, but loadCreationData always
+  // refreshes state.referenceStatuses regardless, via refreshReferenceStatuses.
   if (hadCachedTree) { state.loaded.works = false; state.loaded.characters = {}; state.loaded.outfits = {}; state.loaded.groups = {}; state.loaded.compose = false; state.loaded.fragmentPath = null; }
   await rerender(!hadCachedTree);
   if (hadCachedTree) rerender(true);

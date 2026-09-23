@@ -232,13 +232,24 @@ function resourceSelect(value, options, onChange, label) {
   ]);
 }
 
+/** Renders a reference-image thumbnail. `ctx.cache` is a panel-level
+ * `Map(imageId -> objectURL)`: every re-render (e.g. after a selection click)
+ * rebuilds the DOM, but a cached image sets `img.src` synchronously instead
+ * of refetching the blob, so the thumbnail never flashes broken while a
+ * fresh request is in flight. */
 function imageThumb(ctx, imageId, label, onOpen) {
   const img = el("img", { class: "reference-set-thumb", alt: label });
-  ctx.api.imageBlob(`/v1/images/${imageId}/content`).then((blob) => {
-    const url = URL.createObjectURL(blob);
-    ctx.ownedUrls?.add(url);
-    img.src = url;
-  }).catch(() => { img.alt = `${label} (불러오기 실패)`; });
+  const cached = ctx.cache?.get(imageId);
+  if (cached) {
+    img.src = cached;
+  } else {
+    ctx.api.imageBlob(`/v1/images/${imageId}/content`).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      ctx.cache?.set(imageId, url);
+      ctx.ownedUrls?.add(url);
+      img.src = url;
+    }).catch(() => { img.alt = `${label} (불러오기 실패)`; });
+  }
   img.tabIndex = 0; img.role = "button"; img.setAttribute("aria-label", `${label} 확대 보기`);
   img.addEventListener("click", onOpen);
   img.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } });
@@ -260,6 +271,12 @@ export function mountReferenceSetPanel(container, ctx) {
     historyOpen: false, history: null,
   };
   const ownedUrls = new Set();
+  // Panel-level thumbnail cache: every render() rebuilds the DOM (e.g. on a
+  // pair selection click), but a cached objectURL is applied synchronously so
+  // thumbnails never refetch or flash broken on re-render. Revoked on
+  // dispose, and per-image on pair deletion.
+  const imageUrlCache = new Map();
+  const thumbCtx = { api: ctx.api, cache: imageUrlCache, ownedUrls };
   let disposed = false;
   let pollHandle = null;
 
@@ -304,7 +321,8 @@ export function mountReferenceSetPanel(container, ctx) {
     if (!hasPending()) return;
     pollHandle = setTimeout(async () => { pollHandle = null; if (!disposed) { await load(false); schedulePoll(); } }, 4000);
   };
-  ctx.signal?.addEventListener("abort", () => { disposed = true; if (pollHandle) clearTimeout(pollHandle); for (const url of ownedUrls) URL.revokeObjectURL(url); });
+  const revokeCache = () => { for (const url of imageUrlCache.values()) URL.revokeObjectURL(url); imageUrlCache.clear(); };
+  ctx.signal?.addEventListener("abort", () => { disposed = true; if (pollHandle) clearTimeout(pollHandle); for (const url of ownedUrls) URL.revokeObjectURL(url); revokeCache(); });
 
   const submitSamples = async () => {
     try {
@@ -358,9 +376,53 @@ export function mountReferenceSetPanel(container, ctx) {
       const key = makeKey();
       await ctx.api.post(`/v1/outfits/${ctx.outfitId}/reference-set/confirm`, { full_image_id: state.selection.fullImageId, face_image_id: state.selection.faceImageId }, key);
       state.selection = {};
+      state.error = null;
       ctx.notify?.("참조 세트를 확정했습니다.");
+      await load(false); // refreshes state.status so the confirmed set shows immediately
+    } catch (error) {
+      // Shown persistently in the panel (not just a toast) since the error
+      // often names differing settings the user needs to read carefully.
+      state.error = errorText(error);
+      ctx.notify?.(state.error, true);
+    } finally { state.pending = false; render(); }
+  };
+
+  const deletePair = async (pair) => {
+    if (typeof window !== "undefined" && window.confirm && !window.confirm("목록에서 삭제합니다. 이미지 파일은 갤러리에 남습니다.")) return;
+    try {
+      state.pending = true; render();
+      await ctx.api.delete(`/v1/outfits/${ctx.outfitId}/reference-samples/${pair.id}`);
+      for (const task of [pair.full_task, pair.face_task]) for (const image of task?.images || []) {
+        const url = imageUrlCache.get(image.id);
+        if (url) { URL.revokeObjectURL(url); imageUrlCache.delete(image.id); }
+      }
+      state.multiSelect = state.multiSelect.filter((id) => id !== pair.id);
+      state.error = null;
+      ctx.notify?.("샘플 쌍을 목록에서 삭제했습니다.");
       await load(false);
-    } catch (error) { ctx.notify?.(errorText(error), true); } finally { state.pending = false; render(); }
+    } catch (error) { state.error = errorText(error); ctx.notify?.(state.error, true); } finally { state.pending = false; render(); }
+  };
+
+  const deleteSelectedPairs = async () => {
+    const targets = state.pairs.filter((pair) => state.multiSelect.includes(pair.id));
+    if (!targets.length) return;
+    if (typeof window !== "undefined" && window.confirm && !window.confirm(`선택한 ${targets.length}개 쌍을 목록에서 삭제합니다. 이미지 파일은 갤러리에 남습니다.`)) return;
+    try {
+      state.pending = true; render();
+      let failed = 0;
+      for (const pair of targets) {
+        try {
+          await ctx.api.delete(`/v1/outfits/${ctx.outfitId}/reference-samples/${pair.id}`);
+          for (const task of [pair.full_task, pair.face_task]) for (const image of task?.images || []) {
+            const url = imageUrlCache.get(image.id);
+            if (url) { URL.revokeObjectURL(url); imageUrlCache.delete(image.id); }
+          }
+        } catch (error) { failed += 1; state.error = errorText(error); }
+      }
+      state.multiSelect = [];
+      ctx.notify?.(failed ? `${failed}개는 삭제하지 못했습니다.` : "선택한 쌍을 목록에서 삭제했습니다.", Boolean(failed));
+      await load(false);
+    } finally { state.pending = false; render(); }
   };
 
   const reconfirm = async () => {
@@ -406,13 +468,14 @@ export function mountReferenceSetPanel(container, ctx) {
       const selected = role === "full" ? state.selection.fullImageId === image.id : state.selection.faceImageId === image.id;
       const label = role === "full" ? "전신" : "얼굴";
       const pick = () => { state.selection = selectPairImage(state.selection, role, pair.id, image.id); render(); };
-      const thumb = imageThumb({ api: ctx.api, ownedUrls }, image.id, `${label} 선택`, pick);
+      const thumb = imageThumb(thumbCtx, image.id, `${label} 선택`, pick);
       const zoom = el("button", { type: "button", class: "reference-pick-zoom", "aria-label": `${label} 크게 보기`, text: "⤢", onclick: (event) => { event.stopPropagation(); openRoleViewer(role, pair.id); } });
       return el("figure", { class: `reference-pick${selected ? " selected" : ""}`, "aria-pressed": selected ? "true" : "false" }, [thumb, zoom, selected ? el("span", { class: "reference-pick-badge", text: `${label} ✓` }) : null]);
     };
     return el("li", { class: "panel reference-sample-pair" }, [
       el("div", { class: "row" }, [el("input", { type: "checkbox", "aria-label": `쌍 ${pair.seed} 선택`, checked: state.multiSelect.includes(pair.id), onchange: (event) => { state.multiSelect = togglePairMultiSelect(state.multiSelect, pair.id, event.target.checked); render(); } }),
-        el("strong", { text: `Seed ${pair.seed}` }), running ? el("span", { class: "badge", text: "생성 중" }) : failed ? el("span", { class: "badge error", text: "실패" }) : el("span", { class: "badge", text: "완료" })]),
+        el("strong", { text: `Seed ${pair.seed}` }), running ? el("span", { class: "badge", text: "생성 중" }) : failed ? el("span", { class: "badge error", text: "실패" }) : el("span", { class: "badge", text: "완료" }),
+        el("button", { type: "button", class: "button secondary reference-pair-delete", "aria-label": "이 쌍 삭제", disabled: state.pending ? "" : null, text: "✕", onclick: () => deletePair(pair) })]),
       el("div", { class: "reference-pair-images" }, [roleImages("full", pair.full_task), roleImages("face", pair.face_task)]),
     ]);
   }
@@ -426,14 +489,14 @@ export function mountReferenceSetPanel(container, ctx) {
       el("h3", { text: "참조 세트" }),
       el("p", {}, [el("span", { class: "badge", text: referenceStatusLabel(status.status) }), status.status === "needs_review" ? el("span", { class: "muted", text: ` ${referenceStaleText(status.stale)}` }) : null]),
       status.set ? el("div", { class: "row" }, [
-        imageThumb({ api: ctx.api, ownedUrls }, status.set.full.core_image_id, "전신", () => openLightbox([
+        imageThumb(thumbCtx, status.set.full.core_image_id, "전신", () => openLightbox([
           { id: status.set.full.core_image_id, title: "전신", loadSrc: () => ctx.api.imageBlob(`/v1/images/${status.set.full.core_image_id}/content`).then((blob) => { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }) },
           { id: status.set.face.core_image_id, title: "얼굴", loadSrc: () => ctx.api.imageBlob(`/v1/images/${status.set.face.core_image_id}/content`).then((blob) => { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }) },
         ], 0, { signal: ctx.signal })),
-        imageThumb({ api: ctx.api, ownedUrls }, status.set.face.core_image_id, "얼굴", () => openLightbox([
+        imageThumb(thumbCtx, status.set.face.core_image_id, "얼굴", () => openLightbox([
           { id: status.set.face.core_image_id, title: "얼굴", loadSrc: () => ctx.api.imageBlob(`/v1/images/${status.set.face.core_image_id}/content`).then((blob) => { const url = URL.createObjectURL(blob); ownedUrls.add(url); return url; }) },
         ], 0, { signal: ctx.signal })),
-        el("div", {}, [el("p", { text: `revision ${status.set.revision} · Seed ${status.set.seed}` }),
+        el("div", {}, [el("p", { text: `revision ${status.set.revision} · Seed ${status.set.seed}${status.set.face_seed !== undefined && status.set.face_seed !== status.set.seed ? ` / 얼굴 Seed ${status.set.face_seed}` : ""}` }),
           el("p", { class: "muted", text: `확정 시각: ${new Date(status.set.confirmed_at * 1000).toLocaleString("ko-KR")}` }),
           ...summaryRows.map((row) => el("p", { class: "muted", text: `${row.label}: ${row.text}` }))]),
       ]) : el("p", { class: "muted", text: "확정된 참조 세트가 없습니다. 아래에서 샘플을 만들고 전신·얼굴을 골라 확정하세요." }),
@@ -504,6 +567,7 @@ export function mountReferenceSetPanel(container, ctx) {
       el("div", { class: "reference-pair-actions" }, [
         button("참조 세트로 확정", confirmSet, { disabled: state.pending || !pairSelectionReady(state.selection) }),
         button("선택한 쌍 다시 생성", regenerateSelectedPairs, { secondary: true, disabled: state.pending || !state.multiSelect.length }),
+        button("선택한 쌍 삭제", deleteSelectedPairs, { secondary: true, disabled: state.pending || !state.multiSelect.length }),
         button("전신 모아 보기", () => openRoleViewer("full"), { secondary: true, disabled: !roleEntries("full").length }),
         button("얼굴 모아 보기", () => openRoleViewer("face"), { secondary: true, disabled: !roleEntries("face").length }),
       ]),
