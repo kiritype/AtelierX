@@ -1,0 +1,44 @@
+{
+  "prompt": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "reference-full-body.png"
+      }
+    },
+    "2": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "reference-face.png"
+      }
+    },
+    "3": {
+      "class_type": "AtelierXAnimaGenerate",
+      "inputs": {
+        "diffusion_model": "waiANIMA_v10Base10.safetensors",
+        "text_encoder": "waiANIMA_v10Base10_txt.safetensors",
+        "vae": "qwen_image_vae.safetensors",
+        "positive_prompt": "A fully clothed adult woman, calm expression, detailed anime illustration, studio portrait",
+        "negative_prompt": "child, minor, nude, nsfw, blurry, low quality, white background, simple background",
+        "width": 768,
+        "height": 1024,
+        "seed": 123456789,
+        "steps": 24,
+        "cfg": 4.5,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal",
+        "lora_stack": "[]",
+        "reference_full": ["1", 0],
+        "reference_face": ["2", 0],
+        "consistency": "{\"method\":\"anima-incontext-character\",\"params\":{\"strength\":1.0,\"end_percent\":0.5}}"
+      }
+    },
+    "4": {
+      "class_type": "PreviewImage",
+      "inputs": {
+        "images": ["3", 0]
+      }
+    }
+  },
+  "client_id": "atelierx-anima-incontext-example"
+}

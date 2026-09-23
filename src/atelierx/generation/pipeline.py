@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import math
 
-from ..common import ApiError
+from ..common import ApiError, canonical
+from . import consistency as consistency_methods
 
 NODES = {
     "upscale": ("AtelierXUpscale",),
@@ -145,11 +146,29 @@ def validate_pipeline(value, info, has_loras=False):
     return result
 
 
-def build_anima_prompt(anima_inputs, pipeline, job_id, output_name=None):
-    """Build the fixed Anima -> Upscale -> Detailer -> Censor -> Alpha -> Encode chain."""
+def build_anima_prompt(anima_inputs, pipeline, job_id, output_name=None, consistency=None):
+    """Build the fixed Anima -> Upscale -> Detailer -> Censor -> Alpha -> Encode chain.
+
+    `consistency` is None (unchanged graph, ADR-0027 backward compatibility)
+    or a validated {method,params,references} (see consistency.py). When
+    present, two placeholder LoadImage nodes ("ref-full"/"ref-face") are
+    wired into the Anima node's reference_full/reference_face inputs; the
+    caller fills their real uploaded filenames in after this call (the same
+    two-step pattern independent postprocess uses for its source LoadImage).
+    """
     if output_name is not None and "encode" not in pipeline:
         raise ApiError("GEN_INVALID_POSTPROCESS", "output_name requires the encode stage")
-    prompt = {"1": {"class_type": "AtelierXAnimaGenerate", "inputs": anima_inputs}}
+    prompt = {}
+    if consistency is not None:
+        prompt["ref-full"] = {"class_type": "LoadImage", "inputs": {"image": ""}}
+        prompt["ref-face"] = {"class_type": "LoadImage", "inputs": {"image": ""}}
+        anima_inputs = {
+            **anima_inputs,
+            "reference_full": ["ref-full", 0],
+            "reference_face": ["ref-face", 0],
+            "consistency": canonical(consistency_methods.node_prompt_fields(consistency)),
+        }
+    prompt["1"] = {"class_type": "AtelierXAnimaGenerate", "inputs": anima_inputs}
     image = ["1", 0]
     next_id = 2
     if "upscale" in pipeline:

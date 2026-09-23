@@ -26,6 +26,7 @@ from ..gpu import permission
 from ..queue_api import attach_queue_api
 from ..output_names import validate_output_name
 from .pipeline import NODES as POSTPROCESS_NODES, build_anima_prompt, validate_pipeline
+from . import consistency as consistency_methods
 
 NODE = "AtelierXAnimaGenerate"
 ENCODE = "AtelierXEncodeSave"
@@ -76,11 +77,12 @@ def validate_inputs(value, schema):
     if not isinstance(value, dict):
         raise ApiError("GEN_INVALID_INPUT", "inputs must be an object")
     required = schema["input"]["required"]
-    allowed = set(required) | {"loras", "output_name"}
+    allowed = set(required) | {"loras", "output_name", "consistency"}
     if set(value) - allowed or set(required) - set(value):
         raise ApiError("GEN_INVALID_INPUT", "Missing or unknown Anima fields")
     result = dict(value)
     result.pop("output_name", None)
+    consistency_raw = result.pop("consistency", None)
     for name, definition in required.items():
         kind, options = definition[0], definition[1] if len(definition) > 1 else {}
         item = value[name]
@@ -113,7 +115,7 @@ def validate_inputs(value, schema):
         if type(strength) not in (int, float) or not math.isfinite(strength) or not -100 <= strength <= 100:
             raise ApiError("GEN_INVALID_INPUT", "LoRA strength must be finite and within -100..100")
     result["lora_stack"] = canonical(loras)
-    return result
+    return result, consistency_raw
 
 
 class Generation:
@@ -162,7 +164,8 @@ class Generation:
 
     async def node_info(self):
         """Read the exact registration snapshot used to validate a job."""
-        names = [NODE, "SaveImage", "LoraLoaderModelOnly"] + [node for nodes in POSTPROCESS_NODES.values() for node in nodes]
+        names = [NODE, "SaveImage", "LoraLoaderModelOnly"] + [node for nodes in POSTPROCESS_NODES.values() for node in nodes] \
+            + list(consistency_methods.REQUIRED_NODES)
         values = await asyncio.gather(*(self.call("GET", f"/object_info/{name}") for name in names))
         return {name: value[name] for name, value in zip(names, values) if name in value}
 
@@ -170,6 +173,8 @@ class Generation:
         result = {key: value for key, value in job.items() if key not in {"node_inputs", "idempotency_key", "fingerprint"}}
         result.setdefault("requested_postprocess", {})
         result.setdefault("postprocess", {})
+        result.setdefault("requested_consistency", None)
+        result.setdefault("consistency", None)
         return result
 
     def lookup(self, job_id):
@@ -245,7 +250,17 @@ class Generation:
             info = await self.node_info()
             if NODE not in info:
                 raise ApiError("GEN_NODE_UNAVAILABLE", "Anima node is not registered", 503)
-            node_inputs = validate_inputs(inputs, info[NODE])
+            node_inputs, consistency_raw = validate_inputs(inputs, info[NODE])
+            consistency = consistency_methods.validate_consistency(consistency_raw, info, family="anima")
+            if consistency is not None:
+                resolved = []
+                for reference in consistency["references"]:
+                    _, image, _ = self.image_source(reference["image_id"])
+                    if image["sha256"] != reference["sha256"]:
+                        raise ApiError("GEN_IMAGE_INTEGRITY",
+                                       f"consistency reference sha256 does not match the stored image: {reference['role']}", 422)
+                    resolved.append(dict(reference))
+                consistency = {**consistency, "references": resolved}
             output_name = parse_output_name(inputs.get("output_name"))
             pipeline = validate_pipeline(postprocess, info, bool(json.loads(node_inputs["lora_stack"])))
             pipeline = require_named_encode(pipeline, info, output_name)
@@ -256,7 +271,10 @@ class Generation:
                         raise ApiError("GEN_INVALID_POSTPROCESS", f"detailer {input_name} is not registered for {node}")
             job_id = str(uuid.uuid4())
             job = dict(job_id=job_id, prompt_id=job_id, state="queued", created_at=time.time(),
-                       **({"output_name": output_name} if output_name is not None else {}), inputs=inputs, requested_postprocess=postprocess or {}, postprocess=pipeline, node_inputs=node_inputs, fingerprint=fingerprint,
+                       **({"output_name": output_name} if output_name is not None else {}), inputs=inputs,
+                       requested_postprocess=postprocess or {}, postprocess=pipeline,
+                       requested_consistency=consistency_raw, consistency=consistency,
+                       node_inputs=node_inputs, fingerprint=fingerprint,
                        idempotency_key=key, images=[], error=None)
             self.save(job)
             self.jobs[job_id] = job
@@ -339,7 +357,8 @@ class Generation:
                 await self.node_schema()
             job["state"] = "submitting"
             self.save(job)
-            prompt, output_node = build_anima_prompt(job["node_inputs"], job.get("postprocess", {}), job["job_id"], job.get("output_name"))
+            prompt, output_node = build_anima_prompt(job["node_inputs"], job.get("postprocess", {}), job["job_id"],
+                                                      job.get("output_name"), job.get("consistency"))
             if job.get("source_image_id"):
                 _, image, path = self.image_source(job["source_image_id"])
                 data = path.read_bytes()
@@ -356,6 +375,26 @@ class Generation:
                 if name != filename or subfolder or uploaded.get("type", "input") != "input":
                     raise ApiError("GEN_COMFY_REJECTED", "ComfyUI returned unexpected uploaded image location", 502)
                 prompt["1"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+            if job.get("consistency"):
+                # ADR-0027 P7: re-check integrity right before execution, same
+                # two-step LoadImage pattern as the source_image_id block above.
+                for reference in job["consistency"]["references"]:
+                    _, image, path = self.image_source(reference["image_id"])
+                    data = path.read_bytes()
+                    if hashlib.sha256(data).hexdigest() != reference["sha256"]:
+                        raise ApiError("GEN_IMAGE_INTEGRITY",
+                                       f"Consistency reference image changed before generation: {reference['role']}", 422)
+                    extension = image["media_type"].split("/")[-1]
+                    filename = f"atelierx-{job['job_id']}-ref-{reference['role']}.{extension}"
+                    form = aiohttp.FormData()
+                    form.add_field("image", data, filename=filename, content_type=image["media_type"])
+                    form.add_field("overwrite", "false")
+                    uploaded = await self.call("POST", "/upload/image", data=form)
+                    name = uploaded.get("name")
+                    subfolder = uploaded.get("subfolder", "")
+                    if name != filename or subfolder or uploaded.get("type", "input") != "input":
+                        raise ApiError("GEN_COMFY_REJECTED", "ComfyUI returned unexpected uploaded image location", 502)
+                    prompt[f"ref-{reference['role']}"]["inputs"]["image"] = name
             job["output_node"] = output_node
             self.save(job)
             try:
@@ -503,6 +542,7 @@ def create_app(directory, comfy_url, token, poll=1.0, coordinator_url=None):
         metadata = stack[1] if len(stack) > 1 and isinstance(stack[1], dict) else {}
         result["loras"] = [item for item in metadata.get("atelierx_lora_stack", {}).get("options", []) if isinstance(item, str)]
         result["upscale_models"] = [item for item in service._options(info.get("AtelierXUpscale", {}), "upscale_model") if isinstance(item, str)]
+        result["consistency_methods"] = consistency_methods.resources_entry(info, family="anima")
         return web.json_response(result, headers={"Cache-Control": "no-store"})
 
     async def independent_postprocess(request):
