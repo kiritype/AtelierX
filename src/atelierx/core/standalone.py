@@ -13,6 +13,7 @@ import aiohttp
 
 from ..common import ApiError, canonical
 from .presets import _model_name
+from ..output_names import build_output_name
 
 
 class StandaloneJobs:
@@ -132,7 +133,10 @@ class StandaloneJobs:
             # A standalone job has no Task row, so it must freeze the sentinel
             # before its own durable job record is written.
             inputs["seed"] = secrets.randbelow(2**53)
-        job = {"id": str(uuid.uuid4()), "state": "queued", "created_at": time.time(), "request": body, "config": self.config, "generation_endpoint": self.core.generation_url,
+        job_id, created_at = str(uuid.uuid4()), time.time()
+        accepted = time.localtime(created_at)
+        inputs["output_name"] = build_output_name("AtelierX", "discord", time.strftime("%Y-%m-%d", accepted), time.strftime("%H%M%S", accepted) + "-" + job_id[:6])
+        job = {"id": job_id, "state": "queued", "created_at": created_at, "request": body, "config": self.config, "generation_endpoint": self.core.generation_url,
                "generation_job_id": None, "generation_inputs": inputs, "seed": inputs["seed"], "images": [], "error": None,
                "validation": {"state": "not_requested", "outcome": None}}
         try:
@@ -246,7 +250,7 @@ class StandaloneJobs:
                         or item.get("media_type") not in ("image/png", "image/webp")):
                     raise ApiError("CORE_GENERATION_PROTOCOL_ERROR", "Invalid Generation image descriptor", 502)
                 seen.add(item["image_id"])
-            job["images"] = [{"image_id": item["image_id"], "generation_image_id": item["image_id"], "sha256": item["sha256"], "bytes": item["bytes"], "media_type": item["media_type"], "content_url": "/v1/standalone-jobs/" + job["id"] + "/images/" + item["image_id"] + "/content"} for item in remote.get("images", [])]
+            job["images"] = [{"image_id": item["image_id"], "generation_image_id": item["image_id"], "sha256": item["sha256"], "bytes": item["bytes"], "media_type": item["media_type"], "output_path": item["output_path"] if isinstance(item.get("output_path"), str) else None, "content_url": "/v1/standalone-jobs/" + job["id"] + "/images/" + item["image_id"] + "/content"} for item in remote.get("images", [])]
             job["state"] = "completed"
         elif state == "failed": job.update(state="failed", error={"code": "CORE_GENERATION_FAILED", "message": "Generation did not complete"})
         elif state == "cancelled": job.update(state="failed", error={"code": "CORE_GENERATION_CANCELLED", "message": "Generation was cancelled"})

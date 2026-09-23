@@ -1,5 +1,18 @@
 # 전역 프롬프트 조각과 제작 계획 API
 
+## 2026-09-23 사용자 입력 조각 번호·손 포함 — ADR-0026
+
+이 절은 아래의 자동 번호 설명(전역 양의 정수 자동 부여·재사용 없음)과 숫자 검색 설명을 대체한다.
+
+- **번호:** 이미지별 조각(`common=false`)은 `number` 문자열이 필수다. 앞뒤 공백을 제거한 뒤 1–32자여야 하고 파일명 요소로 그대로 쓸 수 있어야 한다. `<>:"/\|?*`, 제어 문자, 연속 공백, 끝의 점, Windows 예약 이름(CON/PRN/AUX/NUL/COM1–9/LPT1–9)은 거절한다. 숫자·한글·영문 등은 모두 허용한다. 공통 적용 조각의 `number`는 항상 `null`이며 값을 보내면 거절한다. 공통 조각을 이미지별로 바꾸는 PATCH는 `number`를 함께 보내야 하고, 이미지별 조각을 공통으로 바꾸면 번호는 `null`이 된다.
+- **오류:** 형식 오류는 `CORE_FRAGMENT_NUMBER_INVALID`, 이미지별 조각의 번호 누락은 `CORE_FRAGMENT_NUMBER_REQUIRED`(모두 400, 메시지 한국어)다.
+- **수정:** `PATCH /v1/prompt-fragments/{id}`에 `number`를 보내 revision과 함께 바꾼다. 과거 revision·이미 접수한 Task/계획 snapshot의 번호와 출력 파일명은 바뀌지 않는다. 조각 snapshot은 `{id, revision, number, body, include}`(번호가 있을 때)다.
+- **중복 허용·경고:** 같은 번호(대소문자 무시)를 허용한다. `POST`/`PATCH` 응답은 조각 문서에 `warnings` 배열을 더한다. 보관되지 않은 다른 조각과 번호가 같으면 `[{"code":"duplicate_number","number":"12","fragment_ids":["..."]}]`, 아니면 `[]`다. 목록·상세 GET에는 `warnings`가 없다. 확인 창은 Frontend가 띄운다.
+- **번호 확인:** `GET /v1/prompt-fragments/number-check?number=<번호>[&exclude_id=<조각 ID>]` → `{"number":"12","duplicates":[{"id","number","name","archived"}]}`. 보관된 조각도 `archived:true`로 포함한다. 번호 형식이 틀리면 400이다.
+- **목록·검색:** 정렬은 숫자만인 번호(숫자 크기순) → 그 밖의 번호(문자순) → 번호 없음(공통) 순이다. `q`가 `#`으로 시작하거나 숫자만이면 번호 정확 일치(대소문자 무시)만, 그 밖에는 번호 정확 일치 또는 이름·본문 부분 일치로 찾는다.
+- **이전:** Core 시작 시 기존 INTEGER 번호 열과 고유 인덱스를 TEXT 열·일반 인덱스로 재구성한다. 기존 이미지별 조각은 번호를 `"12"`처럼 문자열로 유지하고 공통 조각의 번호는 `null`로 바꾼다(현재 문서만, revision 이력은 그대로). 번호가 없던 과거 이미지별 조각은 생성 시각·ID 순으로 쓰이지 않은 `"1"`, `"2"`…를 채운다. 자동 번호 순서 표(`prompt_fragment_number_sequence`)는 더 쓰지 않는다.
+- **손 포함:** `include`는 `upper`, `lower` 필수와 선택 `accessories`, `hands` bool이다. 생략한 `accessories`/`hands`는 합성 시 true다. 손 항목은 포함될 때만 생성 Prompt와 검사 항목에 들어간다. 합성 순서·검사 항목·출력 파일명은 [REST API](rest-api.md)의 2026-09-23 절을 따른다.
+
 ## 2026-09-22 외형·액세서리 계약 정정
 
 캐릭터의 `appearance_prompt`는 항상 포함하고, 의상 `components`는 `upper/lower/accessories`다. 조각 `include`에 `accessories` boolean을 추가하며 생략한 과거 조각은 합성 시 true로 해석한다. 과거 조각 revision 문서와 저장된 계획 snapshot을 다시 쓰지 않는다. 이전 문서의 상의/하의만 포함 여부를 갖는다는 표현은 이 확장으로 대체한다.
@@ -16,13 +29,14 @@ Core preview/Task/제작 계획에 선택적 `common_fragments: [{id, revision}]
 
 - `GET /v1/prompt-fragment-categories`: 사용자 관리 단일 단계 분류 목록을 `archived`, `limit`(최대 200), `offset`으로 조회한다. 응답은 `{items, total, limit, offset}`이다.
 - `POST /v1/prompt-fragment-categories`: `{name}`으로 분류를 만든다. `GET`/`PATCH /v1/prompt-fragment-categories/{id}`는 현재 분류 조회와 revision 기반 이름 변경·보관 처리를 제공한다. 분류는 `{id, name, revision, archived, created_at, updated_at}`이다.
-- `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q`는 이름·본문 부분 검색이며 숫자 또는 `#` 뒤 숫자는 표시 번호 정확 검색이다.
-- `POST /v1/prompt-fragments`: 기존 `{name, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)를 더할 수 있다.
+- `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q` 검색 규칙은 위 ADR-0026 절을 따른다.
+- `POST /v1/prompt-fragments`: `{name, number, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)·`common`을 더할 수 있다. 공통 조각은 `number`를 보내지 않는다.
+- `GET /v1/prompt-fragments/number-check`: 번호 중복 확인(위 절).
 - `GET /v1/prompt-fragments/{id}`: 현재 문서 조회.
 - `PATCH /v1/prompt-fragments/{id}`: 현재 `revision`과 변경 필드로 수정·보관 처리.
 - `GET /v1/prompt-fragments/{id}/revisions`: 변경 이력 페이지 조회.
 
-분류는 태그가 아니며 조각당 하나 또는 미분류만 허용한다. 조각에는 생성 순서의 전역 양의 정수 `number`가 자동으로 한 번만 부여된다. 번호는 보관 여부와 무관하게 재사용하지 않으며 UUID `id`·revision 이력은 유지한다. 과거 데이터는 생성 시각, UUID 순으로 번호를 채우고 기존 revision 문서는 변경하지 않는다. 보관된 분류는 새 조각 또는 분류 변경 대상으로 지정할 수 없지만, 이미 그 분류를 가리키는 조각은 조회·이력·기존 계획 스냅샷에서 계속 읽을 수 있다.
+분류는 태그가 아니며 조각당 하나 또는 미분류만 허용한다. (2026-09-23 대체) 조각 번호는 위 ADR-0026 절처럼 사용자가 입력·수정한다. UUID `id`·revision 이력은 유지한다. 보관된 분류는 새 조각 또는 분류 변경 대상으로 지정할 수 없지만, 이미 그 분류를 가리키는 조각은 조회·이력·기존 계획 스냅샷에서 계속 읽을 수 있다.
 
 이름은 1–200자, 본문은 1–20,000자다. 생성 요청에는 `fragment: {id, revision}`을 지정한다. 조각 모드는 기존 구도·표정·동작·상황·include 직접 입력과 혼용하지 않는다. 최신 활성 revision만 신규 계획에 사용할 수 있으며 이미 저장된 계획의 스냅샷은 수정되지 않는다. 기존 스냅샷의 `{id, revision, body, include}` 모양은 호환을 위해 유지한다.
 

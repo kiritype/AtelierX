@@ -87,6 +87,46 @@ export function postprocessRequest(draft) {
   return {postprocess};
 }
 
+export const FINDING_SOURCE_LABELS = Object.freeze({character_features: "외형 특징", character_appearance: "외형 설명", outfit_upper: "상의", outfit_lower: "하의", outfit_accessories: "액세서리", outfit_hands: "손", fragment: "조각"});
+export const findingSourceLabel = (source) => (source && FINDING_SOURCE_LABELS[source]) || null;
+
+export function singleValidationSummary(run) {
+  const result = run?.result && typeof run.result === "object" ? run.result : {};
+  const describe = (item) => {
+    const source = findingSourceLabel(item?.source);
+    const subject = String(item?.prompt_excerpt || item?.expected || item?.feature || item?.code || "항목");
+    const observed = item?.observed ? String(item.observed) : "";
+    return {source, subject, observed, text: `${source ? `[${source}] ` : ""}${subject}${observed ? ` — ${observed}` : ""}`};
+  };
+  const diagnostics = (result.diagnostics && typeof result.diagnostics === "object" ? result.diagnostics : null) || (run?.diagnostics && typeof run.diagnostics === "object" ? run.diagnostics : {});
+  const dropped = diagnostics.regeneration_proposal_dropped;
+  return {
+    findings: (Array.isArray(result.findings) ? result.findings : []).map(describe),
+    notAssessable: (Array.isArray(result.not_assessable) ? result.not_assessable : []).map(describe),
+    proposalDropped: typeof dropped === "string" && dropped ? dropped : null,
+  };
+}
+
+export function outputPathText(image) {
+  return typeof image?.output_path === "string" && image.output_path.trim() ? image.output_path : null;
+}
+
+function singleValidationView(run) {
+  const summary = singleValidationSummary(run);
+  const wrap = el("div", "", "validation-result");
+  const list = (items) => { const ul = el("ul"); for (const item of items) ul.append(el("li", item.text)); return ul; };
+  if (summary.findings.length) wrap.append(el("h4", `불합격 근거 ${summary.findings.length}개`), list(summary.findings));
+  else if (run?.result) wrap.append(el("p", "불합격 근거가 없습니다.", "muted"));
+  if (summary.notAssessable.length) {
+    const box = el("details", "", "validation-not-assessable");
+    box.append(el("summary", `판단 불가 항목 ${summary.notAssessable.length}개 (불합격 아님)`), el("p", "이미지나 구도로 확인할 수 없어 판정에서 제외한 항목입니다.", "muted"), list(summary.notAssessable));
+    wrap.append(box);
+  }
+  if (summary.proposalDropped) wrap.append(el("p", "재생성 제안 형식 오류로 제안을 생략했습니다.", "muted"));
+  if (run?.error) wrap.append(el("p", errorText(run.error), "error"));
+  return wrap;
+}
+
 function field(label, value = "", type = "text") {
   const wrap = el("label", "", "field");
   wrap.append(el("span", label));
@@ -291,6 +331,8 @@ export async function mount(container, ctx) {
       const seed = resolvedSeed(task.snapshot);
       detail.replaceChildren(el("h2", "이미지 상세"), el("p", `형식: ${image.media_type} · ${image.bytes} bytes`), el("p", `Task: ${image.task_id}`, "muted"), ...(seed === null ? [] : [el("p", `Seed: ${seed}`)]));
       detail.prepend(button("← 이미지 목록", backToList, "button mobile-only"));
+      const outputPath = outputPathText(image);
+      if (outputPath) { const pathLine = el("p", "", "output-path"); pathLine.append(el("span", "파일 경로: "), el("code", outputPath)); detail.append(pathLine); }
       if (task.snapshot?.fragment?.id) {
         const fragmentInfo = el("p", "조각 번호 확인 중…", "muted"); detail.append(fragmentInfo);
         ctx.api.get(`/v1/prompt-fragments/${task.snapshot.fragment.id}`).then(fragment => {
@@ -329,12 +371,14 @@ export async function mount(container, ctx) {
       detail.append(el("h3", "단일 검사 이력"));
       for (const run of history.items) {
         const row = el("div", `${verdictLabel(run.state)}${run.outcome ? ` / ${verdictLabel(run.outcome)}` : ""}`, "row");
+        const resultBox = el("div");
+        if (run.result || run.error) resultBox.append(singleValidationView(run));
         row.append(button("결과", async () => {
           try {
             const current = await ctx.api.get(`/v1/validation-runs/${run.id}`);
-            if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) ctx.notify(JSON.stringify({state: current.state, outcome: current.outcome, error: current.error}));
+            if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) resultBox.replaceChildren(singleValidationView(current));
           } catch (error) { if (activeDetail(disposed, detailEpoch, epoch, state.selected, imageId)) ctx.notify(errorText(error), true); }
-        })); detail.append(row);
+        })); detail.append(row, resultBox);
       }
       if (reviewMode) {
         void addSingleActions(image, epoch); await addGroupActions(image, epoch);

@@ -20,6 +20,7 @@ from aiohttp import web
 from ..runtime_info import RUNTIME_INFO
 
 from ..common import ApiError, canonical
+from ..output_names import build_output_name
 from .batches import CoreBatches
 from .production_plans import ProductionPlans
 from .catalog import list_groups, list_images
@@ -42,8 +43,11 @@ from .operations_status import OperationsStatus
 
 CORE = web.AppKey("core", object)
 FRONTEND_CONNECTION = web.AppKey("frontend_connection", FrontendConnection)
-COMPONENTS = {"upper", "lower", "accessories"}
+PARTS = ("upper", "lower", "accessories", "hands")
+COMPONENTS = set(PARTS)
+REQUIRED_COMPONENTS = {"upper", "lower", "accessories"}
 LEGACY_COMPONENTS = {"appearance", "upper", "lower"}
+COMPOSITION_VERSION = 4
 GEN_FIELDS = {"diffusion_model", "text_encoder", "vae", "width", "height", "seed", "steps", "cfg", "sampler", "scheduler"}
 TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "common_fragments", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
 
@@ -68,8 +72,28 @@ def components(value):
     # character-owned appearance schema.
     if isinstance(value, dict) and set(value) == LEGACY_COMPONENTS:
         return {name: text(value[name], name) for name in sorted(LEGACY_COMPONENTS)}
-    fields(value, COMPONENTS, COMPONENTS)
-    return {name: text(value[name], name) for name in sorted(COMPONENTS)}
+    fields(value, COMPONENTS, REQUIRED_COMPONENTS)
+    return {name: text(value.get(name, ""), name) for name in sorted(COMPONENTS)}
+
+
+def check_features(value):
+    if not isinstance(value, list) or len(value) > 50:
+        invalid("check_features must be an array of at most 50 items")
+    result = []
+    for item in value:
+        if not isinstance(item, str):
+            invalid("check_features items must be text")
+        item = item.strip()
+        if len(item) > 200:
+            invalid("check_features items must be at most 200 characters")
+        if item:
+            result.append(item)
+    return result
+
+
+def output_path(item):
+    value = item.get("output_path")
+    return value if isinstance(value, str) and 0 < len(value) <= 1024 else None
 
 
 def revision(value):
@@ -151,7 +175,7 @@ class Core:
             invalid("fragment cannot be combined with framing, prompt inputs, or include")
         framing = None if fragment else payload.get("framing")
         if fragment:
-            framing_prompt, include = "", {"upper": True, "lower": True, "accessories": True, **fragment["include"]}
+            framing_prompt, include = "", {"upper": True, "lower": True, "accessories": True, "hands": True, **fragment["include"]}
         else:
             if not isinstance(framing, str) or framing not in {"upper_body", "full_body", "custom"}:
                 invalid("framing supports upper_body, full_body or custom")
@@ -163,7 +187,7 @@ class Core:
                 include = {"upper": include["upper"], "lower": include["lower"], "accessories": True}
             fields(include, COMPONENTS)
             if any(type(value) is not bool for value in include.values()): invalid("include values must be boolean")
-            if framing == "custom" and set(include) != set(COMPONENTS): invalid("Custom framing requires explicit upper, lower and accessories inclusion")
+            if framing == "custom" and not REQUIRED_COMPONENTS <= set(include): invalid("Custom framing requires explicit upper, lower and accessories inclusion")
         framing_context = ", ".join([fragment["body"] if fragment else framing_prompt, *(item["body"] for item in common_fragments)])
         framing_terms = {entry["requirement"].strip().casefold()
                          for part in clauses(framing_context) for entry in expanded_clause(part)}
@@ -175,20 +199,28 @@ class Core:
         settings = self.store.settings()
         source = group["components"]
         appearance = group.get("character_appearance_prompt", source.get("appearance", ""))
+        character = self.store.entity(group["character_id"], "characters")
+        features = character.get("check_features") or []
         chunks = [settings["positive_quality"]]
         decisions = {"appearance": {"included": True, "reason": "character"}}
         chunks.append(appearance)
-        for name in ("upper", "lower", "accessories"):
+        checks = ([{"text": feature, "source": "character_features"} for feature in features] if features else
+                  [{"text": appearance, "source": "character_appearance"}] if appearance.strip() else [])
+        for name in PARTS:
             active = include.get(name, True) and not (name == "lower" and framing == "upper_body")
             decisions[name] = {"included": active, "reason": "fragment" if fragment and active else "included" if active else
                                ("framing" if name == "lower" and framing == "upper_body" else "user_excluded")}
             if active:
                 chunks.append(source.get(name, ""))
+                if source.get(name, "").strip():
+                    checks.append({"text": source[name], "source": "outfit_" + name})
         for common in common_fragments:
             chunks.append(common["body"])
         chunks.append(framing_prompt)
-        for name in ("expression", "action", "situation"): chunks.append(text(payload.get(name, ""), name))
+        prompt_texts = [framing_prompt] + [text(payload.get(name, ""), name) for name in ("expression", "action", "situation")]
+        chunks.extend(prompt_texts[1:])
         if fragment: chunks.append(fragment["body"])
+        checks.extend({"text": value, "source": "fragment"} for value in ([fragment["body"]] if fragment else prompt_texts) if value.strip())
         positive = ", ".join(chunk for chunk in chunks if chunk.strip())
         gen = selected_presets.get("generation", {}).get("settings")
         if gen is None:
@@ -204,18 +236,19 @@ class Core:
             invalid("Each postprocess stage must be an object")
         if "upscale" in postprocess:
             validate_postprocess_settings({"upscale": postprocess["upscale"]})
-        character = self.store.entity(group["character_id"], "characters")
-        negative_sources = {"global": settings["negative"], "character": character.get("negative_prompt", "")}
+        negative_sources ={"global": settings["negative"], "character": character.get("negative_prompt", "")}
         negative = ", ".join(part for part in negative_sources.values() if part.strip())
         positive_terms = {entry["requirement"].strip().casefold() for part in clauses(positive) for entry in expanded_clause(part)}
         forbidden_terms = {entry["requirement"].strip().casefold() for part in clauses(negative_sources["character"]) for entry in expanded_clause(part)}
         if positive_terms & forbidden_terms:
             raise ApiError("CORE_PROMPT_CONFLICT", "A character forbidden element also occurs in the positive prompt")
         gen.update(positive_prompt=positive, negative_prompt=negative)
-        snapshot = dict(composition_version=2, negative_sources=negative_sources, character_revision=character["revision"], group=group, settings=settings,
-                        generation_inputs=gen, inclusion=decisions, generation_endpoint=self.generation_url)
+        prefix = self.output_prefix(group)
+        if fragment and fragment.get("number"):
+            gen["output_name"] = build_output_name(*prefix, fragment["number"])
+        snapshot = dict(composition_version=COMPOSITION_VERSION, negative_sources=negative_sources, character_revision=character["revision"], group=group, settings=settings,
+                        generation_inputs=gen, inclusion=decisions, generation_endpoint=self.generation_url, positive_check=checks, output_name_prefix=prefix)
         if framing == "custom":
-            snapshot["composition_version"] = 3
             snapshot["prompt_inputs"] = {name: payload.get(name, "") for name in ("framing_prompt", "expression", "action", "situation")}
         if selected_presets:
             snapshot["preset_sources"] = {kind: selected_presets[kind]["preset"] for kind in sorted(selected_presets)}
@@ -229,6 +262,9 @@ class Core:
             snapshot["validation"] = self.validation.freeze(selection)
         digest = hashlib.sha256(canonical(snapshot).encode()).hexdigest()
         return {"snapshot": snapshot, "preview_hash": digest}
+
+    def output_prefix(self, group):
+        return ["AtelierX", *(self.store.entity(group[key], kind)["name"] for key, kind in (("work_id", "works"), ("character_id", "characters"), ("outfit_id", "outfits")))]
 
     def preset_settings(self, payload):
         """Resolve explicitly versioned presets before composing an immutable Task snapshot."""
@@ -348,7 +384,7 @@ class Core:
                 images.append(dict(id=str(uuid.uuid4()), task_id=task["id"], group_id=task["group_id"],
                                    generation_image_id=item["image_id"], generation_job_id=job["job_id"],
                                    sha256=item["sha256"], bytes=item["bytes"], media_type=item["media_type"],
-                                   validation_state="not_requested"))
+                                   output_path=output_path(item), validation_state="not_requested"))
             self.store.finish_generation(task, images)
         elif state == "cancelled":
             task.update(state="cancelled", error=None)
@@ -516,12 +552,13 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
                                       "limit": limit, "offset": offset})
         body = await request.json()
         required = {"name"} | ({"parent_id"} if KINDS[kind] else set()) | ({"components"} if kind == "outfits" else set())
-        fields(body, required | ({"negative_prompt", "appearance_prompt"} if kind == "characters" else set()), required)
+        fields(body, required | ({"negative_prompt", "appearance_prompt", "check_features"} if kind == "characters" else set()), required)
         result = core.store.create_entity(kind, text(body["name"], "name", True),
                                           text(body["parent_id"], "parent_id", True) if KINDS[kind] else None,
                                           components(body["components"]) if kind == "outfits" else None,
                                           character_negative(body.get("negative_prompt", "")) if kind == "characters" else "",
-                                          text(body.get("appearance_prompt", ""), "appearance_prompt") if kind == "characters" else "")
+                                          text(body.get("appearance_prompt", ""), "appearance_prompt") if kind == "characters" else "",
+                                          check_features(body.get("check_features", [])) if kind == "characters" else None)
         return web.json_response(result, status=201)
 
     async def entity_detail(request):
@@ -529,7 +566,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
         if request.method == "GET":
             return web.json_response(core.store.entity_response(entity_id, kind))
         body = await request.json()
-        allowed = {"revision", "name", "archived"} | ({"components"} if kind == "outfits" else set()) | ({"negative_prompt", "appearance_prompt"} if kind == "characters" else set())
+        allowed = {"revision", "name", "archived"} | ({"components"} if kind == "outfits" else set()) | ({"negative_prompt", "appearance_prompt", "check_features"} if kind == "characters" else set())
         fields(body, allowed, {"revision"})
         changes = {key: value for key, value in body.items() if key != "revision"}
         if not changes:
@@ -539,7 +576,9 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
         if "archived" in changes and type(changes["archived"]) is not bool:
             invalid("archived must be boolean")
         if "components" in changes:
-            components(changes["components"])
+            changes["components"] = components(changes["components"])
+        if "check_features" in changes:
+            changes["check_features"] = check_features(changes["check_features"])
         if "negative_prompt" in changes:
             character_negative(changes["negative_prompt"])
         if "appearance_prompt" in changes:
@@ -619,7 +658,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
         return web.json_response(found[1])
 
     async def image(request):
-        return web.json_response(core.store.image(request.match_info["id"]))
+        return web.json_response({"output_path": None, **core.store.image(request.match_info["id"])})
 
     async def image_content(request):
         image = core.store.image(request.match_info["id"])

@@ -27,8 +27,11 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
             if self.mode == "bad": return web.json_response({"choices":[{"message":{"content":"not json"}}]})
             if self.mode == "reject": return web.Response(status=401)
             checks = json.loads(self.provider_bodies[-1]["messages"][1]["content"][0]["text"].split(": ", 1)[1])
-            verdict = {"assessments": [{"id": check["id"], "status": "mismatch" if self.mode == "fail" and i == 0 else "matched",
+            first = {"fail": "mismatch", "not_assessable": "not_assessable"}.get(self.mode, "matched")
+            verdict = {"assessments": [{"id": check["id"], "status": first if i == 0 else "matched",
                         "observed": "test visual observation", "location": "center"} for i, check in enumerate(checks)]}
+            if getattr(self, "proposal", None) is not None:
+                verdict["regeneration_changes"] = self.proposal
             choice = {"message":{"content":json.dumps(verdict)}}
             if self.mode == "length": choice["finish_reason"] = "length"
             return web.json_response({"choices":[choice], "usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19,"ignored":"secret"}})
@@ -278,5 +281,51 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(result["outcome"])
         self.assertIsNone(result["result"])
         self.assertEqual(result["late_result"]["outcome"], "passed")
+
+    async def test_positive_check_contract_fingerprint_and_not_assessable(self):
+        _, upload = await self.upload()
+        service = self.client.app[SERVICE]
+        check = [{"text": "silver hair", "source": "character_features"}, {"text": "black boots", "source": "outfit_lower"}]
+        for bad in ([], [{"text": "x", "source": "quality"}], [{"text": "", "source": "fragment"}],
+                    [{"text": "x" * 4001, "source": "fragment"}], [{"text": "x", "source": "fragment", "extra": 1}], "x"):
+            body = self.body(upload); body["image"]["positive_check"] = bad
+            self.assertEqual((await self.submit_body(body, "bad-check"))[0], 400)
+        legacy = self.body(upload)
+        scoped = self.body(upload); scoped["image"]["positive_check"] = check
+        self.assertEqual((await self.submit_body(legacy, "scope-key"))[0], 202)
+        self.assertEqual((await self.submit_body(scoped, "scope-key"))[0], 409)
+        self.mode = "not_assessable"
+        status, job = await self.submit_body(scoped, "scoped")
+        self.assertEqual(status, 202)
+        result = await self.wait(job["job_id"])
+        self.assertEqual(result["evaluation_version"], 6)
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(result["result"]["not_assessable"], [{"prompt_excerpt": "silver hair", "source": "character_features", "observed": "test visual observation"}])
+        content = self.provider_bodies[-1]["messages"][1]["content"]
+        listed = json.loads(content[0]["text"].split(": ", 1)[1])
+        self.assertEqual([item["requirement"] for item in listed if item["kind"] == "positive"], ["silver hair", "black boots"])
+        self.assertIn("adult woman", content[-1]["text"])
+        self.assertIn("not_assessable", self.provider_bodies[-1]["messages"][0]["content"])
+        self.assertEqual(len(service.jobs), 2)
+
+    async def test_invalid_regeneration_proposal_is_dropped_but_failure_kept(self):
+        _, upload = await self.upload()
+        body = self.body(upload); body["generation_settings"] = {"seed": 1, "steps": 24, "cfg": 4.5}
+        self.mode = "fail"
+        self.proposal = [{"field": "steps", "value": 500, "reason": "more detail", "evidence_ids": ["positive-1"]}]
+        _, job = await self.submit_body(body, "bad-proposal")
+        result = await self.wait(job["job_id"])
+        self.assertEqual((result["state"], result["outcome"], result["error"]), ("completed", "failed", None))
+        self.assertEqual(result["result"]["regeneration"]["changes"], [])
+        self.assertIn("steps is out of range", result["result"]["diagnostics"]["regeneration_proposal_dropped"])
+        self.assertIn("proposal_unavailable_reason", result["result"]["regeneration"])
+        self.proposal = [{"field": "steps", "value": 30, "reason": "more detail", "evidence_ids": ["positive-1"]}]
+        _, job = await self.submit_body(body, "good-proposal")
+        result = await self.wait(job["job_id"])
+        self.assertEqual(result["result"]["regeneration"]["changes"], self.proposal)
+        self.assertNotIn("diagnostics", result["result"])
+        self.proposal = None; self.mode = "bad"
+        _, job = await self.submit_body(body, "bad-judgment")
+        self.assertEqual((await self.wait(job["job_id"]))["error"]["code"], "VAL_PROVIDER_RESPONSE_INVALID")
 
 if __name__ == "__main__": unittest.main()

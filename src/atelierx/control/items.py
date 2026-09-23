@@ -378,6 +378,10 @@ class ComfyUIItem(ProcessItem):
             raise OperationError("ComfyUI 프로세스가 종료되지 않았습니다.")
         self.panel.last_logs[self.id] = record.get("log")
         self.save_record(None)
+        # Windows can keep the listening socket briefly after exit; a restart would otherwise see "external".
+        deadline = time.monotonic() + 20
+        while procs.port_open(self.port()) and time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
 
 
 class LmStudioItem(Item):

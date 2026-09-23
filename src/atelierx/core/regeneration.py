@@ -17,11 +17,11 @@ class Regeneration:
         snapshot = copy.deepcopy(source["snapshot"])
         inputs = snapshot["generation_inputs"]
         patch = body.get("generation_inputs", {})
-        if not isinstance(patch, dict) or set(patch) & {"positive_prompt", "negative_prompt"}:
+        if not isinstance(patch, dict) or set(patch) & {"positive_prompt", "negative_prompt", "output_name"}:
             raise ApiError("CORE_REGENERATION_INVALID", "Regeneration preserves the saved prompt intent")
         if manual and "seed" not in patch:
             inputs["seed"] = (inputs["seed"] + 1 + secrets.randbelow(2**32)) % (2**64)
-        settings = {key: value for key, value in inputs.items() if key not in {"positive_prompt", "negative_prompt"}}
+        settings = {key: value for key, value in inputs.items() if key not in {"positive_prompt", "negative_prompt", "output_name"}}
         settings.update(patch)
         inputs.update(self.validate_generation(settings))
         if "postprocess" in body:

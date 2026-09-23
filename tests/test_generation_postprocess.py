@@ -45,8 +45,11 @@ class PostprocessTests(unittest.IsolatedAsyncioTestCase):
         async def history(request): return web.json_response(self.history)
         async def view(request):
             return web.Response(body=b"RIFFxxxxWEBPfixture" if request.query.get("filename", "").endswith("webp") else b"\x89PNG\r\n\x1a\nfixture")
+        async def upload(request):
+            form = await request.post()
+            return web.json_response({"name": form["image"].filename, "subfolder": "", "type": "input"})
         app.add_routes([web.get("/object_info/{name}", info), web.get("/queue", queue), web.post("/prompt", prompt),
-                        web.get("/history/{id}", history), web.get("/view", view)])
+                        web.get("/history/{id}", history), web.get("/view", view), web.post("/upload/image", upload)])
         self.comfy = TestServer(app); await self.comfy.start_server()
         self.client = TestClient(TestServer(create_app(self.temp.name, str(self.comfy.make_url("/")), "token", .01))); await self.client.start_server()
 
@@ -79,6 +82,106 @@ class PostprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([x["media_type"] for x in done["images"]], ["image/png", "image/webp"])
         image = await self.client.get(done["images"][1]["url"], headers=self.headers())
         self.assertEqual(image.headers["Content-Type"], "image/webp")
+
+    def named_encode(self):
+        self.schemas["AtelierXEncodeSave"] = {"input": {"required": {}, "optional": {"output_name": ["STRING", {"default": ""}]}}}
+
+    async def test_output_name_adds_encode_and_records_output_path(self):
+        self.named_encode()
+        name = "AtelierX/작품/캐릭터/복장/12"
+        response = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name=name)}, headers=self.headers("named"))
+        self.assertEqual(response.status, 202)
+        job = await response.json()
+        self.assertEqual(job["output_name"], name)
+        self.assertEqual(job["postprocess"], {"encode": {"webp_enabled": False, "webp_quality": 90}})
+        await self.state(job["job_id"], "submitted")
+        graph = self.posts[0]["prompt"]
+        self.assertNotIn("output_name", graph["1"]["inputs"])
+        self.assertEqual(graph["2"], {"class_type": "AtelierXEncodeSave", "inputs": {"image": ["1", 0], "filename_prefix": job["job_id"],
+                                      "webp_enabled": False, "webp_quality": 90, "output_name": name}})
+        self.assertNotIn("SaveImage", [node["class_type"] for node in graph.values()])
+        self.pending = []
+        self.history[job["job_id"]] = {"status": {"completed": True}, "outputs": {"2": {"atelierx_files": [
+            {"filename": "12 (2).png", "type": "output", "subfolder": "AtelierX/작품/캐릭터/복장", "format": "png"}]}}}
+        done = await self.state(job["job_id"], "completed")
+        self.assertEqual(done["images"][0]["output_path"], "AtelierX/작품/캐릭터/복장/12 (2).png")
+        self.assertEqual(done["images"][0]["url"], f'/v1/images/{job["job_id"]}-0')
+        again = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name=name)}, headers=self.headers("named"))
+        self.assertEqual((again.status, (await again.json())["job_id"]), (200, job["job_id"]))
+        conflict = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name=name + "b")}, headers=self.headers("named"))
+        self.assertEqual(conflict.status, 409)
+        unnamed = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": INPUT}, headers=self.headers("named"))
+        self.assertEqual(unnamed.status, 409)
+
+    async def test_output_name_uses_requested_encode_settings(self):
+        self.named_encode()
+        response = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name="AtelierX/discord/2026-09-23/a"),
+                                          "postprocess": {"encode": {"webp_enabled": True, "webp_quality": 80}}}, headers=self.headers("named-webp"))
+        job = await response.json()
+        await self.state(job["job_id"], "submitted")
+        self.assertEqual(self.posts[0]["prompt"]["2"]["inputs"], {"image": ["1", 0], "filename_prefix": job["job_id"], "webp_enabled": True,
+                                                                  "webp_quality": 80, "output_name": "AtelierX/discord/2026-09-23/a"})
+        self.pending = []
+        self.history[job["job_id"]] = {"status": {"completed": True}, "outputs": {"2": {"atelierx_files": [
+            {"filename": "a.png", "type": "output", "subfolder": "AtelierX/discord/2026-09-23", "format": "png"},
+            {"filename": "a.webp", "type": "output", "subfolder": "AtelierX/discord/2026-09-23", "format": "webp"}]}}}
+        done = await self.state(job["job_id"], "completed")
+        self.assertEqual([x["output_path"] for x in done["images"]], ["AtelierX/discord/2026-09-23/a.png", "AtelierX/discord/2026-09-23/a.webp"])
+
+    async def test_invalid_output_name_and_unsupported_encode_are_rejected(self):
+        for index, bad in enumerate(("../x", "/abs", "a\\b", "CON", "a//b", 5, "", "a/b/c/d/e/f/g")):
+            with self.subTest(bad=bad):
+                response = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name=bad)}, headers=self.headers(f"bad-{index}"))
+                self.assertEqual(response.status, 400)
+                self.assertEqual((await response.json())["error"]["code"], "GEN_INVALID_INPUT")
+        response = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": dict(INPUT, output_name="AtelierX/a")}, headers=self.headers("old-encode"))
+        self.assertEqual(response.status, 503)
+        self.assertFalse(self.posts)
+
+    async def test_without_output_name_keeps_save_image_and_path(self):
+        self.named_encode()
+        response = await self.client.post("/v1/nodes/anima/jobs", json={"inputs": INPUT}, headers=self.headers("plain"))
+        job = await response.json()
+        self.assertNotIn("output_name", job)
+        self.assertEqual(job["postprocess"], {})
+        await self.state(job["job_id"], "submitted")
+        self.assertEqual(self.posts[0]["prompt"]["2"], {"class_type": "SaveImage", "inputs": {"images": ["1", 0], "filename_prefix": f'AtelierX/{job["job_id"]}'}})
+        self.pending = []
+        self.history[job["job_id"]] = {"status": {"completed": True}, "outputs": {"2": {"images": [
+            {"filename": "x_00001_.png", "type": "output", "subfolder": "AtelierX"}]}}}
+        done = await self.state(job["job_id"], "completed")
+        self.assertEqual(done["images"][0]["output_path"], "AtelierX/x_00001_.png")
+
+    async def test_independent_postprocess_accepts_output_name(self):
+        self.named_encode()
+        self.schemas["LoadImage"] = {}
+        job = await (await self.client.post("/v1/nodes/anima/jobs", json={"inputs": INPUT}, headers=self.headers("source"))).json()
+        await self.state(job["job_id"], "submitted")
+        self.pending = []
+        self.history[job["job_id"]] = {"status": {"completed": True}, "outputs": {"2": {"images": [{"filename": "s.png", "type": "output", "subfolder": "AtelierX"}]}}}
+        source = (await self.state(job["job_id"], "completed"))["images"][0]
+        path = f'/v1/images/{source["image_id"]}/postprocess-jobs'
+        upscale = {"upscale": {"upscale_model": "4x-UltraSharp.safetensors", "scale": 1.5}}
+        bad = await self.client.post(path, json={"postprocess": upscale, "output_name": "../x"}, headers=self.headers("pp-bad"))
+        self.assertEqual(bad.status, 400)
+        extra = await self.client.post(path, json={"postprocess": upscale, "other": 1}, headers=self.headers("pp-extra"))
+        self.assertEqual(extra.status, 400)
+        response = await self.client.post(path, json={"postprocess": upscale, "output_name": "AtelierX/작품/캐릭터/복장/12"}, headers=self.headers("pp"))
+        self.assertEqual(response.status, 202)
+        post = await response.json()
+        self.assertEqual(post["postprocess"]["encode"], {"webp_enabled": False, "webp_quality": 90})
+        await self.state(post["job_id"], "submitted")
+        graph = self.posts[-1]["prompt"]
+        self.assertEqual(graph["1"]["class_type"], "LoadImage")
+        self.assertEqual(graph["3"]["inputs"]["output_name"], "AtelierX/작품/캐릭터/복장/12")
+        conflict = await self.client.post(path, json={"postprocess": upscale}, headers=self.headers("pp"))
+        self.assertEqual(conflict.status, 409)
+
+    def test_build_prompt_requires_encode_for_output_name(self):
+        with self.assertRaises(ApiError):
+            build_anima_prompt(INPUT, {}, "job", "AtelierX/a")
+        graph, output = build_anima_prompt(INPUT, {"encode": {"webp_enabled": False, "webp_quality": 90}}, "job")
+        self.assertNotIn("output_name", graph[output]["inputs"])
 
     async def test_rejects_unknown_graph_and_missing_registered_stage(self):
         for pipeline in ({"alpha": {"segmentation_model": "missing"}}, {"detailer": {}}, {"other": {}}):

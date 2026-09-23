@@ -65,7 +65,8 @@ class NodeRegistrationTests(unittest.TestCase):
         schema = self.module.AtelierXEncodeSave.define_schema()
         self.assertEqual(schema.node_id, "AtelierXEncodeSave")
         self.assertTrue(schema.is_output_node)
-        self.assertEqual([field["id"] for field in schema.inputs], ["image", "filename_prefix", "webp_enabled", "webp_quality"])
+        self.assertEqual([field["id"] for field in schema.inputs], ["image", "filename_prefix", "webp_enabled", "webp_quality", "output_name"])
+        self.assertEqual((schema.inputs[4]["default"], schema.inputs[4]["optional"]), ("", True))
         self.assertEqual(schema.inputs[3]["min"], 1)
         self.assertEqual(schema.inputs[3]["max"], 100)
         self.assertEqual(asyncio.run(self.module.AtelierXEncodeSaveExtension().get_node_list()), [self.module.AtelierXEncodeSave])
@@ -80,6 +81,12 @@ class NodeRegistrationTests(unittest.TestCase):
         save.assert_called_once_with(image, "C:/Comfy/output", "image", True, 90)
         self.assertIs(result[0], image)
         self.assertEqual(result.ui, {"images": saved["images"], "atelierx_files": saved["files"]})
+
+    def test_execute_forwards_output_name(self):
+        with patch.object(self.module, "save_images", return_value={"images": [], "files": []}) as save:
+            image = object()
+            self.module.AtelierXEncodeSave.execute(image, "image", False, 90, "AtelierX/작품/12")
+        save.assert_called_once_with(image, "C:/Comfy/output", "image", False, 90, "AtelierX/작품/12")
 
 
 if __name__ == "__main__":

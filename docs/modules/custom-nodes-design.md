@@ -131,6 +131,9 @@ Terra의 Anima 첫 생성 Node와 테스트 구현을 검토했고 WAI 조합 �
 
 #### AtelierXEncodeSave (atelierx_encode)
 - [구현] 입력·기본값·저장 규칙은 패키지 README 참조.
+- [구현] 선택 입력 `output_name`(ADR-0026): 비어 있지 않으면 `<ComfyUI output>/<output_name>.png`(+`.webp`)로 저장하고, PNG·WebP 중 하나라도 있으면 두 확장자가 모두 없는 첫 ` (n)` 번호를 함께 쓴다. 이름 규칙은 공용 `src/atelierx/output_names.py`와 같다(Node 쪽 복제, 일치 테스트). 비어 있으면 기존 UUID 이름 저장과 같다.
+- [구현] Generation 연결: `inputs.output_name`(선택)은 Job 입력·멱등 식별에 포함된다. 지정되면 반드시 Encode Node로 저장하며, `encode` 단계가 없으면 `webp_enabled=false`로 추가한다(SaveImage 경로 미사용). 등록된 Encode Node에 `output_name` 입력이 없으면 503으로 거부한다. 독립 후처리(`POST /v1/images/{id}/postprocess-jobs`) 본문도 같은 규칙의 `output_name`을 받는다. 결과 `images[]`에는 ComfyUI history의 `subfolder`/`filename`에서 만든 출력 폴더 기준 상대 경로 `output_path`(모를 때 null)를 기록한다. `<data-dir>/images/` 내부 사본은 그대로다.
+- [미검증] 설치된 ComfyUI에서 `output_name` 저장·충돌 번호 실제 실행은 아직 확인하지 않았다.
 
 ### 의존성·모델 목록
 

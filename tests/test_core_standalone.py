@@ -44,6 +44,8 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "ready_to_dispatch")
         await self.jobs.advance(job); self.assertEqual(self.jobs.get(job["id"])["state"], "completed")
         self.assertEqual(self.calls[0][2]["json"]["inputs"]["positive_prompt"], "literal, prompt")
+        self.assertRegex(self.calls[0][2]["json"]["inputs"]["output_name"], r"^AtelierX/discord/\d{4}-\d{2}-\d{2}/\d{6}-" + job["id"][:6] + "$")
+        self.assertEqual(job["generation_inputs"]["output_name"], self.calls[0][2]["json"]["inputs"]["output_name"])
 
     async def test_optional_mode_is_normalized_without_changing_legacy_fingerprint(self):
         direct, created = self.jobs.create("legacy-direct", {"prompt": "literal", "mode": "direct"})
