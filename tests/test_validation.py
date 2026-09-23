@@ -273,6 +273,34 @@ class ValidationTests(unittest.IsolatedAsyncioTestCase):
         empty["image"].update(negative_prompt="low quality, beard", negative_sources={"global": "low quality", "character": "beard", "fragment": ""})
         self.assertEqual((await self.submit_body(empty, "fragment-empty"))[0], 202)
 
+    async def test_consistency_negative_source_appended_last_and_never_checked(self):
+        """ADR-0027 P4: reference background suppression joins last and is generation-only."""
+        _, upload = await self.upload()
+        body = self.body(upload)
+        body["image"].update(negative_prompt="low quality, beard, lens flare, white background, simple background",
+                             negative_sources={"global": "low quality", "character": "beard", "fragment": "lens flare",
+                                              "consistency": "white background, simple background"})
+        _, job = await self.submit_body(body, "consistency-negative")
+        result = await self.wait(job["job_id"])
+        self.assertEqual(result["outcome"], "passed")
+        sent = self.provider_bodies[-1]["messages"][1]["content"][0]["text"]
+        self.assertIn("beard", sent)
+        self.assertNotIn("lens flare", sent)
+        self.assertNotIn("white background", sent)
+        # Order matters: consistency must be last, after fragment.
+        reordered = copy.deepcopy(body)
+        reordered["image"]["negative_prompt"] = "low quality, beard, white background, simple background, lens flare"
+        self.assertEqual((await self.submit_body(reordered, "consistency-order"))[0], 400)
+        mismatched = copy.deepcopy(body)
+        mismatched["image"]["negative_sources"]["consistency"] = "different text"
+        self.assertEqual((await self.submit_body(mismatched, "consistency-mismatch"))[0], 400)
+        # consistency alone (no fragment) still reproduces and joins correctly.
+        without_fragment = copy.deepcopy(body)
+        without_fragment["image"].update(negative_prompt="low quality, beard, white background, simple background",
+                                         negative_sources={"global": "low quality", "character": "beard",
+                                                           "consistency": "white background, simple background"})
+        self.assertEqual((await self.submit_body(without_fragment, "consistency-no-fragment"))[0], 202)
+
     async def test_cancel_queued_job_never_calls_provider_and_queue_pages(self):
         from unittest.mock import AsyncMock
         _, upload = await self.upload()

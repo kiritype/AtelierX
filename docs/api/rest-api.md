@@ -174,6 +174,11 @@ Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변�
 | POST | `/v1/images/{id}/validations` | `{"provider_id":"local-vision","profile_id":"single-default"}` + 멱등 키 → 검증 Run |
 | GET | `/v1/images/{id}/validations` | 해당 이미지 검증 이력 `{items}` |
 | GET | `/v1/validation-runs/{id}` | Core가 저장한 검증 Run |
+| GET/POST | `/v1/outfits/{id}/reference-samples` | 참조 샘플 전신·얼굴 쌍 생성/조회. 아래 [참조 세트와 일관성](#참조-세트와-일관성---adr-0027) 절 |
+| GET | `/v1/outfits/{id}/reference-set` | 현재 참조 세트 상태(`none/valid/needs_review`) |
+| POST | `/v1/outfits/{id}/reference-set/confirm` | 후보 전신·얼굴 이미지로 새 revision 확정 |
+| POST | `/v1/outfits/{id}/reference-set/reconfirm` | "변경 확인 후 유지": 새 이미지 없이 현재 revision 재확정 |
+| GET | `/v1/outfits/{id}/reference-set/revisions` | 확정 이력(삭제 없음) |
 
 ### Entity와 전역 설정
 
@@ -187,7 +192,7 @@ Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변�
 
 Entity 응답: `id,kind,parent_id,name,revision,archived`, 의상은 `components`, 캐릭터는 `negative_prompt`·`appearance_prompt`·`check_features`. PATCH는 현재 `revision`과 `name`/`archived`, 의상 `components`, 캐릭터 `negative_prompt`/`appearance_prompt`/`check_features`를 지원한다. `parent_id` 이동은 지원하지 않는다. components는 현재 `upper,lower,accessories`를 필수로, `hands`를 선택(생략 시 빈 문자열)으로 전달한다(아래 "2026-09-23 손 항목·검사 항목 출처·출력 파일명" 절). 이름은 비어 있지 않은 문자열, 문자열 최대 20,000자, revision은 1 이상 정수다. revision 불일치는 409. archive는 연쇄 삭제가 아니다.
 
-전역 설정 필드: `revision`, `positive_quality`, `negative`, `auto_regeneration_enabled`, `max_auto_regenerations`. PATCH는 revision 필수, 나머지 변경 필드 선택이다. 자동 상한은 0 이상 정수, 기본 5. 새 최초/수동 시도의 자동 실행 묶음에 적용되며 아래 재생성 절을 참조한다.
+전역 설정 필드: `revision`, `positive_quality`, `negative`, `auto_regeneration_enabled`, `max_auto_regenerations`, `reference_templates`. PATCH는 revision 필수, 나머지 변경 필드 선택이다. 자동 상한은 0 이상 정수, 기본 5. 새 최초/수동 시도의 자동 실행 묶음에 적용되며 아래 재생성 절을 참조한다. `reference_templates`는 ADR-0027 참조 샘플 고정 구도 문구·포함이며 아래 [참조 세트와 일관성](#참조-세트와-일관성---adr-0027) 절을 따른다.
 
 ### Task 입력·snapshot
 
@@ -220,11 +225,42 @@ framing은 `upper_body|full_body|custom`. 기존 두 값의 include는 `appearan
 
 generation_inputs: 모델/encoder/VAE/sampler/scheduler 이름 문자열, width/height 256~1920의 16배수, seed는 Core 입력에서 -1(이미지별 무작위) 또는 0~2^64−1 정수, steps 1~100 정수, cfg 0~20 유한수. Core는 무작위 Seed를 실행 전 고정·저장하며 Generation에는 0 이상의 실제 값만 보낸다. loras는 선택 배열 `[{"name":"등록 파일명","strength":0.35}]`, strength −100~100 유한수. 실제 등록/지원 범위는 Generation이 추가 검사한다. JavaScript의 정수 정밀도 한계에 유의하며 현재 문자열 seed는 지원하지 않는다.
 
-snapshot에는 `composition_version`(신규 4, 과거 2·3), `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`(신규는 `output_name` 포함), `character_revision`, `negative_sources`(조각 Negative가 있을 때만 `fragment` 키 추가), `positive_check`, `output_name_prefix` 및 선택 `postprocess`가 저장된다. custom 구도의 `prompt_inputs`는 버전 4에서도 유지한다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
+snapshot에는 `composition_version`(신규 4, 과거 2·3), `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`(신규는 `output_name` 포함), `character_revision`, `negative_sources`(조각 Negative가 있을 때만 `fragment` 키, 일관성 배경 억제가 있을 때만 `consistency` 키 추가), `positive_check`, `output_name_prefix` 및 선택 `postprocess`, `consistency`, `reference_settings_mismatch_accepted`, `purpose`(참조 샘플만 `"reference_sample"`)가 저장된다. custom 구도의 `prompt_inputs`는 버전 4에서도 유지한다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다. `consistency`·`reference_settings_mismatch_accepted`는 [참조 세트와 일관성](#참조-세트와-일관성---adr-0027) 절을 따른다.
 
-Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,images,error,validation,automatic_attempts_used`. 생성 상태는 `queued → dispatching → generation_pending|generating → generated|failed`. 기본은 생성만 수행한다. 선택 `validation: {"provider_id":"local-vision","profile_id":"single-default"}`를 보내면 Core가 선택의 Profile·Provider·endpoint를 snapshot에 고정하고, 생성된 각 출력 이미지의 단일 검증을 자동 접수한다. Client가 종료되어도 Core가 진행한다. 수동 검증 POST도 유지한다.
+Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,images,error,validation,automatic_attempts_used`. 생성 상태는 `queued → dispatching → generation_pending|generating → generated|failed`. 기본은 생성만 수행한다. 선택 `validation: {"provider_id":"local-vision","profile_id":"single-default"}`를 보내면 Core가 선택의 Profile·Provider·endpoint를 snapshot에 고정하고, 생성된 각 출력 이미지의 단일 검증을 자동 접수한다. Client가 종료되어도 Core가 진행한다. 수동 검증 POST도 유지한다. (2026-09-24) 참조 샘플이 아닌 신규 Task 생성은 대상 의상의 확정 참조 세트가 `valid`여야 하며, 없거나 `needs_review`면 409 `CORE_REFERENCE_SET_REQUIRED`다. 아래 절을 따른다.
 
 검증 Run 주요 응답: `id,image_id,state,request,endpoint,job_id,outcome,result,error,created_at`. `endpoint`는 내부 Validation 주소이며 외부 Provider URL/키가 아니다. 검증 결과는 이미지 Metadata에 연결되며 Task 생성 상태를 덮지 않는다. 같은 이미지에 새 키를 사용하면 명시적 재검증이다.
+
+## 참조 세트와 일관성 — ADR-0027
+
+**[구현, 2026-09-24]** 참조 세트는 **의상 단위**로 전신 1장 + 얼굴 1장을 보관하며 확정할 때마다 새 revision을 추가한다(삭제 없음, 이전 확정 세트는 이력으로 보존). 현재 캐릭터·의상 revision과 세트에 기록된 revision이 다르면 `needs_review`다. 상태는 `none | valid | needs_review`다.
+
+### 참조 샘플 생성
+
+`POST /v1/outfits/{id}/reference-samples`는 `Idempotency-Key`와 `{generation_inputs, common_fragments?, postprocess?}`를 받아 전신·얼굴 **쌍**을 생성한다. 두 Task는 같은 Seed를 공유한다(`generation_inputs.seed=-1`이면 이 접수에서 한 번만 무작위 값을 고른다). 고정 구도는 전역 설정 `reference_templates.full`/`reference_templates.face`(`framing_prompt`,`include`)를 사용하며 기본값은 전신 `full body, standing, straight-on, front view, looking at viewer, arms at sides, white background, simple background`(포함 전부 true), 얼굴 `portrait, close-up, face focus, straight-on, looking at viewer, white background, simple background`(`upper,accessories` true, `lower,hands` false)다. `PATCH /v1/settings`의 `reference_templates`로 문구·포함을 바꿀 수 있다.
+
+두 Task의 snapshot은 `purpose:"reference_sample"`을 갖는다. 참조 샘플은 참조 세트 강제(P5)·자동/수동 검증 요청·`consistency` 합성에서 제외된다(자기 자신을 참조로 쓰지 않는다). 출력 파일명은 `AtelierX/<작품>/<캐릭터>/<의상>/reference/<full|face>-<쌍 ID 앞 8자>`다. 응답 `{id,outfit_id,seed,full_task_id,face_task_id,created_at}`. 신규 202/동일 키 200. `GET /v1/outfits/{id}/reference-samples`는 해당 의상의 쌍 목록을 `full_task`/`face_task`(전체 Task 객체) 포함으로 반환한다.
+
+### 확정·재확인·조회
+
+- `GET /v1/outfits/{id}/reference-set` → `{status,set,stale}`. `set`은 없으면 `null`이며, 있으면 `{id,outfit_id,revision,character_revision,outfit_revision,full:{core_image_id,generation_image_id,sha256},face:{...},seed,settings_summary,confirmed_at}`이다. `settings_summary`는 `{diffusion_model,text_encoder,common_fragments:[{id,revision}],positive_quality,loras}`다(sampler·steps·cfg·해상도 제외). `stale`은 `needs_review`일 때 달라진 항목(`character`/`outfit`) 목록이다.
+- `POST /v1/outfits/{id}/reference-set/confirm` — `Idempotency-Key`와 `{full_image_id,face_image_id}`. 두 이미지는 해당 의상의 참조 샘플 Task(같은 Seed 쌍)의 생성 완료 이미지여야 하며, PNG를 우선 권장한다(강제하지 않음). 새 revision을 만들고 이전 확정 세트는 보존한다. 신규 201/동일 키 200.
+- `POST /v1/outfits/{id}/reference-set/reconfirm` — `Idempotency-Key`와 `{revision}`(현재 세트 revision). "변경 확인 후 유지": 이미지를 바꾸지 않고 현재 캐릭터·의상 revision으로 다시 확정한다. revision 불일치는 409 `CORE_REVISION_CONFLICT`.
+- `GET /v1/outfits/{id}/reference-set/revisions` — `{items,limit,offset,total}`, 최신 revision부터.
+
+### 제작 계획·Task 강제 — P5
+
+새 제작 계획(`POST /v1/production-plans`)과 조각 유무에 관계없는 신규 개별 Task(`POST /v1/tasks`, 참조 샘플 제외)는 대상 의상의 참조 세트가 `valid`여야 한다. 아니면 409 `CORE_REFERENCE_SET_REQUIRED`와 `{outfits:[{outfit_id,status}]}`를 반환한다. 예외: 참조 샘플 Task, 과거(참조 도입 이전) snapshot의 재생성(`POST /v1/tasks/{id}/regenerations`)은 원래 snapshot을 그대로 쓰며 강제·일관성 추가가 없다.
+
+### 생성 설정의 `consistency`
+
+Task/제작 계획의 preview 입력은 선택 `consistency: {method, params?}` 또는 `consistency: null`(끔)을 받는다. 생략하면 대상 의상의 참조 세트가 `valid`일 때 기본 방식 `anima-incontext-character`와 기본 params가 자동 적용되고, `valid`가 아니면 아무 것도 붙지 않는다(참조 샘플 접수는 항상 `consistency: null`을 보내 자기 참조를 막는다). 현재 방식 params는 `strength`(기본 1.0, 0.5~1.5), `end_percent`(기본 0.5, 0.3~1.0, 0.5 미만이면 응답에는 없지만 서버가 검증만 하고 경고 표시는 Frontend 몫), `suppress_reference_background`(기본 true)다. 방식·범위는 `GET /v1/generation/resources`의 `consistency_methods`(Generation 등록)와 값이 같다(현재 Core는 preview가 동기 함수라 Generation을 매 호출 원격 조회하지 않고 같은 값의 로컬 정의로 검증한다).
+
+Task snapshot의 `consistency`는 `{method,params,reference_set:{id,revision},references:[{role,core_image_id,generation_image_id,sha256}]}`이며 `role`은 `full`/`face` 정확히 둘이다. Generation에 보내는 `generation_inputs.consistency`는 축약형 `{method,params,references:[{role,image_id,sha256}]}`(`image_id`는 Generation 이미지 ID)다. `suppress_reference_background=true`면 최종 Negative의 **마지막**에 `white background, simple background`를 추가하고 `negative_sources.consistency`에 그 문구를 기록한다(있을 때만 키 추가). 이 출처는 ADR-0023의 global과 같이 생성 전용이며 VLM 검사 대상이 아니다. `consistency`·이 Negative는 preview_hash·계획 hash에 포함된다.
+
+### 생성 설정 불일치 경고 — P1/#7
+
+참조 세트의 `settings_summary`와 계획/Task의 실제 설정(diffusion_model, text_encoder, common_fragments id+revision, positive_quality, loras)이 다르면 409 `CORE_REFERENCE_SETTINGS_MISMATCH`와 `{diff:{필드:{reference,plan}}}`를 반환한다. 요청에 `accept_reference_settings_mismatch: true`를 포함하면 진행하며, snapshot에 `reference_settings_mismatch_accepted:{accepted:true,diff}`를 기록한다. 차단이 아니라 확인 절차이며 그림체 실험을 허용한다.
 
 ## Generation
 
@@ -334,6 +370,7 @@ LM Studio는 현재 `json_schema`와 `image_format=png`를 사용한다. WebP는
 | 401 | 인증 오류 | 토큰 누락·불일치 |
 | 404 | CORE_NOT_FOUND / GEN_JOB_NOT_FOUND / VAL_JOB_NOT_FOUND | 리소스 없음 |
 | 409 | CORE_IDEMPOTENCY_CONFLICT / VAL_IDEMPOTENCY_CONFLICT / CORE_PREVIEW_STALE | 키 충돌·변경된 미리보기; Entity revision도 409 |
+| 409 | CORE_REFERENCE_SET_REQUIRED / CORE_REFERENCE_SETTINGS_MISMATCH / CORE_REFERENCE_IMAGE_INVALID | 참조 세트 없음·불일치·설정 경고 미확인·참조 샘플이 아닌 이미지 확정 시도(ADR-0027) |
 | 422 | VAL_PROFILE_UNSUPPORTED / VAL_PROVIDER_UNCONFIGURED / VAL_PROFILE_MISMATCH | 지원하지 않거나 등록과 다른 검증 선택 |
 | Job outcome=error | VAL_IMAGE_INTEGRITY / VAL_IMAGE_INVALID / VAL_IMAGE_TOO_LARGE | 원본 접근·무결성·입력 한도 |
 | Job outcome=error | VAL_PROVIDER_REJECTED / VAL_PROVIDER_TIMEOUT / VAL_PROVIDER_UNAVAILABLE | Provider 거절·시간 초과·통신 실패 |

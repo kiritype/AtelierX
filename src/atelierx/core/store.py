@@ -12,6 +12,14 @@ from ..output_names import build_output_name
 
 KINDS = {"works": None, "characters": "works", "outfits": "characters"}
 
+# ADR-0027 P1: fixed-pose reference sample templates. User-editable via settings.
+DEFAULT_REFERENCE_TEMPLATES = {
+    "full": {"framing_prompt": "full body, standing, straight-on, front view, looking at viewer, arms at sides, white background, simple background",
+             "include": {"upper": True, "lower": True, "accessories": True, "hands": True}},
+    "face": {"framing_prompt": "portrait, close-up, face focus, straight-on, looking at viewer, white background, simple background",
+             "include": {"upper": True, "lower": False, "accessories": True, "hands": False}},
+}
+
 
 def representative_image(images):
     """ADR-0025 E: one attempt is validated once, preferring its PNG output."""
@@ -65,9 +73,20 @@ class Store:
             with self.db:
                 self.db.execute("INSERT INTO settings VALUES(?,?)", (1, canonical({
                     "revision": 1, "positive_quality": "", "negative": "",
-                    "auto_regeneration_enabled": True, "max_auto_regenerations": 5})))
+                    "auto_regeneration_enabled": True, "max_auto_regenerations": 5,
+                    "reference_templates": DEFAULT_REFERENCE_TEMPLATES})))
         self._migrate_existing_outfit_appearance()
         self._migrate_outfit_hands()
+        self._migrate_reference_templates()
+
+    def _migrate_reference_templates(self):
+        """Add default reference sample templates to a settings document saved before ADR-0027."""
+        current = self.settings()
+        if "reference_templates" in current:
+            return
+        with self.db:
+            current.update(reference_templates=DEFAULT_REFERENCE_TEMPLATES, revision=current["revision"] + 1)
+            self.db.execute("INSERT INTO settings VALUES(?,?)", (current["revision"], canonical(current)))
 
     def close(self):
         self.db.close()
@@ -227,6 +246,16 @@ class Store:
                             created_at=time.time())
             self.db.execute("INSERT INTO groups VALUES(?,?,?)", (document["id"], outfit_id, canonical(document)))
         return document
+
+    def find_or_create_group(self, outfit_id):
+        """Reuse a group whose fixed snapshot still matches current revisions (reference samples)."""
+        outfit = self.active_chain(outfit_id, "outfits")
+        character = self.entity(outfit["parent_id"], "characters")
+        for row in self.db.execute("SELECT document FROM groups WHERE outfit_id=? ORDER BY rowid DESC", (outfit_id,)):
+            group = json.loads(row[0])
+            if group.get("outfit_revision") == outfit["revision"] and group.get("character_revision") == character["revision"]:
+                return group
+        return self.create_group(outfit_id)
 
     def group(self, group_id):
         row = self.db.execute("SELECT document FROM groups WHERE id=?", (group_id,)).fetchone()
