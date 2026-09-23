@@ -171,6 +171,7 @@ def _image_item(image, group, created_at, single_outcome, single_run_id, group_s
         # Image records have no own timestamp; this is the accepted Task time.
         "created_at": created_at, "generation_image_id": image["generation_image_id"],
         "sha256": image["sha256"], "bytes": image["bytes"], "media_type": image["media_type"],
+        "output_path": image.get("output_path"),
         "single_outcome": single_outcome, "single_validation_run_id": single_run_id,
         "group_status": group_status, "group_validation_run_id": group_run_id,
         "group_reference_revision": reference_revision,
@@ -179,7 +180,10 @@ def _image_item(image, group, created_at, single_outcome, single_run_id, group_s
 
 
 def list_images(core, query):
-    """Return gallery metadata without files, snapshots, paths, or credentials."""
+    """Return gallery metadata without files, snapshots, or credentials.
+
+    ``output_path`` is only the ComfyUI output-relative name Generation reported.
+    """
     limit, offset = _page(query, _IMAGE_FIELDS)
     identifiers = {name: _uuid_filter(query, name) for name in ("work_id", "character_id", "outfit_id", "group_id", "task_id")}
     media_type = _one(query, "media_type")

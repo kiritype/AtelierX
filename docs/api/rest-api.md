@@ -45,7 +45,7 @@ Discord 전용 Bridge는 `POST /v1/discord/jobs`, `POST /v1/discord/status`를 �
 
 그룹 item은 `id,outfit_id,character_id,work_id,outfit_revision,components,created_at` 및 존재하는 `reference`를 반환한다. 현재 의상 편집 내용을 과거 group에 합성하거나 목록 조회로 새 group을 만들지 않는다.
 
-갤러리 item은 `id,task_id,group_id,work_id,character_id,outfit_id,created_at,generation_image_id,sha256,bytes,media_type,single_outcome,single_validation_run_id,group_status,group_validation_run_id,group_reference_revision,content_url`이다. `content_url`은 `/v1/images/{id}/content`의 인증된 상대 API 경로다. 목록 자체는 이미지 bytes, 파일 경로, 전체 Prompt/snapshot, Provider secret을 반환하지 않는다. `media_type` 필터는 image/png 또는 image/webp다.
+갤러리 item은 `id,task_id,group_id,work_id,character_id,outfit_id,created_at,generation_image_id,sha256,bytes,media_type,output_path,single_outcome,single_validation_run_id,group_status,group_validation_run_id,group_reference_revision,content_url`이다. `content_url`은 `/v1/images/{id}/content`의 인증된 상대 API 경로다. 목록 자체는 이미지 bytes, 전체 Prompt/snapshot, Provider secret을 반환하지 않는다. `output_path`는 Generation이 보고한 ComfyUI 출력 파일 위치이며 과거 결과는 `null`이다(ADR-0026). `media_type` 필터는 image/png 또는 image/webp다.
 
 `single_outcome`은 최신 단일 검증 요청 기준 `unvalidated/pending/passed/failed/error/cancelled`이며, 과거 합격 뒤 새 queued 요청이 있으면 pending이다. `group_status`는 `reference/matched/mismatch/insufficient/reference_conflict/error/unvalidated/stale/not_eligible`로 별도 표시한다. reference는 선택된 기준 역할이지 합격 판정이 아니다. stale은 현재 기준으로 유효한 완료 판정이 없는 과거 기준 결과이고, not_eligible은 현재 묶음 비교 대상에서 제외된 상태다. 현재 기준 결과·대상 집합은 기존 Core group consistency의 판정을 재사용한다. 단일/묶음 상태를 하나의 ambiguous state나 종합 합격으로 합치지 않는다. `single_validation_run_id`와 `group_validation_run_id`는 해당 요약의 근거 실행 ID이며 없으면 null이다. `group_reference_revision`은 현재 기준 revision이므로 stale 결과의 과거 revision으로 해석하지 않는다. 전체 이력은 기존 이미지 검증/그룹 상세 API에서 조회한다.
 
@@ -185,7 +185,7 @@ Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변�
 {"name":"제복","parent_id":"캐릭터 ID","components":{"appearance":"silver hair, blue eyes, hairpin","upper":"white shirt, blue jacket, brooch","lower":"black trousers, boots"}}
 ```
 
-Entity 응답: `id,kind,parent_id,name,revision,archived`, 의상은 `components`, 신규 캐릭터는 `negative_prompt`. PATCH는 현재 `revision`과 `name`/`archived`, 의상 `components`, 캐릭터 `negative_prompt`를 지원한다. `parent_id` 이동은 지원하지 않는다. components는 3개 전체 키를 전달한다. 이름은 비어 있지 않은 문자열, 문자열 최대 20,000자, revision은 1 이상 정수다. revision 불일치는 409. archive는 연쇄 삭제가 아니다.
+Entity 응답: `id,kind,parent_id,name,revision,archived`, 의상은 `components`, 캐릭터는 `negative_prompt`·`appearance_prompt`·`check_features`. PATCH는 현재 `revision`과 `name`/`archived`, 의상 `components`, 캐릭터 `negative_prompt`/`appearance_prompt`/`check_features`를 지원한다. `parent_id` 이동은 지원하지 않는다. components는 현재 `upper,lower,accessories`를 필수로, `hands`를 선택(생략 시 빈 문자열)으로 전달한다(아래 "2026-09-23 손 항목·검사 항목 출처·출력 파일명" 절). 이름은 비어 있지 않은 문자열, 문자열 최대 20,000자, revision은 1 이상 정수다. revision 불일치는 409. archive는 연쇄 삭제가 아니다.
 
 전역 설정 필드: `revision`, `positive_quality`, `negative`, `auto_regeneration_enabled`, `max_auto_regenerations`. PATCH는 revision 필수, 나머지 변경 필드 선택이다. 자동 상한은 0 이상 정수, 기본 5. 새 최초/수동 시도의 자동 실행 묶음에 적용되며 아래 재생성 절을 참조한다.
 
@@ -220,7 +220,7 @@ framing은 `upper_body|full_body|custom`. 기존 두 값의 include는 `appearan
 
 generation_inputs: 모델/encoder/VAE/sampler/scheduler 이름 문자열, width/height 256~1920의 16배수, seed는 Core 입력에서 -1(이미지별 무작위) 또는 0~2^64−1 정수, steps 1~100 정수, cfg 0~20 유한수. Core는 무작위 Seed를 실행 전 고정·저장하며 Generation에는 0 이상의 실제 값만 보낸다. loras는 선택 배열 `[{"name":"등록 파일명","strength":0.35}]`, strength −100~100 유한수. 실제 등록/지원 범위는 Generation이 추가 검사한다. JavaScript의 정수 정밀도 한계에 유의하며 현재 문자열 seed는 지원하지 않는다.
 
-snapshot에는 `composition_version=2`, `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`, `character_revision`, `negative_sources` 및 선택 `postprocess`가 저장된다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
+snapshot에는 `composition_version`(신규 4, 과거 2·3), `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`(신규는 `output_name` 포함), `character_revision`, `negative_sources`, `positive_check`, `output_name_prefix` 및 선택 `postprocess`가 저장된다. custom 구도의 `prompt_inputs`는 버전 4에서도 유지한다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
 
 Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,images,error,validation,automatic_attempts_used`. 생성 상태는 `queued → dispatching → generation_pending|generating → generated|failed`. 기본은 생성만 수행한다. 선택 `validation: {"provider_id":"local-vision","profile_id":"single-default"}`를 보내면 Core가 선택의 Profile·Provider·endpoint를 snapshot에 고정하고, 생성된 각 출력 이미지의 단일 검증을 자동 접수한다. Client가 종료되어도 Core가 진행한다. 수동 검증 POST도 유지한다.
 
@@ -284,6 +284,10 @@ Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠
 - output_conditions=true이면 expected_output 객체가 필요하다. alpha는 `not_required|channel_required|transparency_required`. 출력 조건은 **원본** PNG/WebP로 검사한다.
 - Core는 이미지의 원래 Task snapshot에 `postprocess.alpha`가 있으면 `transparency_required`, 없으면 `not_required`를 전달한다. 현재 Preset/설정 변경으로 과거 이미지의 요구를 바꾸지 않는다. 출력 조건을 끈 Profile은 이 검사를 수행하지 않는다. 실제 투명 픽셀 존재 여부를 검사하며 캐릭터 마스크·경계 품질을 보장하지 않는다. 기존 검증 Run은 그대로 보존하고 명시적 새 검증부터 적용한다.
 - 입력은 정지 PNG/WebP, 최대 16 MiB·40MP. animation/multi-frame은 거절한다.
+
+### Positive 검사 항목 — ADR-0025
+
+Core는 신규 Task의 단일 검증 요청에 `image.positive_check: [{text, source}]`를 추가한다. 출처·구성은 문서 끝의 2026-09-23 절을 따른다. Validation 측 해석(`not_assessable` 등)은 [Validation 현행 사양](../modules/validation.md)을 따른다.
 
 ### Negative 출처 계약 — ADR-0023
 
@@ -473,3 +477,36 @@ Core 시작 시 현재 의상들의 외형이 동일하면 캐릭터 외형으�
 | Generation | `GET /v1/resources` | ComfyUI의 현재 Anima 노드 입력 목록 조회 |
 
 응답은 `{family:"anima",diffusion_models:[],text_encoders:[],vaes:[],samplers:[],schedulers:[],loras:[],upscale_models:[]}`이며 각 배열은 등록된 이름 문자열이다. GPU 추론·다운로드를 수행하지 않고 파일 시스템 경로를 임의 탐색하지 않는다. 자원이 없으면 빈 배열, ComfyUI/노드에 접근할 수 없으면 503이며 기존 파일명으로 자동 대체하지 않는다. 목록에 있다는 사실은 모든 모델 조합의 호환성 보장이 아니며 실행 시 기존 검증을 유지한다. Core의 기존 Bearer/Access 인증 경계를 유지한다.
+
+## 2026-09-23 손 항목·검사 항목 출처·출력 파일명 — ADR-0025/0026
+
+**의상 손 항목:** 의상 `components`는 `{upper,lower,accessories,hands}`다. `hands`는 선택 문자열(빈 값 허용)이며 생략하면 `""`로 저장한다. Core 시작 시 `hands`가 없는 현재 의상 문서에 `hands:""`를 넣고 revision을 하나 올린다(과거 revision·그룹·Task snapshot은 다시 쓰지 않는다). 과거 외형 포함 의상은 외형 이전 시 함께 채운다. Positive 합성 순서는 전역 품질 → 캐릭터 외형 → 상의 → 하의 → 액세서리 → 손 → 공통 적용 조각 → (기존 구도·표정·동작·상황) → 이미지별 조각 본문이다. 기존 직접 입력 Task의 `include`도 선택 `hands` bool을 받으며 custom 구도는 `upper,lower,accessories`만 필수다. `inclusion.hands`가 preview/snapshot에 기록된다. 신규 snapshot은 `composition_version:4`다.
+
+**캐릭터 검사용 핵심 특징:** 캐릭터 POST/PATCH/GET에 `check_features: string[]`(0..50개, 각 항목 앞뒤 공백 제거 후 1..200자, 빈 항목은 버림)을 둔다. 기본 `[]`이며 다른 필드처럼 revision 이력에 남는다. 형식 오류는 `CORE_INVALID_INPUT`(400)이다.
+
+**단일 검증 검사 항목(`positive_check`):** preview 시 Core가 snapshot에 `positive_check: [{text, source}]`를 고정하고, 단일 검증 요청의 `image.positive_check`로 그대로 보낸다. 재시도·재생성은 원래 snapshot을 복사하므로 같은 목록을 쓴다. `source`는 다음 중 하나다.
+
+| source | 내용 |
+| --- | --- |
+| `character_features` | `check_features`가 있으면 항목마다 하나 |
+| `character_appearance` | `check_features`가 비어 있으면 `appearance_prompt` 전체(비어 있으면 생략) |
+| `outfit_upper` / `outfit_lower` / `outfit_accessories` / `outfit_hands` | 실제 포함되고 비어 있지 않은 의상 부분만 |
+| `fragment` | 이미지별 조각 본문. 조각 없는 기존 Task는 구도 문구·표정·동작·상황 중 비어 있지 않은 값마다 하나 |
+
+전역 품질 프롬프트와 공통 적용 조각은 넣지 않는다. `image.positive_prompt`는 기존처럼 실제 생성 전체 문구다. `positive_check`가 없는 과거 Task의 검증 요청에는 이 필드를 보내지 않는다. 묶음 검증 요청 형식은 바꾸지 않았다.
+
+**출력 파일명(`generation_inputs.output_name`):** Core가 접수 시점에 정해 snapshot에 고정하고 Generation `inputs.output_name`으로 보낸다. 각 이름 요소는 `<>:"/\|?*`·제어 문자를 `_`로 바꾸고, 연속 공백을 하나로, 앞뒤 공백·끝의 점을 제거하며, 빈 값은 `_`, Windows 예약 이름(CON/PRN/AUX/NUL/COM1–9/LPT1–9)은 끝에 `_`를 붙이고 80자로 자른다. 요소는 `/`로 잇는다.
+
+| 대상 | output_name |
+| --- | --- |
+| 조각 Task·제작 계획 항목 | `AtelierX/<작품>/<캐릭터>/<의상>/<조각 번호>` (preview 시점 이름) |
+| 조각 없는 기존 방식 Task | `AtelierX/<작품>/<캐릭터>/<의상>/task-<계보 최초 Task ID 앞 8자>` (Task 저장 시 결정) |
+| 수동·자동 재생성, 그룹 대체 | 원래 Task의 이름을 그대로 사용(충돌 시 Encode Node가 ` (2)` 등을 붙임) |
+| 독립 생성(Discord) | `AtelierX/discord/<YYYY-MM-DD>/<HHMMSS>-<Job ID 앞 6자>` (접수 시 Core 로컬 시각) |
+| Core 독립 후처리 | Generation 요청 본문 `output_name` = `AtelierX/postprocess/<YYYY-MM-DD>/<원본 Core 이미지 ID 앞 8자>`; Job 응답 `output_name` |
+
+이름이 없는 과거 snapshot을 재생성하면 그룹의 현재 작품·캐릭터·의상 이름과 계보 ID로 한 번 정한다. 이후 작품·조각 번호를 바꿔도 이미 접수한 이름은 바뀌지 않는다. 재생성 `generation_inputs` 변경에 `output_name`을 넣으면 `CORE_REGENERATION_INVALID`다.
+
+**출력 위치 기록:** Core 이미지 문서는 Generation 완료 descriptor의 `images[].output_path`(문자열, 없으면 `null`)를 `output_path`로 저장한다. `GET /v1/images/{id}`, `GET /v1/images`, 독립 생성·후처리 Job의 `images[]`가 `output_path`를 반환한다. 과거 결과는 `null`이다.
+
+전역 조각 번호의 입력 규칙·중복 경고·번호 확인 API는 [전역 프롬프트 조각과 제작 계획 API](prompt-fragments-production-plans.md)를 따른다.

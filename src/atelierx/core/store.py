@@ -8,6 +8,7 @@ import uuid
 import secrets
 
 from ..common import ApiError, ProcessLock, canonical
+from ._output_names import build_output_name
 
 KINDS = {"works": None, "characters": "works", "outfits": "characters"}
 
@@ -61,6 +62,7 @@ class Store:
                     "revision": 1, "positive_quality": "", "negative": "",
                     "auto_regeneration_enabled": True, "max_auto_regenerations": 5})))
         self._migrate_existing_outfit_appearance()
+        self._migrate_outfit_hands()
 
     def close(self):
         self.db.close()
@@ -90,9 +92,21 @@ class Store:
                     self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (character_id, character["revision"], canonical(character)))
                 for outfit_id, outfit, _ in outfits:
                     parts = outfit["components"]
-                    outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", "")}, revision=outfit["revision"] + 1)
+                    outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", ""), "hands": parts.get("hands", "")}, revision=outfit["revision"] + 1)
                     self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (outfit["revision"], canonical(outfit), outfit_id))
                     self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (outfit_id, outfit["revision"], canonical(outfit)))
+
+    def _migrate_outfit_hands(self):
+        """Add the empty hands part to current outfit documents (ADR-0026)."""
+        with self.db:
+            for outfit_id, raw in self.db.execute("SELECT id,document FROM entities WHERE kind='outfits'").fetchall():
+                outfit = json.loads(raw)
+                parts = outfit.get("components")
+                if not isinstance(parts, dict) or "hands" in parts or "appearance" in parts:
+                    continue
+                outfit.update(components=dict(parts, hands=""), revision=outfit["revision"] + 1)
+                self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (outfit["revision"], canonical(outfit), outfit_id))
+                self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (outfit_id, outfit["revision"], canonical(outfit)))
 
     def entity(self, entity_id, kind=None, active=False):
         row = self.db.execute("SELECT * FROM entities WHERE id=?", (entity_id,)).fetchone()
@@ -106,6 +120,7 @@ class Store:
         document = self.entity(entity_id, kind)
         if document["kind"] == "characters":
             document.setdefault("appearance_prompt", "")
+            document.setdefault("check_features", [])
             row = self.db.execute("SELECT document FROM appearance_migration_conflicts WHERE character_id=?", (entity_id,)).fetchone()
             if row:
                 conflict = json.loads(row[0]); candidates = {}
@@ -122,7 +137,7 @@ class Store:
             self.active_chain(entry["parent_id"], parent_kind)
         return entry
 
-    def create_entity(self, kind, name, parent_id, components=None, negative_prompt="", appearance_prompt=""):
+    def create_entity(self, kind, name, parent_id, components=None, negative_prompt="", appearance_prompt="", check_features=None):
         with self.db:
             if KINDS[kind]:
                 self.active_chain(parent_id, KINDS[kind])
@@ -133,6 +148,7 @@ class Store:
             if kind == "characters":
                 document["negative_prompt"] = negative_prompt
                 document["appearance_prompt"] = appearance_prompt
+                document["check_features"] = list(check_features or [])
             self.db.execute("INSERT INTO entities VALUES(?,?,?,?,?,?)",
                             (document["id"], kind, parent_id, 1, 0, canonical(document)))
             self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (document["id"], 1, canonical(document)))
@@ -151,7 +167,7 @@ class Store:
                 for outfit_id in detail["outfit_ids"]:
                     outfit = self.entity(outfit_id, "outfits"); parts = outfit.get("components", {})
                     if "appearance" in parts:
-                        outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", "")}, revision=outfit["revision"] + 1)
+                        outfit.update(components={"upper": parts.get("upper", ""), "lower": parts.get("lower", ""), "accessories": parts.get("accessories", ""), "hands": parts.get("hands", "")}, revision=outfit["revision"] + 1)
                         self.db.execute("UPDATE entities SET revision=?,document=? WHERE id=?", (outfit["revision"], canonical(outfit), outfit_id))
                         self.db.execute("INSERT INTO revisions VALUES(?,?,?)", (outfit_id, outfit["revision"], canonical(outfit)))
                 self.db.execute("DELETE FROM appearance_migration_conflicts WHERE character_id=?", (entity_id,))
@@ -237,6 +253,7 @@ class Store:
                         snapshot=snapshot, generation_job_id=None, images=[], error=None,
                         validation={"state": "not_requested", "outcome": None}, automatic_attempts_used=0)
         link = dict(regeneration or {"kind": "initial", "parent_task_id": None, "lineage_id": document["id"]})
+        self._freeze_output_name(snapshot, group_id, link["lineage_id"])
         if link["kind"] != "automatic":
             link["cycle_id"] = document["id"]
         document["regeneration"] = link
@@ -257,6 +274,21 @@ class Store:
             self.db.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?,?)", (
                 document["id"], group_id, key, fingerprint, "queued", document["created_at"], canonical(document)))
         return document
+
+    def _freeze_output_name(self, snapshot, group_id, lineage_id):
+        """Name a Task once; regenerations copy the original snapshot's name."""
+        inputs = snapshot.get("generation_inputs") if isinstance(snapshot, dict) else None
+        if not isinstance(inputs, dict) or "output_name" in inputs:
+            return
+        prefix = snapshot.get("output_name_prefix")
+        if not isinstance(prefix, list):
+            try:
+                group = self.group(group_id)
+                prefix = ["AtelierX", *(self.entity(group[key], kind)["name"] for key, kind in (("work_id", "works"), ("character_id", "characters"), ("outfit_id", "outfits")))]
+            except (ApiError, KeyError):
+                return
+        number = (snapshot.get("fragment") or {}).get("number") or "task-" + str(lineage_id)[:8]
+        inputs["output_name"] = build_output_name(*prefix, number)
 
     @staticmethod
     def execution_snapshot(snapshot):

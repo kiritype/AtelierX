@@ -36,6 +36,11 @@
 - [구현] 계획 전체를 한 트랜잭션으로 저장(draft, Task 미생성)하고 `plan_hash` 일치 start 후 실행한다. 실행 창 8개, 묶음 target chunk 32개. 계획 상태는 draft → running → group_validation_pending / awaiting_reference_confirmation → completed / failed / cancelled / insufficient_images(기준 없음 + 통과 2장 미만)이고 중간 상태로 cancellation_pending이 있다. outcome은 passed/failed/incomplete/error/unvalidated다. 항목 상태는 queued, generation_pending, single_validation_pending, passed, single_failed, generation_failed, cancelled, generation_only (코드: core/production_plans.py)
 - [구현] 복구: Task를 저장했으나 항목 연결 전에 중단되면 재기동 후 연결하거나 취소한다. 묶음 Run 저장 후 비교 연결 전 중단은 plan/sequence/chunk 고정 키로 복원한다. 단일·묶음 검사 중 취소는 Provider 종료까지 계획을 cancellation_pending으로 두며, 남은 항목 접수나 후속 묶음은 시작하지 않는다
 - [구현] 다중 그룹 F/E는 catalog를 200개씩 읽고 그룹별 독립 계획(키·본문 고정)으로 접수한다. 부분 접수 실패를 전체 성공으로 표시하지 않는다
+- [확정] ADR-0026: 이미지별 조각 번호는 사용자가 입력·수정하고 중복은 경고 후 허용한다. 공통 적용 조각은 번호가 없다. 의상은 상의·하의·액세서리·손이며 조각의 손 포함 기본값은 true다. 출력은 `AtelierX\<작품>\<캐릭터>\<복장>\<조각번호>`, Discord는 `AtelierX\discord\<날짜>\`다
+- [구현] 조각 번호는 TEXT(1–32자, 파일명 안전 문자열)이고 고유 인덱스·자동 순번을 쓰지 않는다. POST/PATCH 응답 `warnings`와 `GET /v1/prompt-fragments/number-check`로 중복을 알린다. 시작 시 INTEGER 번호 표를 재구성해 기존 번호를 문자열로 유지한다 (코드: core/fragments.py)
+- [구현] 출력 파일명: Core가 접수 시 `generation_inputs.output_name`을 고정한다(조각 Task·계획 항목은 preview, 조각 없는 Task는 Task 저장 시 `task-<계보 ID 앞 8자>`, 재생성은 원래 이름 재사용, Discord는 `AtelierX/discord/<날짜>/<시각>-<Job ID 앞 6자>`, 독립 후처리는 본문 `output_name`). 이름 요소 정리는 Core 내부 `core/_output_names.py`(공유 모듈과 같은 계약)다. 이미지 문서는 Generation이 보고한 `output_path`를 저장한다
+- [구현] ADR-0025 검사 범위: preview snapshot의 `positive_check`(캐릭터 핵심 특징 또는 외형, 포함된 의상 부분, 이미지별 조각/기존 입력)를 단일 검증 요청 `image.positive_check`로 전달한다. 전역 품질·공통 적용 조각은 제외한다. 캐릭터 `check_features`는 0..50개·항목 200자 이하다 (코드: core/__init__.py, core/validation.py)
+- [제한] Generation·Encode Node의 `output_name` 적용과 Validation의 `positive_check` 해석은 각 서비스 구현에 의존한다. 실제 ComfyUI 출력 폴더 구조·충돌 번호는 이 Core 변경만으로 검증되지 않았다
 - [구현] Seed: Core 입력 -1은 snapshot 확정 시 `secrets.randbelow(2**53)`로 한 번 치환한다. 0 이상 지정값은 그대로 모든 항목에 쓰며 index 파생은 없다 (코드: core/store.py)
 - [제한] 그룹 목록을 한 화면에 렌더링하므로 대량 그룹에는 검색·페이지가 필요하다. 3,000장 실제 GPU 실행, 장기 무인 운영, 프롬프트에 구체화되지 않은 외형 차이(머리 길이 등)의 일관성 판정 품질은 검증되지 않았다
 

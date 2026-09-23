@@ -7,6 +7,7 @@ import uuid
 
 from ..common import ApiError, canonical
 from .presets import validate_postprocess_settings
+from ._output_names import build_output_name
 
 TERMINAL = {"completed", "failed", "cancelled"}
 OBSERVATION_SECONDS = 300  # Operator recovery bound; not a product retention policy.
@@ -47,9 +48,9 @@ class CorePostprocess:
 
     @staticmethod
     def public(job):
-        fields = {"id", "state", "source_image_id", "source_generation_image_id", "source_sha256", "source_media_type", "generation_job_id", "requested_postprocess", "postprocess", "preset_source", "error", "cancel_requested", "created_at", "updated_at"}
+        fields = {"id", "state", "output_name", "source_image_id", "source_generation_image_id", "source_sha256", "source_media_type", "generation_job_id", "requested_postprocess", "postprocess", "preset_source", "error", "cancel_requested", "created_at", "updated_at"}
         result = {key: job[key] for key in fields if key in job}
-        result["images"] = [{key: item[key] for key in ("image_id", "sha256", "bytes", "media_type", "content_url")} for item in job.get("images", [])]
+        result["images"] = [{**{key: item[key] for key in ("image_id", "sha256", "bytes", "media_type", "content_url")}, "output_path": item["output_path"] if isinstance(item.get("output_path"), str) else None} for item in job.get("images", [])]
         return result
 
     def _resolve(self, body):
@@ -89,7 +90,9 @@ class CorePostprocess:
         endpoint = task["snapshot"].get("generation_endpoint")
         if not isinstance(endpoint, str) or endpoint != self.core.generation_url:
             raise ApiError("CORE_GENERATION_ENDPOINT_CHANGED", "Image belongs to another Generation endpoint", 409)
-        job = {"id": str(uuid.uuid4()), "state": "queued", "created_at": time.time(), "updated_at": time.time(),
+        now = time.time()
+        job = {"id": str(uuid.uuid4()), "state": "queued", "created_at": now, "updated_at": now,
+               "output_name": build_output_name("AtelierX", "postprocess", time.strftime("%Y-%m-%d", time.localtime(now)), image_id[:8]),
                "source_image_id": image_id, "source_generation_image_id": image["generation_image_id"],
                "source_sha256": image["sha256"], "source_media_type": image["media_type"],
                "source_inputs": task["snapshot"]["generation_inputs"], "generation_endpoint": endpoint,
@@ -144,7 +147,7 @@ class CorePostprocess:
                 return
         if job["state"] == "queued":
             job["state"] = "dispatching"; job["observation_deadline"] = time.time() + OBSERVATION_SECONDS; self.save(job)
-            remote = await self.core.generation("POST", "/v1/images/" + job["source_generation_image_id"] + "/postprocess-jobs", headers={"Idempotency-Key": internal_key}, json={"postprocess": job["requested_postprocess"]})
+            remote = await self.core.generation("POST", "/v1/images/" + job["source_generation_image_id"] + "/postprocess-jobs", headers={"Idempotency-Key": internal_key}, json={"postprocess": job["requested_postprocess"], **({"output_name": job["output_name"]} if job.get("output_name") else {})})
         elif job["state"] == "dispatching":
             remote = await self.core.generation("GET", "/v1/jobs/by-key", headers={"Idempotency-Key": internal_key})
             if remote is None:
