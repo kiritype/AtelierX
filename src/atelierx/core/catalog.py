@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import uuid
 
-from .common import ApiError
+from ..common import ApiError
 
 
 _PAGE_FIELDS = {"limit", "offset"}

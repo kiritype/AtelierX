@@ -17,14 +17,14 @@ import os
 from pathlib import Path
 import time
 import uuid
-from .runtime_info import RUNTIME_INFO
+from ..runtime_info import RUNTIME_INFO
 
 import aiohttp
 from aiohttp import web
-from .common import ApiError, ProcessLock, canonical
-from .gpu import permission
-from .queue_api import attach_queue_api
-from .generation_pipeline import NODES as POSTPROCESS_NODES, build_anima_prompt, validate_pipeline
+from ..common import ApiError, ProcessLock, canonical
+from ..gpu import permission
+from ..queue_api import attach_queue_api
+from .pipeline import NODES as POSTPROCESS_NODES, build_anima_prompt, validate_pipeline
 
 NODE = "AtelierXAnimaGenerate"
 TERMINAL = {"completed", "failed", "cancelled"}

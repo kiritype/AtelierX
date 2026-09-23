@@ -11,8 +11,8 @@ from urllib.parse import urlparse
 
 import aiohttp
 
-from .common import ApiError, canonical
-from .core_presets import _model_name
+from ..common import ApiError, canonical
+from .presets import _model_name
 
 
 class StandaloneJobs:

@@ -235,7 +235,7 @@ Job 주요 응답: `job_id,prompt_id,state,inputs,requested_postprocess,postproc
 
 Generation의 by-key 조회는 진행 중인 접수의 노드 확인·저장 잠금을 기다린다. 접수 handler 내부의 저장 지연을 키 없음으로 오인하지 않으며, 조회 시간 초과는 Core가 기존 키로 다시 확인한다. Validation 연결의 bare HTTP 502/503/504도 접수 결과 재조회 대상으로 취급하되, 구조화된 `VAL_*` 오류 응답은 명시 오류로 보존한다. 완료된 Validation `outcome=error`의 자동 추론 재시도는 허용하지 않는다.
 
-상태: `queued → submitting → submitted|running → completed|failed`. 오류·수락 불명은 임의로 다시 생성하지 않는다. 이미지 목록은 `image_id,sha256,bytes,media_type,url` 등의 메타데이터를 포함한다. 정확한 이미지 descriptor는 실행 결과와 [Generation 소스](../../src/atelierx/generation.py)의 capture/public을 기준으로 한다.
+상태: `queued → submitting → submitted|running → completed|failed`. 오류·수락 불명은 임의로 다시 생성하지 않는다. 이미지 목록은 `image_id,sha256,bytes,media_type,url` 등의 메타데이터를 포함한다. 정확한 이미지 descriptor는 실행 결과와 [Generation 소스](../../src/atelierx/generation/__init__.py)의 capture/public을 기준으로 한다.
 
 ## Validation
 

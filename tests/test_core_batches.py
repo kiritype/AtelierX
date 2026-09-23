@@ -6,8 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from atelierx.common import ApiError, canonical
-from atelierx.core_batches import CoreBatches
-from atelierx.core_store import Store
+from atelierx.core.batches import CoreBatches
+from atelierx.core.store import Store
 
 
 class FakeValidation:

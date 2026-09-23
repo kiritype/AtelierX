@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from atelierx.common import ApiError
-from atelierx.core_postprocess import CorePostprocess
+from atelierx.core.postprocess import CorePostprocess
 
 
 class Store:
@@ -74,9 +74,9 @@ class CorePostprocessTests(unittest.IsolatedAsyncioTestCase):
     async def test_unavailable_is_bounded(self):
         job, _ = self.jobs.create("source", "key", {"postprocess":{"encode":{"webp_enabled":True}}})
         self.core.generation.side_effect = ApiError("CORE_GENERATION_UNAVAILABLE", "down", 503)
-        with patch("atelierx.core_postprocess.time.time", return_value=0):
+        with patch("atelierx.core.postprocess.time.time", return_value=0):
             await self.jobs.tick()
-        with patch("atelierx.core_postprocess.time.time", return_value=301):
+        with patch("atelierx.core.postprocess.time.time", return_value=301):
             await self.jobs.tick()
         self.assertEqual(self.jobs.get(job["id"])["error"]["code"], "CORE_GENERATION_ACCEPTANCE_UNKNOWN")
 

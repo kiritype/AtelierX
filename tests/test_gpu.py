@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import aiohttp
 from aiohttp import web
 from aiohttp.test_utils import TestServer
-from atelierx.core_store import Store
+from atelierx.core.store import Store
 from atelierx.gpu import GpuCoordinator, permission
 
 

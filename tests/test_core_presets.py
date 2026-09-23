@@ -11,7 +11,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
 from atelierx.core import create_app, generation_settings
-from atelierx.core_presets import CorePresets
+from atelierx.core.presets import CorePresets
 
 
 GENERATION = {

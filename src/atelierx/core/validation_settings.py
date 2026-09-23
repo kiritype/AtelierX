@@ -1,8 +1,8 @@
 """Core SQLite persistence for revisioned Validation settings; never secrets."""
 from __future__ import annotations
 import copy, json, re, sqlite3, time
-from .common import ApiError, canonical
-from .validation_registry import GROUP_PROFILE_FIELDS, OPTIONAL_PROVIDER_FIELDS, PROFILE_FIELDS, PROVIDER_FIELDS, public_provider
+from ..common import ApiError, canonical
+from ..validation_registry import GROUP_PROFILE_FIELDS, OPTIONAL_PROVIDER_FIELDS, PROFILE_FIELDS, PROVIDER_FIELDS, public_provider
 
 IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,199}")
 def invalid(message): raise ApiError("CORE_VALIDATION_SETTINGS_INVALID", message, 422)

@@ -35,7 +35,7 @@
 - [구현] v9: 보조 기준이 있으면 기준 쌍 사전 비교 후 대상 비교(보조 2장 시 추가 호출 최대 3). 쌍 mismatch → `reference_conflict`, 대상 VLM 미호출·`target_not_compared=true`. 나머지는 REST 명세와 일치.
 - [구현] UI 규칙: pair 원문의 'target'은 두 번째 기준을 뜻하므로 '기준 간 차이'로 표시하고 실제 대상 결함으로 재서술하지 않는다.
 - [구현] Group 응답 Schema에 허용 기준 ID enum·필수 관찰 키·평가 개수·참조 최대 수를 명시. 원본 구조화 `provider_assessments`를 Job에 보관해 계약 오류 진단. 서버가 문자열 근거를 읽어 판정을 보정하지 않음.
-- [구현] 선택 재생성 record는 요청 key·기준 snapshot·원본 sha256/출력 순번/media type·고정 regeneration/단일 검증 snapshot·묶음 profile/provider/endpoint snapshot을 먼저 저장한 뒤 내부 멱등 키로 Task 생성. 자동 단일 재생성 자식이 생기면 cycle `active_task_id`를 추적하고 그 자식의 같은 순번·형식 출력이 단일 통과해야 묶음 대상. replacement Task(및 자동 자식)의 비선택 파생 출력은 대상 제외, 원본 Task의 비선택 PNG/WebP는 독립 대상 유지. Task 생성 전 `creating`은 기준 변경을 재확인하고 Task 미생성 시 원본을 현재 대상으로 복귀. 기준 변경 시 `stale_reference`로 종료. (코드: core_groups.py)
+- [구현] 선택 재생성 record는 요청 key·기준 snapshot·원본 sha256/출력 순번/media type·고정 regeneration/단일 검증 snapshot·묶음 profile/provider/endpoint snapshot을 먼저 저장한 뒤 내부 멱등 키로 Task 생성. 자동 단일 재생성 자식이 생기면 cycle `active_task_id`를 추적하고 그 자식의 같은 순번·형식 출력이 단일 통과해야 묶음 대상. replacement Task(및 자동 자식)의 비선택 파생 출력은 대상 제외, 원본 Task의 비선택 PNG/WebP는 독립 대상 유지. Task 생성 전 `creating`은 기준 변경을 재확인하고 Task 미생성 시 원본을 현재 대상으로 복귀. 기준 변경 시 `stale_reference`로 종료. (코드: core/groups.py)
 - [구현] Provider timeout/수락 불명 시 Core GPU owner를 자동 해제하지 않음 → 해당 DB 재사용 전 종료 상태 진단 후 복구 절차 필요.
 - [제한] 현 8B 모델: 상의 범위만 지정한 정상 대조가 `max_tokens=1024`에 도달해 `finish_reason=length` 오류, appearance 근거에 상의 관찰 혼입. 표정 전용·부분 가림·다수 캐릭터/보조 기준 대조 데이터 없음. 무인 운영 적합으로 보고하지 않음. 1024는 시험값이며 전역 기본값 미확정.
 

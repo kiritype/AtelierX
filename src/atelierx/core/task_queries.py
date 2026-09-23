@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .common import ApiError
+from ..common import ApiError
 
 
 TASK_FILTERS = {"group_id", "work_id", "character_id", "outfit_id", "state"}

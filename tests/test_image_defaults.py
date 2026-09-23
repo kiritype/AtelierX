@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from atelierx.core import CORE, create_app
-from atelierx.core_validation import CoreValidation
+from atelierx.core.validation import CoreValidation
 from atelierx.common import ApiError
 
 

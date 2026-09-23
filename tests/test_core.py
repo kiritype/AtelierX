@@ -334,7 +334,7 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.posts)
 
     async def test_second_owner_rejected_and_terminal_result_not_overwritten(self):
-        from atelierx.core_store import Store
+        from atelierx.core.store import Store
         with self.assertRaises(RuntimeError):
             Store(Path(self.tmp.name) / "core.sqlite3")
         _, _, _, group = await self.setup_group()

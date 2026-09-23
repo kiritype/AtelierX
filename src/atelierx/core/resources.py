@@ -1,7 +1,7 @@
 """Core's authenticated read-only view of Generation's registered resources."""
 from aiohttp import web
 
-from .common import ApiError
+from ..common import ApiError
 
 
 def attach(app, core):

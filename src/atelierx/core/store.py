@@ -7,7 +7,7 @@ import time
 import uuid
 import secrets
 
-from .common import ApiError, ProcessLock, canonical
+from ..common import ApiError, ProcessLock, canonical
 
 KINDS = {"works": None, "characters": "works", "outfits": "characters"}
 
