@@ -82,5 +82,5 @@ On 2026-09-13, the package was also linked into the installed ComfyUI through
 the junction above. The example was opened and executed from the ComfyUI UI;
 the full generation-to-PreviewImage workflow succeeded. The installed example
 is under `user/default/workflows/AtelierX/Anima - Generate and Preview.json`.
-See the [installation and execution record](../../docs/development/anima-generation-validation.md)
+See the [installation and execution record](../../docs/modules/custom-nodes-design.md)
 for the verified settings and local output location.

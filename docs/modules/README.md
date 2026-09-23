@@ -1,8 +1,10 @@
 # 모듈 책임과 상세 문서 안내
 
+**현행 사양 문서:** [Core·Generation](core-generation.md) · [Validation](validation.md) · [Frontend](frontend.md) · [Custom Node](custom-nodes-design.md) · [REST API](../api/rest-api.md). 아래 책임 표의 Proposed/TODO 표기는 ADR 결정 상태이며 구현 현황은 현행 사양 문서와 [현재 상태](../development/status.md)를 따른다.
+
 2026-09-22 후속 확정: 캐릭터 외형, 의상 상의·하의·액세서리로 편집 모델을 변경한다. Core가 이전 충돌 확인·프롬프트 합성·스냅샷을 소유하고 Frontend는 관리/생성/검토/갤러리 역할을 분리한다. 아래 과거 의상 외형 표현은 이 정정으로 대체한다.
 
-Core가 요청 시 선택한 검증 설정을 고정하고 생성 완료 후 검증을 접수하도록 구현했다. 공유 GPU·취소·Queue의 현재 범위는 [실행 기록](../development/core-orchestration-validation.md), 경로/필드는 [API 명세](../api/rest-api.md)를 따른다.
+Core가 요청 시 선택한 검증 설정을 고정하고 생성 완료 후 검증을 접수하도록 구현했다. 공유 GPU·취소·Queue의 현재 범위는 [실행 기록](core-generation.md), 경로/필드는 [API 명세](../api/rest-api.md)를 따른다.
 
 [ADR-0023](../architecture/adr/0023-negative-prompt-sources.md): Core가 전역·캐릭터 Negative 저장·합성·출처 고정을 담당한다. Generation은 합성 문구를 실행하고 Validation은 캐릭터 금지 요소만 검사한다.
 
@@ -122,10 +124,10 @@ Validation·Core·Client의 응답 처리는 [ADR-0005](../architecture/adr/0005
 
 ## 구현 진척 — 2026-09-13
 
-Core의 SQLite 도메인·Prompt 고정·Generation 접수/복구·이미지 저장 흐름은 [Core REST](../development/core-rest.md), 보조 노드의 ComfyUI 설치 및 실행 범위는 [실행 기록](../development/postprocess-live-validation.md)에 기록한다. Validation 연결과 Generation 보조 노드 API 확장은 남아 있다.
+Core의 SQLite 도메인·Prompt 고정·Generation 접수/복구·이미지 저장 흐름은 [Core REST](core-generation.md), 보조 노드의 ComfyUI 설치 및 실행 범위는 [실행 기록](custom-nodes-design.md)에 기록한다. Validation 연결과 Generation 보조 노드 API 확장은 남아 있다.
 
-[Backend 후처리·단일 검증 통합](../development/backend-pipeline-integration.md): Core가 이미지별 검증 이력을 소유하고 Validation이 AI Provider 요청 및 오류를 정규화한다. 실제 VLM 연결과 전체 기능 완료 여부는 실행 기록의 남은 범위를 따른다.
+[Backend 후처리·단일 검증 통합](core-generation.md): Core가 이미지별 검증 이력을 소유하고 Validation이 AI Provider 요청 및 오류를 정규화한다. 실제 VLM 연결과 전체 기능 완료 여부는 실행 기록의 남은 범위를 따른다.
 
 ## Frontend 구성 합의 — 2026-09-13
 
-[전체 화면 구성](../development/frontend-structure.md)에 제작·갤러리·작업 현황·설정의 역할과 이동을 기록했다. [제작 화면 상세](../development/frontend-production-screen.md)는 원본 저장, 이번 생성 입력, 과거 결과를 분리한다. [메뉴별 API 대조](../development/frontend-menu-api-map.md)는 구현 API와 제안 조회 API를 구분하며 UI의 Backend 책임 복제를 허용하지 않는다.
+[전체 화면 구성](frontend.md)에 제작·갤러리·작업 현황·설정의 역할과 이동을 기록했다. [제작 화면 상세](frontend.md)는 원본 저장, 이번 생성 입력, 과거 결과를 분리한다. [메뉴별 API 대조](frontend.md)는 구현 API와 제안 조회 API를 구분하며 UI의 Backend 책임 복제를 허용하지 않는다.

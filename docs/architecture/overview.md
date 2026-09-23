@@ -6,24 +6,24 @@
 
 2026-09-22 최신 확정: 작품 > 캐릭터 > 의상 계층은 유지하되 외형 소유권은 캐릭터로 이동한다. 의상에는 상의·하의·액세서리를 두고, 조각의 세 요소 포함 여부에 따라 Core가 합성한다(외형 항상 포함). ADR-0021/0022의 해당 과거 의상 외형 배치만 대체하며, 기존 그룹·작업 스냅샷과 revision 이력은 소급 변경하지 않는다.
 
-2026-09-22 사용자 승인: [전역 조각·모바일 제작 UI](../development/frontend-library-ux-review.md)를 구현한다. 조각은 사용자 관리 단일 계층 카테고리와 전체 고유 자동 번호(불변·재사용 없음)를 사용한다. 캐릭터/의상별 검증 통과 결과를 이미지셋으로 조회하고, 파일명 구조는 보류한다. 반응형 탐색·입력·상태 보존을 포함하며 Core의 실행·판정 책임을 유지한다.
+2026-09-22 사용자 승인: [전역 조각·모바일 제작 UI](../modules/frontend.md)를 구현한다. 조각은 사용자 관리 단일 계층 카테고리와 전체 고유 자동 번호(불변·재사용 없음)를 사용한다. 캐릭터/의상별 검증 통과 결과를 이미지셋으로 조회하고, 파일명 구조는 보류한다. 반응형 탐색·입력·상태 보존을 포함하며 Core의 실행·판정 책임을 유지한다.
 
-2026-09-21 개인용 원격 Frontend 인증 보완: Google OAuth 연결은 후속으로 미루고, Core가 Cloudflare Access의 서명·발급자·대상 애플리케이션·허용 사용자와 요청 출처를 검증한다. 서버 비공개 설정의 Core 연결 토큰을 사용해 브라우저의 반복 입력을 없애며, 기존 서비스 Bearer 인증은 유지한다. Frontend 설정에서는 연결 상태와 저장 토큰 교체만 제공하고 원문을 반환하지 않는다. 별도 BFF는 두지 않는다. [설정과 검증 상태](../development/remote-access.md).
+2026-09-21 개인용 원격 Frontend 인증 보완: Google OAuth 연결은 후속으로 미루고, Core가 Cloudflare Access의 서명·발급자·대상 애플리케이션·허용 사용자와 요청 출처를 검증한다. 서버 비공개 설정의 Core 연결 토큰을 사용해 브라우저의 반복 입력을 없애며, 기존 서비스 Bearer 인증은 유지한다. Frontend 설정에서는 연결 상태와 저장 토큰 교체만 제공하고 원문을 반환하지 않는다. 별도 BFF는 두지 않는다. [설정과 검증 상태](../development/operations.md).
 
-2026-09-21 Discord 서버 추가: 사용자가 지정한 두 번째 서버도 허용 범위에 포함한다. 두 허용 서버의 모든 채널에서 멤버가 사용할 수 있으며 다른 서버와 DM은 차단한다. [운영 반영 상태](../development/discord-personal-bot.md).
+2026-09-21 Discord 서버 추가: 사용자가 지정한 두 번째 서버도 허용 범위에 포함한다. 두 허용 서버의 모든 채널에서 멤버가 사용할 수 있으며 다른 서버와 DM은 차단한다. [운영 반영 상태](../development/discord.md).
 
-2026-09-21 최신 사용자 지시: Discord 봇은 일반 테스트용으로 두고 추가 개발의 순위를 뒤로 미룬다. 본체 Backend/F/E 제작 흐름의 남은 기능을 우선 검토한다. 아래 같은 날짜의 Discord 우선 착수 기록은 당시 범위다. [현재 우선순위 제안](../development/remaining-work-priorities.md).
+2026-09-21 최신 사용자 지시: Discord 봇은 일반 테스트용으로 두고 추가 개발의 순위를 뒤로 미룬다. 본체 Backend/F/E 제작 흐름의 남은 기능을 우선 검토한다. 아래 같은 날짜의 Discord 우선 착수 기록은 당시 범위다. [현재 우선순위 제안](../development/status.md).
 
 2026-09-21 Discord 권한 변경: 설치 권한(Discord 앱 소유자 한정)과 사용 권한(지정 서버/채널의 모든 멤버)을 분리한다. Worker는 서명된 서버·채널·멤버 정보를 검사하고 Bridge도 동일 범위를 재검사한다. Core 작업 조정 책임과 요청자별 결과 소유권은 유지한다.
 
-2026-09-21 사용자 지시: 배포 전 개인용 사용과 Discord 봇 구현을 우선한다. Discord는 F/E 분류·그룹과 독립된 자연어/원문 생성 요청이다. Workers는 수신·인증, 로컬 Bridge는 전달, Core는 독립 생성 상태·Planner·GPU·Generation 조정을 담당한다. 기존 그룹을 임의 생성하지 않으며 Core의 별도 `standalone_jobs`에 저장한다. [구현·권한·대기 계약](../development/discord-personal-bot.md).
+2026-09-21 사용자 지시: 배포 전 개인용 사용과 Discord 봇 구현을 우선한다. Discord는 F/E 분류·그룹과 독립된 자연어/원문 생성 요청이다. Workers는 수신·인증, 로컬 Bridge는 전달, Core는 독립 생성 상태·Planner·GPU·Generation 조정을 담당한다. 기존 그룹을 임의 생성하지 않으며 Core의 별도 `standalone_jobs`에 저장한다. [구현·권한·대기 계약](../development/discord.md).
 
 2026-09-13 최신 사용자 정정: 조각 기반 제작에서는 **외형을 항상 포함**한다. 전역 공유 조각은 본문과 **상의·하의 포함 여부만** 저장하며 appearance 선택 필드는 두지 않는다. 아래 과거 조각별 외형 선택 설명을 대체한다. 전역 Positive + 외형 + 선택한 상의/하의 + 조각 본문, 전역 Negative + 캐릭터 Negative를 사용한다. 구현·테스트를 계속 진행하도록 승인됐다.
 
 
-2026-09-13 최신 조각 설계: Core가 작품/캐릭터/의상과 독립된 전역 공유 Prompt 조각을 소유한다. 조각별 외형·상의·하의 포함 여부와 본문을 대상 의상 그룹에 적용하고 실행 snapshot에 고정한다. 기존 캐릭터 연결 조각·별도 공통 Prompt 권고를 대체한다. [확정 반영 flow](../development/batch-production-flow-review.md). 구현 전 계약 정리 단계다.
+2026-09-13 최신 조각 설계: Core가 작품/캐릭터/의상과 독립된 전역 공유 Prompt 조각을 소유한다. 조각별 외형·상의·하의 포함 여부와 본문을 대상 의상 그룹에 적용하고 실행 snapshot에 고정한다. 기존 캐릭터 연결 조각·별도 공통 Prompt 권고를 대체한다. [확정 반영 flow](../modules/core-generation.md). 구현 전 계약 정리 단계다.
 
-2026-09-13 UI 후속 지시: 제작·갤러리의 분류 트리와 자유 다중 행 Prompt 입력을 지원한다. Core는 custom 구도와 명시적 영역 포함을 받아 preview/snapshot에 원문을 고정한다. 대량 조각 라이브러리는 기존 Core Batch·검증 흐름과의 [사전 검토](../development/batch-prompt-fragments-review.md) 단계다.
+2026-09-13 UI 후속 지시: 제작·갤러리의 분류 트리와 자유 다중 행 Prompt 입력을 지원한다. Core는 custom 구도와 명시적 영역 포함을 받아 preview/snapshot에 원문을 고정한다. 대량 조각 라이브러리는 기존 Core Batch·검증 흐름과의 [사전 검토](../modules/core-generation.md) 단계다.
 
 [ADR-0023](adr/0023-negative-prompt-sources.md): 전역 Negative는 생성 전용, 캐릭터 Negative는 생성 및 금지 요소 검증에 사용한다. Core가 합성 문구와 출처를 시도별 고정한다. [현재 API 명세](../api/rest-api.md).
 
@@ -33,9 +33,9 @@
 
 ## 목적과 현재 단계
 
-2026-09-13 사용자 승인한 생성만/생성 후 검증 선택을 Core Task에서 처리한다. Client는 시작 요청·상태 표시, Core는 후속 검증 접수·GPU 조정·취소 전달을 담당한다. [실행 범위 및 한계](../development/core-orchestration-validation.md).
+2026-09-13 사용자 승인한 생성만/생성 후 검증 선택을 Core Task에서 처리한다. Client는 시작 요청·상태 표시, Core는 후속 검증 접수·GPU 조정·취소 전달을 담당한다. [실행 범위 및 한계](../modules/core-generation.md).
 
-2026-09-13 후속 사용자 지시로 Frontend 제외 Backend·SDK·CLI 구현을 시작했다. 아래 과거 ADR 전용 문구보다 이 지시가 우선한다. 첫 구현은 [Generation Anima REST 경로](../development/generation-rest.md)이며 Node 준비 확인 후 순차 실제 실행을 검증했다. Backend 전체 구현 완료나 미정 정책의 일괄 Accepted 전환을 뜻하지 않는다.
+2026-09-13 후속 사용자 지시로 Frontend 제외 Backend·SDK·CLI 구현을 시작했다. 아래 과거 ADR 전용 문구보다 이 지시가 우선한다. 첫 구현은 [Generation Anima REST 경로](../modules/core-generation.md)이며 Node 준비 확인 후 순차 실제 실행을 검증했다. Backend 전체 구현 완료나 미정 정책의 일괄 Accepted 전환을 뜻하지 않는다.
 
 2026-09-13 개발 순서 확정: Backend 3개 최소 통합 흐름·기능 확장 → Shared API Client 기반 CLI → Frontend. Custom Node는 병행한다. 현재는 ADR 검토를 계속하며 [개발 순서](../development/README.md)에 범위를 기록했다. 구현 개시와 구분한다.
 
@@ -221,17 +221,17 @@ N-14의 현재 목표는 Generation에서 캐릭터 일관성을 최대한 확�
 
 ## 2026-09-13 Core 최소 생성 흐름 구현
 
-[Core REST](../development/core-rest.md)의 SQLite 도메인·Prompt 스냅샷·Generation 접수/복구·이미지 메타데이터 저장과 실제 생성 통합을 검증했다. [보조 노드](../development/postprocess-live-validation.md)는 설치된 ComfyUI REST 직접 실행까지 확인했으며 Generation 보조 API와 Validation 연결은 후속 작업이다.
+[Core REST](../modules/core-generation.md)의 SQLite 도메인·Prompt 스냅샷·Generation 접수/복구·이미지 메타데이터 저장과 실제 생성 통합을 검증했다. [보조 노드](../modules/custom-nodes-design.md)는 설치된 ComfyUI REST 직접 실행까지 확인했으며 Generation 보조 API와 Validation 연결은 후속 작업이다.
 
 ## Backend 초기 통합 확장
 
-[후처리·단일 검증 통합](../development/backend-pipeline-integration.md)을 구현했다. 생성 완료와 검증 outcome을 분리하고 오류 후 자동 재생성을 실행하지 않는다. 실제 VLM 품질, 자동 재생성 적용 및 묶음 검증은 후속 범위다.
+[후처리·단일 검증 통합](../modules/core-generation.md)을 구현했다. 생성 완료와 검증 outcome을 분리하고 오류 후 자동 재생성을 실행하지 않는다. 실제 VLM 품질, 자동 재생성 적용 및 묶음 검증은 후속 범위다.
 
 ## Frontend 화면 구성 합의 — 2026-09-13
 
-사용자는 제작 / 갤러리 / 작업 현황 / 설정의 상단 4개 메뉴, 제작의 분류 트리·편집·생성 설정 배치, 결과·작업·설정 간 이동 원칙을 승인했다. [전체 구성](../development/frontend-structure.md)에 보존했다. 이는 화면 구성 결정이며 Framework, 누락 API 구현 완료, Frontend 구현 착수를 뜻하지 않는다. Core 조정·REST canonical·Shared Client·별도 BFF 없음과 Backend→CLI→Frontend 개발 순서는 유지한다. 제작 상세와 메뉴별 API 공백은 일반 상세 초안으로 병행 정리한다.
+사용자는 제작 / 갤러리 / 작업 현황 / 설정의 상단 4개 메뉴, 제작의 분류 트리·편집·생성 설정 배치, 결과·작업·설정 간 이동 원칙을 승인했다. [전체 구성](../modules/frontend.md)에 보존했다. 이는 화면 구성 결정이며 Framework, 누락 API 구현 완료, Frontend 구현 착수를 뜻하지 않는다. Core 조정·REST canonical·Shared Client·별도 BFF 없음과 Backend→CLI→Frontend 개발 순서는 유지한다. 제작 상세와 메뉴별 API 공백은 일반 상세 초안으로 병행 정리한다.
 
 
 ## Frontend 파일럿 구현 — 2026-09-13
 
-사용자의 파일럿 완성 지시에 따라 Core의 allowlist 정적 파일 제공과 same-origin 브라우저 REST Client를 구현했다. 네 메뉴를 연결하고 실제 생성·후처리·단일 검증을 브라우저에서 확인했다. 새 BFF 없이 Backend 책임을 유지하며 브라우저 token은 메모리에만 둔다. [파일럿 범위·제한](../development/frontend-pilot.md)을 따른다. 프레임워크·배포 정책의 새 ADR 일괄 승인을 의미하지 않는다.
+사용자의 파일럿 완성 지시에 따라 Core의 allowlist 정적 파일 제공과 same-origin 브라우저 REST Client를 구현했다. 네 메뉴를 연결하고 실제 생성·후처리·단일 검증을 브라우저에서 확인했다. 새 BFF 없이 Backend 책임을 유지하며 브라우저 token은 메모리에만 둔다. [파일럿 범위·제한](../modules/frontend.md)을 따른다. 프레임워크·배포 정책의 새 ADR 일괄 승인을 의미하지 않는다.

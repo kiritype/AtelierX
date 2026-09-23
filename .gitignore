@@ -38,3 +38,6 @@ artifacts/frontend-pilot/
 
 # Wrangler local deployment state.
 /.wrangler/
+
+# Local-only work history (summarized into tracked docs first)
+docs/history/
