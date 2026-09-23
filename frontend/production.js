@@ -5,6 +5,7 @@
 import {fragmentKey, fragmentListPath, fragmentReference, preserveSelection} from "./fragment-picker.js";
 import {mountStudioTree} from "./studio-tree.js";
 import {OUTFIT_PARTS, checkFeaturesError, defaultFragmentInclude, fragmentIncludeSummary, fragmentLabel, inclusionLabels, parseCheckFeatures} from "./fragment-rules.js";
+import {consistencyFormValues, consistencyMethodChoices, estimatedSecondsWithConsistency, mountReferenceSetPanel, referenceMismatchDiffRows, referenceStatusLabel} from "./reference-sets.js";
 
 const EMPTY_COMPONENTS = Object.freeze({ upper: "", lower: "", accessories: "", hands: "" });
 const DEFAULT_GENERATION = Object.freeze({
@@ -109,7 +110,32 @@ function makeKey() {
 
 function requestError(error) {
   if (error?.code === "CORE_APPEARANCE_MIGRATION_RESOLUTION_REQUIRED") return "캐릭터 외형 이전 충돌을 먼저 해결하세요. 캐릭터 편집에서 후보 외형을 선택해 저장한 뒤 의상과 생성을 다시 준비하세요.";
+  if (error?.code === "CORE_REFERENCE_SET_REQUIRED") {
+    const outfits = (error.details?.outfits || []).map((item) => `${item.outfit_id}(${referenceStatusLabel(item.status)})`).join(", ");
+    return `참조 세트가 필요합니다${outfits ? `: ${outfits}` : ""}. 캐릭터 관리의 의상 화면에서 먼저 참조 세트를 확정하세요.`;
+  }
   return error?.message || "요청을 완료하지 못했습니다.";
+}
+
+/** ADR-0027 P1/#7, P5: `POST /v1/production-plans` rejects a missing/needs_review
+ * reference set (409 `CORE_REFERENCE_SET_REQUIRED`, re-thrown with a readable
+ * message via `requestError`) and warns on a settings mismatch (409
+ * `CORE_REFERENCE_SETTINGS_MISMATCH`, `{diff}`). The mismatch is not a hard
+ * block: on confirmation this resubmits the same body plus
+ * `accept_reference_settings_mismatch: true` under a new idempotency key,
+ * since the body content changed. */
+async function submitProductionPlan(api, request, key) {
+  try {
+    return await api.post("/v1/production-plans", request, key);
+  } catch (error) {
+    if (error?.code !== "CORE_REFERENCE_SETTINGS_MISMATCH") throw error;
+    const rows = referenceMismatchDiffRows(error.details?.diff);
+    const summary = rows.map((row) => `- ${row.label}: 참조 세트=${row.reference} / 계획=${row.plan}`).join("\n");
+    const proceed = typeof window !== "undefined" && window.confirm
+      ? window.confirm(`생성 설정이 확정한 참조 세트와 다릅니다.\n${summary}\n\n그래도 진행할까요?`) : false;
+    if (!proceed) throw new Error("설정 불일치로 계획을 만들지 않았습니다. 확인 후 다시 시도하세요.");
+    return api.post("/v1/production-plans", { ...request, accept_reference_settings_mismatch: true }, makeKey());
+  }
 }
 
 function collection(payload) {
@@ -132,6 +158,7 @@ function initialDraft() {
     generation: deepCopy(DEFAULT_GENERATION), loras: [],
     generationPreset: "", postprocessPreset: "", postprocessMode: "default",
     upscaleModel: "4x-UltraSharp.safetensors", upscaleScale: 1.5, webpEnabled: true, webpQuality: 90,
+    consistencyMethod: "", consistencyParams: {},
     validationMode: "generation", validationEnabled: false, validationProfile: "", validationProvider: "",
     groupValidationProfile: "", groupValidationProvider: "", planKey: null, planRequest: null, planPending: false,
     multiPlanRequests: {}, multiPlanPending: false,
@@ -298,13 +325,27 @@ function entityEditor(state, api, rerender, notify) {
     state.archiveConfirm = {kind, id: editor.targetId, revision: editor.revision, archived: editor.archived, workId: editor.workId, characterId: editor.characterId};
     rerender();
   };
+  const referenceHost = kind === "outfits" && isEdit && !editor.archived ? node("div", { class: "reference-set-host" }) : null;
+  // entityEditor is rebuilt (fresh DOM nodes) on every explicit rerender(), so
+  // this always tears down the previous panel and mounts a new one into the
+  // current host rather than trying to reuse a detached container.
+  state.referencePanelDispose?.();
+  state.referencePanelDispose = null;
+  if (referenceHost) {
+    queueMicrotask(() => {
+      state.referencePanelDispose = mountReferenceSetPanel(referenceHost, {
+        api, outfitId: editor.targetId, notify, signal: state.pageSignal,
+      });
+    });
+  }
   return node("section", { class: "panel" }, [node("h2", { text: isEdit ? `${names[kind]} 수정` : `새 ${names[kind]} 만들기` }),
     parents.length ? node("p", {class: "muted", text: `상위 분류: ${parents.join(" › ")}`}) : null,
     state.dirty ? node("p", { class: "error", text: "원본에 저장하지 않은 변경이 있습니다." }) : null,
     node("div", { class: "grid" }, controls), node("div", { class: "row" }, [button(isEdit ? `${names[kind]} 변경 저장` : `새 ${names[kind]} 저장`, save, {disabled: state.entityPending}),
       button("취소", () => { if (state.entityPending) return; state.editor = null; state.dirty = false; rerender(); }, { secondary: true, disabled: state.entityPending }),
       isEdit ? button(editor.archived ? "복원" : "보관", archive, {secondary: true, disabled: state.entityPending}) : null]),
-    isEdit ? node("p", { class: "muted", text: "보관은 삭제나 연쇄 변경이 아닙니다. 기존 고정 그룹과 과거 이력은 유지됩니다." }) : null]);
+    isEdit ? node("p", { class: "muted", text: "보관은 삭제나 연쇄 변경이 아닙니다. 기존 고정 그룹과 과거 이력은 유지됩니다." }) : null,
+    referenceHost]);
 }
 
 function invalidatePreview(draft, clearTask = false) {
@@ -371,6 +412,10 @@ export function buildGenerationBody(state) {
     if (!draft.validationProfile || !draft.validationProvider) throw new Error("검사 Profile과 Provider를 모두 선택하세요.");
     body.validation = { profile_id: draft.validationProfile, provider_id: draft.validationProvider };
   }
+  // ADR-0027 P3: omitting `consistency` lets Core apply its own default (the
+  // registered method, when the outfit's reference set is valid) or nothing
+  // (when it is not). An explicit method here overrides only its params.
+  if (draft.consistencyMethod) body.consistency = { method: draft.consistencyMethod, params: { ...draft.consistencyParams } };
   return body;
 }
 
@@ -471,7 +516,15 @@ function generationPanel(state, api, rerender, notify) {
   const draft = state.draft;
   const resources = state.resources || {};
   let estimateLabel = null;
-  const updateEstimate = () => { if (!estimateLabel) return; try { const value = postprocessResolutionEstimate(draft, state.presets); estimateLabel.textContent = value ? `예상 최종 해상도: ${value.width}×${value.height} (최종 ${value.factor}배; 모델 고유 배율과 별개)` : "예상 최종 해상도: 원본 크기"; } catch { estimateLabel.textContent = "예상 최종 해상도를 계산할 수 없습니다."; } };
+  let timeEstimateLabel = null;
+  const updateEstimate = () => {
+    if (estimateLabel) { try { const value = postprocessResolutionEstimate(draft, state.presets); estimateLabel.textContent = value ? `예상 최종 해상도: ${value.width}×${value.height} (최종 ${value.factor}배; 모델 고유 배율과 별개)` : "예상 최종 해상도: 원본 크기"; } catch { estimateLabel.textContent = "예상 최종 해상도를 계산할 수 없습니다."; } }
+    if (timeEstimateLabel) {
+      const consistencyOn = Boolean(draft.consistencyMethod);
+      const seconds = estimatedSecondsWithConsistency(9, consistencyOn);
+      timeEstimateLabel.textContent = consistencyOn ? `예상 생성 시간: 장당 약 ${Math.round(seconds)}초 (참조 일관성 적용 시 약 3.3배)` : "참조 일관성을 켜면 장당 약 30초로 늘어납니다(현재 약 9초).";
+    }
+  };
   const change = (callback) => (value) => { callback(value); invalidatePreview(draft, true); updateEstimate(); };
   const generationControls = draft.generationPreset ? [node("p", { class: "muted", text: "Generation preset을 선택했으므로 직접 모델 설정은 요청에 함께 보내지 않습니다." })] : [
     field("Diffusion model", resourceChoice(draft.generation.diffusion_model, resources.diffusion_models, change((value) => { draft.generation.diffusion_model = value; }), "모델"), state.resourcesError || "Core에 등록된 모델만 선택할 수 있습니다."),
@@ -514,14 +567,43 @@ function generationPanel(state, api, rerender, notify) {
     draft.validationMode === "single-group" ? field("묶음 검사 Profile", choice(draft.groupValidationProfile, state.presets.groupProfiles || [], (value) => { draft.groupValidationProfile = value; invalidatePreview(draft); })) : null,
     draft.validationMode === "single-group" ? field("묶음 검사 Provider", choice(draft.groupValidationProvider, state.presets.providers, (value) => { draft.groupValidationProvider = value; invalidatePreview(draft); })) : null,
   ]);
+  const consistencyMethods = consistencyMethodChoices(resources.consistency_methods);
+  const selectedMethod = consistencyMethods.find((method) => method.id === draft.consistencyMethod) || null;
+  const applyMethod = (methodId) => {
+    draft.consistencyMethod = methodId;
+    const method = consistencyMethods.find((item) => item.id === methodId);
+    draft.consistencyParams = method ? consistencyFormValues(method.params, draft.consistencyParams).values : {};
+    invalidatePreview(draft, true); updateEstimate(); rerender();
+  };
+  const consistencyParamFields = () => {
+    if (!selectedMethod) return [];
+    const { values, warnings } = consistencyFormValues(selectedMethod.params, draft.consistencyParams);
+    draft.consistencyParams = values;
+    return Object.entries(selectedMethod.params).map(([key, spec]) => {
+      const warn = warnings.includes(key);
+      const control = spec.type === "boolean"
+        ? node("input", { type: "checkbox", checked: values[key], onchange: (event) => { draft.consistencyParams[key] = event.target.checked; invalidatePreview(draft, true); } })
+        : textInput(values[key], change((value) => { draft.consistencyParams[key] = value; }), { type: "number", min: spec.min, max: spec.max, step: 0.05 });
+      return field(key, control, warn ? `경고: ${spec.warn_below} 미만은 의상 색이 흔들릴 수 있습니다.` : (spec.min !== undefined ? `허용 범위 ${spec.min}~${spec.max}` : ""));
+    });
+  };
+  const consistencyPanel = node("div", { class: "grid" }, [
+    field("일관성 방식", node("select", { onchange: (event) => applyMethod(event.target.value) }, [
+      selectedOption("", "기본값 사용 (참조 세트가 유효하면 Core가 자동 적용)", !draft.consistencyMethod),
+      ...consistencyMethods.map((method) => node("option", { value: method.id, selected: draft.consistencyMethod === method.id ? "" : null, disabled: method.available ? null : "", text: `${method.id}${method.available ? "" : ` (사용 불가: ${method.reason || "미등록"})`}` })),
+    ]), consistencyMethods.length ? "" : "Generation 자원 목록을 아직 불러오지 못했습니다."),
+    ...consistencyParamFields(),
+  ]);
   const directSettings = draft.generationPreset ? null : node("details", { class: "production-direct-settings", open: "" }, [
     node("summary", { text: "직접 생성 설정" }), node("div", { class: "grid" }, generationControls),
     node("h3", { text: "LoRA" }), node("p", { class: "muted", text: "행 순서대로 적용합니다. 설치 확인된 Anima LoRA를 제안하며, 다른 등록 파일명도 직접 입력할 수 있습니다." }),
     node("datalist", { id: "production-known-anima-loras" }, (resources.loras || []).map((name) => node("option", { value: name }))), ...loraRows,
     button("+ LoRA", () => { draft.loras.push({ name: "", strength: 1 }); invalidatePreview(draft); rerender(); }, { secondary: true }),
   ]);
+  timeEstimateLabel = node("p", { class: "muted" }); updateEstimate();
   return node("section", { class: "panel" }, [node("h2", { text: "생성 설정" }), field("생성 Preset", presetSelect),
     draft.generationPreset ? node("p", { class: "muted", text: "선택한 Preset의 고정 설정을 사용합니다." }) : directSettings,
+    node("h3", { text: "일관성(참조 이미지)" }), consistencyPanel, timeEstimateLabel,
     node("h3", { text: "후처리" }), postprocess, node("h3", { text: "검사" }), validation]);
 }
 
@@ -635,7 +717,7 @@ function planSetupPanel(state, api, rerender, notify) {
       draft.planRequest ||= buildProductionPlanBody(state);
       draft.planKey ||= makeKey();
       draft.planPending = true; rerender();
-      const plan = await api.post("/v1/production-plans", draft.planRequest, draft.planKey);
+      const plan = await submitProductionPlan(api, draft.planRequest, draft.planKey);
       state.productionPlanId = plan.id; state.productionPlan = plan; draft.planPending = false;
       notify("고정 제작 계획을 만들었습니다. 시작 전에는 GPU 작업을 실행하지 않습니다.");
       await refreshProductionPlan(state, api); rerender();
@@ -683,7 +765,7 @@ function multiPlanSetupPanel(state, api, rerender, notify) {
       for (const groupId of Object.keys(requests)) {
         const entry = draft.multiPlanRequests[groupId];
         try {
-          const plan = await api.post("/v1/production-plans", entry.request, entry.key);
+          const plan = await submitProductionPlan(api, entry.request, entry.key);
           entry.plan = plan; entry.error = null;
           state.multiProductionPlans[groupId] = plan;
         } catch (error) { entry.error = requestError(error); }
@@ -1032,6 +1114,16 @@ async function loadCreationData(state, api, isCurrent) {
   if (!isCurrent()) return;
   state.entities = {works, characters, outfits, groups: []};
   state.fragmentCategories = categories; state.creationFragments = fragments;
+  // ADR-0027 P5: a production plan is rejected for any outfit without a valid
+  // reference set, so the target tree shows status up front instead of only
+  // surfacing it after a 409. Best effort: a fetch failure leaves the outfit
+  // unbadged rather than blocking the whole tree.
+  const statusEntries = await Promise.all(outfits.filter((item) => !item.archived).map(async (outfit) => {
+    try { return [outfit.id, (await api.get(`/v1/outfits/${outfit.id}/reference-set`)).status]; }
+    catch { return [outfit.id, null]; }
+  }));
+  if (!isCurrent()) return;
+  state.referenceStatuses = Object.fromEntries(statusEntries);
   state.creationLoaded = true;
 }
 
@@ -1057,7 +1149,13 @@ function creationPanel(state, api, rerender, notify) {
   const outfitTree = node("section", {class: "panel creation-target-tree"}, [node("h2", {text: "작품 · 캐릭터 · 의상"}), ...activeWorks.map((work) => {
     const characters = charactersFor(work); const outfits = characters.flatMap(outfitsFor);
     const open = state.creationExpanded[work.id] !== false;
-    return node("div", {class: "creation-tree-work"}, [treeToggle(work.name, open, () => toggleExpanded(work.id)), check(`작품 · ${work.name}`, treeSelectionState(outfits.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(outfits.map((item) => item.id), checked), locked || !outfits.length), !outfits.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, open ? node("div", {class: "creation-tree-outfits"}, characters.map((character) => { const children = outfitsFor(character); const characterOpen = state.creationExpanded[character.id] !== false; return node("div", {class: "creation-tree-character"}, [treeToggle(character.name, characterOpen, () => toggleExpanded(character.id)), check(`캐릭터 · ${character.name}`, treeSelectionState(children.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(children.map((item) => item.id), checked), locked || !children.length), !children.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, characterOpen ? node("div", {class: "creation-tree-outfits"}, children.map((outfit) => node("div", {class: "creation-tree-outfit"}, [check(`의상 · ${outfit.name}`, treeSelectionState([outfit.id], selectedOutfits), (checked) => toggleOutfits([outfit.id], checked), locked)]))) : null]); })) : null]);
+    return node("div", {class: "creation-tree-work"}, [treeToggle(work.name, open, () => toggleExpanded(work.id)), check(`작품 · ${work.name}`, treeSelectionState(outfits.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(outfits.map((item) => item.id), checked), locked || !outfits.length), !outfits.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, open ? node("div", {class: "creation-tree-outfits"}, characters.map((character) => { const children = outfitsFor(character); const characterOpen = state.creationExpanded[character.id] !== false; return node("div", {class: "creation-tree-character"}, [treeToggle(character.name, characterOpen, () => toggleExpanded(character.id)), check(`캐릭터 · ${character.name}`, treeSelectionState(children.map((item) => item.id), selectedOutfits), (checked) => toggleOutfits(children.map((item) => item.id), checked), locked || !children.length), !children.length ? node("small", {class: "muted", text: "선택 가능한 활성 의상이 없습니다."}) : null, characterOpen ? node("div", {class: "creation-tree-outfits"}, children.map((outfit) => {
+      const referenceStatus = state.referenceStatuses?.[outfit.id] ?? null;
+      const referenceOk = referenceStatus === "valid";
+      return node("div", {class: "creation-tree-outfit"}, [check(`의상 · ${outfit.name}`, treeSelectionState([outfit.id], selectedOutfits), (checked) => toggleOutfits([outfit.id], checked), locked || !referenceOk),
+        referenceStatus ? node("span", {class: "badge", text: referenceStatusLabel(referenceStatus)}) : null,
+        !referenceOk ? node("span", {class: "row"}, [node("small", {class: "muted", text: "참조 세트가 필요합니다."}), button("의상 관리에서 만들기", () => { state.navigate?.("production"); notify?.(`캐릭터 관리에서 "${outfit.name}" 의상을 선택해 참조 세트를 만드세요.`); }, {secondary: true})]) : null]);
+    })) : null]); })) : null]);
   })]);
   const fragments = (state.creationFragments || []).filter((item) => !item.archived);
   const categories = new Set(state.fragmentCategories.map((item) => item.id));
@@ -1093,7 +1191,7 @@ function creationPanel(state, api, rerender, notify) {
     finally { state.creationPending = false; rerender(); }
   };
   const createPlans = async () => {
-    try { state.creationPending = true; rerender(); const requests = freezeMultiProductionPlanRequests(state); let failed = 0; for (const groupId of Object.keys(requests)) { const entry = state.draft.multiPlanRequests[groupId]; if (!entry.plan) { try { entry.plan = await api.post("/v1/production-plans", entry.request, entry.key); entry.error = null; } catch (error) { entry.error = requestError(error); failed += 1; } } } notify(failed ? `${failed}개 계획 접수에 실패했습니다. 같은 고정 키로 다시 시도할 수 있습니다.` : "고정 제작 계획을 만들었습니다. 아직 실행을 시작하지 않았습니다.", Boolean(failed)); }
+    try { state.creationPending = true; rerender(); const requests = freezeMultiProductionPlanRequests(state); let failed = 0; for (const groupId of Object.keys(requests)) { const entry = state.draft.multiPlanRequests[groupId]; if (!entry.plan) { try { entry.plan = await submitProductionPlan(api, entry.request, entry.key); entry.error = null; } catch (error) { entry.error = requestError(error); failed += 1; } } } notify(failed ? `${failed}개 계획 접수에 실패했습니다. 같은 고정 키로 다시 시도할 수 있습니다.` : "고정 제작 계획을 만들었습니다. 아직 실행을 시작하지 않았습니다.", Boolean(failed)); }
     catch (error) { state.error = requestError(error); } finally { state.creationPending = false; rerender(); }
   };
   const previewPrompt = async (outfitId, fragment) => {
@@ -1120,9 +1218,12 @@ function creationPanel(state, api, rerender, notify) {
 export async function mount(container, ctx) {
   const state = pageState(ctx);
   const creationMode = ctx.mode === "creation";
-  if (creationMode) { state.productionSection = "compose"; state.creationMode = true; if (!state.creationValidationInitialized) { state.draft.validationMode = "single-group"; state.draft.validationEnabled = true; state.creationValidationInitialized = true; } }
+  // ADR-0027 P6: the default check for a new production plan is single-only;
+  // single+group validation remains selectable but is no longer preselected.
+  if (creationMode) { state.productionSection = "compose"; state.creationMode = true; if (!state.creationValidationInitialized) { state.draft.validationMode = "single"; state.draft.validationEnabled = true; state.creationValidationInitialized = true; } }
   state.navigate = ctx.navigate;
   state.api = ctx.api;
+  state.pageSignal = ctx.signal;
   let disposed = false;
   let loading = 0;
   const notify = (message, error = false) => ctx.notify?.(message, error);
@@ -1163,5 +1264,5 @@ export async function mount(container, ctx) {
   if (hadCachedTree) { state.loaded.works = false; state.loaded.characters = {}; state.loaded.outfits = {}; state.loaded.groups = {}; state.loaded.compose = false; state.loaded.fragmentPath = null; }
   await rerender(!hadCachedTree);
   if (hadCachedTree) rerender(true);
-  return () => { disposed = true; state.tree?.dispose?.(); state.tree = null; };
+  return () => { disposed = true; state.tree?.dispose?.(); state.tree = null; state.referencePanelDispose?.(); state.referencePanelDispose = null; };
 }

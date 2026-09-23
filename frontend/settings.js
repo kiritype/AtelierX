@@ -1,4 +1,15 @@
 const el=(tag,text="",className="")=>{const n=document.createElement(tag);n.textContent=text;if(className)n.className=className;return n;};
+// Kept local (not imported from reference-sets.js) so this module stays loadable
+// as a standalone data: URL in tests/test_settings_forms.mjs; logic mirrors
+// reference-sets.js's referenceTemplatesDraft/referenceTemplatesFromDraft,
+// covered separately by tests/test_frontend_reference_sets.mjs.
+const referenceTemplateRole=(value)=>({framing_prompt:value?.framing_prompt||"",include:{upper:Boolean(value?.include?.upper),lower:Boolean(value?.include?.lower),accessories:Boolean(value?.include?.accessories),hands:Boolean(value?.include?.hands)}});
+export const referenceTemplatesDraft=(templates)=>({full:referenceTemplateRole(templates?.full),face:referenceTemplateRole(templates?.face)});
+export const referenceTemplatesFromDraft=(draft)=>{
+ if(!draft.full.framing_prompt.trim()||!draft.face.framing_prompt.trim())throw new Error("전신·얼굴 구도 문구를 모두 입력하세요.");
+ const role=(value)=>({framing_prompt:String(value.framing_prompt||"").trim(),include:{upper:Boolean(value.include.upper),lower:Boolean(value.include.lower),accessories:Boolean(value.include.accessories),hands:Boolean(value.include.hands)}});
+ return {full:role(draft.full),face:role(draft.face)};
+};
 const button=(text,fn)=>{const n=el("button",text,"button");n.type="button";n.onclick=fn;return n;};
 const errorText=(e)=>e?.code?`${e.code}: ${e.message||"Request failed"}`:e?.message||String(e);
 export const numberValue=(v,fallback=undefined)=>v===""?fallback:Number(v);
@@ -35,7 +46,7 @@ const validationSetting=(kind,d,id)=>kind==="providers"?(()=>{const r={provider_
 export async function mount(container,ctx){
  const state=ctx.state.settings??={section:"global",drafts:{}};let ticket=0,disposed=false;
  const root=el("section","","panel"),nav=el("nav","","settings-nav"),content=el("section","","panel"),layout=el("div","","settings-layout");layout.append(nav,content);root.append(layout);container.replaceChildren(root);
- const sections=[["connection","Core 연결"],["global","전역 Prompt"],["regeneration","자동 재생성"],["generation","생성 Preset"],["postprocess","후처리 Preset"],["single-profiles","단일 검사 Profile"],["group-profiles","묶음 검사 Profile"],["providers","검사 Provider"],["nodes","실행 환경 상태"]],navs=new Map();
+ const sections=[["connection","Core 연결"],["global","전역 Prompt"],["reference-templates","참조 템플릿"],["regeneration","자동 재생성"],["generation","생성 Preset"],["postprocess","후처리 Preset"],["single-profiles","단일 검사 Profile"],["group-profiles","묶음 검사 Profile"],["providers","검사 Provider"],["nodes","실행 환경 상태"]],navs=new Map();
  const dirty=d=>{d.dirty=true;ctx.state.dirty=true;}, clean=()=>ctx.state.dirty=Object.values(state.drafts).some(d=>d.dirty);
  const draft=(key,server,make)=>state.drafts[key]??={key,value:make(server),baseRevision:server.revision,dirty:false,conflict:false};
  const field=(label,control,hint="")=>{const w=el("label","","field");w.append(el("span",label),control);if(hint)w.append(el("small",hint));return w;};
@@ -45,7 +56,28 @@ export async function mount(container,ctx){
  const reload=async(d,path,make)=>{try{const server=await ctx.api.get(path);state.drafts[d.key]={key:d.key,value:make(server),baseRevision:server.revision,dirty:false,conflict:false};clean();render();}catch(e){ctx.notify(errorText(e),true);}};
  const save=async(d,request)=>{try{await request();delete state.drafts[d.key];clean();ctx.notify("저장했습니다.");render();}catch(e){if(e?.status===409||e?.code==="CORE_REVISION_CONFLICT"){d.conflict=true;ctx.notify("revision 충돌입니다. 초안을 유지합니다.",true);render();}else ctx.notify(errorText(e),true);}};
  sections.forEach(([id,title])=>{const b=button(title,()=>{state.section=id;render();});navs.set(id,b);nav.append(b);});
- async function render(){const current=++ticket,section=state.section;navs.forEach((b,id)=>{const active=id===section;b.classList.toggle("active",active);b.toggleAttribute("aria-current",active);});content.replaceChildren(el("p","설정을 불러오는 중…","muted"));try{if(section==="connection"){await connection(current);return;}if(section==="nodes"){await nodes(current);return;}const path=["global","regeneration"].includes(section)?"/v1/settings":["generation","postprocess"].includes(section)?`/v1/presets/${section}?limit=50&offset=0`:`/v1/validation-settings/${section}?include_archived=true`;const result=await ctx.api.get(path);if(disposed||current!==ticket)return;if(section==="generation"){let resources=null,resourcesError=null;try{resources=await ctx.api.get("/v1/generation/resources");}catch(error){resourcesError=errorText(error);}if(disposed||current!==ticket||state.section!==section)return;state.generationResources=resources;state.generationResourcesError=resourcesError;}if(["global","regeneration"].includes(section))globals(result);else if(["generation","postprocess"].includes(section))presets(section,result);else validations(section,result);}catch(e){if(current===ticket&&!disposed&&state.section===section)content.replaceChildren(el("p",errorText(e),"error"));}}
+ async function render(){const current=++ticket,section=state.section;navs.forEach((b,id)=>{const active=id===section;b.classList.toggle("active",active);b.toggleAttribute("aria-current",active);});content.replaceChildren(el("p","설정을 불러오는 중…","muted"));try{if(section==="connection"){await connection(current);return;}if(section==="nodes"){await nodes(current);return;}const path=["global","regeneration","reference-templates"].includes(section)?"/v1/settings":["generation","postprocess"].includes(section)?`/v1/presets/${section}?limit=50&offset=0`:`/v1/validation-settings/${section}?include_archived=true`;const result=await ctx.api.get(path);if(disposed||current!==ticket)return;if(section==="generation"){let resources=null,resourcesError=null;try{resources=await ctx.api.get("/v1/generation/resources");}catch(error){resourcesError=errorText(error);}if(disposed||current!==ticket||state.section!==section)return;state.generationResources=resources;state.generationResourcesError=resourcesError;}if(section==="reference-templates")referenceTemplates(result);else if(["global","regeneration"].includes(section))globals(result);else if(["generation","postprocess"].includes(section))presets(section,result);else validations(section,result);}catch(e){if(current===ticket&&!disposed&&state.section===section)content.replaceChildren(el("p",errorText(e),"error"));}}
+ function referenceTemplates(server){
+  const key="settings:reference-templates",d=draft(key,server,s=>referenceTemplatesDraft(s.reference_templates)),form=el("div","","grid");
+  content.replaceChildren(el("h2","참조 템플릿"),el("p","참조 샘플의 고정 구도 문구와 포함 부위입니다(ADR-0027). 캐릭터 관리의 의상 화면에서 이 템플릿으로 전신·얼굴 샘플을 만듭니다.","muted"));
+  const partLabels={upper:"상의",lower:"하의",accessories:"액세서리",hands:"손"};
+  const roleFields=(role,label)=>{
+   const value=d.value[role];
+   const set=document.createElement("fieldset");set.append(el("legend",label));
+   const prompt=document.createElement("textarea");prompt.value=value.framing_prompt;prompt.oninput=()=>{value.framing_prompt=prompt.value;dirty(d);};
+   set.append(field("구도 Prompt",prompt));
+   for(const part of["upper","lower","accessories","hands"]){
+    const box=document.createElement("input");box.type="checkbox";box.checked=value.include[part];
+    box.onchange=()=>{value.include[part]=box.checked;dirty(d);};
+    set.append(field(`${partLabels[part]} 포함`,box));
+   }
+   return set;
+  };
+  form.append(roleFields("full","전신"),roleFields("face","얼굴"));
+  form.append(el("p",`기준 revision: ${d.baseRevision}`,"muted"),button("저장",()=>save(d,()=>ctx.api.patch("/v1/settings",{revision:d.baseRevision,reference_templates:referenceTemplatesFromDraft(d.value)}))));
+  const c=conflict(d,()=>reload(d,"/v1/settings",s=>referenceTemplatesDraft(s.reference_templates)));if(c)form.append(c);
+  content.append(form);
+ }
  async function connection(current){
   const manualForm=(problem)=>{
    const form=el("div","","grid"),token=document.createElement("input");
