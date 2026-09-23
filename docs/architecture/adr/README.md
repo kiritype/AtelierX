@@ -34,7 +34,7 @@
 | [0024: 로컬 운영 제어판과 Frontend 운영 현황](0024-local-operations-control-panel.md) | Accepted — 별도 제어판 프로세스, 묶음·외부 프로그램 toggle, 안전 종료, Core 읽기 전용 현황 경로 | 2026-09-23 |
 | [0025: 단일 검증의 검사 대상 범위와 판단 불가 항목](0025-validation-check-scope.md) | Accepted — 출처 기반 검사 범위·not_assessable·캐릭터 핵심 특징·재생성 제안 오류 분리. ADR-0004·0017 부분 변경 | 2026-09-23 |
 | [0026: 조각 번호·출력 파일명·손 항목·Discord 출력 폴더](0026-fragment-numbers-output-names-hands.md) | Accepted — 사용자 입력 번호·중복 경고·작품\\캐릭터\\복장\\번호 파일명·손 항목. ADR-0021·0022 부분 변경 | 2026-09-23 |
-| [0027: 참조 세트와 생성 일관성 방식](0027-reference-sets-and-consistency-methods.md) | Proposed — 의상 단위 참조 세트(전신·얼굴)·재확인 필요·일관성 방식 선택과 params·제작 계획 강제 | 미확정 |
+| [0027: 참조 세트와 생성 일관성 방식](0027-reference-sets-and-consistency-methods.md) | Accepted(부분) — 의상 단위 참조 세트(전신·얼굴)·재확인 필요·일관성 방식 선택과 params·제작 계획 강제. 생성 설정 불일치 처리는 Proposed. ADR-0010·0023 부분 변경 | 2026-09-23 |
 
 [backlog](backlog.md)는 논의 후보 목록이며 ADR 승인 기록이 아니다. [template](template.md)을 사용해 논의할 ADR의 초안을 작성할 수 있다.
 

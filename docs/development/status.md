@@ -59,9 +59,9 @@
 | F10 | P3 | 자연어 제작 Agent·후속 편집 | Agent·Planner 도구 미구현. Inpaint/ControlNet/Crop/색감/Watermark는 로드맵. LoRA 학습·중복 검사는 제외 |
 | F11 | 신규·후속(확정 로드맵) | 작품·캐릭터 기본 공통 적용 프롬프트 | 출처 구분(작품/캐릭터/이번 생성), 중복 1회 적용, 이번 제외 시 기본값 불변 |
 | F12 | 신규·P2(확정 로드맵) | 로고·favicon | 웹 매뉴얼 캡처 전 |
-| F13 | 진행 중(확정 순서) | 참조 세트·In-Context 참조 조건 | 미구현. 실험 후 ADR. 제작 계획은 확정 참조 세트 필수(Core 강제) |
-| F14 | 진행 중(확정 순서) | 라이트박스(확대·이동·2장 비교) | 실험 전 구현 |
-| F15 | 신규(2026-09-23 사용자 결정) | 조각 Negative(이미지별·공통 모두) | 미구현. [조각 API](../api/prompt-fragments-production-plans.md) 맨 위 절 |
+| F13 | 진행 중(확정 순서) | 참조 세트·In-Context 참조 조건 | 미구현. [ADR-0027](../architecture/adr/0027-reference-sets-and-consistency-methods.md) 부분 확정(설정 불일치 처리 논의 중). 제작 계획·신규 Task는 확정 참조 세트 필수 |
+| F14 | 구현(서비스 재시작 후 적용) | 라이트박스(확대·이동·2장 비교) | PR #21. 실제 브라우저·모바일 미검증 |
+| F16 | 신규(2026-09-23 사용자 결정) | 조각 Negative(이미지별·공통 모두) | 미구현. [조각 API](../api/prompt-fragments-production-plans.md) 맨 위 절 |
 | F15 | 확정·비긴급 | 단일 이미지 생성 화면 | standalone 경로 재사용 검토, 출력 `AtelierX\single\<날짜>\` |
 
 ### B. 복구·연결
