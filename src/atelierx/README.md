@@ -9,6 +9,8 @@
 | `validation.py` | Validation 서비스: VLM Provider 호출과 판정 집계 | `atelierx-validation` |
 | `discord_bridge.py` | Discord Worker 요청을 Core로 전달하는 Bridge | `python -m atelierx.discord_bridge` |
 | `api_client.py`, `cli.py` | Shared API Client와 CLI | `python -m atelierx.cli` |
+| `launcher/` | 서비스 묶음 실행기: Core + 선택 Generation·Validation·Bridge를 한 프로세스로 실행, 안전 종료(Ctrl+C·Ctrl+Break·제어판 종료 요청 파일) | `python -m atelierx.launcher`, `scripts\start_frontend_pilot.bat` |
+| `control/` | 로컬 운영 제어판(127.0.0.1:8180): 서비스 묶음·ComfyUI·LM Studio·Tunnel 시작·종료, 상태·로그·의존성 점검, Core용 `/status` | `atelierx-control`, `python -m atelierx.control` |
 
 ## 공유 모듈
 

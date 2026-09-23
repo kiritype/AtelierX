@@ -22,6 +22,7 @@
 | `pilot/frontend-connection.json` | Access JWT 검증 설정과 서버 저장 Core 토큰 ([예시](../../config/frontend-connection.example.json)) |
 | `pilot/core.sqlite3`, `pilot/generation/`, `pilot/validation/` | Core DB, 최종 이미지(`generation/images/`), 검증 데이터 |
 | `pilot/logs/` | 실행기 로그 |
+| `control/settings.json`, `state.json`, `token.txt`, `logs/` | 운영 제어판 설정·관리 프로세스 기록·Core 상태 조회용 읽기 토큰·자식 로그 |
 | `discord/standalone.json`, `discord/bridge.json` | 독립 생성·Bridge 설정 ([예시](../../examples/)) |
 | `discord/` 기타 | Bot·Bridge 토큰, 식별값, Worker secret 원본 |
 | `discord-bridge/` | Bridge의 요청별 전달 상태 기록 |
@@ -37,7 +38,8 @@
 
 | 포트 | 서비스 |
 | --- | --- |
-| 8188 | ComfyUI (외부 프로세스, 실행기가 시작·종료하지 않음) |
+| 8180 | 운영 제어판 |
+| 8188 | ComfyUI (실행기는 시작·종료하지 않음. 제어판이 시작·종료할 수 있음) |
 | 8189 | Generation |
 | 8190 | Core + Frontend `/ui/` |
 | 8191 | Validation |
@@ -53,7 +55,8 @@ scripts\start_frontend_pilot.bat
 scripts\start_frontend_pilot.bat -StandaloneConfig .atelierx\discord\standalone.json -DiscordBridgeConfig .atelierx\discord\bridge.json
 ```
 
-- 직접 실행: `.venv/Scripts/python.exe -B scripts/run_frontend_pilot.py [--standalone-config ...] [--discord-bridge-config ...] [--launcher-config ...]`. Bridge 설정은 standalone 설정을 요구한다.
+- 직접 실행: `.venv/Scripts/python.exe -B -m atelierx.launcher [--standalone-config ...] [--discord-bridge-config ...] [--launcher-config ...] [--no-generation] [--no-validation]`. 실행기 코드는 `src/atelierx/launcher/`이며 `scripts/run_frontend_pilot.py`는 같은 인자를 받는 호환 wrapper다. Bridge 설정은 standalone 설정을 요구한다.
+- `--no-generation`/`--no-validation`(`.bat`에서는 `-NoGeneration`/`-NoValidation`): 로컬 Generation/Validation을 띄우지 않는다. Core는 평소처럼 `127.0.0.1:8189`/`8191`을 가리키며, 포트 검사는 실제로 띄우는 서비스만 한다.
 - 시작 전 필요한 포트(8190, 로컬 8189/8191, Bridge 시 8192)를 모두 검사한다. 하나라도 사용 중이면 어떤 서비스도 만들지 않고 사용 중 포트만 표시한 뒤 종료한다.
 - `-LauncherConfig`: `mode: local`에서 `generation_url`/`validation_url`을 지정하면 해당 서비스는 원격으로 연결만 하고 시작·종료하지 않는다(원격 측 Core callback 구성과 실제 원격 동작은 미검증). `mode: remote-ui`는 지정한 UI를 브라우저로 열기만 한다.
 - 접속: 로컬 `http://127.0.0.1:8190/ui/`. `/`와 `/ui`는 `/ui/`로 리디렉션한다.
@@ -61,9 +64,10 @@ scripts\start_frontend_pilot.bat -StandaloneConfig .atelierx\discord\standalone.
 
 ## 종료
 
-- `Ctrl+C`는 이 실행기가 시작한 서비스만 종료한다. ComfyUI·LM Studio·Tunnel은 건드리지 않는다.
+- `Ctrl+C`(또는 `Ctrl+Break`)는 이 실행기가 시작한 서비스만 종료한다. ComfyUI·LM Studio·Tunnel은 건드리지 않는다.
 - 종료 전 활성 작업(Core Task·독립 생성·제작 계획·후처리·검증·묶음·GPU owner/waiting, Generation/Validation Job, Bridge 미전달 건, 원격 서비스 큐)을 센다. 하나라도 있으면 종료를 거절하고 개수를 표시한다. 완료 후 다시 `Ctrl+C`를 누른다. 원격 큐를 읽지 못해도 종료를 거절한다.
 - 실행 중 5초마다 상태를 확인하고 변화가 있거나 약 1분마다 `[status] active work: ...`를 남긴다.
+- 같은 5초 주기에 `.atelierx/control/bundle-stop-request.json`(제어판의 종료 요청)을 읽어 `Ctrl+C`와 같은 기준으로 판단하고, 수락 여부·활성 작업 개수를 `bundle-stop-response.json`에 남긴다. 실행기 시작 시 남아 있던 요청 파일은 지운다.
 
 ## 로그
 
@@ -107,10 +111,38 @@ powershell -NoProfile -File scripts\remote_tunnel_status.ps1
 - 파일이 없거나 로컬 접속이면 기존 Bearer 연결: `설정 → Core 연결`에 `pilot/token.txt` 값을 입력하며 현재 탭 메모리에만 보관한다.
 - 상태: 코드·격리 검증 완료, 로컬 설정 파일 존재. **외부 브라우저에서 토큰 없이 자동 연결되는 흐름의 명시적 확인 기록은 없다**(확인 필요).
 
+## 운영 제어판 ([ADR-0024](../architecture/adr/0024-local-operations-control-panel.md))
+
+이 PC에서만 여는 웹 화면(`http://127.0.0.1:8180/`)으로 서비스 묶음·ComfyUI·LM Studio 서버·Tunnel을 켜고 끄며 상태·로그·의존성을 본다. 원격에서는 Tailscale+RDP로 이 PC에 접속해 연다. Frontend에는 Core를 거친 읽기 전용 상태만 표시된다.
+
+```powershell
+scripts\start_control_panel.bat          # 제어판 실행 후 기본 브라우저로 열기
+.venv\Scripts\python.exe -B -m atelierx.control [--port 8180] [--no-autostart] [--open-browser]
+```
+
+- 한 번에 하나만 실행된다(`.atelierx/control/control.lock`). 이미 실행 중이면 `--open-browser`는 브라우저만 연다.
+- 제어판을 닫아도(`Ctrl+C`/창 닫기) 제어판이 띄운 프로그램은 계속 실행된다. 다시 켜면 `state.json`의 PID·실행 파일·명령줄이 실제 프로세스와 일치하는 항목만 다시 관리 대상으로 인식하고 나머지 기록은 버린다.
+
+| 항목 | 시작 | 종료 조건 | 준비 확인 |
+| --- | --- | --- | --- |
+| AtelierX 서비스 | `python -m atelierx.launcher` + 시작 옵션(Generation·Validation·Discord Bridge). 옵션 변경은 재시작 시 적용 | 종료 요청 파일로 실행기에 요청. 활성 작업이 있으면 실행기가 거절하고 화면에 개수를 표시. 강제 종료 없음 | `GET 127.0.0.1:8190/health`가 200 또는 401 |
+| ComfyUI | Stability Matrix 설정(`C:\StabilityMatrix\settings.json`)의 ComfyUI 실행 인자로 `venv\Scripts\python.exe main.py`. `--listen 127.0.0.1 --port 8188`은 항상 강제 | 제어판이 띄운 경우만. `/queue` 비어 있음 + Core GPU owner/waiting 없음(Core 미응답이면 이 검사 생략) → 프로세스 트리 종료 | `GET /system_stats` 200 (최대 180초) |
+| LM Studio 서버 | `lms server start` | 제어판이 켠 경우만. `lms ps --json` idle + Core GPU owner 없음 → `lms server stop`. 모델 로드·언로드는 하지 않음 | 1234 포트 listen |
+| Cloudflare Tunnel | `cloudflared tunnel run --token-file .atelierx/cloudflare/tunnel-token.txt`, 로그·`tunnel.pid`는 기존 스크립트와 같은 위치 | `tunnel.pid` 프로세스가 실행 파일·`--token-file` 경로까지 일치할 때만(스크립트로 켠 Tunnel도 관리 대상으로 인식) | 식별 규칙에 맞는 프로세스 실행 중 |
+
+- 안전 규칙: 제어판이 시작했고 기록과 일치하는 프로세스만 종료한다. 8188/8190 등을 이미 다른 프로세스가 쓰고 있으면 "외부 실행"으로 표시만 하고 새로 켜지도 끄지도 않는다(Stability Matrix로 켠 ComfyUI 포함). 제어판이 띄운 ComfyUI는 Stability Matrix 화면에 실행 중으로 보이지 않으므로 한쪽 방식만 쓴다.
+- 자동 켜기: 항목별 "시작 시 자동 켜기"를 체크하면 제어판 시작 시 ComfyUI·LM Studio → 서비스 → Tunnel 순서로 앞 단계 준비를 확인한 뒤 켠다. 이미 실행 중이고 준비 확인을 통과하면 켠 것으로 본다. 한 단계라도 실패하면 이후 단계는 진행하지 않고 원인을 표시한다.
+- 로그인 시 실행: 화면의 "바로가기 만들기"가 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\AtelierX Control Panel.lnk`(대상 `scripts\start_control_panel.bat`)를 만든다. 삭제도 같은 화면에서 한다. 관리자 권한은 쓰지 않는다.
+- 로그: 서비스·ComfyUI·LM Studio는 `.atelierx/control/logs/<항목>-<UTC시각>.log`, Tunnel은 기존 `.atelierx/cloudflare/tunnel-*.log`. 화면에서 최근 200줄을 본다. 로그는 제어판 화면에만 보이며 Frontend로 전달하지 않는다.
+- 의존성 점검(읽기 전용, 약 30초 캐시): ComfyUI 응답, AtelierX Node 등록(`/object_info`), Anima Node 선택 목록, `lms` 설치와 `gpu-config.json`의 모델 존재(`lms ls`는 앱·서버를 깨우므로 LM Studio 서버가 이미 켜져 있을 때만 확인), cloudflared·Tunnel token 파일 존재(내용은 읽지 않음), Validation·GPU 설정 파일 존재, 8180–8192·1234 포트 사용 주체.
+- 보안: `127.0.0.1`에만 바인딩한다. 모든 `/api/*`는 Host가 `127.0.0.1:<포트>`/`localhost:<포트>`여야 하고, 변경 요청은 `X-AtelierX-Control: 1` 헤더와 같은 origin(Origin이 있을 때)을 요구한다. Core용 `GET /status`는 `control/token.txt` Bearer가 필요하며 상태·의존성 요약만 반환한다(로그·명령줄·비밀값 없음).
+- 설정 파일 `control/settings.json`의 경로 값(`comfyui.stability_matrix_settings`, `comfyui.root`, `lmstudio.lms`, `tunnel.cloudflared`, `services.python`, Bridge 설정 경로)은 직접 편집할 수 있다. 화면에서는 자동 켜기와 서비스 시작 옵션만 바꾼다.
+- 실제 ComfyUI·LM Studio·cloudflared를 제어판으로 켜고 끄는 흐름은 격리 테스트 외 실사용 확인이 필요하다. 특히 제어판으로 띄운 ComfyUI의 Node·모델 목록이 Stability Matrix 실행과 같은지 첫 실행에서 확인한다.
+
 ## 아직 없는 것
 
-- Windows 로그인 자동 시작·재부팅 후 복구(서비스·Tunnel 모두). 2026-09-23 결정으로 localhost 운영 제어판의 항목별 "시작 시 자동 켜기"로 구현 예정.
-- 실행기의 ComfyUI·LM Studio·Tunnel 시작/종료, 재시작 명령, 서비스 상태 통합 화면.
+- 재부팅 직후 로그인 전 자동 복구(로그인 후 시작프로그램으로 제어판이 뜬다).
+- 실행 중 Generation·Validation·Bridge 개별 on/off, 작업 완료 후 종료 예약, 강제 종료.
 - 백업·복원, 디스크 부족 대응, 로그 보존 정책, 운영 알림.
 - EXE 실행기·Bash/타 OS 지원·깨끗한 PC 설치(설치 배포 단계).
 - 참고: `.atelierx/discord/restart-pilot.ps1`은 과거 background 재시작용 로컬 도구다. 실행 중 프로세스의 명령줄을 읽지 못하면 안전 검사로 중단한다. 표준 시작·종료는 위 전경 실행기다.

@@ -1,0 +1,77 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1c1f24;
+  --muted: #5d6673;
+  --border: #d9dde3;
+  --accent: #2f5bd3;
+  --ok: #1d7a46;
+  --ok-bg: #e3f4ea;
+  --warn: #8a5a00;
+  --warn-bg: #fff3d6;
+  --bad: #b3261e;
+  --bad-bg: #fde7e5;
+  --info: #3b4b66;
+  --info-bg: #e8edf5;
+  --log-bg: #11151b;
+  --log-text: #d7dee8;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --surface: #1d2128; --text: #e6e9ee; --muted: #9aa4b2; --border: #323844;
+    --accent: #7ea0ff; --ok: #6fd39b; --ok-bg: #173325; --warn: #f0c060; --warn-bg: #3a2f14;
+    --bad: #ff8f86; --bad-bg: #3d1c1a; --info: #b9c6dc; --info-bg: #252d3b; --log-bg: #0b0d11; --log-text: #d7dee8;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", "Malgun Gothic", system-ui, sans-serif; }
+h1 { font-size: 1.35rem; margin: 0; }
+h2 { font-size: 1.05rem; margin: 0; }
+h3 { font-size: 1rem; margin: 0; }
+.top { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: flex-end; padding: 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.top p { margin: 4px 0 0; }
+.top-meta { display: flex; gap: 8px; align-items: center; }
+main { padding: 16px; display: grid; gap: 16px; max-width: 1200px; margin: 0 auto; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.notice { margin: 16px 16px 0; padding: 10px 12px; border-radius: 8px; background: var(--info-bg); color: var(--info); }
+.notice.bad { background: var(--bad-bg); color: var(--bad); }
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); margin-top: 10px; }
+.card, .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 10px 0; font-size: .9rem; }
+.card dt { color: var(--muted); }
+.card dd { margin: 0; overflow-wrap: anywhere; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.panel .row + p, .panel h2 + p { margin: 6px 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.options { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; display: grid; gap: 4px; }
+label.inline, .options label, .autostart { display: inline-flex; gap: 6px; align-items: center; font-size: .9rem; }
+input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+button, select { font: inherit; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 5px 12px; min-height: 34px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.badge-running, .badge-ok { background: var(--ok-bg); color: var(--ok); }
+.badge-external, .badge-warning, .badge-starting, .badge-stopping { background: var(--warn-bg); color: var(--warn); }
+.badge-error, .badge-missing { background: var(--bad-bg); color: var(--bad); }
+.badge-stopped, .badge-unknown { background: var(--info-bg); color: var(--info); }
+.msg { font-size: .85rem; margin: 6px 0 0; padding: 6px 8px; border-radius: 6px; overflow-wrap: anywhere; white-space: pre-line; }
+.msg.bad { background: var(--bad-bg); color: var(--bad); }
+.msg.ok { background: var(--ok-bg); color: var(--ok); }
+.msg.warn { background: var(--warn-bg); color: var(--warn); }
+.log { background: var(--log-bg); color: var(--log-text); padding: 10px; border-radius: 8px; height: 360px; overflow: auto; font: 12px/1.45 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; }
+.deps { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.deps li { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: start; font-size: .9rem; }
+.deps li > .badge { justify-self: start; }
+.deps .detail { color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .top, main { padding: 12px; }
+  .deps li { grid-template-columns: 68px 1fr; gap: 6px; }
+  .log { height: 280px; }
+}
