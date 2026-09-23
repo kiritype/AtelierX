@@ -1,25 +1,17 @@
 import asyncio
-import importlib.util
 import json
 import socket
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
-from pilot_launcher import load_remote_config, redact_log, unavailable_ports  # noqa: E402
-from atelierx.core import CORE, create_app as create_core_app  # noqa: E402
-from atelierx.generation import SERVICE as GENERATION_SERVICE, create_app as create_generation_app  # noqa: E402
-from atelierx.validation import SERVICE as VALIDATION_SERVICE, create_app as create_validation_app  # noqa: E402
-
-spec = importlib.util.spec_from_file_location("run_frontend_pilot_test", ROOT / "scripts" / "run_frontend_pilot.py")
-pilot = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(pilot)
+from atelierx.launcher import run as pilot
+from atelierx.launcher.helpers import load_remote_config, redact_log, unavailable_ports
+from atelierx.core import CORE, create_app as create_core_app
+from atelierx.generation import SERVICE as GENERATION_SERVICE, create_app as create_generation_app
+from atelierx.validation import SERVICE as VALIDATION_SERVICE, create_app as create_validation_app
 
 
 class FakeLog:
@@ -77,7 +69,7 @@ class FrontendPilotLauncherTests(unittest.TestCase):
             def getsignal(self, _): return "previous"
             def signal(self, _, handler): self.handler = handler
         signals, event = Signals(), Event()
-        self.assertEqual(pilot.install_stop_signal(Loop(), event, signals), "previous")
+        self.assertEqual(pilot.install_stop_signal(Loop(), event, signals), {Signals.SIGINT: "previous"})
         signals.handler()
         self.assertTrue(event.set_called)
 

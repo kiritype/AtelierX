@@ -16,6 +16,17 @@ export const connectionDisplay=value=>({
  browserMemory:value?.auth_mode==="bearer"&&!value?.configured,
  canSave:!!value?.configured
 });
+export const operationStateLabels={running:"실행 중",external:"외부 실행",stopped:"중지",starting:"시작 중",stopping:"종료 중",error:"오류"};
+export const dependencyStatusLabels={ok:"정상",warning:"주의",missing:"없음",unknown:"확인 불가"};
+export const operationsUnavailableText={not_configured:"이 Core에는 운영 제어판 연결이 설정되어 있지 않습니다. 제어판 또는 실행기에서 Core를 시작하면 연결됩니다.",token_missing:"제어판 상태 토큰이 아직 없습니다. 이 PC에서 제어판을 한 번 실행하세요.",unreachable:"제어판이 실행 중이 아닙니다. 이 PC에서 제어판을 실행하세요.",unauthorized:"제어판이 상태 조회 토큰을 거부했습니다. 제어판과 Core를 다시 시작하세요.",invalid_response:"제어판 응답을 해석할 수 없습니다. 제어판과 Core 버전을 확인하세요."};
+const optionLabels={generation:"Generation",validation:"Validation",discord_bridge:"Discord Bridge"};
+const timeText=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString("ko-KR");};
+export const operationsView=value=>{
+ if(value?.control_panel!=="available")return {available:false,message:operationsUnavailableText[value?.reason]||"운영 제어판 상태를 확인할 수 없습니다.",items:[],dependencies:[]};
+ const items=(value.items||[]).map(item=>{const details=[];if(item.pid!=null)details.push(`PID ${item.pid}`);if(item.started_at)details.push(`시작 ${timeText(item.started_at)}`);if(item.ports?.length)details.push(`포트 ${item.ports.join(", ")}`);if(item.state!=="external")details.push(item.managed?"제어판 관리":"제어판 관리 아님");if(item.autostart)details.push("시작 시 자동 켜기");if(item.options){const on=Object.entries(optionLabels).filter(([k])=>item.options[k]).map(([,t])=>t);details.push(`시작 옵션: ${on.length?on.join(", "):"Core만"}`);}return {label:item.label||item.id,state:operationStateLabels[item.state]||item.state,details,error:item.last_error||null};});
+ const dependencies=(value.dependencies||[]).map(d=>({label:d.label||d.id,status:dependencyStatusLabels[d.status]||d.status,detail:d.detail||""}));
+ return {available:true,generatedAt:value.generated_at?timeText(value.generated_at):null,items,dependencies};
+};
 const genDraft=s=>({diffusion_model:s.diffusion_model||"",text_encoder:s.text_encoder||"",vae:s.vae||"",width:String(s.width??1024),height:String(s.height??1024),seed:String(s.seed??0),steps:String(s.steps??24),cfg:String(s.cfg??4.5),sampler:s.sampler||"euler",scheduler:s.scheduler||"normal",loras:(s.loras||[]).map(x=>({name:x.name||"",strength:String(x.strength??1)}))});
 const postDraft=s=>({base:JSON.parse(JSON.stringify(s)),upscale_enabled:!!s.upscale,upscale_model:s.upscale?.upscale_model||"4x-UltraSharp.safetensors",upscale_scale:String(s.upscale?.scale??1.5),encode_enabled:!!s.encode,webp_enabled:!!s.encode?.webp_enabled,webp_quality:String(s.encode?.webp_quality??90)});
 const validationDraft=(kind,s={})=>kind==="providers"?{provider_id:s.provider_id||"",model:s.model||"",url:s.url||"",timeout_seconds:String(s.timeout_seconds??30),max_tokens:s.max_tokens==null?"":String(s.max_tokens),response_format:s.response_format||"json_object",image_format:s.image_format||"original",shared_gpu:!!s.shared_gpu,api_key_env:s.api_key_env}:{profile_id:s.profile_id||"",output_conditions:!!s.output_conditions,positive_prompt:!!s.positive_prompt,negative_prompt:!!s.negative_prompt,consistency:kind==="group-profiles"};
@@ -34,7 +45,7 @@ export async function mount(container,ctx){
  const reload=async(d,path,make)=>{try{const server=await ctx.api.get(path);state.drafts[d.key]={key:d.key,value:make(server),baseRevision:server.revision,dirty:false,conflict:false};clean();render();}catch(e){ctx.notify(errorText(e),true);}};
  const save=async(d,request)=>{try{await request();delete state.drafts[d.key];clean();ctx.notify("저장했습니다.");render();}catch(e){if(e?.status===409||e?.code==="CORE_REVISION_CONFLICT"){d.conflict=true;ctx.notify("revision 충돌입니다. 초안을 유지합니다.",true);render();}else ctx.notify(errorText(e),true);}};
  sections.forEach(([id,title])=>{const b=button(title,()=>{state.section=id;render();});navs.set(id,b);nav.append(b);});
- async function render(){const current=++ticket,section=state.section;navs.forEach((b,id)=>{const active=id===section;b.classList.toggle("active",active);b.toggleAttribute("aria-current",active);});content.replaceChildren(el("p","설정을 불러오는 중…","muted"));try{if(section==="connection"){await connection(current);return;}if(section==="nodes"){if(current===ticket&&!disposed)nodes();return;}const path=["global","regeneration"].includes(section)?"/v1/settings":["generation","postprocess"].includes(section)?`/v1/presets/${section}?limit=50&offset=0`:`/v1/validation-settings/${section}?include_archived=true`;const result=await ctx.api.get(path);if(disposed||current!==ticket)return;if(section==="generation"){let resources=null,resourcesError=null;try{resources=await ctx.api.get("/v1/generation/resources");}catch(error){resourcesError=errorText(error);}if(disposed||current!==ticket||state.section!==section)return;state.generationResources=resources;state.generationResourcesError=resourcesError;}if(["global","regeneration"].includes(section))globals(result);else if(["generation","postprocess"].includes(section))presets(section,result);else validations(section,result);}catch(e){if(current===ticket&&!disposed&&state.section===section)content.replaceChildren(el("p",errorText(e),"error"));}}
+ async function render(){const current=++ticket,section=state.section;navs.forEach((b,id)=>{const active=id===section;b.classList.toggle("active",active);b.toggleAttribute("aria-current",active);});content.replaceChildren(el("p","설정을 불러오는 중…","muted"));try{if(section==="connection"){await connection(current);return;}if(section==="nodes"){await nodes(current);return;}const path=["global","regeneration"].includes(section)?"/v1/settings":["generation","postprocess"].includes(section)?`/v1/presets/${section}?limit=50&offset=0`:`/v1/validation-settings/${section}?include_archived=true`;const result=await ctx.api.get(path);if(disposed||current!==ticket)return;if(section==="generation"){let resources=null,resourcesError=null;try{resources=await ctx.api.get("/v1/generation/resources");}catch(error){resourcesError=errorText(error);}if(disposed||current!==ticket||state.section!==section)return;state.generationResources=resources;state.generationResourcesError=resourcesError;}if(["global","regeneration"].includes(section))globals(result);else if(["generation","postprocess"].includes(section))presets(section,result);else validations(section,result);}catch(e){if(current===ticket&&!disposed&&state.section===section)content.replaceChildren(el("p",errorText(e),"error"));}}
  async function connection(current){
   const manualForm=(problem)=>{
    const form=el("div","","grid"),token=document.createElement("input");
@@ -93,6 +104,26 @@ export async function mount(container,ctx){
    const c=conflict(edit,()=>reload(edit,`/v1/validation-settings/${kind}/${encodeURIComponent(ident)}`,make));if(c)row.append(c);content.append(row);
   }
  }
- function nodes(){content.replaceChildren(el("h2","실행 환경 상태"),el("p","same-origin Core API에는 Generation 등록 Node 조회 경로가 없습니다. 이 화면은 모델 설치·다운로드·재시작을 하지 않습니다.","muted"));}
+ async function nodes(current){
+  const block=el("section","","section"),refresh=button("새로고침",()=>render());
+  const head=el("div","","row");head.append(el("h3","운영 제어판"),refresh);block.append(head);
+  let value;try{value=await ctx.api.get("/v1/operations/status");}catch(e){value=null;block.append(el("p",errorText(e),"error"));}
+  if(disposed||current!==ticket)return;
+  if(value){
+   const view=operationsView(value);
+   if(!view.available)block.append(el("p",view.message,"muted"));
+   else{
+    if(view.generatedAt)block.append(el("p",`확인 시각: ${view.generatedAt}`,"muted"));
+    const list=el("div","","grid");
+    view.items.forEach(item=>{const box=el("div");const top=el("div","","row");top.append(el("strong",item.label),el("span",item.state,"badge"));box.append(top);if(item.details.length)box.append(el("small",item.details.join(" · ")));if(item.error)box.append(el("p",`최근 오류: ${item.error}`,"error"));list.append(box);});
+    if(!view.items.length)list.append(el("p","표시할 항목이 없습니다.","muted"));
+    block.append(list,el("h3","의존성 점검"));
+    const deps=el("ul");view.dependencies.forEach(d=>{const li=el("li"),row=el("div","","row");row.append(el("span",d.label),el("span",d.status,"badge"));li.append(row);if(d.detail)li.append(el("small",d.detail));deps.append(li);});
+    block.append(view.dependencies.length?deps:el("p","의존성 점검 결과가 없습니다.","muted"));
+   }
+  }
+  block.append(el("p","이 화면은 상태만 표시합니다. 시작·종료와 로그는 이 PC의 제어판에서 확인하세요.","muted"));
+  content.replaceChildren(el("h2","실행 환경 상태"),block,el("p","same-origin Core API에는 Generation 등록 Node 조회 경로가 없습니다. 이 화면은 모델 설치·다운로드·재시작을 하지 않습니다.","muted"));
+ }
  await render();return()=>{disposed=true;ticket++;container.replaceChildren();};
 }

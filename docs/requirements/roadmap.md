@@ -12,6 +12,7 @@
 - **문서 이력:** 작업 이력은 현행 정책 요약 후 `docs/history/`로 옮기고 Git에서 ignore한다. 삭제하지 않는다.
 - **웹 매뉴얼:** 공개 예정. 별도 브랜치의 Next.js 계열 사이트를 Cloudflare Workers로 자동 배포한다. 향후 릴리즈 패키지에는 포함하지 않는다.
 - **자동 시작:** 제어판에 항목별(ComfyUI·LM Studio·서비스 묶음·Tunnel) "시작 시 자동 켜기" 체크박스를 둔다. 체크된 항목만 제어판 시작 시 의존 순서(ComfyUI·LM Studio → 서비스 → Tunnel)로 준비 확인 후 켠다. 설정은 Git 제외 `.atelierx/`에 저장한다. 로그인 시 제어판 실행 바로가기는 생성 전 사용자 승인을 받는다.
+- **제어판 설계:** [ADR-0024](../architecture/adr/0024-local-operations-control-panel.md)로 확정(2026-09-23).
 - **문서 정리 순서:** 현행 결정은 정책 문서로, 기록 문서에만 있는 현행 사양은 모듈 문서로 먼저 요약한 뒤 원본을 `docs/history/`로 옮긴다.
 
 ## P0 종료와 P1 진행 — 사용자 확인

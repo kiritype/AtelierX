@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AtelierX 제어판</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>AtelierX 제어판</h1>
+      <p class="muted">이 PC 전용(127.0.0.1) 운영 화면입니다. 제어판을 닫아도 실행 중인 프로그램은 계속 실행됩니다.</p>
+    </div>
+    <div class="top-meta">
+      <span id="updated" class="muted">불러오는 중…</span>
+      <span id="conn" class="badge badge-unknown" hidden>연결 끊김</span>
+    </div>
+  </header>
+
+  <div id="autostart" class="notice" hidden></div>
+
+  <main>
+    <section aria-labelledby="items-title">
+      <h2 id="items-title">관리 항목</h2>
+      <div id="items" class="cards"></div>
+    </section>
+
+    <section aria-labelledby="log-title" class="panel">
+      <div class="row">
+        <h2 id="log-title">로그</h2>
+        <label class="inline">항목
+          <select id="log-item">
+            <option value="services">AtelierX 서비스</option>
+            <option value="comfyui">ComfyUI</option>
+            <option value="lmstudio">LM Studio 서버</option>
+            <option value="tunnel">Cloudflare Tunnel</option>
+          </select>
+        </label>
+        <label class="inline"><input type="checkbox" id="log-follow" checked> 자동 갱신</label>
+      </div>
+      <p id="log-file" class="muted small"></p>
+      <pre id="log" class="log" tabindex="0">항목을 선택하면 최근 로그가 표시됩니다.</pre>
+    </section>
+
+    <section aria-labelledby="deps-title" class="panel">
+      <div class="row">
+        <h2 id="deps-title">의존성 점검</h2>
+        <button type="button" id="deps-refresh">다시 점검</button>
+      </div>
+      <p class="muted small">읽기 전용 점검입니다. 결과는 약 30초 동안 재사용됩니다.</p>
+      <ul id="deps" class="deps"><li class="muted">점검 중…</li></ul>
+    </section>
+
+    <section aria-labelledby="startup-title" class="panel">
+      <h2 id="startup-title">로그인 시 제어판 자동 실행</h2>
+      <p class="muted small">사용자 시작프로그램 폴더에 바로가기를 만들거나 지웁니다. 관리자 권한은 쓰지 않습니다.
+        자동 실행된 제어판은 각 항목의 "시작 시 자동 켜기" 설정대로 ComfyUI·LM Studio → 서비스 → Tunnel 순서로 켭니다.</p>
+      <div class="row">
+        <span id="shortcut-state" class="muted">확인 중…</span>
+        <button type="button" id="shortcut-toggle" disabled>…</button>
+      </div>
+    </section>
+  </main>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

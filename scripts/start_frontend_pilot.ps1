@@ -1,7 +1,9 @@
 param(
     [string]$LauncherConfig,
     [string]$StandaloneConfig,
-    [string]$DiscordBridgeConfig
+    [string]$DiscordBridgeConfig,
+    [switch]$NoGeneration,
+    [switch]$NoValidation
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,5 +14,7 @@ $launchArgs = @('-B', (Join-Path $root 'scripts\run_frontend_pilot.py'))
 if ($LauncherConfig) { $launchArgs += @('--launcher-config', $LauncherConfig) }
 if ($StandaloneConfig) { $launchArgs += @('--standalone-config', $StandaloneConfig) }
 if ($DiscordBridgeConfig) { $launchArgs += @('--discord-bridge-config', $DiscordBridgeConfig) }
+if ($NoGeneration) { $launchArgs += '--no-generation' }
+if ($NoValidation) { $launchArgs += '--no-validation' }
 & $python @launchArgs
 exit $LASTEXITCODE

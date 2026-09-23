@@ -10,6 +10,8 @@
 
 2026-09-21 개인용 원격 Frontend 인증 보완: Google OAuth 연결은 후속으로 미루고, Core가 Cloudflare Access의 서명·발급자·대상 애플리케이션·허용 사용자와 요청 출처를 검증한다. 서버 비공개 설정의 Core 연결 토큰을 사용해 브라우저의 반복 입력을 없애며, 기존 서비스 Bearer 인증은 유지한다. Frontend 설정에서는 연결 상태와 저장 토큰 교체만 제공하고 원문을 반환하지 않는다. 별도 BFF는 두지 않는다. [설정과 검증 상태](../development/operations.md).
 
+2026-09-23 [ADR-0024](adr/0024-local-operations-control-panel.md) 확정: 별도 로컬 운영 제어판 프로세스(`127.0.0.1:8180`)가 기존 단일 서비스 묶음과 ComfyUI·LM Studio·Tunnel을 사용자 권한으로 시작·안전 종료하고 상태·로그·의존성을 보여 준다. 원격 조작은 없으며, Frontend는 Core의 읽기 전용 `GET /v1/operations/status`로 운영 현황만 본다.
+
 2026-09-21 Discord 서버 추가: 사용자가 지정한 두 번째 서버도 허용 범위에 포함한다. 두 허용 서버의 모든 채널에서 멤버가 사용할 수 있으며 다른 서버와 DM은 차단한다. [운영 반영 상태](../development/discord.md).
 
 2026-09-21 최신 사용자 지시: Discord 봇은 일반 테스트용으로 두고 추가 개발의 순위를 뒤로 미룬다. 본체 Backend/F/E 제작 흐름의 남은 기능을 우선 검토한다. 아래 같은 날짜의 Discord 우선 착수 기록은 당시 범위다. [현재 우선순위 제안](../development/status.md).

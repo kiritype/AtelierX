@@ -84,7 +84,7 @@
 | O2 | 확정 순서 | 최소 백업·복원 | DB·이미지·설정 일관 백업, 복사 환경 복원 시험. Import/Export UI는 P2 |
 | O3 | P2(제안) | 디스크 부족·로그·보관 | 저장 실패 명시 종료, 용량 경고, 로그 보존. 자동 삭제 정책 미정 |
 | O4 | P3(제안) | 모델/파일 관리·설치 배포 | 모델 탐색·import/삭제·새 clone 초기화. 설치 배포는 UI 안정화·실제 흐름 검증 후. 모델 자동 다운로드·미검증 릴리즈 없음 |
-| O5 | 확정 순서 | localhost 운영 제어판·F/E 현황판 | 사용자 권한으로 서비스 묶음·ComfyUI·LM Studio·Tunnel on/off, 항목별 자동 켜기, 자신이 시작한 것만 종료. F/E는 상태 조회만 |
+| O5 | 구현 중 ([ADR-0024](../architecture/adr/0024-local-operations-control-panel.md)) | localhost 운영 제어판·F/E 현황판 | 사용자 권한으로 서비스 묶음·ComfyUI·LM Studio·Tunnel on/off, 항목별 자동 켜기, 자신이 시작한 것만 종료. F/E는 상태 조회만 |
 
 ## 확인이 필요한 사항
 
