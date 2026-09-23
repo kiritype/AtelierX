@@ -15,7 +15,10 @@ DEFAULT_SETTINGS = {
     "autostart": {item: False for item in ITEM_IDS},
     "services": {"generation": True, "validation": True, "discord_bridge": False,
                  "standalone_config": ".atelierx/discord/standalone.json",
-                 "discord_bridge_config": ".atelierx/discord/bridge.json", "python": None},
+                 "discord_bridge_config": ".atelierx/discord/bridge.json", "python": None,
+                 # Values are read at start and passed only to the services process; they never reach logs or the UI.
+                 "bridge_env_files": {"ATELIERX_DISCORD_BRIDGE_TOKEN": ".atelierx/discord/bridge-token.txt"},
+                 "bridge_env": {"ATELIERX_PLANNER_API_KEY": "lm-studio"}},
     "comfyui": {"stability_matrix_settings": "C:\\StabilityMatrix\\settings.json", "root": None},
     "lmstudio": {"lms": None},
     "tunnel": {"cloudflared": None},
