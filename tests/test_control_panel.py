@@ -348,3 +348,17 @@ class StatusLatencyTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertLess(elapsed, 1.0)
         self.assertEqual(body["dependencies"], [])
+
+
+class ServicesReadinessTests(unittest.TestCase):
+    def test_any_non_server_error_reply_from_core_counts_as_ready(self):
+        from atelierx.control.items import ServicesItem
+        temp = TempPanel()
+        try:
+            item = temp.panel.items["services"]
+            self.assertIsInstance(item, ServicesItem)
+            for status, expected in ((200, True), (401, True), (403, True), (502, False), (None, False)):
+                with mock.patch.object(temp.panel, "http_status", mock.AsyncMock(return_value=status)):
+                    self.assertEqual(asyncio.run(item.is_ready()), expected, status)
+        finally:
+            temp.directory.cleanup()

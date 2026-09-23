@@ -101,6 +101,7 @@ class Panel:
         while True:
             try:
                 await self.refresh()
+                self.cached_dependencies()
             except Exception as error:  # keep monitoring; a single failed probe must not end the loop
                 print(f"[control] status refresh failed: {type(error).__name__}", flush=True)
             await asyncio.sleep(interval)
@@ -136,6 +137,7 @@ class Panel:
             finally:
                 item.op = None
                 await self.refresh()
+                self.background(self.dependency_checks(refresh=True))
 
     def start_op(self, item_id, action):
         return self.background(self.run_op(item_id, action))

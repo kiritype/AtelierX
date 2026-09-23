@@ -265,7 +265,9 @@ class ServicesItem(ProcessItem):
         self.save_record(record)
 
     async def is_ready(self):
-        return await self.panel.http_status(self.panel.urls["core"] + "/health") in {200, 401}
+        # Core answers 401 or 403 without credentials depending on its auth config; any non-5xx reply means it is serving.
+        status = await self.panel.http_status(self.panel.urls["core"] + "/health")
+        return status is not None and status < 500
 
     async def stop(self):
         record = self.require_managed()
