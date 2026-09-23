@@ -3,8 +3,8 @@ import copy
 import hashlib
 import secrets
 
-from .common import ApiError, canonical
-from .regeneration_contract import validate_changes
+from ..common import ApiError, canonical
+from ..regeneration_contract import validate_changes
 
 
 class Regeneration:

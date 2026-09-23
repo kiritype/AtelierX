@@ -4,7 +4,7 @@ from pathlib import Path
 import unittest
 
 from atelierx.common import ApiError
-from atelierx.core_validation_settings import ValidationSettings
+from atelierx.core.validation_settings import ValidationSettings
 from atelierx.validation_registry import RevisionRegistry
 
 PROFILE = {"profile_id":"single","revision":1,"output_conditions":True,"positive_prompt":True,"negative_prompt":False,"body_parts":[],"metadata":False,"consistency":False}

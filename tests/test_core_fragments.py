@@ -11,7 +11,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
 from atelierx.core import Core, create_app
-from atelierx.core_fragments import CoreFragments
+from atelierx.core.fragments import CoreFragments
 
 
 GENERATION = {

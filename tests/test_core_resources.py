@@ -6,7 +6,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
-from atelierx.core_resources import attach
+from atelierx.core.resources import attach
 
 
 class ResourcesTests(unittest.IsolatedAsyncioTestCase):

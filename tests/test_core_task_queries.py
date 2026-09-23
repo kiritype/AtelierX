@@ -9,9 +9,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError, canonical
 from atelierx.core import create_app
-from atelierx.core_batches import CoreBatches
-from atelierx.core_store import Store
-from atelierx.core_task_queries import list_batches, list_tasks
+from atelierx.core.batches import CoreBatches
+from atelierx.core.store import Store
+from atelierx.core.task_queries import list_batches, list_tasks
 
 
 class CoreTaskQueryTests(unittest.TestCase):

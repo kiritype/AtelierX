@@ -4,8 +4,8 @@ import tempfile
 import unittest
 
 from atelierx.common import ApiError
-from atelierx.core_fragments import CoreFragments
-from atelierx.core_store import Store
+from atelierx.core.fragments import CoreFragments
+from atelierx.core.store import Store
 
 
 class CharacterAppearanceContractTests(unittest.TestCase):

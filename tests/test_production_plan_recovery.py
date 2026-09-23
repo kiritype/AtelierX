@@ -6,9 +6,9 @@ import uuid
 from pathlib import Path
 
 from atelierx.common import canonical
-from atelierx.core_groups import CoreGroups
-from atelierx.core_production_plans import ProductionPlans, WINDOW
-from atelierx.core_store import Store
+from atelierx.core.groups import CoreGroups
+from atelierx.core.production_plans import ProductionPlans, WINDOW
+from atelierx.core.store import Store
 import test_production_plans as fixtures
 
 

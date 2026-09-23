@@ -4,7 +4,7 @@
 
 ADR-0002 N-16/N-17은 생성 및 후처리 설정의 Preset Save/Load를 요구한다.
 Core가 SQLite를 소유하고 Generation이 직접 DB를 열지 않는 경계를 유지하기 위해,
-`src/atelierx/core_presets.py`의 `CorePresets`가 기존 Core SQLite 연결에
+`src/atelierx/core/presets.py`의 `CorePresets`가 기존 Core SQLite 연결에
 `presets`, `preset_revisions` 테이블을 만든다. `core.py`는 Core 생성 직후 이 모듈을
 초기화하고 `attach(app)`하므로 아래 경로는 기존 Core Bearer middleware 아래에서 동작한다.
 

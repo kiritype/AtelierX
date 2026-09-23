@@ -10,8 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from atelierx.common import ApiError, canonical
-from atelierx.core_production_plans import ProductionPlans, WINDOW
-from atelierx.core_store import Store
+from atelierx.core.production_plans import ProductionPlans, WINDOW
+from atelierx.core.store import Store
 
 
 class FakeValidation:

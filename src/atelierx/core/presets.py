@@ -14,7 +14,7 @@ import uuid
 
 from aiohttp import web
 
-from .common import ApiError, canonical
+from ..common import ApiError, canonical
 
 
 KINDS = {"generation", "postprocess"}

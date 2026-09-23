@@ -17,26 +17,26 @@ import uuid
 
 import aiohttp
 from aiohttp import web
-from .runtime_info import RUNTIME_INFO
+from ..runtime_info import RUNTIME_INFO
 
-from .common import ApiError, canonical
-from .core_batches import CoreBatches
-from .core_production_plans import ProductionPlans
-from .core_catalog import list_groups, list_images
-from .core_task_queries import list_tasks, list_batches
-from .core_groups import CoreGroups
-from .core_presets import CorePresets, validate_postprocess_settings
-from .core_fragments import CoreFragments
-from .core_regeneration import Regeneration
-from .core_store import KINDS, Store
-from .core_validation import CoreValidation
-from .validation_evidence import clauses, expanded_clause
-from .gpu import GpuCoordinator
-from .core_standalone import StandaloneJobs
-from .core_postprocess import CorePostprocess
-from .queue_api import attach_queue_api
+from ..common import ApiError, canonical
+from .batches import CoreBatches
+from .production_plans import ProductionPlans
+from .catalog import list_groups, list_images
+from .task_queries import list_tasks, list_batches
+from .groups import CoreGroups
+from .presets import CorePresets, validate_postprocess_settings
+from .fragments import CoreFragments
+from .regeneration import Regeneration
+from .store import KINDS, Store
+from .validation import CoreValidation
+from ..validation_evidence import clauses, expanded_clause
+from ..gpu import GpuCoordinator
+from .standalone import StandaloneJobs
+from .postprocess import CorePostprocess
+from ..queue_api import attach_queue_api
 from .frontend import attach as attach_frontend
-from .core_resources import attach as attach_generation_resources
+from .resources import attach as attach_generation_resources
 from .frontend_connection import FrontendConnection
 
 CORE = web.AppKey("core", object)

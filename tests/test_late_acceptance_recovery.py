@@ -12,7 +12,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from atelierx.common import ApiError
-from atelierx.core_validation import CoreValidation
+from atelierx.core.validation import CoreValidation
 from atelierx.generation import NODE, create_app as generation_app
 from atelierx.gpu import permission
 

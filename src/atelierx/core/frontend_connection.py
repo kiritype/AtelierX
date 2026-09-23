@@ -14,7 +14,7 @@ import aiohttp
 import jwt
 from jwt.algorithms import RSAAlgorithm
 
-from .common import ApiError
+from ..common import ApiError
 
 
 _MAX_JWKS_BYTES = 128 * 1024

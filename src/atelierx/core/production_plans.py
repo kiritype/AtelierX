@@ -6,7 +6,7 @@ import uuid
 
 from aiohttp import web
 
-from .common import ApiError, canonical
+from ..common import ApiError, canonical
 
 TERMINAL = {"completed", "failed", "cancelled", "insufficient_images"}
 ITEM_DONE = {"passed", "single_failed", "generation_failed", "cancelled", "generation_only"}

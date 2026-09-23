@@ -4,8 +4,8 @@ import uuid
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from atelierx.core_store import Store
-from atelierx.core_regeneration import Regeneration
+from atelierx.core.store import Store
+from atelierx.core.regeneration import Regeneration
 from atelierx.core import generation_settings
 from atelierx.common import ApiError, canonical
 from atelierx.regeneration_contract import validate_changes

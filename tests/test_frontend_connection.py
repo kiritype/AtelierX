@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 import jwt
 
 from atelierx.core import FRONTEND_CONNECTION, create_app
-from atelierx.frontend_connection import FrontendConnection
+from atelierx.core.frontend_connection import FrontendConnection
 from atelierx.common import ApiError
 
 

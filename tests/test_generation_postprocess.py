@@ -7,7 +7,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.generation import NODE, create_app
 from atelierx.common import ApiError
-from atelierx.generation_pipeline import build_anima_prompt, upscale_dimensions, validate_pipeline
+from atelierx.generation.pipeline import build_anima_prompt, upscale_dimensions, validate_pipeline
 
 
 INPUT = {"diffusion_model": "anima", "text_encoder": "encoder", "vae": "vae", "positive_prompt": "character",

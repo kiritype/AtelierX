@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from .common import ApiError
+from ..common import ApiError
 
 NODES = {
     "upscale": ("AtelierXUpscale",),

@@ -4,7 +4,7 @@ from pathlib import Path
 from aiohttp import web
 
 
-_ROOT = Path(__file__).resolve().parents[2] / "frontend"
+_ROOT = Path(__file__).resolve().parents[3] / "frontend"
 _ASSETS = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",

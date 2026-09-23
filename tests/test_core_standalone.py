@@ -12,9 +12,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
 from atelierx.core import create_app as core_app, generation_settings
-from atelierx.core_presets import validate_postprocess_settings
-from atelierx.core_standalone import StandaloneJobs
-from atelierx.core_store import Store
+from atelierx.core.presets import validate_postprocess_settings
+from atelierx.core.standalone import StandaloneJobs
+from atelierx.core.store import Store
 
 
 class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
@@ -105,7 +105,7 @@ class StandaloneJobsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_random_seed_is_safe_once_per_job_and_fixed_mode_remains_compatible(self):
         self.jobs.config["seed_mode"] = "random"
-        with patch("atelierx.core_standalone.secrets.randbelow", return_value=9007199254740991) as random_seed:
+        with patch("atelierx.core.standalone.secrets.randbelow", return_value=9007199254740991) as random_seed:
             job, _ = self.jobs.create("random", {"prompt":"x","mode":"direct"})
             duplicate, created = self.jobs.create("random", {"prompt":"x","mode":"direct"})
         self.assertFalse(created); self.assertEqual(job["seed"], 9007199254740991)

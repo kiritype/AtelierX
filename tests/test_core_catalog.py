@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from multidict import MultiDict
 
 from atelierx.common import ApiError
-from atelierx.core_catalog import list_groups, list_images
-from atelierx.core_groups import CoreGroups
-from atelierx.core_store import Store
+from atelierx.core.catalog import list_groups, list_images
+from atelierx.core.groups import CoreGroups
+from atelierx.core.store import Store
 
 
 def identifier(number):
