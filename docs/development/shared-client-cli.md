@@ -64,9 +64,9 @@ Generation/Validation 직접 조회, 묶음 검증·기준 관리의 전체 명�
 
 실제 CLI subprocess → Python Client → Core HTTP → 임시 SQLite 경로를 검증했다. preview의 upper_body 하의 제외, 기본 1024 해상도, 접수 후 Core 재시작·키 조회, 동일 키 중복 방지·다른 내용 409, Task 취소, 수동 새 Task/cycle, 기본 상한 5, attempts/cycle stop, 단일 검증 접수·동일 키 반환·취소를 포함한다. 검증용 완료 이미지는 fixture이며 GPU·Generation·VLM 추론은 실행하지 않았다.
 
-최종 전체 회귀 테스트: **171개 통과**, 20.044초. 명령은 `.venv/Scripts/python.exe -B -m unittest discover -s tests -q`, 로그는 `artifacts/full-suite/cli-mutations.log`다. Client 5개·CLI 9개·CLI→Core 통합 2개를 포함한다. 설정 화면은 [상세 초안](frontend-settings-screen.md)이며 UI 실행 검증은 하지 않았다.
+최종 전체 회귀 테스트: **171개 통과**, 20.044초. 명령은 `.venv/Scripts/python.exe -B -m unittest discover -s tests -q`, 로그는 `artifacts/full-suite/cli-mutations.log`다. Client 5개·CLI 9개·CLI→Core 통합 2개를 포함한다. 설정 화면은 [상세 초안](../modules/frontend.md)이며 UI 실행 검증은 하지 않았다.
 
 
 ## F/E 파일럿 병행 확장
 
-`settings update --input FILE`, `group-batches create GROUP_ID --input FILE --idempotency-key KEY`, `group-batches cancel ID`, `group-batches confirm-reference ID --input FILE --idempotency-key KEY`를 추가했다. 설정 수정은 revision을 포함한 변경 객체, 일괄 생성은 기존 `{items,group_validation}`, 기준 확인은 `{reference_revision}`이다. CLI는 입력을 한 번 전달하며 실행 순서를 조정하지 않는다. 최신 전체 174개 테스트와 화면 실환경 결과는 [Frontend 파일럿](frontend-pilot.md)을 따른다.
+`settings update --input FILE`, `group-batches create GROUP_ID --input FILE --idempotency-key KEY`, `group-batches cancel ID`, `group-batches confirm-reference ID --input FILE --idempotency-key KEY`를 추가했다. 설정 수정은 revision을 포함한 변경 객체, 일괄 생성은 기존 `{items,group_validation}`, 기준 확인은 `{reference_revision}`이다. CLI는 입력을 한 번 전달하며 실행 순서를 조정하지 않는다. 최신 전체 174개 테스트와 화면 실환경 결과는 [Frontend 파일럿](../modules/frontend.md)을 따른다.

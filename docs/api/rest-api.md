@@ -22,7 +22,7 @@ prompt는 공백만 아닌 최대 20,000자 문자열이다(Discord 입력은 �
 
 Generation POST 전 intent를 저장하며, 재시작·통신 단절 후에는 기존 키만 조회한다. `CORE_GENERATION_ACCEPTANCE_UNKNOWN`은 자동 재접수하지 않는다. Planner 실행 중 재시작은 `CORE_PLANNER_ACCEPTANCE_UNKNOWN`이며 추론을 자동 재시도하지 않는다. 본문까지 완료된 응답과 추론 결과 저장 여부를 구분해 GPU를 해제하고, 응답 불명은 권한을 보존한다. 설정 endpoint 변경은 `CORE_GENERATION_ENDPOINT_CHANGED`, 저장된 Planner 모델과 현재 GPU 모델 불일치는 `CORE_PLANNER_MODEL_CHANGED`다. 독립 생성 취소 API와 F/E 그룹 갤러리 편입은 이번 경로에 없다.
 
-Discord 전용 Bridge는 `POST /v1/discord/jobs`, `POST /v1/discord/status`를 제공하며 Core와 다른 Bearer 토큰과 Discord 사용자 허용 목록을 사용한다. 자세한 전달·대기·권한 계약은 [개인용 Discord 봇](../development/discord-personal-bot.md)을 따른다.
+Discord 전용 Bridge는 `POST /v1/discord/jobs`, `POST /v1/discord/status`를 제공하며 Core와 다른 Bearer 토큰과 허용 서버(선택적으로 채널) 정책을 사용한다. 자세한 전달·대기·권한 계약은 [Discord 봇](../development/discord.md)을 따른다.
 
 전역 조각과 대량 제작 계획은 [별도 API 명세](prompt-fragments-production-plans.md)를 참조한다.
 
@@ -97,7 +97,7 @@ Core의 `/v1/validation-settings/{kind}`에서 kind는 `single-profiles`, `group
 
 단일 profile은 `profile_id`, `revision`, `output_conditions`, `positive_prompt`, `negative_prompt`, `body_parts`, `metadata`, `consistency`를 받는다. 아직 구현하지 않은 검사는 활성화할 수 없다. 묶음 profile은 `{profile_id,revision,consistency:true}`다. Provider는 `provider_id`, `revision`, `model`, `timeout_seconds`, 등록된 `url`과 지원 형식 설정을 보관한다. 비밀 API key 원문은 Core 설정 입력·조회·이력에 포함하지 않는다. 접수한 Task와 검증 작업은 선택 당시 revision을 유지한다.
 
-Validation의 `POST /v1/registry/snapshot`은 인증된 서비스 간 설정 동기화용이다. 일반 이미지 검증 요청에는 Provider URL이나 비밀키를 포함하지 않는다. 현재 운영 상태·동기화 및 연결 확인의 구체적인 제한은 [설정 구현 기록](../development/validation-settings.md)에 기록한다.
+Validation의 `POST /v1/registry/snapshot`은 인증된 서비스 간 설정 동기화용이다. 일반 이미지 검증 요청에는 Provider URL이나 비밀키를 포함하지 않는다. 동기화·credential 규칙과 연결 확인의 제한은 [Validation 현행 사양](../modules/validation.md#검사-설정-관리core--validation-registry)을 따른다.
 
 ## 그룹 일괄 생성
 
@@ -111,7 +111,7 @@ Validation의 `POST /v1/registry/snapshot`은 인증된 서비스 간 설정 동
 
 items는 1..32개의 Task 입력이며 group_id는 상위 경로에서 상속하고 각 항목에 단일 validation 선택을 요구한다. 접수 시 프롬프트·생성/후처리 설정·검사 revision·자동 재생성 설정을 고정한다. 항목별 최종 자동 재생성 시도를 따라가며 단일 통과 이미지로만 묶음 검사를 요청한다. 생성 실패·단일 불합격·취소는 항목별 summary에 남는다. 묶음 비교 자체의 판정은 group_run_id로 조회한다.
 
-기준이 없으면 후보만 반환하며 자동 저장하지 않는다. `awaiting_reference_confirmation`은 기존 기준 API로 기준을 지정한 후 confirm-reference를 호출해야 재개된다. 기준 없는 통과 이미지 0/1장은 `insufficient_images`로 종료한다. 기존 기준이 있으면 신규 대상 1장도 비교할 수 있다. 기준 변경 후 확인은 새로운 내부 검증 key를 사용하며 기존 결과 이력을 보존한다. 현재 묶음 Validation의 호출당 대상 상한은 32장이고, 여러 출력 형식으로 대상이 이를 넘는 요청의 자동 분할은 지원하지 않는다. 상세 구현·검증 범위는 [일괄 생성 기록](../development/group-batches.md)을 참조한다.
+기준이 없으면 후보만 반환하며 자동 저장하지 않는다. `awaiting_reference_confirmation`은 기존 기준 API로 기준을 지정한 후 confirm-reference를 호출해야 재개된다. 기준 없는 통과 이미지 0/1장은 `insufficient_images`로 종료한다. 기존 기준이 있으면 신규 대상 1장도 비교할 수 있다. 기준 변경 후 확인은 새로운 내부 검증 key를 사용하며 기존 결과 이력을 보존한다. 현재 묶음 Validation의 호출당 대상 상한은 32장이고, 여러 출력 형식으로 대상이 이를 넘는 요청의 자동 분할은 지원하지 않는다. 상세 동작은 [Core·Generation 현행 사양](../modules/core-generation.md)을 참조한다.
 
 ## 공통
 
@@ -229,7 +229,7 @@ Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,ima
 
 `inputs`는 Core generation_inputs의 필드에 **실제 `positive_prompt`, `negative_prompt`를 추가**한다. Generation은 출처를 분류하거나 AI에 검증을 요청하지 않고 전달된 합성 문구를 실행한다.
 
-`postprocess` 지원 키: `upscale,detailer,censor,alpha,encode`. 명시한 객체에서 생략한 단계는 실행하지 않는다. 순서는 Upscale → Detailer → Censor → Alpha → Encode로 고정한다. Core 요청 자체의 postprocess 생략 기본값은 문서 앞의 기본 이미지 크기 절을 따른다. 기타 stage 계약은 [후처리 상세 계약](../development/generation-postprocess.md)을 참조한다. 기존 이미지 독립 후처리는 아래 절의 image-ID API를 사용하며 임의 graph API는 없다.
+`postprocess` 지원 키: `upscale,detailer,censor,alpha,encode`. 명시한 객체에서 생략한 단계는 실행하지 않는다. 순서는 Upscale → Detailer → Censor → Alpha → Encode로 고정한다. Core 요청 자체의 postprocess 생략 기본값은 문서 앞의 기본 이미지 크기 절을 따른다. stage별 필드·기본값은 아래 [후처리 stage와 독립 후처리 상세](#후처리-stage와-독립-후처리-상세)를 따른다. 기존 이미지 독립 후처리는 아래 절의 image-ID API를 사용하며 임의 graph API는 없다.
 
 Job 주요 응답: `job_id,prompt_id,state,inputs,requested_postprocess,postprocess,images,error,created_at,updated_at` 등. `requested_postprocess`는 원요청, `postprocess`는 정규화 설정이다. 내부 node_inputs·멱등 키·fingerprint는 공개하지 않는다.
 
@@ -320,7 +320,7 @@ LM Studio는 현재 `json_schema`와 `image_format=png`를 사용한다. WebP는
 
 ## 재현·변경 관리
 
-[Backend 시험](../../tests/), [실제 전체 흐름 스크립트](../../scripts/test_backend_pipeline_rest.py), [구현 체크리스트](../development/backend-implementation-checklist.md)를 참조한다. 이 문서와 실제 route·필드·판정이 달라지면 같은 변경에서 갱신한다. 묶음 API는 아래 구현 범위와 제한을 따르며 문서만으로 전체 기능을 완료 처리하지 않는다.
+[Backend 시험](../../tests/), [실제 전체 흐름 스크립트](../../scripts/test_backend_pipeline_rest.py), [Core·Generation 현행 사양](../modules/core-generation.md)을 참조한다. 이 문서와 실제 route·필드·판정이 달라지면 같은 변경에서 갱신한다. 묶음 API는 아래 구현 범위와 제한을 따르며 문서만으로 전체 기능을 완료 처리하지 않는다.
 
 
 ## Core 후속 검증·GPU 조정·취소·Queue — 2026-09-13 추가
@@ -356,7 +356,7 @@ Core는 ComfyUI busy 여부를 확인하고, 생성 전 지정 LM Studio 모델�
 
 Generation이 권한 취득 후 ComfyUI의 다른 작업을 발견하고 아직 자신의 `/prompt`를 제출하지 않았다면 권한을 반납하고 대기한다. 제출 응답의 `prompt_id`가 저장된 ID와 다르면 `GEN_EXECUTION_UNKNOWN`으로 종료하며 권한을 보존한다. coordinator 응답의 `granted`/`released`는 JSON boolean `true`만 성공으로 인정한다. 손상된 JSON이나 다른 자료형의 응답은 허가·반납 확인으로 사용하지 않는다.
 
-[구현·실행 기록](../development/core-orchestration-validation.md)을 참고한다.
+GPU 준비 절차 상세는 [Core·Generation 현행 사양](../modules/core-generation.md#core-오케스트레이션gpu-조정취소)을 참고한다.
 
 
 ## 재생성 및 시도 이력 (2026-09-13 구현)
@@ -422,7 +422,7 @@ Core는 접수 시 reference revision·선택 이미지의 group/단일 통과 �
 
 ## 저장 이미지 독립 후처리
 
-Core 접수·파생 결과·취소·페이지 조회는 [Core 이미지 후처리 계약](../development/core-image-postprocess.md)을 따른다. Core의 `POST /v1/images/{id}/postprocess-jobs`는 Core 이미지 ID와 `{postprocess:{...}}` 또는 `{preset:{id,revision}}`를 받는다. Generation의 동일 모양 경로는 Generation 이미지 ID를 받으므로 구분한다. 새 결과는 후처리 Job 이력에 연결하며 원본 그룹·검사·기준을 자동 교체하지 않는다.
+Core 접수·파생 결과·취소·페이지 조회는 아래 [후처리 stage와 독립 후처리 상세](#후처리-stage와-독립-후처리-상세)를 따른다. Core의 `POST /v1/images/{id}/postprocess-jobs`는 Core 이미지 ID와 `{postprocess:{...}}` 또는 `{preset:{id,revision}}`를 받는다. Generation의 동일 모양 경로는 Generation 이미지 ID를 받으므로 구분한다. 새 결과는 후처리 Job 이력에 연결하며 원본 그룹·검사·기준을 자동 교체하지 않는다.
 
 Generation `POST /v1/images/{image_id}/postprocess-jobs`는 `Idempotency-Key`와 `{postprocess:{...}}`를 받는다. 신규 202/동일 입력 기존 Job 200이며 일반 Job 조회·취소·Queue·SSE를 사용한다. 지원 stage/설정은 기존 Anima 후처리와 같다. 하나 이상 stage를 지정한다.
 

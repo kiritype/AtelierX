@@ -1,5 +1,7 @@
 # Validation 실행 가능한 계약 초안 0.1
 
+> **현행 구현과의 관계 (2026-09-23):** 이 폴더는 Validation 구현 전에 작성된 초안이다. 현재 구현의 상태 전이(`queued→submitting→running`, 재시작 시 `submitting/running`은 `VAL_PROVIDER_ACCEPTANCE_UNKNOWN`으로 종료)와 평가 방식은 이 초안과 다르다. 현행 동작은 [Validation 현행 사양](../../modules/validation.md)과 [REST API](../../api/rest-api.md)를 따른다. 이 초안을 구현 기준으로 갱신할지, 역사 자료로 둘지는 ADR-0005·0019 상태와 함께 결정 대기다.
+
 상태: 현재 ADR 검토 범위를 앞서 작성된 참고 산출물. 사용자 재확인에 따라 확정 명세나 구현 기준으로 채택하지 않으며 추가 코드/Schema 생성·자동 검사는 보류한다. **Backend 구현·Provider 품질 검증·실제 장애 복구 시험은 아니다.** 기존 Accepted ADR은 유지하며 ADR-0005·0019는 Proposed 상태다. Python/Pydantic은 문서 계약 검증에 기존 ComfyUI 환경을 활용한 도구 선택이고 Backend Stack 결정이 아니다. 의존성을 설치하거나 ComfyUI 서버를 변경하지 않았다.
 
 ## 산출물

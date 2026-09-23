@@ -19,7 +19,7 @@ Encode / Save 우선 제안은 사용자가 채택하지 않았다. 첫 구현�
 - WAI 모델 정보의 권장 범위 Steps 20~30, CFG 4~5를 바탕으로 시험 기본값 24·4.5 및 Euler ancestral / normal을 사용한다. 모든 Anima 모델에 공통 최적값을 보장하거나 미정 기본값 취득 정책을 확정하는 것은 아니다.
 - Terra는 단위 테스트와 실제 ComfyUI 로딩·생성 runner를 작성한다. 주 에이전트가 코드 검토 후 같은 GPU에서 한 번에 한 작업으로 실제 생성 검증을 수행한다. 기존 설치·모델 변경과 다운로드는 필요할 때 별도로 판단한다.
 
-환경 추가 확인: 기존 ComfyUI venv에서 Python 3.12.10, Torch 2.14.0+cu130, CUDA 사용 가능 및 RTX 4090 인식을 확인했다. ComfyUI 소스에 Anima 모델·QWEN3_06B Text Encoder 인식이 있다. [첫 실제 생성 검증](../development/anima-generation-validation.md)에서 WAI 모델 조합의 768×1024 생성 성공과 검증 한계를 기록했다.
+환경 추가 확인: 기존 ComfyUI venv에서 Python 3.12.10, Torch 2.14.0+cu130, CUDA 사용 가능 및 RTX 4090 인식을 확인했다. ComfyUI 소스에 Anima 모델·QWEN3_06B Text Encoder 인식이 있다. [첫 실제 생성 검증](custom-nodes-design.md)에서 WAI 모델 조합의 768×1024 생성 성공과 검증 한계를 기록했다.
 
 ## 확인한 개발 환경
 
@@ -91,3 +91,71 @@ Terra의 Anima 첫 생성 Node와 테스트 구현을 검토했고 WAI 조합 �
 ## 후속 Node 병렬 개발 — 2026-09-13 사용자 지시
 
 사용자가 다른 Custom Node 개발도 서브 에이전트로 병렬 진행하도록 지시했다. 주 에이전트가 Upscale과 배경 투명화를 독립 Terra 작업으로 배정했다. 구현 prototype은 각각 `custom_nodes/atelierx_upscale`, `custom_nodes/atelierx_alpha`에서 준비하며 설치 모델·의존성 확인 후 실제 가능한 범위를 보고한다. 미정 리샘플링/검출 모델/경계 처리 선택은 제품 정책 확정과 구분한다. 기존 Anima·동적 LoRA와 별도로 코드/테스트를 작성하고 GPU·서버 재시작·설치 통합은 주 에이전트가 조정한다. 모델 없는 기능을 완료로 보고하지 않으며 사용자 직접 실행 가능한 예제·설치 검증 기준을 유지한다.
+
+## 현행 노드 사양과 설치 상태
+
+표기: **[확정]** 사용자 확정·Accepted ADR, **[구현]** 현재 코드 동작(초기 운영값 포함), **[제한]** 미구현·미검증·알려진 한계. 날짜별 검증 기록은 로컬 전용 `docs/history/`에 있다.
+
+#### 공통 설치
+- [구현] 설치 ComfyUI 0.35.0 `C:\StabilityMatrix\Packages\ComfyUI`의 `custom_nodes\atelierx_*` 6개는 저장소 `custom_nodes/atelierx_*`를 가리키는 Junction. 각 `scripts/Install-AtelierX*.ps1 -ComfyRoot ...`는 기존 디렉터리/다른 대상 Junction을 덮어쓰지 않음. Python 변경은 ComfyUI 재시작 후 반영.
+- [구현] 사용자 실행용 Workflow는 `...\ComfyUI\user\default\workflows\AtelierX\`에 복사본으로 설치. 예제 변경 시 복사본 갱신하되 사용자 수정본은 덮어쓰지 않음.
+- [구현] Impact Pack/Subpack은 `.atelierx/reference/ComfyUI-Impact-Pack`, `-Subpack`(gitignore 대상) Junction으로 설치됨. ComfyUI venv에 `ultralytics`, `segment-anything` 설치(기존 PyTorch 교체 없음).
+- [구현] Alpha/Censor 검출기 입력은 ComfyUI RGB float → BGR uint8 ndarray로 변환(Ultralytics 규격).
+
+#### AtelierXAnimaGenerate (atelierx_anima)
+- [구현] 입력: `diffusion_model`(diffusion_models), `text_encoder`(text_encoders), `vae`(vae), positive/negative prompt, width/height 기본 1024(256~1920, step 16), seed 0, steps 24(≤100), cfg 4.5(≤20), sampler `euler_ancestral`, scheduler `normal`, 선택 `lora_stack`. 출력 IMAGE 1개. Anima 모델 타입·VAE 16 latent channel 검사. 저장 안 함.
+- [구현] checkpoints에만 있는 모델은 목록에 없음.
+- [구현] `lora_stack`: 순서 보존 JSON `[{"name","strength"}]`, 위→아래 model-only patch, strength -100~100, patch 0개면 오류, 재시도 없음. 빈 배열=기존 동작. 이전 3슬롯 API 입력과 19-widget Workflow는 호환 변환. 화면은 `web/atelierx_lora_stack.js`의 `+ Add LoRA`/`−` UI.
+- [제한] 실제 GPU 검증 조합은 WAI(`waiANIMA_v10Base10` + `_txt` + `qwen_image_vae`) 하나. 다른 Anima 모델 미보장. 24/4.5는 WAI 모델카드 기반 시험값이며 전역 기본값 정책 아님. LoRA 0.35/0.5는 예제값.
+
+#### AtelierXUpscale (atelierx_upscale)
+- [구현] 입력·Lanczos half-up·기본 1.5·4x-UltraSharp 기본: 패키지 README 참조. 추가: RGB만 허용(Alpha·1채널 미지원), 타일/Overlap 사용자 설정 없음.
+- [제한] 리샘플링·반올림은 N-13 미결정의 첫 구현.
+
+#### AtelierXDetailer / AtelierXImpactDetailerPipeline (atelierx_detailer)
+- [구현] `AtelierX Detailer Pipeline (Impact)`: Face→Eye→Mouth→Hand 순서, pass별 enabled + detector 문자열. 기본 `bbox/face_yolov8m.pt`(Face·Mouth), `segm/PitEyeDetailer-v2-seg.pt`, `bbox/hand_yolov8s.pt`, SAM `sam_vit_b_01ec64.pth`. 입력 MODEL/CLIP/VAE, positive/negative CONDITIONING, seed 0, steps 10, cfg 5.0, `euler_ancestral`/`normal`, denoise 0.5. 필요 Impact class `UltralyticsDetectorProvider`, `SAMLoader`, `ToDetailerPipe`, `FaceDetailerPipe`; 누락 시 enabled pass 실행 때 class 이름 포함 오류. disabled pass는 로드 안 함, 전부 off면 입력 그대로.
+- [구현] `AtelierX Detailer`(보조, 외부 mask): 패키지 README 참조. 코드 기본 steps 20, cfg 5.0, `euler`, denoise 0.35, grow_mask_by 6.
+- [제한] Mouth는 전용 detector가 아니라 얼굴 detector fallback(참고 Workflow와 동일). 사용자는 원본 이미지의 생성 Prompt·모델을 맞춰야 함.
+- 참고 구현: kiritype/ComfyUI-AssetManager.
+
+#### AtelierXDetectNsfwMask / AtelierXCensor (atelierx_censor)
+- [구현] Detect: `segmentation_model`(ultralytics_segm), `labels` 기본 `nipples,pussy,penis,anus,testicles,x-ray,cross-section`, confidence 0.35. 해당 라벨 mask 합성. 검출 0은 정상(이미지 유지), 모델 오류·잘못된 라벨은 오류.
+- [구현] Censor: `treatment` mosaic(기본)/white(feathered)/white_solid, `intensity` 15(1~128, dilation=intensity 기반), enabled. 영역 밖·Alpha 보존, off면 원본.
+- [제한] 검열 대상 검출률 미평가(의상 착용 이미지 검출 0만 확인).
+
+#### AtelierXDetectCharacterMask / AtelierXApplyCharacterAlpha (atelierx_alpha)
+- [구현] Detect: `segmentation_model`(ultralytics_segm), confidence 0.35, COCO person(0) 전체 결합, `retina_masks` 크기 불일치·검출 없음은 오류(Alpha 불변).
+- [구현] Apply: 패키지 README 참조(enabled 기본 true).
+- [구현] Core 연결: Task snapshot에 `postprocess.alpha`가 있으면 검사 요청 `expected_output.alpha=transparency_required`, 없으면 `not_required`(원래 생성 설정 기준, PNG/WebP 동일). 투명 영역 없으면 `completed/failed`, AI 검사 생략. `output_conditions=false` Profile은 검사 안 함. 최소 면적·경계 품질 기준 없음.
+- [제한] 한 명 선택·SAM·BiRefNet/rembg·머리카락 경계는 N-10 미결정. 분리 품질 미평가.
+
+#### AtelierXEncodeSave (atelierx_encode)
+- [구현] 입력·기본값·저장 규칙은 패키지 README 참조.
+
+### 의존성·모델 목록
+
+| 이름 | 필수/선택 | 폴더(ComfyUI 등록명 → 설치 경로) | 사용 노드 |
+| --- | --- | --- | --- |
+| Anima diffusion model (검증: `waiANIMA_v10Base10.safetensors`) | 필수 | diffusion_models → `Models\DiffusionModels` | AnimaGenerate, Detailer 예제 |
+| 대응 Qwen3 0.6B Text Encoder (`waiANIMA_v10Base10_txt.safetensors`) | 필수 | text_encoders(clip) → `Models\TextEncoders` | AnimaGenerate |
+| `qwen_image_vae.safetensors` | 필수 | vae → `Models\VAE` | AnimaGenerate |
+| Anima LoRA (예: `anima-base-1-masterpiece-v51`, `anima-highres-aesthetic-boost`) | 선택 | loras → `Models\Lora` | AnimaGenerate |
+| `4x-UltraSharp.safetensors` | Upscale 사용 시 필수(기본) | upscale_models → `Models\ESRGAN`(또는 RealESRGAN/SwinIR) | Upscale |
+| ComfyUI-Impact-Pack + Impact-Subpack | Impact Detailer 필수 | `ComfyUI\custom_nodes` | ImpactDetailerPipeline |
+| `bbox/face_yolov8m.pt` | Face·Mouth pass 필수 | ultralytics_bbox → `Models\Ultralytics\bbox` | ImpactDetailerPipeline |
+| `segm/PitEyeDetailer-v2-seg.pt` | Eye pass 필수 | ultralytics_segm → `Models\Ultralytics\segm` | ImpactDetailerPipeline |
+| `bbox/hand_yolov8s.pt` | Hand pass 필수 | ultralytics_bbox | ImpactDetailerPipeline |
+| `sam_vit_b_01ec64.pth` | Impact Detailer 필수 | sams → `Models\Sams` | ImpactDetailerPipeline |
+| `ntd11_anime_nsfw_segm_v5-variant1.pt` (사용자 제공 `animeNSFWDetection_v50Variant1.zip`, SHA-256 `d04eec2d…0cc900`) | 자동 Censor 필수 | ultralytics_segm | DetectNsfwMask |
+| `person_yolov8n-seg.pt` (설치 Workflow 선택값, 로그 미기재) | 자동 Alpha 필수 | ultralytics_segm | DetectCharacterMask |
+| Python `ultralytics`(검증 8.4.150) | Detect 노드·Impact 필수 | ComfyUI venv | Alpha/Censor Detect, Impact |
+| Python `segment-anything`(1.0) | Impact SAM 필수 | ComfyUI venv | ImpactDetailerPipeline |
+
+### 패키지 README 불일치 (리팩토링 단계에서 정비)
+
+코드 기준이 우선한다.
+
+- `atelierx_censor`: README는 NudeNet ONNX 어댑터(`model_path`, `block_size`)로 설명하지만 코드는 ultralytics_segm YOLO + `labels`, treatment `white_solid`, `intensity`를 사용한다.
+- `atelierx_anima`: README의 임시 기본 512×512와 달리 코드 기본은 1024×1024다.
+- Detailer·Alpha·Censor README의 "모델·runtime 없음" 서술은 구식이다. 현재 설치 환경에는 Ultralytics·SAM·Impact Pack과 기본 weight가 있다.
+- 설치된 사용자 Workflow 일부(Censor·Detailer 자동 검출, Dynamic LoRA)는 저장소 examples와 다르며, Impact Pack 소스는 Git 제외 경로에 있어 새 clone에서 재현 경로가 없다. 원본 추적 위치와 설치 안내가 필요하다.

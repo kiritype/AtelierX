@@ -22,7 +22,7 @@ npm test
 
 Install the pinned toolchain with `npm ci`. Check packaging with `npx wrangler deploy --dry-run`, confirm the intended account using `npx wrangler whoami`, then deploy using `npx wrangler deploy`. Local `.dev.vars` is not uploaded as remote secrets; use `npx wrangler secret put NAME` for each required value. The setup inputs are `DISCORD_PUBLIC_KEY`, `DISCORD_APPLICATION_ID`, `DISCORD_ALLOWED_USER_IDS`, `BRIDGE_URL`, and `BRIDGE_TOKEN`. Do not pass the Bot Token to the Worker.
 
-Current deployment and end-to-end verification status are maintained in [the personal bot report](../../docs/development/discord-personal-bot.md).
+Current deployment and end-to-end verification status are maintained in [the personal bot report](../../docs/development/discord.md).
 
 
 Access modes: `DISCORD_ACCESS_MODE=users` (default) uses the existing explicit user allowlist. `guild` requires nonempty `DISCORD_ALLOWED_GUILD_IDS` and a signed guild member identity; optional `DISCORD_ALLOWED_CHANNEL_IDS` narrows access to exact channels. Guild mode forwards `guild_id` and `channel_id` to the Bridge, which must use the matching policy. DM and other guilds are rejected, including for the owner. Empty or malformed required scope does not grant public access. Bot installation restrictions are separate: disable Public Bot in the Discord Developer Portal to restrict server installation to the application owner.

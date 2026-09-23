@@ -123,7 +123,7 @@ Provider 품질 평가 데이터, 기계 검증 Schema, Queue 파일 기록의 c
 
 **현재 적용 상태 보완:** 사용자는 해당 작업 이후 현재는 ADR 검토 단계임을 재확인했다. 아래 자료는 범위를 앞서 작성한 참고 산출물로 보존하며 확정 명세·구현 착수 근거로 사용하지 않는다. 현재 후속 작업은 문서 검토에 한정하고 해당 코드·자동 검사·기계 Schema를 확장하거나 실행하지 않는다. 별도 승인된 Custom Node 개발과 구분한다.
 
-[계약 초안](../../contracts/validation/README.md)에 5종 JSON Schema·10개 예제·추가 의미 검사·상태 전이를 작성했다. [검증 기록](../../development/validation-contract-verification.md)의 18개 검사가 통과했다. 실제 저장/Provider/GPU 복구는 아직 미시험이다. 여러 파일의 원자적 갱신 문제는 Job 원본 기록을 권위로 두고 인덱스를 복원하는 초안으로 보완했다. Schema와 Python은 계약 검증 자료이며 Backend 언어/라이브러리 선택이 아니다.
+[계약 초안](../../contracts/validation/README.md)에 5종 JSON Schema·10개 예제·추가 의미 검사·상태 전이를 작성했다. [검증 기록](../../modules/validation.md)의 18개 검사가 통과했다. 실제 저장/Provider/GPU 복구는 아직 미시험이다. 여러 파일의 원자적 갱신 문제는 Job 원본 기록을 권위로 두고 인덱스를 복원하는 초안으로 보완했다. Schema와 Python은 계약 검증 자료이며 Backend 언어/라이브러리 선택이 아니다.
 
 ## 현재 검토 결론
 
