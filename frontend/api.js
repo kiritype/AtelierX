@@ -1,9 +1,14 @@
 export class ApiClientError extends Error {
-  constructor(code, message, status) {
+  constructor(code, message, status, details) {
     super(message);
     this.name = "ApiClientError";
     this.code = code;
     this.status = status;
+    // ApiError.details are merged into the response `error` object by Core
+    // (e.g. CORE_REFERENCE_SET_REQUIRED's `outfits`, CORE_REFERENCE_SETTINGS_MISMATCH's
+    // `diff`). Keep them, minus the always-present code/message, for callers that need
+    // structured data beyond the human-readable message.
+    this.details = details && typeof details === "object" ? details : {};
   }
 }
 
@@ -15,7 +20,10 @@ function serviceError(payload, status, token) {
     (!token || !error.code.includes(token)) ? error.code : "CLIENT_HTTP_ERROR";
   const message = error && typeof error.message === "string" &&
     (!token || !error.message.includes(token)) ? error.message.slice(0, 500) : "Service request failed";
-  return new ApiClientError(code, message, status);
+  const details = error ? { ...error } : {};
+  delete details.code;
+  delete details.message;
+  return new ApiClientError(code, message, status, code === "CLIENT_HTTP_ERROR" ? {} : details);
 }
 
 export class ApiClient {

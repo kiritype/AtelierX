@@ -10,8 +10,9 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
-from atelierx.core import create_app, generation_settings
+from atelierx.core import CORE, create_app, generation_settings
 from atelierx.core.presets import CorePresets
+from _reference_fixture import confirm_reference_set_offline
 
 
 GENERATION = {
@@ -133,6 +134,7 @@ class PresetRestTaskIntegrationTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "character", "parent_id": work["id"]})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "outfit", "parent_id": character["id"], "components": {"appearance": "blue eyes", "upper": "shirt", "lower": "boots"}})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        confirm_reference_set_offline(self.client.server.app[CORE], group["id"], outfit["id"], GENERATION)
         return group
 
     async def test_authenticated_rest_and_versioned_preset_task_snapshot(self):

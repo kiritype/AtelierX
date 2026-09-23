@@ -84,7 +84,33 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "NEVER_INSERT_CHARACTER", "parent_id": work["id"]})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "NEVER_INSERT_OUTFIT", "parent_id": character["id"], "components": PARTS})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        await self.confirm_reference_set(outfit["id"])
         return work, character, outfit, group
+
+    async def confirm_reference_set(self, outfit_id, key=None):
+        """ADR-0027 P5: fixture helper generating+confirming a reference set for an outfit."""
+        key = key or "reference-samples:" + outfit_id
+        status, pair = await self.request("POST", f"/v1/outfits/{outfit_id}/reference-samples",
+                                          {"generation_inputs": GEN}, key)
+        self.assertIn(status, (200, 201), pair)
+        images = {}
+        for role in ("full", "face"):
+            task_id = pair[f"{role}_task_id"]
+            for _ in range(200):
+                _, task = await self.request("GET", f"/v1/tasks/{task_id}")
+                if task["state"] == "generated":
+                    break
+                await asyncio.sleep(0.01)
+            self.assertEqual(task["state"], "generated", task)
+            png = next(image for image in task["images"] if image["media_type"] == "image/png")
+            images[role] = png["id"]
+        status, confirmed = await self.request("POST", f"/v1/outfits/{outfit_id}/reference-set/confirm",
+                                                {"full_image_id": images["full"], "face_image_id": images["face"]}, key + ":confirm")
+        self.assertIn(status, (200, 201), confirmed)
+        # The fixture's own reference-sample generation must not pollute a test's
+        # own assertions about how many Generation POSTs its own actions caused.
+        self.posts.clear()
+        return confirmed
 
     def payload(self, group):
         return dict(group_id=group["id"], framing="upper_body", expression="smiling", generation_inputs=GEN)
@@ -346,16 +372,17 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_fragment_negatives_compose_after_character_in_selection_order(self):
-        _, character, _, group = await self.setup_group()
+        _, character, outfit, group = await self.setup_group()
         await self.request("PATCH", "/v1/settings", {"revision": 1, "negative": "low quality"})
         await self.request("PATCH", "/v1/characters/" + character["id"], {"revision": 1, "negative_prompt": "beard"})
+        await self.confirm_reference_set(outfit["id"], key="reference-samples:" + outfit["id"] + ":r2")
         status, variant = await self.request("POST", "/v1/prompt-fragments", {"name": "variant", "number": "1", "body": "standing pose", "negative": "sitting", "include": {"upper": True, "lower": False}})
         self.assertEqual((status, variant["negative"]), (201, "sitting"))
         _, first = await self.request("POST", "/v1/prompt-fragments", {"name": "light", "body": "rim light", "common": True, "negative": "lens flare", "include": {"upper": False, "lower": False}})
         _, empty = await self.request("POST", "/v1/prompt-fragments", {"name": "plain", "body": "soft focus", "common": True, "include": {"upper": False, "lower": False}})
         _, second = await self.request("POST", "/v1/prompt-fragments", {"name": "bg", "body": "white background", "common": True, "negative": "text, logo", "include": {"upper": False, "lower": False}})
         commons = [{"id": item["id"], "revision": 1} for item in (second, empty, first)]
-        base = {"group_id": group["id"], "generation_inputs": GEN, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": commons}
+        base = {"group_id": group["id"], "generation_inputs": GEN, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": commons, "consistency": None}
         status, preview = await self.request("POST", "/v1/prompts/preview", base)
         self.assertEqual(status, 200)
         snapshot = preview["snapshot"]
@@ -371,11 +398,16 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         # Only the per-image fragment Negative remains when commons have none.
         _, variant_only = await self.request("POST", "/v1/prompts/preview", dict(base, common_fragments=[{"id": empty["id"], "revision": 1}]))
         self.assertEqual(variant_only["snapshot"]["negative_sources"]["fragment"], "sitting")
-        # Without fragment Negatives the snapshot keeps its previous two-key shape.
+        # Without fragment Negatives the snapshot keeps its previous two-key shape (plus
+        # default consistency, since a valid reference set is confirmed for this outfit).
         _, legacy = await self.request("POST", "/v1/prompts/preview", self.payload(group))
-        self.assertEqual(legacy["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard"})
-        status, task = await self.request("POST", "/v1/tasks", dict(base, preview_hash=preview["preview_hash"]), "fragment-negative")
-        self.assertIn(status, (200, 201, 202))
+        self.assertEqual(legacy["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard", "consistency": "white background, simple background"})
+        # A valid reference set always uses a consistency method for real Task creation
+        # (ADR-0027); drop the preview-only opt-out before submitting (this also changes
+        # the frozen preview_hash, so this submission does not replay the disabled one).
+        real_task_body = {k: v for k, v in base.items() if k != "consistency"}
+        status, task = await self.request("POST", "/v1/tasks", dict(real_task_body, accept_reference_settings_mismatch=True), "fragment-negative")
+        self.assertIn(status, (200, 201, 202), task)
         self.assertEqual(task["snapshot"]["negative_sources"]["fragment"], "text, logo, lens flare, sitting")
 
     async def test_character_negative_snapshot_conflicts_and_stale_preview(self):
@@ -383,9 +415,11 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         await self.request("PATCH", "/v1/settings", {"revision": 1, "negative": "low quality"})
         status, updated = await self.request("PATCH", "/v1/characters/" + character["id"], {"revision": 1, "negative_prompt": "beard"})
         self.assertEqual(status, 200)
+        await self.confirm_reference_set(outfit["id"], key="reference-samples:" + outfit["id"] + ":r2")
         _, preview = await self.request("POST", "/v1/prompts/preview", self.payload(group))
-        self.assertEqual(preview["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard"})
-        self.assertEqual(preview["snapshot"]["generation_inputs"]["negative_prompt"], "low quality, beard")
+        # A valid reference set is confirmed above, so default consistency composes too (ADR-0027 P4).
+        self.assertEqual(preview["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard", "consistency": "white background, simple background"})
+        self.assertEqual(preview["snapshot"]["generation_inputs"]["negative_prompt"], "low quality, beard, white background, simple background")
         _, task = await self.request("POST", "/v1/tasks", self.payload(group), "negative-snapshot")
         await self.request("PATCH", "/v1/characters/" + character["id"], {"revision": 2, "negative_prompt": "hat"})
         status, _ = await self.request("POST", "/v1/tasks", dict(self.payload(group), preview_hash=preview["preview_hash"]), "stale-negative")

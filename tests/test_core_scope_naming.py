@@ -15,6 +15,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from atelierx.core import CORE, Core, create_app
 from atelierx.output_names import build_output_name, sanitize_segment
 from atelierx.core.store import Store
+from _reference_fixture import confirm_reference_set
 
 GEN = dict(diffusion_model="anima", text_encoder="encoder", vae="vae", width=512, height=512,
            seed=1, steps=24, cfg=4.5, sampler="euler", scheduler="normal")
@@ -193,6 +194,8 @@ class CoreScopeRestTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "Char", "parent_id": work["id"], "appearance_prompt": "silver hair"})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "Outfit", "parent_id": character["id"], "components": OUTFIT})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        await confirm_reference_set(self.request, outfit["id"], GEN)
+        self.posts.clear()
         _, fragment = await self.request("POST", "/v1/prompt-fragments", {"name": "f", "number": "12", "body": "waving", "include": {"upper": True, "lower": True}})
         status, task = await self.request("POST", "/v1/tasks", {"group_id": group["id"], "fragment": {"id": fragment["id"], "revision": 1}, "generation_inputs": GEN}, "fragment")
         self.assertEqual(status, 202, task)

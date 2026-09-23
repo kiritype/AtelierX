@@ -9,8 +9,9 @@ from pathlib import Path
 from aiohttp.test_utils import TestClient, TestServer
 
 from atelierx.common import ApiError
-from atelierx.core import Core, create_app
+from atelierx.core import CORE, Core, create_app
 from atelierx.core.fragments import CoreFragments
+from _reference_fixture import confirm_reference_set_offline
 
 
 GENERATION = {
@@ -285,6 +286,7 @@ class FragmentRestTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "character", "parent_id": work["id"]})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "outfit", "parent_id": character["id"], "components": {"appearance": "hair", "upper": "shirt", "lower": "boots"}})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        confirm_reference_set_offline(self.client.server.app[CORE], group["id"], outfit["id"], GENERATION)
         task_input = {"group_id": group["id"], "fragment": {"id": created["id"], "revision": 1}, "generation_inputs": GENERATION}
         status, task = await self.request("POST", "/v1/tasks", task_input, "fragment-task")
         self.assertEqual(status, 202)

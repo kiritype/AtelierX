@@ -21,6 +21,7 @@ import aiohttp
 from aiohttp import web
 
 from atelierx.core import create_app as core_app
+from _reference_fixture import confirm_reference_set
 
 
 TOKEN = "service-fault-test-token"
@@ -129,10 +130,15 @@ class ServiceFaultRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def create_group(self):
         _, work = await self.request("POST", "/v1/works", {"name": "fault work"})
-        _, character = await self.request("POST", "/v1/characters", {"name": "fault character", "parent_id": work["id"]})
+        _, character = await self.request("POST", "/v1/characters", {"name": "fault character", "parent_id": work["id"], "appearance_prompt": "blue eyes"})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "fault outfit", "parent_id": character["id"],
-            "components": {"appearance": "blue eyes", "upper": "shirt", "lower": "boots"}})
+            "components": {"upper": "shirt", "lower": "boots", "accessories": ""}})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        self.outfit_id = outfit["id"]
+        await confirm_reference_set(self.request, outfit["id"], {
+            "diffusion_model": "mock", "text_encoder": "mock", "vae": "mock", "seed": 1,
+            "steps": 2, "cfg": 1, "sampler": "euler", "scheduler": "normal"})
+        self.generation.posts = 0
         return group["id"]
 
     def payload(self):
@@ -232,7 +238,7 @@ class ServiceFaultRecoveryTests(unittest.IsolatedAsyncioTestCase):
                 self.fail("subprocess Core did not start")
             self.generation.lose_next_reply = True
             status, task = await self.request("POST", "/v1/tasks", self.payload(), "subprocess-lost")
-            self.assertEqual(status, 202)
+            self.assertEqual(status, 202, task)
             for _ in range(200):
                 if self.generation.posts == 1: break
                 await asyncio.sleep(.01)

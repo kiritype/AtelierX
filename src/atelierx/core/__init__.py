@@ -29,6 +29,7 @@ from .groups import CoreGroups
 from .presets import CorePresets, validate_postprocess_settings
 from .fragments import CoreFragments
 from .regeneration import Regeneration
+from .reference_sets import ReferenceSets
 from .store import KINDS, Store
 from .validation import CoreValidation
 from ..validation_evidence import clauses, expanded_clause
@@ -49,7 +50,47 @@ REQUIRED_COMPONENTS = {"upper", "lower", "accessories"}
 LEGACY_COMPONENTS = {"appearance", "upper", "lower"}
 COMPOSITION_VERSION = 4
 GEN_FIELDS = {"diffusion_model", "text_encoder", "vae", "width", "height", "seed", "steps", "cfg", "sampler", "scheduler"}
-TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "common_fragments", "generation_inputs", "postprocess", "presets", "preview_hash", "validation"}
+TASK_FIELDS = {"group_id", "framing", "framing_prompt", "expression", "action", "situation", "include", "fragment", "common_fragments", "generation_inputs", "postprocess", "presets", "preview_hash", "validation", "consistency", "accept_reference_settings_mismatch"}
+
+# ADR-0027 P3: consistency method registry. Generation's ``/v1/resources`` is the
+# eventual canonical source (``consistency_methods``); this static mirror of the
+# accepted defaults/ranges lets synchronous prompt composition validate params
+# without a network round trip, and is used until that resource is cached here.
+DEFAULT_CONSISTENCY_METHOD = "anima-incontext-character"
+CONSISTENCY_METHODS = {
+    "anima-incontext-character": {
+        "families": ["anima"],
+        "params": {
+            "strength": {"type": "number", "default": 1.0, "min": 0.5, "max": 1.5},
+            "end_percent": {"type": "number", "default": 0.5, "min": 0.3, "max": 1.0, "warn_below": 0.5},
+            "suppress_reference_background": {"type": "boolean", "default": True},
+        },
+    },
+}
+REFERENCE_SETTINGS_FIELDS = ("diffusion_model", "text_encoder", "common_fragments", "positive_quality", "loras")
+
+
+def consistency_params(method_id, requested):
+    definition = CONSISTENCY_METHODS.get(method_id)
+    if definition is None:
+        invalid(f"Unknown consistency method: {method_id}")
+    if requested is None:
+        requested = {}
+    if not isinstance(requested, dict) or set(requested) - set(definition["params"]):
+        invalid("Unknown consistency params")
+    result, warnings = {}, []
+    for name, spec in definition["params"].items():
+        value = requested.get(name, spec["default"])
+        if spec["type"] == "number":
+            if type(value) not in (int, float) or not math.isfinite(value) or not spec["min"] <= value <= spec["max"]:
+                invalid(f"consistency params.{name} must be a number in {spec['min']}..{spec['max']}")
+            if "warn_below" in spec and value < spec["warn_below"]:
+                warnings.append(name)
+        elif spec["type"] == "boolean":
+            if type(value) is not bool:
+                invalid(f"consistency params.{name} must be boolean")
+        result[name] = value
+    return result, warnings
 
 
 def invalid(message):
@@ -146,6 +187,20 @@ def generation_settings(value):
     return dict(value, loras=loras)
 
 
+def reference_templates(value):
+    fields(value, {"full", "face"}, {"full", "face"})
+    result = {}
+    for role in ("full", "face"):
+        entry = value[role]
+        fields(entry, {"framing_prompt", "include"}, {"framing_prompt", "include"})
+        text(entry["framing_prompt"], "framing_prompt", True)
+        fields(entry["include"], COMPONENTS, COMPONENTS)
+        if any(type(v) is not bool for v in entry["include"].values()):
+            invalid("reference_templates include values must be boolean")
+        result[role] = {"framing_prompt": entry["framing_prompt"], "include": dict(entry["include"])}
+    return result
+
+
 class Core:
     def __init__(self, db_path, generation_url, token, generation_token, poll):
         self.store = Store(db_path)
@@ -236,6 +291,7 @@ class Core:
             invalid("Each postprocess stage must be an object")
         if "upscale" in postprocess:
             validate_postprocess_settings({"upscale": postprocess["upscale"]})
+        consistency = self.resolve_consistency(payload, group)
         negative_sources = {"global": settings["negative"], "character": character.get("negative_prompt", "")}
         # Fragment Negatives are generation-only: selected common fragments in
         # order, then the image-variant fragment. The key is omitted when empty so
@@ -243,11 +299,16 @@ class Core:
         fragment_negative = ", ".join(part for part in (*(item.get("negative", "") for item in common_fragments), (fragment or {}).get("negative", "")) if part.strip())
         if fragment_negative:
             negative_sources["fragment"] = fragment_negative
+        if consistency and consistency[0]["params"].get("suppress_reference_background"):
+            # ADR-0027 P4: appended last, generation-only, excluded from VLM checks (like global).
+            negative_sources["consistency"] = "white background, simple background"
         negative = ", ".join(part for part in negative_sources.values() if part.strip())
         positive_terms = {entry["requirement"].strip().casefold() for part in clauses(positive) for entry in expanded_clause(part)}
         forbidden_terms = {entry["requirement"].strip().casefold() for part in clauses(negative_sources["character"]) for entry in expanded_clause(part)}
         if positive_terms & forbidden_terms:
             raise ApiError("CORE_PROMPT_CONFLICT", "A character forbidden element also occurs in the positive prompt")
+        if consistency:
+            gen["consistency"] = consistency[1]
         gen.update(positive_prompt=positive, negative_prompt=negative)
         prefix = self.output_prefix(group)
         if fragment and fragment.get("number"):
@@ -262,6 +323,8 @@ class Core:
         if common_fragments: snapshot["common_fragments"] = common_fragments
         if postprocess:
             snapshot["postprocess"] = postprocess
+        if consistency:
+            snapshot["consistency"] = consistency[0]
         if payload.get("validation") is not None:
             selection = payload["validation"]
             fields(selection, {"provider_id", "profile_id"}, {"provider_id", "profile_id"})
@@ -271,6 +334,51 @@ class Core:
 
     def output_prefix(self, group):
         return ["AtelierX", *(self.store.entity(group[key], kind)["name"] for key, kind in (("work_id", "works"), ("character_id", "characters"), ("outfit_id", "outfits")))]
+
+    def resolve_consistency(self, payload, group):
+        """Build the (snapshot, generation_inputs) consistency pair, or None (ADR-0027 P3)."""
+        if "consistency" in payload and payload["consistency"] is None:
+            return None
+        reference_sets = getattr(self, "reference_sets", None)
+        if reference_sets is None:
+            return None
+        status = reference_sets.status(group["outfit_id"])
+        if status["status"] != "valid":
+            return None
+        reference_set = status["set"]
+        requested = payload.get("consistency")
+        if requested is not None:
+            fields(requested, {"method", "params"}, {"method"})
+        method_id = (requested or {}).get("method", DEFAULT_CONSISTENCY_METHOD)
+        params, _warnings = consistency_params(method_id, (requested or {}).get("params"))
+        references = [{"role": "full", **reference_set["full"]}, {"role": "face", **reference_set["face"]}]
+        snapshot_block = {"method": method_id, "params": params,
+                          "reference_set": {"id": reference_set["id"], "revision": reference_set["revision"]},
+                          "references": references}
+        generation_block = {"method": method_id, "params": params,
+                            "references": [{"role": item["role"], "image_id": item["generation_image_id"], "sha256": item["sha256"]} for item in references]}
+        return snapshot_block, generation_block
+
+    def require_reference_set(self, group):
+        """ADR-0027 P5: block production plan/Task creation without a valid reference set."""
+        status = self.reference_sets.status(group["outfit_id"])
+        if status["status"] != "valid":
+            raise ApiError("CORE_REFERENCE_SET_REQUIRED",
+                            "Confirm a valid reference set for this outfit before creating a production plan or task",
+                            409, details={"outfits": [{"outfit_id": group["outfit_id"], "status": status["status"]}]})
+        return status["set"]
+
+    def check_reference_settings(self, snapshot, reference_set, accepted):
+        """ADR-0027 P1/#7: warn (or block) when a plan's settings differ from the confirmed reference set."""
+        gen = snapshot["generation_inputs"]
+        expected = reference_set["settings_summary"]
+        actual = {"diffusion_model": gen.get("diffusion_model"), "text_encoder": gen.get("text_encoder"),
+                  "common_fragments": [{"id": item["id"], "revision": item["revision"]} for item in snapshot.get("common_fragments", [])],
+                  "positive_quality": snapshot.get("settings", {}).get("positive_quality", ""), "loras": gen.get("loras", [])}
+        diff = {key: {"reference": expected.get(key), "plan": actual.get(key)} for key in REFERENCE_SETTINGS_FIELDS if expected.get(key) != actual.get(key)}
+        if diff and not accepted:
+            raise ApiError("CORE_REFERENCE_SETTINGS_MISMATCH", "Generation settings differ from the confirmed reference set", 409, details={"diff": diff})
+        return diff
 
     def preset_settings(self, payload):
         """Resolve explicitly versioned presets before composing an immutable Task snapshot."""
@@ -300,9 +408,21 @@ class Core:
             if old[0] != fingerprint:
                 raise ApiError("CORE_IDEMPOTENCY_CONFLICT", "Request key already has different content", 409)
             return old[1], False
+        reference_set = None
+        if getattr(self, "reference_sets", None) is not None:
+            # ADR-0027 P5: new individual Tasks require a valid reference set for their outfit.
+            reference_set = self.require_reference_set(self.store.group(payload["group_id"]))
+            # A valid reference set always uses a consistency method here; only
+            # reference-sample generation and pre-ADR-0027 regeneration run without one.
+            if "consistency" in payload and payload["consistency"] is None:
+                invalid("consistency cannot be disabled once a valid reference set is required")
         preview = self.preview(payload)
         if "preview_hash" in payload and payload["preview_hash"] != preview["preview_hash"]:
             raise ApiError("CORE_PREVIEW_STALE", "Prompt or settings changed; review the updated preview", 409)
+        if reference_set is not None:
+            diff = self.check_reference_settings(preview["snapshot"], reference_set, bool(payload.get("accept_reference_settings_mismatch")))
+            if diff:
+                preview["snapshot"]["reference_settings_mismatch_accepted"] = {"accepted": True, "diff": diff}
         try:
             return self.store.create_task(key, fingerprint, payload["group_id"], preview["snapshot"]), True
         except sqlite3.IntegrityError:
@@ -445,7 +565,10 @@ async def errors(request, handler):
                 raise ApiError("CORE_FRONTEND_TOKEN_INVALID", "Stored frontend token does not match the current Core token", 401)
         return await handler(request)
     except ApiError as exc:
-        return web.json_response({"error": {"code": exc.code, "message": exc.message}}, status=exc.status)
+        error = {"code": exc.code, "message": exc.message}
+        if exc.details:
+            error.update(exc.details)
+        return web.json_response({"error": error}, status=exc.status)
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
         return web.json_response({"error": {"code": "CORE_INVALID_INPUT", "message": "Invalid JSON or value"}}, status=400)
     except sqlite3.OperationalError:
@@ -473,6 +596,8 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
     core.batches.attach(app)
     core.plans = ProductionPlans(core)
     core.plans.attach(app)
+    core.reference_sets = ReferenceSets(core)
+    core.reference_sets.attach(app)
     core.gpu = GpuCoordinator(core.store, gpu_config)
     core.standalone = StandaloneJobs(core, standalone_config, generation_settings, validate_postprocess_settings)
     core.postprocess = CorePostprocess(core)
@@ -601,7 +726,7 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
         if request.method == "GET":
             return web.json_response(core.store.settings())
         body = await request.json()
-        fields(body, {"revision", "positive_quality", "negative", "auto_regeneration_enabled", "max_auto_regenerations"}, {"revision"})
+        fields(body, {"revision", "positive_quality", "negative", "auto_regeneration_enabled", "max_auto_regenerations", "reference_templates"}, {"revision"})
         changes = {key: value for key, value in body.items() if key != "revision"}
         for name in ("positive_quality", "negative"):
             if name in changes:
@@ -610,6 +735,8 @@ def create_app(db_path, generation_url, token, generation_token=None, poll=1, va
             invalid("auto_regeneration_enabled must be boolean")
         if "max_auto_regenerations" in changes and (type(changes["max_auto_regenerations"]) is not int or changes["max_auto_regenerations"] < 0):
             invalid("max_auto_regenerations must be a nonnegative integer")
+        if "reference_templates" in changes:
+            changes["reference_templates"] = reference_templates(changes["reference_templates"])
         return web.json_response(core.store.update_settings(revision(body["revision"]), changes))
 
     async def groups(request):

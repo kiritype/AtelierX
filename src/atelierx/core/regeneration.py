@@ -22,7 +22,9 @@ class Regeneration:
             raise ApiError("CORE_REGENERATION_INVALID", "Regeneration preserves the saved prompt intent")
         if manual and "seed" not in patch:
             inputs["seed"] = (inputs["seed"] + 1 + secrets.randbelow(2**32)) % (2**64)
-        settings = {key: value for key, value in inputs.items() if key not in {"positive_prompt", "negative_prompt", "output_name"}}
+        # ADR-0027: consistency is Core-composed, never re-validated as user input;
+        # a regeneration keeps the original snapshot's consistency block untouched.
+        settings = {key: value for key, value in inputs.items() if key not in {"positive_prompt", "negative_prompt", "output_name", "consistency"}}
         settings.update(patch)
         inputs.update(self.validate_generation(settings))
         if "postprocess" in body:

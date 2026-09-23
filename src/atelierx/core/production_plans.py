@@ -79,7 +79,7 @@ class ProductionPlans:
     def create(self, key, body):
         if not isinstance(key, str) or not 1 <= len(key) <= 200:
             bad("Idempotency-Key required")
-        allowed = {"group_id", "fragments", "common_fragments", "generation_inputs", "presets", "postprocess", "validation", "group_validation"}
+        allowed = {"group_id", "fragments", "common_fragments", "generation_inputs", "presets", "postprocess", "validation", "group_validation", "consistency", "accept_reference_settings_mismatch"}
         if not isinstance(body, dict) or set(body) - allowed or not {"group_id", "fragments"} <= set(body):
             bad("group_id and fragments are required")
         if ("validation" in body and not isinstance(body["validation"], dict)) or (
@@ -108,6 +108,15 @@ class ProductionPlans:
             if frozen_validation["profile"].get("consistency") is not True:
                 bad("Select a group consistency profile")
         group = self.core.store.group(body["group_id"])
+        # ADR-0027 P5: a valid reference set for the plan's outfit is required. Absent on
+        # ``core`` fakes used by lower-level dispatch-cycle tests, which do not exercise this gate.
+        reference_set = None
+        if getattr(self.core, "reference_sets", None) is not None:
+            reference_set = self.core.require_reference_set(group)
+            # A valid reference set always uses a consistency method for the plan;
+            # only reference-sample generation and pre-ADR-0027 regeneration opt out.
+            if "consistency" in body and body["consistency"] is None:
+                bad("consistency cannot be disabled once a valid reference set is required")
         plan = {"id": str(uuid.uuid4()), "state": "draft", "total": len(selections), "created_at": time.time(),
                 "group_id": group["id"], "accepted_reference": group.get("reference"), "reference": None,
                 "sequence": 0, "validation_mode": validation_mode,
@@ -118,10 +127,16 @@ class ProductionPlans:
         digest = hashlib.sha256(canonical({"request": body, "group_validation": frozen_validation}).encode())
         # All selected items are accepted durably, without creating GPU tasks.
         # Rows keep large snapshots out of the list/status response.
+        mismatch_diff = None
         with self.db:
             for index, selection in enumerate(selections):
                 preview = self.core.preview(dict(base, fragment=selection))
                 snapshot = self.core.store.execution_snapshot(preview["snapshot"])
+                if reference_set is not None and mismatch_diff is None:
+                    # Checked once: every item shares the plan's generation settings and common fragments.
+                    mismatch_diff = self.core.check_reference_settings(snapshot, reference_set, bool(body.get("accept_reference_settings_mismatch"))) or {}
+                if mismatch_diff:
+                    snapshot["reference_settings_mismatch_accepted"] = {"accepted": True, "diff": mismatch_diff}
                 preview_hash = hashlib.sha256(canonical(snapshot).encode()).hexdigest()
                 digest.update(preview_hash.encode())
                 item = {"index": index, "state": "queued", "snapshot": snapshot,

@@ -25,10 +25,33 @@ class CliCoreIntegrationTests(unittest.IsolatedAsyncioTestCase):
         character = store.create_entity("characters", "Character", work["id"])
         outfit = store.create_entity("outfits", "Outfit", character["id"],
                                     {"appearance": "blue eyes", "upper": "white shirt", "lower": "boots"})
+        self.outfit = outfit
         self.group = store.create_group(outfit["id"])
         self.payload = {"group_id": self.group["id"], "framing": "upper_body", "postprocess": {},
                         "generation_inputs": {"diffusion_model": "fixture", "text_encoder": "fixture", "vae": "fixture",
                                               "seed": 1, "steps": 24, "cfg": 4.5, "sampler": "euler", "scheduler": "normal"}}
+        self.confirm_reference_set_fixture(outfit)
+
+    def confirm_reference_set_fixture(self, outfit):
+        """ADR-0027 P5 fixture: the worker is disabled here, so build a reference
+        set directly through store/reference_sets, bypassing HTTP and generation."""
+        core = self.core
+        gen = dict(self.payload["generation_inputs"], seed=1)
+        images = {}
+        for role, framing_prompt, include in (
+                ("full", "full body ref", {"upper": True, "lower": True, "accessories": True, "hands": True}),
+                ("face", "face ref", {"upper": True, "lower": False, "accessories": True, "hands": False})):
+            snapshot = core.preview({"group_id": self.group["id"], "framing": "custom", "framing_prompt": framing_prompt,
+                                     "include": include, "generation_inputs": gen, "consistency": None})["snapshot"]
+            snapshot["purpose"] = "reference_sample"
+            task = core.store.create_task("ref-" + role, "fp-" + role, self.group["id"], snapshot)
+            image = {"id": str(uuid.uuid4()), "task_id": task["id"], "group_id": self.group["id"],
+                     "generation_image_id": str(uuid.uuid4()) + "-0", "sha256": hashlib.sha256(task["id"].encode()).hexdigest(),
+                     "bytes": 7, "media_type": "image/png", "validation_state": "not_requested"}
+            core.store.finish_generation(task, [image])
+            images[role] = image["id"]
+        core.reference_sets.confirm(outfit["id"], "confirm-reference-fixture",
+                                    {"full_image_id": images["full"], "face_image_id": images["face"]})
 
     async def start_core(self):
         app = create_app(self.root / "core.sqlite3", "http://127.0.0.1:1", "integration-token",

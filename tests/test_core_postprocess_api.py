@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from PIL import Image
 
 from atelierx.core import CORE, create_app
+from _reference_fixture import confirm_reference_set
 
 
 def png_bytes(color=(20, 40, 60)):
@@ -99,6 +100,7 @@ class CorePostprocessApiTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "Source character", "parent_id": work["id"]})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "Source outfit", "parent_id": character["id"], "components": PARTS})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
+        await confirm_reference_set(self.request, outfit["id"], GEN_INPUTS)
         _, task = await self.request("POST", "/v1/tasks", {"group_id": group["id"], "framing": "upper_body", "generation_inputs": GEN_INPUTS, "postprocess": {}}, "source")
         for _ in range(200):
             _, task = await self.request("GET", "/v1/tasks/" + task["id"])
