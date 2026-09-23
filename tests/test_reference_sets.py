@@ -245,6 +245,88 @@ class ReferenceSetTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(task["snapshot"]["reference_settings_mismatch_accepted"]["accepted"])
         self.assertIn("diffusion_model", task["snapshot"]["reference_settings_mismatch_accepted"]["diff"])
 
+    async def test_confirm_allows_different_pairs_with_matching_settings(self):
+        """UX follow-up (2026-09): full and face may be picked from different
+        sample pairs (different seeds) as long as both used the same
+        generation settings summary."""
+        _, outfit, group = await self.setup_group()
+        _, pair1 = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN}, "pair-a")
+        _, pair2 = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": dict(GEN, seed=2)}, "pair-b")
+
+        async def wait_generated(task_id):
+            for _ in range(300):
+                _, task = await self.request("GET", "/v1/tasks/" + task_id)
+                if task["state"] == "generated":
+                    return task
+            raise AssertionError("task never generated")
+
+        full_task = await wait_generated(pair1["full_task_id"])
+        face_task = await wait_generated(pair2["face_task_id"])
+        full_image = next(image for image in full_task["images"] if image["media_type"] == "image/png")
+        face_image = next(image for image in face_task["images"] if image["media_type"] == "image/png")
+        status, confirmed = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-set/confirm",
+            {"full_image_id": full_image["id"], "face_image_id": face_image["id"]}, "cross-pair-confirm")
+        self.assertEqual(status, 201, confirmed)
+        self.assertEqual(confirmed["seed"], pair1["seed"])
+        self.assertEqual(confirmed["face_seed"], pair2["seed"])
+        self.assertNotEqual(confirmed["seed"], confirmed["face_seed"])
+
+    async def test_confirm_rejects_mismatched_settings_naming_fields(self):
+        _, outfit, group = await self.setup_group()
+        _, common = await self.request("POST", "/v1/prompt-fragments",
+            {"name": "rim light", "body": "rim light", "common": True, "include": {"upper": False, "lower": False}})
+        _, pair1 = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN}, "plain-pair")
+        _, pair2 = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples",
+            {"generation_inputs": dict(GEN, seed=2), "common_fragments": [{"id": common["id"], "revision": common["revision"]}]}, "common-pair")
+
+        async def wait_generated(task_id):
+            for _ in range(300):
+                _, task = await self.request("GET", "/v1/tasks/" + task_id)
+                if task["state"] == "generated":
+                    return task
+            raise AssertionError("task never generated")
+
+        full_task = await wait_generated(pair1["full_task_id"])
+        face_task = await wait_generated(pair2["face_task_id"])
+        full_image = next(image for image in full_task["images"] if image["media_type"] == "image/png")
+        face_image = next(image for image in face_task["images"] if image["media_type"] == "image/png")
+        status, error = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-set/confirm",
+            {"full_image_id": full_image["id"], "face_image_id": face_image["id"]}, "mismatched-confirm")
+        self.assertEqual((status, error["error"]["code"]), (409, "CORE_REFERENCE_IMAGE_INVALID"))
+        self.assertIn("공통 조각", error["error"]["message"])
+
+    async def test_delete_sample_pair_archives_and_is_idempotent(self):
+        _, outfit, group = await self.setup_group()
+        status, pair = await self.request("POST", f"/v1/outfits/{outfit['id']}/reference-samples", {"generation_inputs": GEN}, "del-pair")
+        self.assertEqual(status, 201)
+        for task_id in (pair["full_task_id"], pair["face_task_id"]):
+            for _ in range(300):
+                _, task = await self.request("GET", "/v1/tasks/" + task_id)
+                if task["state"] == "generated":
+                    break
+            else:
+                raise AssertionError("task never generated")
+        status, deleted = await self.request("DELETE", f"/v1/outfits/{outfit['id']}/reference-samples/{pair['id']}")
+        self.assertEqual((status, deleted["archived"]), (200, True))
+        _, listed = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-samples")
+        self.assertEqual(listed["items"], [])
+        _, listed_all = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-samples?include_archived=true")
+        self.assertEqual(len(listed_all["items"]), 1)
+        # Repeat delete is idempotent (200, no-op).
+        status2, deleted2 = await self.request("DELETE", f"/v1/outfits/{outfit['id']}/reference-samples/{pair['id']}")
+        self.assertEqual((status2, deleted2["archived"]), (200, True))
+        # Deleting a pair id that never existed is a 404.
+        status3, missing = await self.request("DELETE", f"/v1/outfits/{outfit['id']}/reference-samples/does-not-exist")
+        self.assertEqual((status3, missing["error"]["code"]), (404, "CORE_NOT_FOUND"))
+
+    async def test_delete_sample_pair_blocked_when_used_by_reference_set(self):
+        _, outfit, group = await self.setup_group()
+        confirmed = await confirm_reference_set(self.request, outfit["id"], GEN)
+        _, listed = await self.request("GET", f"/v1/outfits/{outfit['id']}/reference-samples")
+        used_pair = listed["items"][0]
+        status, error = await self.request("DELETE", f"/v1/outfits/{outfit['id']}/reference-samples/{used_pair['id']}")
+        self.assertEqual((status, error["error"]["code"]), (409, "CORE_REFERENCE_SAMPLE_IN_USE"))
+
     async def test_regeneration_keeps_original_snapshot_without_enforcement(self):
         _, outfit, group = await self.setup_group()
         await confirm_reference_set(self.request, outfit["id"], GEN)

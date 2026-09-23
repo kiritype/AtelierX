@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { appearanceMigrationChoiceRequired, buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, creationPreviewPage, entityMutationRequest, estimatedUpscaleResolution, fragmentPickerQuery, freezeMultiProductionPlanRequests, loadProductionData, postprocessResolutionEstimate, previewRequestIsCurrent, randomSafeSeed, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, toggleTreeSelection, treeSelectionState } from "../frontend/production.js";
+import { appearanceMigrationChoiceRequired, buildGenerationBody, buildProductionPlanBody, buildProductionPlanRequests, clearProductionPlanSelection, creationPreviewPage, entityMutationRequest, estimatedUpscaleResolution, fragmentPickerQuery, freezeMultiProductionPlanRequests, loadCreationData, loadProductionData, postprocessResolutionEstimate, previewRequestIsCurrent, randomSafeSeed, refreshReferenceStatuses, SAMPLER_OPTIONS, SCHEDULER_OPTIONS, toggleTreeSelection, treeSelectionState } from "../frontend/production.js";
 
 function state(overrides = {}) {
   return {
@@ -250,6 +250,47 @@ test("stale production loads do not apply a late catalog response", async () => 
   const current = {selection: {workId: null, characterId: null, outfitId: null}, expanded: {works: {}, characters: {}}, entities: {works: [{id: "kept"}], characters: [], outfits: [], groups: []}, presets: {}, productionSection: "prepare", fragmentSearch: "", fragmentCategoryId: "", fragmentLimit: 25, fragmentOffset: 0};
   await loadProductionData(current, {get: async () => ({items: [{id: "late"}]})}, () => false);
   assert.deepEqual(current.entities.works, [{id: "kept"}]);
+});
+
+test("creation data caches entities/fragments after the first load but always refreshes reference statuses", async () => {
+  const referenceCalls = [];
+  const statuses = ["valid", "needs_review"];
+  const api = {get: async (path) => {
+    if (path.startsWith("/v1/outfits/outfit-1/reference-set")) { referenceCalls.push(path); return {status: statuses[referenceCalls.length - 1] || "valid"}; }
+    if (path.startsWith("/v1/works")) return {items: [{id: "work-1", archived: false}]};
+    if (path.startsWith("/v1/characters")) return {items: [{id: "char-1", parent_id: "work-1", archived: false}]};
+    if (path.startsWith("/v1/outfits")) return {items: [{id: "outfit-1", parent_id: "char-1", archived: false}]};
+    return {items: []};
+  }};
+  const current = {selection: {workId: null, characterId: null, outfitId: null}, expanded: {works: {}, characters: {}}, entities: {works: [], characters: [], outfits: [], groups: []}, presets: {}, productionSection: "prepare", fragmentSearch: "", fragmentCategoryId: "", fragmentLimit: 25, fragmentOffset: 0};
+  await loadCreationData(current, api, () => true);
+  assert.equal(current.creationLoaded, true);
+  assert.deepEqual(current.entities.outfits.map((item) => item.id), ["outfit-1"]);
+  assert.deepEqual(current.referenceStatuses, {"outfit-1": "valid"});
+  assert.equal(referenceCalls.length, 1);
+  // Simulate a second creation-screen mount/refresh in the same session (e.g.
+  // after confirming a reference set on the character-management screen):
+  // entities/fragments must stay cached (no new /v1/works etc. calls beyond
+  // loadProductionData's own always-on works fetch), but the reference status
+  // must be re-fetched and reflect the new value.
+  const entitiesBefore = current.entities;
+  await loadCreationData(current, api, () => true);
+  assert.equal(current.entities, entitiesBefore, "entities object identity unchanged: no full reload");
+  assert.equal(referenceCalls.length, 2);
+  assert.deepEqual(current.referenceStatuses, {"outfit-1": "needs_review"});
+});
+
+test("refreshReferenceStatuses alone re-reads status for every active outfit and tolerates a fetch failure", async () => {
+  const calls = [];
+  const api = {get: async (path) => {
+    calls.push(path);
+    if (path.includes("outfit-bad")) throw new Error("boom");
+    return {status: "valid"};
+  }};
+  const current = {entities: {outfits: [{id: "outfit-1", archived: false}, {id: "outfit-bad", archived: false}, {id: "outfit-archived", archived: true}]}};
+  await refreshReferenceStatuses(current, api, () => true);
+  assert.deepEqual(calls.sort(), ["/v1/outfits/outfit-1/reference-set", "/v1/outfits/outfit-bad/reference-set"]);
+  assert.deepEqual(current.referenceStatuses, {"outfit-1": "valid", "outfit-bad": null});
 });
 
 test("explicit editor mode keeps a new child as POST despite an old selected target", () => {

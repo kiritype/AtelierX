@@ -26,6 +26,12 @@ const tokenless = new ApiClient();
 await tokenless.get("/health");
 assert.equal(calls[0].options.headers.Authorization, undefined);
 
+calls.length = 0;
+assert.deepEqual(await client.delete("/v1/outfits/o1/reference-samples/pair-1"), {ok: true});
+assert.equal(calls[0].options.method, "DELETE");
+assert.equal(calls[0].options.body, undefined);
+assert.equal(calls[0].options.headers["Idempotency-Key"], undefined);
+
 await assert.rejects(client.get("https://external.invalid/v1/tasks"), (error) =>
   error instanceof ApiClientError && error.code === "CLIENT_INVALID_PATH");
 await assert.rejects(client.get("/v1/../health"), (error) =>

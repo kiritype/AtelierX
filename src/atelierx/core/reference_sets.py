@@ -22,6 +22,13 @@ def bad(message, code="CORE_REFERENCE_SET_INVALID", status=400):
     raise ApiError(code, message, status)
 
 
+ACTIVE_TASK_STATES = frozenset({"queued", "dispatching", "generation_pending", "generating"})
+SETTINGS_SUMMARY_LABELS = {
+    "diffusion_model": "모델", "text_encoder": "텍스트 인코더", "common_fragments": "공통 조각",
+    "positive_quality": "품질 Positive", "loras": "LoRA",
+}
+
+
 def _fields(value, allowed, required=()):
     if not isinstance(value, dict) or set(value) - set(allowed) or set(required) - set(value):
         bad("Missing or unknown fields")
@@ -130,8 +137,18 @@ class ReferenceSets:
         full_image, full_task = self._reference_image(outfit_id, body["full_image_id"])
         face_image, face_task = self._reference_image(outfit_id, body["face_image_id"])
         full_seed = full_task["snapshot"]["generation_inputs"]["seed"]
-        if face_task["snapshot"]["generation_inputs"]["seed"] != full_seed:
-            bad("전신·얼굴 이미지는 같은 참조 샘플 쌍이어야 합니다", "CORE_REFERENCE_IMAGE_INVALID", 409)
+        face_seed = face_task["snapshot"]["generation_inputs"]["seed"]
+        # ADR-0027/UX follow-up: full and face may come from different sample
+        # pairs (and therefore different seeds) as long as both were produced
+        # with the same generation settings, so the outfit's grain/style stays
+        # consistent. Reject only when the settings actually differ, and name
+        # which fields differ in the error.
+        full_settings = self._settings_summary(full_task["snapshot"])
+        face_settings = self._settings_summary(face_task["snapshot"])
+        diff_fields = [key for key in full_settings if full_settings[key] != face_settings.get(key)]
+        if diff_fields:
+            names = ", ".join(SETTINGS_SUMMARY_LABELS.get(name, name) for name in diff_fields)
+            bad(f"전신·얼굴 참조 이미지의 생성 설정이 서로 다릅니다: {names}", "CORE_REFERENCE_IMAGE_INVALID", 409)
         fingerprint = hashlib.sha256(canonical({"action": "confirm", "outfit_id": outfit_id, "body": body}).encode()).hexdigest()
 
         def build(current, revision):
@@ -140,7 +157,7 @@ class ReferenceSets:
                 "character_revision": character["revision"], "outfit_revision": outfit["revision"],
                 "full": {"core_image_id": full_image["id"], "generation_image_id": full_image["generation_image_id"], "sha256": full_image["sha256"]},
                 "face": {"core_image_id": face_image["id"], "generation_image_id": face_image["generation_image_id"], "sha256": face_image["sha256"]},
-                "seed": full_seed, "settings_summary": self._settings_summary(full_task["snapshot"]),
+                "seed": full_seed, "face_seed": face_seed, "settings_summary": full_settings,
                 "confirmed_at": time.time(),
             }
         return self._write_revision(outfit_id, key, fingerprint, build)
@@ -237,15 +254,49 @@ class ReferenceSets:
                             (pair_id, outfit_id, key, fingerprint, canonical(document)))
         return document, True
 
-    def list_sample_pairs(self, outfit_id):
+    def list_sample_pairs(self, outfit_id, include_archived=False):
         self.core.store.entity(outfit_id, "outfits")
         rows = self.db.execute("SELECT document FROM reference_sample_pairs WHERE outfit_id=? ORDER BY rowid DESC", (outfit_id,)).fetchall()
         items = []
         for row in rows:
             pair = json.loads(row[0])
+            if pair.get("archived") and not include_archived:
+                continue
             items.append({**pair, "full_task": self.core.store.task(pair["full_task_id"]),
                           "face_task": self.core.store.task(pair["face_task_id"])})
         return {"items": items}
+
+    # -- reference sample deletion -----------------------------------------------
+
+    def _pair_document(self, outfit_id, pair_id):
+        row = self.db.execute("SELECT document FROM reference_sample_pairs WHERE id=? AND outfit_id=?", (pair_id, outfit_id)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def delete_sample_pair(self, outfit_id, pair_id):
+        """Archives (hides) a sample pair from the sample list without deleting
+        its Tasks/images -- those remain reachable from the gallery. Repeat
+        deletes of an already-archived pair are a no-op that still returns 200
+        (idempotent by effect, not by Idempotency-Key)."""
+        self.core.store.entity(outfit_id, "outfits")
+        pair = self._pair_document(outfit_id, pair_id)
+        if not pair:
+            bad("Reference sample pair not found", "CORE_NOT_FOUND", 404)
+        if pair.get("archived"):
+            return pair
+        full_task = self.core.store.task(pair["full_task_id"])
+        face_task = self.core.store.task(pair["face_task_id"])
+        if full_task["state"] in ACTIVE_TASK_STATES or face_task["state"] in ACTIVE_TASK_STATES:
+            bad("참조 샘플 생성이 진행 중입니다. 완료 후 다시 시도하세요", "CORE_REFERENCE_SAMPLE_IN_USE", 409)
+        image_ids = {image["id"] for task in (full_task, face_task) for image in (task.get("images") or [])}
+        revision_rows = self.db.execute("SELECT document FROM reference_set_revisions WHERE outfit_id=?", (outfit_id,)).fetchall()
+        for row in revision_rows:
+            revision = json.loads(row[0])
+            if revision["full"]["core_image_id"] in image_ids or revision["face"]["core_image_id"] in image_ids:
+                bad("참조 세트에서 사용 중인 이미지는 목록에서 삭제할 수 없습니다", "CORE_REFERENCE_SAMPLE_IN_USE", 409)
+        pair = {**pair, "archived": True}
+        with self.db:
+            self.db.execute("UPDATE reference_sample_pairs SET document=? WHERE id=? AND outfit_id=?", (canonical(pair), pair_id, outfit_id))
+        return pair
 
     # -- routes -------------------------------------------------------------------
 
@@ -253,9 +304,14 @@ class ReferenceSets:
         async def samples(request):
             outfit_id = request.match_info["id"]
             if request.method == "GET":
-                return web.json_response(self.list_sample_pairs(outfit_id))
+                include_archived = request.query.get("include_archived") == "true"
+                return web.json_response(self.list_sample_pairs(outfit_id, include_archived))
             document, created = self.create_sample_pair(outfit_id, request.headers.get("Idempotency-Key"), await request.json())
             return web.json_response(document, status=201 if created else 200)
+
+        async def delete_sample(request):
+            document = self.delete_sample_pair(request.match_info["id"], request.match_info["pair_id"])
+            return web.json_response(document, status=200)
 
         async def reference_set(request):
             return web.json_response(self.status(request.match_info["id"]))
@@ -274,6 +330,7 @@ class ReferenceSets:
 
         app.add_routes([
             web.get("/v1/outfits/{id}/reference-samples", samples), web.post("/v1/outfits/{id}/reference-samples", samples),
+            web.delete("/v1/outfits/{id}/reference-samples/{pair_id}", delete_sample),
             web.get("/v1/outfits/{id}/reference-set", reference_set),
             web.post("/v1/outfits/{id}/reference-set/confirm", confirm),
             web.post("/v1/outfits/{id}/reference-set/reconfirm", reconfirm),

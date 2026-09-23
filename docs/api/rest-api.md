@@ -175,6 +175,7 @@ Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변�
 | GET | `/v1/images/{id}/validations` | 해당 이미지 검증 이력 `{items}` |
 | GET | `/v1/validation-runs/{id}` | Core가 저장한 검증 Run |
 | GET/POST | `/v1/outfits/{id}/reference-samples` | 참조 샘플 전신·얼굴 쌍 생성/조회. 아래 [참조 세트와 일관성](#참조-세트와-일관성---adr-0027) 절 |
+| DELETE | `/v1/outfits/{id}/reference-samples/{pair_id}` | 목록에서 해당 쌍을 보관(archive) 처리. 이미지·Task는 삭제하지 않는다. 아래 절 |
 | GET | `/v1/outfits/{id}/reference-set` | 현재 참조 세트 상태(`none/valid/needs_review`) |
 | POST | `/v1/outfits/{id}/reference-set/confirm` | 후보 전신·얼굴 이미지로 새 revision 확정 |
 | POST | `/v1/outfits/{id}/reference-set/reconfirm` | "변경 확인 후 유지": 새 이미지 없이 현재 revision 재확정 |
@@ -241,12 +242,14 @@ Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,ima
 
 **[구현, 2026-09-24]** 선택 `sizes: {full?:{width,height}, face?:{width,height}}`는 역할별 해상도를 `generation_inputs`의 width/height 대신 적용한다(다른 필드는 공유). 각 값은 일반 `generation_inputs` 해상도와 같은 규칙(256~1920, 16배수)을 따르며 위반 시 400이다. 생략한 역할은 `generation_inputs`의 값을 그대로 쓴다. `sizes`는 요청 본문 전체이므로 멱등 키의 지문(fingerprint)에 포함되어, 같은 키로 다른 `sizes`를 보내면 409 `CORE_IDEMPOTENCY_CONFLICT`다.
 
-두 Task의 snapshot은 `purpose:"reference_sample"`을 갖는다. 참조 샘플은 참조 세트 강제(P5)·자동/수동 검증 요청·`consistency` 합성에서 제외된다(자기 자신을 참조로 쓰지 않는다). 출력 파일명은 `AtelierX/<작품>/<캐릭터>/<의상>/reference/<full|face>-<쌍 ID 앞 8자>`다. 응답 `{id,outfit_id,seed,full_task_id,face_task_id,created_at}`. 신규 202/동일 키 200. `GET /v1/outfits/{id}/reference-samples`는 해당 의상의 쌍 목록을 `full_task`/`face_task`(전체 Task 객체) 포함으로 반환한다.
+두 Task의 snapshot은 `purpose:"reference_sample"`을 갖는다. 참조 샘플은 참조 세트 강제(P5)·자동/수동 검증 요청·`consistency` 합성에서 제외된다(자기 자신을 참조로 쓰지 않는다). 출력 파일명은 `AtelierX/<작품>/<캐릭터>/<의상>/reference/<full|face>-<쌍 ID 앞 8자>`다. 응답 `{id,outfit_id,seed,full_task_id,face_task_id,created_at}`. 신규 202/동일 키 200. `GET /v1/outfits/{id}/reference-samples`는 해당 의상의 쌍 목록을 `full_task`/`face_task`(전체 Task 객체) 포함으로 반환하며, 기본은 보관(archive)된 쌍을 제외한다. query `include_archived=true`로 보관된 쌍도 포함해 조회할 수 있다.
+
+**[구현, 2026-09-24]** `DELETE /v1/outfits/{id}/reference-samples/{pair_id}`는 목록에서 필요 없는 쌍을 치운다. 이미지 파일·Task·이미지 자체는 지우지 않으며 갤러리에는 그대로 남는다(문서 `archived:true`만 기록). 두 이미지 중 하나라도 현재 또는 과거 확정 참조 세트 revision에서 쓰이고 있으면 409 `CORE_REFERENCE_SAMPLE_IN_USE`로 거절한다. 두 Task 중 하나라도 아직 진행 중(`queued/dispatching/generation_pending/generating`)이면 같은 코드로 거절한다. Idempotency-Key는 요구하지 않는다: 이미 보관된 쌍을 다시 삭제하면 상태 변경 없이 200과 현재 문서를 반환한다(멱등). 존재하지 않는 `pair_id`는 404 `CORE_NOT_FOUND`다.
 
 ### 확정·재확인·조회
 
-- `GET /v1/outfits/{id}/reference-set` → `{status,set,stale}`. `set`은 없으면 `null`이며, 있으면 `{id,outfit_id,revision,character_revision,outfit_revision,full:{core_image_id,generation_image_id,sha256},face:{...},seed,settings_summary,confirmed_at}`이다. `settings_summary`는 `{diffusion_model,text_encoder,common_fragments:[{id,revision}],positive_quality,loras}`다(sampler·steps·cfg·해상도 제외). `stale`은 `needs_review`일 때 달라진 항목(`character`/`outfit`) 목록이다.
-- `POST /v1/outfits/{id}/reference-set/confirm` — `Idempotency-Key`와 `{full_image_id,face_image_id}`. 두 이미지는 해당 의상의 참조 샘플 Task(같은 Seed 쌍)의 생성 완료 이미지여야 하며, PNG를 우선 권장한다(강제하지 않음). 새 revision을 만들고 이전 확정 세트는 보존한다. 신규 201/동일 키 200.
+- `GET /v1/outfits/{id}/reference-set` → `{status,set,stale}`. `set`은 없으면 `null`이며, 있으면 `{id,outfit_id,revision,character_revision,outfit_revision,full:{core_image_id,generation_image_id,sha256},face:{...},seed,face_seed,settings_summary,confirmed_at}`이다. `seed`는 전신 이미지가 나온 참조 샘플 쌍의 Seed, `face_seed`는 얼굴 이미지가 나온 쌍의 Seed다(둘이 같은 쌍이면 값도 같다). `settings_summary`는 `{diffusion_model,text_encoder,common_fragments:[{id,revision}],positive_quality,loras}`다(sampler·steps·cfg·해상도 제외). `stale`은 `needs_review`일 때 달라진 항목(`character`/`outfit`) 목록이다.
+- `POST /v1/outfits/{id}/reference-set/confirm` — `Idempotency-Key`와 `{full_image_id,face_image_id}`. 두 이미지는 해당 의상의 참조 샘플 Task의 생성 완료 이미지여야 한다. **[구현, 2026-09-24]** 전신·얼굴은 서로 다른 샘플 쌍(다른 Seed)에서 골라도 된다. 대신 두 이미지를 만든 생성 설정 요약(`_settings_summary`: 모델, 텍스트 인코더, 공통 조각 id·revision, 품질 Positive, LoRA)이 일치해야 하며, 다르면 409 `CORE_REFERENCE_IMAGE_INVALID`와 달라진 필드명을 담은 한국어 메시지(예: "전신·얼굴 참조 이미지의 생성 설정이 서로 다릅니다: 공통 조각")를 반환한다. PNG를 우선 권장한다(강제하지 않음). 새 revision을 만들고 이전 확정 세트는 보존한다. 신규 201/동일 키 200.
 - `POST /v1/outfits/{id}/reference-set/reconfirm` — `Idempotency-Key`와 `{revision}`(현재 세트 revision). "변경 확인 후 유지": 이미지를 바꾸지 않고 현재 캐릭터·의상 revision으로 다시 확정한다. revision 불일치는 409 `CORE_REVISION_CONFLICT`.
 - `GET /v1/outfits/{id}/reference-set/revisions` — `{items,limit,offset,total}`, 최신 revision부터.
 
