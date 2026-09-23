@@ -362,3 +362,39 @@ class ServicesReadinessTests(unittest.TestCase):
                     self.assertEqual(asyncio.run(item.is_ready()), expected, status)
         finally:
             temp.directory.cleanup()
+
+
+class ServicesBridgeEnvTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = TempPanel()
+        self.item = self.temp.panel.items["services"]
+        self.token_file = self.temp.root / ".atelierx" / "discord" / "bridge-token.txt"
+
+    def tearDown(self):
+        self.temp.directory.cleanup()
+
+    def test_bridge_env_reads_token_file_and_default_planner_key(self):
+        self.token_file.parent.mkdir(parents=True, exist_ok=True)
+        self.token_file.write_text("bridge-secret\n", encoding="utf-8")
+        with mock.patch.dict("os.environ", {}, clear=False):
+            for name in ("ATELIERX_DISCORD_BRIDGE_TOKEN", "ATELIERX_PLANNER_API_KEY"):
+                __import__("os").environ.pop(name, None)
+            env = self.item.bridge_env()
+        self.assertEqual(env, {"ATELIERX_DISCORD_BRIDGE_TOKEN": "bridge-secret", "ATELIERX_PLANNER_API_KEY": "lm-studio"})
+
+    def test_existing_environment_wins_and_missing_file_is_explained(self):
+        with mock.patch.dict("os.environ", {"ATELIERX_DISCORD_BRIDGE_TOKEN": "from-env", "ATELIERX_PLANNER_API_KEY": "k"}):
+            self.assertEqual(self.item.bridge_env(), {})
+        with mock.patch.dict("os.environ", {"ATELIERX_PLANNER_API_KEY": "k"}):
+            __import__("os").environ.pop("ATELIERX_DISCORD_BRIDGE_TOKEN", None)
+            with self.assertRaises(OperationError) as caught:
+                self.item.bridge_env()
+        self.assertIn("bridge-token.txt", caught.exception.message)
+        self.assertNotIn("from-env", caught.exception.message)
+
+    def test_immediate_exit_reports_last_log_line(self):
+        from atelierx.control.items import last_log_line
+        log = self.temp.root / "x.log"
+        log.write_text("[launcher] starting\n[launcher] Bridge and Core token environment variables are required\n\n", encoding="utf-8")
+        self.assertEqual(last_log_line(log), "[launcher] Bridge and Core token environment variables are required")
+        self.assertEqual(last_log_line(self.temp.root / "missing.log"), "")

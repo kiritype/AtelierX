@@ -24,6 +24,17 @@ class OperationError(Exception):
         self.message, self.active_work = message, active_work
 
 
+def last_log_line(path, limit=200) -> str:
+    try:
+        with open(path, "rb") as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - 8192))
+            lines = [line.strip() for line in stream.read().decode("utf-8", "replace").splitlines() if line.strip()]
+    except OSError:
+        return ""
+    return lines[-1][:limit] if lines else ""
+
+
 def comfyui_args(launch_args) -> list[str]:
     """Stability Matrix LaunchArgs -> argv, always forcing loopback-only --listen and port 8188."""
     result = []
@@ -196,7 +207,8 @@ class ProcessItem(Item):
         await asyncio.sleep(check_after)
         if process.poll() is not None:
             self.save_record(None)
-            raise OperationError(f"{self.label} 프로세스가 바로 종료되었습니다(코드 {process.returncode}). 로그를 확인하세요.")
+            reason = last_log_line(log)
+            raise OperationError(f"{self.label} 프로세스가 바로 종료되었습니다(코드 {process.returncode})" + (f": {reason}" if reason else ". 로그를 확인하세요."))
         return record
 
     async def wait_exit(self, pid, create_time, timeout) -> bool:
@@ -256,13 +268,32 @@ class ServicesItem(ProcessItem):
         if procs.port_open(self.port()):
             raise OperationError(f"{self.port()} 포트가 이미 사용 중입니다(외부 실행). 새로 시작하지 않습니다.")
         options = self.current_options()
+        env = {"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"}
         if options["discord_bridge"]:
             for key in ("standalone_config", "discord_bridge_config"):
                 if not self.paths.resolve(self.settings[key]).is_file():
                     raise OperationError("Discord Bridge 설정 파일이 없습니다: " + key)
-        record = await self.spawn(self.command(options), self.paths.repo, {"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"})
+            env.update(self.bridge_env())
+        record = await self.spawn(self.command(options), self.paths.repo, env)
         record["options"] = options
         self.save_record(record)
+
+    def bridge_env(self) -> dict:
+        env = {}
+        for name, value in (self.settings.get("bridge_env") or {}).items():
+            if not os.environ.get(name) and isinstance(value, str):
+                env[name] = value
+        for name, file in (self.settings.get("bridge_env_files") or {}).items():
+            if os.environ.get(name):
+                continue
+            try:
+                value = self.paths.resolve(file).read_text(encoding="utf-8-sig").strip()
+            except OSError:
+                value = ""
+            if not value:
+                raise OperationError(f"Discord Bridge에 필요한 {name} 값을 읽을 파일이 없거나 비어 있습니다: {file}")
+            env[name] = value
+        return env
 
     async def is_ready(self):
         # Core answers 401 or 403 without credentials depending on its auth config; any non-5xx reply means it is serving.

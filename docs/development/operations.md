@@ -136,6 +136,8 @@ scripts\start_control_panel.bat          # 제어판 실행 후 기본 브라우
 - 로그: 서비스·ComfyUI·LM Studio는 `.atelierx/control/logs/<항목>-<UTC시각>.log`, Tunnel은 기존 `.atelierx/cloudflare/tunnel-*.log`. 화면에서 최근 200줄을 본다. 로그는 제어판 화면에만 보이며 Frontend로 전달하지 않는다.
 - 의존성 점검(읽기 전용, 약 30초 캐시): ComfyUI 응답, AtelierX Node 등록(`/object_info`), Anima Node 선택 목록, `lms` 설치와 `gpu-config.json`의 모델 존재(`lms ls`는 앱·서버를 깨우므로 LM Studio 서버가 이미 켜져 있을 때만 확인), cloudflared·Tunnel token 파일 존재(내용은 읽지 않음), Validation·GPU 설정 파일 존재, 8180–8192·1234 포트 사용 주체.
 - 보안: `127.0.0.1`에만 바인딩한다. 모든 `/api/*`는 Host가 `127.0.0.1:<포트>`/`localhost:<포트>`여야 하고, 변경 요청은 `X-AtelierX-Control: 1` 헤더와 같은 origin(Origin이 있을 때)을 요구한다. Core용 `GET /status`는 `control/token.txt` Bearer가 필요하며 상태·의존성 요약만 반환한다(로그·명령줄·비밀값 없음).
+- Discord Bridge 시작 옵션을 켜면 제어판이 서비스 프로세스에만 `ATELIERX_DISCORD_BRIDGE_TOKEN`(기본 `.atelierx/discord/bridge-token.txt`에서 읽음)과 `ATELIERX_PLANNER_API_KEY`(기본 LM Studio 값 `lm-studio`)를 넣는다. 제어판 환경에 같은 이름의 값이 이미 있으면 그 값을 쓴다. 값은 로그·화면에 남기지 않으며, 파일이 없거나 비어 있으면 시작 전에 이유를 표시한다. 대응 관계는 `control/settings.json`의 `services.bridge_env_files`·`services.bridge_env`에서 바꾼다.
+- 서비스가 시작 직후 종료되면 로그의 마지막 줄을 오류와 함께 표시한다.
 - 설정 파일 `control/settings.json`의 경로 값(`comfyui.stability_matrix_settings`, `comfyui.root`, `lmstudio.lms`, `tunnel.cloudflared`, `services.python`, Bridge 설정 경로)은 직접 편집할 수 있다. 화면에서는 자동 켜기와 서비스 시작 옵션만 바꾼다.
 - 실제 확인(2026-09-23): 제어판으로 ComfyUI를 켜면 약 25초 후 준비되며, AtelierX Node 9개·Impact Pack이 등록되고 Anima·Upscale 모델 목록이 `C:\StabilityMatrix\Models` 파일과 일치했다(모델 경로는 ComfyUI 폴더의 `extra_model_paths.yaml`을 ComfyUI가 직접 읽으므로 실행 방식과 무관). 서비스 묶음 시작, Core 경유 운영 현황, 제어판 재시작 후 ComfyUI·서비스 재인식, 외부 실행 LM Studio 종료 거부, 서비스 안전 종료(활성 작업 0 확인)·ComfyUI 종료를 확인했다. 제어판을 통한 Tunnel·LM Studio 켜기/끄기와 자동 켜기·로그인 바로가기는 실제 환경에서 아직 확인하지 않았다.
 
