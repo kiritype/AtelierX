@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 import json
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 
@@ -33,11 +32,11 @@ class FragmentStoreTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_revision_snapshot_archive_and_reopen(self):
-        created = self.fragments.create("Friendly pose", "smiling, waving", {"upper": True, "lower": False})
+        created = self.fragments.create("Friendly pose", "smiling, waving", {"upper": True, "lower": False}, number="1")
         frozen = self.fragments.snapshot({"id": created["id"], "revision": 1})
         revised = self.fragments.update(created["id"], 1, {"body": "surprised, waving"})
         self.assertEqual(revised["revision"], 2)
-        self.assertEqual(frozen, {"id": created["id"], "revision": 1, "body": "smiling, waving", "include": {"upper": True, "lower": False}})
+        self.assertEqual(frozen, {"id": created["id"], "revision": 1, "number": "1", "body": "smiling, waving", "include": {"upper": True, "lower": False}})
         self.assertEqual([entry["revision"] for entry in self.fragments.history(created["id"], 50, 0)], [2, 1])
         with self.assertRaisesRegex(ApiError, "refresh preview"):
             self.fragments.snapshot({"id": created["id"], "revision": 1})
@@ -51,49 +50,119 @@ class FragmentStoreTests(unittest.TestCase):
 
     def test_rejects_invalid_documents_and_optimistic_conflict(self):
         with self.assertRaisesRegex(ApiError, "include requires"):
-            self.fragments.create("Bad", "body", {"appearance": True, "upper": True, "lower": True})
-        created = self.fragments.create("Good", "body", {"upper": True, "lower": True})
+            self.fragments.create("Bad", "body", {"appearance": True, "upper": True, "lower": True}, number="1")
+        created = self.fragments.create("Good", "body", {"upper": True, "lower": True}, number="1")
         with self.assertRaisesRegex(ApiError, "refresh before editing"):
             self.fragments.update(created["id"], 2, {"name": "stale"})
         with self.assertRaisesRegex(ApiError, "supported changes"):
             self.fragments.update(created["id"], 1, {"appearance": True})
 
+    def test_hands_include_is_optional_and_revisioned(self):
+        legacy = self.fragments.create("Legacy", "pose", {"upper": True, "lower": True}, number="1")
+        self.assertNotIn("hands", legacy["include"])
+        modern = self.fragments.create("Modern", "pose", {"upper": True, "lower": True, "accessories": True, "hands": False}, number="2")
+        self.assertEqual(self.fragments.snapshot({"id": modern["id"], "revision": 1})["include"]["hands"], False)
+        changed = self.fragments.update(legacy["id"], 1, {"include": {"upper": True, "lower": True, "hands": False}})
+        self.assertEqual(changed["include"], {"upper": True, "lower": True, "hands": False})
+        with self.assertRaisesRegex(ApiError, "include requires"):
+            self.fragments.create("Bad", "pose", {"upper": True, "lower": True, "hands": "yes"}, number="3")
+
     def test_common_flag_is_revisioned_without_rewriting_older_history(self):
         created = self.fragments.create("Lighting", "warm rim light", {"upper": False, "lower": False}, common=True)
         self.assertTrue(created["common"])
+        self.assertIsNone(created["number"])
         self.assertTrue(self.fragments.snapshot({"id": created["id"], "revision": 1})["common"])
-        revised = self.fragments.update(created["id"], 1, {"common": False})
-        self.assertFalse(revised["common"])
+        with self.assertRaises(ApiError) as missing:
+            self.fragments.update(created["id"], 1, {"common": False})
+        self.assertEqual(missing.exception.code, "CORE_FRAGMENT_NUMBER_REQUIRED")
+        revised = self.fragments.update(created["id"], 1, {"common": False, "number": "L-1"})
+        self.assertEqual((revised["common"], revised["number"]), (False, "L-1"))
         self.assertTrue(self.fragments.history(created["id"], 10, 0)[1]["common"])
+        common_again = self.fragments.update(created["id"], 2, {"common": True})
+        self.assertIsNone(common_again["number"])
+
+    def test_user_numbers_are_validated_editable_and_may_repeat(self):
+        for bad in ("", "   ", "a" * 33, "1/2", "a:b", "x?", "end.", "CON", "com1", "a  b", "tab\tx", "bell\x07", 7):
+            with self.assertRaises(ApiError, msg=repr(bad)) as caught:
+                self.fragments.create("Bad", "body", {"upper": True, "lower": True}, number=bad)
+            self.assertEqual(caught.exception.code, "CORE_FRAGMENT_NUMBER_INVALID")
+        with self.assertRaises(ApiError) as missing:
+            self.fragments.create("Missing", "body", {"upper": True, "lower": True})
+        self.assertEqual(missing.exception.code, "CORE_FRAGMENT_NUMBER_REQUIRED")
+        with self.assertRaises(ApiError) as common_number:
+            self.fragments.create("Common", "body", {"upper": True, "lower": True}, common=True, number="1")
+        self.assertEqual(common_number.exception.code, "CORE_FRAGMENT_NUMBER_INVALID")
+        first = self.fragments.create("First", "one", {"upper": True, "lower": True}, number=" 표정-01 ")
+        self.assertEqual(first["number"], "표정-01")
+        second = self.fragments.create("Second", "two", {"upper": True, "lower": True}, number="표정-01")
+        self.assertEqual(self.fragments.warnings(second), [{"code": "duplicate_number", "number": "표정-01", "fragment_ids": [first["id"]]}])
+        renumbered = self.fragments.update(second["id"], 1, {"number": "A2"})
+        self.assertEqual((renumbered["number"], renumbered["revision"]), ("A2", 2))
+        self.assertEqual(self.fragments.history(second["id"], 10, 0)[1]["number"], "표정-01")
+        self.assertEqual(self.fragments.warnings(renumbered), [])
+        third = self.fragments.create("Third", "three", {"upper": True, "lower": True}, number="a2")
+        self.assertEqual(self.fragments.warnings(third)[0]["fragment_ids"], [second["id"]])
+        self.fragments.update(renumbered["id"], 2, {"archived": True})
+        self.assertEqual(self.fragments.warnings(third), [])
+        check = self.fragments.number_check("A2", exclude_id=third["id"])
+        self.assertEqual(check, {"number": "A2", "duplicates": [{"id": second["id"], "number": "A2", "name": "Second", "archived": True}]})
+        self.assertEqual(self.fragments.number_check("zzz")["duplicates"], [])
 
     def test_category_filters_archive_rules_and_visible_numbers(self):
         poses = self.fragments.create_category("Poses")
-        first = self.fragments.create("Standing", "standing", {"upper": True, "lower": True}, poses["id"])
-        second = self.fragments.create("No category", "sitting", {"upper": True, "lower": False})
-        self.assertEqual((first["number"], second["number"], second["category_id"]), (1, 2, None))
+        first = self.fragments.create("Standing", "standing", {"upper": True, "lower": True}, poses["id"], number="10")
+        second = self.fragments.create("No category", "sitting", {"upper": True, "lower": False}, number="2")
+        named = self.fragments.create("Named", "kneeling", {"upper": True, "lower": False}, number="B-1")
+        self.assertEqual((first["number"], second["number"], second["category_id"]), ("10", "2", None))
+        self.assertEqual([item["number"] for item in self.fragments.list(50, 0)["items"]], ["2", "10", "B-1"])
         self.assertEqual(self.fragments.list(50, 0, category_id=poses["id"])["total"], 1)
-        self.assertEqual(self.fragments.list(50, 0, category_id="uncategorized")["items"][0]["id"], second["id"])
+        self.assertEqual(self.fragments.list(50, 0, category_id="uncategorized")["total"], 2)
         self.assertEqual(self.fragments.list(50, 0, search="stand")["items"][0]["id"], first["id"])
-        self.assertEqual(self.fragments.list(50, 0, search="#0001")["items"][0]["id"], first["id"])
-        with self.assertRaisesRegex(ApiError, "SQLite integer"):
-            self.fragments.list(50, 0, search="9" * 200)
+        self.assertEqual(self.fragments.list(50, 0, search="#10")["items"][0]["id"], first["id"])
+        self.assertEqual([item["id"] for item in self.fragments.list(50, 0, search="b-1")["items"]], [named["id"]])
+        self.assertEqual(self.fragments.list(50, 0, search="9" * 200)["total"], 0)
         archived = self.fragments.update_category(poses["id"], 1, {"archived": True})
         self.assertTrue(archived["archived"])
         self.assertEqual(self.fragments.get(first["id"])["category_id"], poses["id"])
         self.fragments.update(first["id"], 1, {"category_id": poses["id"], "name": "Standing pose"})
         with self.assertRaisesRegex(ApiError, "Archived prompt fragment category"):
-            self.fragments.create("Blocked", "blocked", {"upper": True, "lower": True}, poses["id"])
-        self.fragments.update(first["id"], 2, {"body": "still standing"})
-        self.fragments.update(second["id"], 1, {"archived": True})
-        third = self.fragments.create("Later", "walking", {"upper": True, "lower": True})
-        self.assertEqual(third["number"], 3)
+            self.fragments.create("Blocked", "blocked", {"upper": True, "lower": True}, poses["id"], number="3")
+
+    def test_integer_unique_numbers_migrate_to_editable_text_without_rewriting_history(self):
         self.db.close()
         self.db = sqlite3.connect(self.path)
+        self.db.executescript("""
+            DROP TABLE prompt_fragment_revisions;
+            DROP TABLE prompt_fragments;
+            CREATE TABLE prompt_fragments (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, archived INTEGER NOT NULL, document TEXT NOT NULL, number INTEGER, category_id TEXT);
+            CREATE TABLE prompt_fragment_revisions (fragment_id TEXT NOT NULL, revision INTEGER NOT NULL, document TEXT NOT NULL, PRIMARY KEY(fragment_id, revision));
+            CREATE TABLE prompt_fragment_number_sequence (name TEXT PRIMARY KEY, next_number INTEGER NOT NULL);
+            INSERT INTO prompt_fragment_number_sequence VALUES('global', 14);
+            CREATE UNIQUE INDEX prompt_fragments_number_unique ON prompt_fragments(number);
+            CREATE INDEX prompt_fragments_category_number ON prompt_fragments(category_id, number);
+        """)
+        base = {"include": {"upper": True, "lower": True}, "revision": 1, "archived": False, "category_id": None}
+        variant = dict(base, id="v-id", name="Variant", body="one", number=12, created_at=10, updated_at=10)
+        common = dict(base, id="c-id", name="Common", body="light", number=13, common=True, created_at=20, updated_at=20)
+        for document in (variant, common):
+            encoded = json.dumps(document, separators=(",", ":"), sort_keys=True)
+            self.db.execute("INSERT INTO prompt_fragments VALUES(?,?,?,?,?,?)", (document["id"], 1, 0, encoded, document["number"], None))
+            self.db.execute("INSERT INTO prompt_fragment_revisions VALUES(?,?,?)", (document["id"], 1, encoded))
+        self.db.commit()
         self.fragments = CoreFragments(self.db)
-        fourth = self.fragments.create("After reopen", "running", {"upper": True, "lower": True})
-        self.assertEqual(fourth["number"], 4)
+        columns = {row[1]: row[2] for row in self.db.execute("PRAGMA table_info(prompt_fragments)")}
+        self.assertEqual(columns["number"], "TEXT")
+        self.assertFalse([row for row in self.db.execute("PRAGMA index_list(prompt_fragments)") if row[2] and not row[1].startswith("sqlite_autoindex")])
+        self.assertEqual(self.fragments.get("v-id")["number"], "12")
+        self.assertIsNone(self.fragments.get("c-id")["number"])
+        self.assertEqual(self.db.execute("SELECT number FROM prompt_fragments WHERE id='v-id'").fetchone()[0], "12")
+        self.assertEqual(self.fragments.history("v-id", 10, 0)[0], variant)
+        duplicate = self.fragments.create("Again", "two", {"upper": True, "lower": True}, number="12")
+        self.assertEqual(self.fragments.warnings(duplicate)[0]["fragment_ids"], ["v-id"])
+        self.fragments = CoreFragments(self.db)
+        self.assertEqual((self.fragments.get("v-id")["number"], self.fragments.get(duplicate["id"])["number"]), ("12", "12"))
 
-    def test_legacy_migration_assigns_stable_numbers_without_rewriting_history(self):
+    def test_pre_number_documents_receive_stable_text_numbers(self):
         self.db.close()
         self.db = sqlite3.connect(self.path)
         self.db.executescript("""
@@ -101,7 +170,6 @@ class FragmentStoreTests(unittest.TestCase):
             DROP TABLE prompt_fragments;
             DROP TABLE prompt_fragment_category_revisions;
             DROP TABLE prompt_fragment_categories;
-            DROP TABLE prompt_fragment_number_sequence;
             CREATE TABLE prompt_fragments (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, archived INTEGER NOT NULL, document TEXT NOT NULL);
             CREATE TABLE prompt_fragment_revisions (fragment_id TEXT NOT NULL, revision INTEGER NOT NULL, document TEXT NOT NULL, PRIMARY KEY(fragment_id, revision));
         """)
@@ -113,36 +181,10 @@ class FragmentStoreTests(unittest.TestCase):
             self.db.execute("INSERT INTO prompt_fragment_revisions VALUES(?,?,?)", (document["id"], 1, encoded))
         self.db.commit()
         self.fragments = CoreFragments(self.db)
-        self.assertEqual((self.fragments.get("z-id")["number"], self.fragments.get("a-id")["number"]), (1, 2))
+        self.assertEqual((self.fragments.get("z-id")["number"], self.fragments.get("a-id")["number"]), ("1", "2"))
         self.assertEqual(self.fragments.history("z-id", 10, 0)[0], older)
         self.fragments = CoreFragments(self.db)
-        self.assertEqual(self.fragments.get("z-id")["number"], 1)
-
-    def test_concurrent_connections_allocate_distinct_numbers(self):
-        self.db.close()
-        ready = threading.Barrier(2)
-        numbers, errors = [], []
-        lock = threading.Lock()
-
-        def create_from_connection(name):
-            connection = sqlite3.connect(self.path, timeout=5)
-            try:
-                fragments = CoreFragments(connection)
-                ready.wait()
-                result = fragments.create(name, name, {"upper": True, "lower": True})
-                with lock:
-                    numbers.append(result["number"])
-            except Exception as error:  # surface worker failures in the test process
-                with lock:
-                    errors.append(error)
-            finally:
-                connection.close()
-
-        workers = [threading.Thread(target=create_from_connection, args=(name,)) for name in ("one", "two")]
-        for worker in workers: worker.start()
-        for worker in workers: worker.join()
-        self.assertEqual(errors, [])
-        self.assertEqual(sorted(numbers), [1, 2])
+        self.assertEqual(self.fragments.get("z-id")["number"], "1")
 
 
 class FragmentPreviewTests(unittest.TestCase):
@@ -159,7 +201,7 @@ class FragmentPreviewTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_fragment_composes_and_freezes_body_without_changing_legacy_requests(self):
-        fragment = self.core.fragments.create("Reaction", "surprised smile", {"upper": True, "lower": False})
+        fragment = self.core.fragments.create("Reaction", "surprised smile", {"upper": True, "lower": False}, number="7")
         request = {"group_id": self.group["id"], "fragment": {"id": fragment["id"], "revision": 1}, "generation_inputs": GENERATION}
         preview = self.core.preview(request)
         snapshot = preview["snapshot"]
@@ -167,7 +209,7 @@ class FragmentPreviewTests(unittest.TestCase):
         self.assertIn("silver hair", snapshot["generation_inputs"]["positive_prompt"])
         self.assertIn("blue jacket", snapshot["generation_inputs"]["positive_prompt"])
         self.assertNotIn("black boots", snapshot["generation_inputs"]["positive_prompt"])
-        self.assertEqual(snapshot["fragment"], {"id": fragment["id"], "revision": 1, "body": "surprised smile", "include": {"upper": True, "lower": False}})
+        self.assertEqual(snapshot["fragment"], {"id": fragment["id"], "revision": 1, "number": "7", "body": "surprised smile", "include": {"upper": True, "lower": False}})
         self.core.fragments.update(fragment["id"], 1, {"body": "calm smile"})
         self.assertEqual(snapshot["fragment"]["body"], "surprised smile")
         with self.assertRaisesRegex(ApiError, "refresh preview"):
@@ -198,10 +240,11 @@ class FragmentRestTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_authenticated_crud_and_revision_history(self):
         self.assertEqual((await self.client.get("/v1/prompt-fragments")).status, 401)
-        status, created = await self.request("POST", "/v1/prompt-fragments", {"name": "Scene", "body": "at a cafe", "include": {"upper": False, "lower": True}})
-        self.assertEqual(status, 201)
+        status, created = await self.request("POST", "/v1/prompt-fragments", {"name": "Scene", "number": "S1", "body": "at a cafe", "include": {"upper": False, "lower": True}})
+        self.assertEqual((status, created["warnings"]), (201, []))
         status, listed = await self.request("GET", "/v1/prompt-fragments?archived=false")
         self.assertEqual((status, listed["items"][0]["id"]), (200, created["id"]))
+        self.assertNotIn("warnings", listed["items"][0])
         _, work = await self.request("POST", "/v1/works", {"name": "work"})
         _, character = await self.request("POST", "/v1/characters", {"name": "character", "parent_id": work["id"]})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "outfit", "parent_id": character["id"], "components": {"appearance": "hair", "upper": "shirt", "lower": "boots"}})
@@ -216,6 +259,26 @@ class FragmentRestTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.request("GET", "/v1/prompt-fragments?archived=false"))[1]["items"], [])
         status, history = await self.request("GET", "/v1/prompt-fragments/" + created["id"] + "/revisions")
         self.assertEqual((status, [item["revision"] for item in history["items"]]), (200, [2, 1]))
+
+    async def test_number_warnings_patch_and_number_check_endpoint(self):
+        include = {"upper": True, "lower": True}
+        _, first = await self.request("POST", "/v1/prompt-fragments", {"name": "A", "number": "12", "body": "a", "include": include})
+        status, second = await self.request("POST", "/v1/prompt-fragments", {"name": "B", "number": "12", "body": "b", "include": include})
+        self.assertEqual((status, second["warnings"]), (201, [{"code": "duplicate_number", "number": "12", "fragment_ids": [first["id"]]}]))
+        status, missing = await self.request("POST", "/v1/prompt-fragments", {"name": "C", "body": "c", "include": include})
+        self.assertEqual((status, missing["error"]["code"]), (400, "CORE_FRAGMENT_NUMBER_REQUIRED"))
+        status, bad = await self.request("POST", "/v1/prompt-fragments", {"name": "C", "number": "a|b", "body": "c", "include": include})
+        self.assertEqual((status, bad["error"]["code"]), (400, "CORE_FRAGMENT_NUMBER_INVALID"))
+        status, check = await self.request("GET", "/v1/prompt-fragments/number-check?number=12&exclude_id=" + second["id"])
+        self.assertEqual((status, check), (200, {"number": "12", "duplicates": [{"id": first["id"], "number": "12", "name": "A", "archived": False}]}))
+        status, invalid = await self.request("GET", "/v1/prompt-fragments/number-check?number=CON")
+        self.assertEqual((status, invalid["error"]["code"]), (400, "CORE_FRAGMENT_NUMBER_INVALID"))
+        status, renumbered = await self.request("PATCH", "/v1/prompt-fragments/" + second["id"], {"revision": 1, "number": "13"})
+        self.assertEqual((status, renumbered["number"], renumbered["revision"], renumbered["warnings"]), (200, "13", 2, []))
+        status, clash = await self.request("PATCH", "/v1/prompt-fragments/" + first["id"], {"revision": 1, "number": "13"})
+        self.assertEqual((status, clash["warnings"][0]["fragment_ids"]), (200, [second["id"]]))
+        status, common = await self.request("POST", "/v1/prompt-fragments", {"name": "L", "number": "1", "common": True, "body": "light", "include": include})
+        self.assertEqual((status, common["error"]["code"]), (400, "CORE_FRAGMENT_NUMBER_INVALID"))
 
 
 if __name__ == "__main__":

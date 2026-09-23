@@ -94,8 +94,8 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         _, character = await self.request("POST", "/v1/characters", {"name": "character", "parent_id": work["id"], "appearance_prompt": "silver hair"})
         _, outfit = await self.request("POST", "/v1/outfits", {"name": "outfit", "parent_id": character["id"], "components": {"upper": "white shirt", "lower": "boots", "accessories": "gold brooch"}})
         _, group = await self.request("POST", "/v1/groups", {"outfit_id": outfit["id"]})
-        _, without = await self.request("POST", "/v1/prompt-fragments", {"name": "without", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": False}})
-        _, with_accessories = await self.request("POST", "/v1/prompt-fragments", {"name": "with", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": True}})
+        _, without = await self.request("POST", "/v1/prompt-fragments", {"name": "without", "number": "1", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": False}})
+        _, with_accessories = await self.request("POST", "/v1/prompt-fragments", {"name": "with", "number": "2", "body": "studio pose", "include": {"upper": True, "lower": False, "accessories": True}})
         base = {"group_id": group["id"], "generation_inputs": GEN}
         _, hidden = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": without["id"], "revision": 1}})
         _, shown = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": with_accessories["id"], "revision": 1}})
@@ -111,7 +111,7 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_common_fragments_are_frozen_and_do_not_change_variant_inclusion(self):
         _, _, _, group = await self.setup_group()
-        _, variant = await self.request("POST", "/v1/prompt-fragments", {"name": "variant", "body": "standing pose", "include": {"upper": True, "lower": False, "accessories": False}})
+        _, variant = await self.request("POST", "/v1/prompt-fragments", {"name": "variant", "number": "1", "body": "standing pose", "include": {"upper": True, "lower": False, "accessories": False}})
         _, common = await self.request("POST", "/v1/prompt-fragments", {"name": "common", "body": "warm rim light", "common": True, "include": {"upper": False, "lower": False, "accessories": False}})
         base = {"group_id": group["id"], "generation_inputs": GEN}
         status, preview = await self.request("POST", "/v1/prompts/preview", {**base, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": [{"id": common["id"], "revision": 1}]})
@@ -148,7 +148,7 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         status, preview = await self.request("POST", "/v1/prompts/preview", body)
         self.assertEqual(status, 200, preview)
         snapshot = preview["snapshot"]
-        self.assertEqual(snapshot["composition_version"], 3)
+        self.assertEqual(snapshot["composition_version"], 4)
         self.assertEqual(snapshot["prompt_inputs"]["framing_prompt"], body["framing_prompt"])
         prompt = snapshot["generation_inputs"]["positive_prompt"]
         self.assertIn(body["framing_prompt"], prompt)

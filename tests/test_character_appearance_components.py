@@ -27,8 +27,8 @@ class CharacterAppearanceContractTests(unittest.TestCase):
 
     def test_legacy_fragment_snapshot_stays_unchanged_while_new_include_accepts_accessories(self):
         fragments = CoreFragments(self.store.db)
-        legacy = fragments.create("legacy", "pose", {"upper": True, "lower": False})
-        modern = fragments.create("modern", "pose", {"upper": True, "lower": False, "accessories": False})
+        legacy = fragments.create("legacy", "pose", {"upper": True, "lower": False}, number="1")
+        modern = fragments.create("modern", "pose", {"upper": True, "lower": False, "accessories": False}, number="2")
         self.assertNotIn("accessories", fragments.snapshot({"id": legacy["id"], "revision": 1})["include"])
         self.assertEqual(fragments.snapshot({"id": modern["id"], "revision": 1})["include"]["accessories"], False)
 
@@ -43,7 +43,7 @@ class CharacterAppearanceContractTests(unittest.TestCase):
         migrated_outfit = self.store.entity(outfit["id"], "outfits")
         old_outfit = self.store.history(outfit["id"], "outfits", 10, 0)[-1]
         self.assertEqual(migrated_character["appearance_prompt"], "silver hair")
-        self.assertEqual(migrated_outfit["components"], {"upper": "shirt", "lower": "boots", "accessories": ""})
+        self.assertEqual(migrated_outfit["components"], {"upper": "shirt", "lower": "boots", "accessories": "", "hands": ""})
         self.assertEqual(old_outfit["components"]["appearance"], "silver hair")
 
     def test_conflicting_legacy_appearance_requires_an_explicit_candidate_resolution(self):

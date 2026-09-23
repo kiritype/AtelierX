@@ -42,6 +42,7 @@ class CorePostprocessApiTests(unittest.IsolatedAsyncioTestCase):
                    "requested_postprocess": body.get("postprocess", {}), "images": [{"image_id": "gen-source", "bytes": len(self.source),
                    "sha256": hashlib.sha256(self.source).hexdigest(), "media_type": "image/png"}], "error": None, "key": key}
             job["images"][0]["image_id"] = job_id + "-0"
+            self.source_inputs = body["inputs"]
             self.source_generation_image_id = job["images"][0]["image_id"]
             self.jobs[key] = job
             return web.json_response(public(job), status=202)
@@ -128,6 +129,8 @@ class CorePostprocessApiTests(unittest.IsolatedAsyncioTestCase):
         job = await self.wait(accepted["id"])
         self.assertEqual((job["source_image_id"], job["state"], job["source_sha256"]), (self.source_image_id, "completed", original["sha256"]))
         self.assertEqual(job["requested_postprocess"], body["postprocess"])
+        self.assertRegex(job["output_name"], r"^AtelierX/postprocess/\d{4}-\d{2}-\d{2}/" + self.source_image_id[:8] + "$")
+        self.assertEqual(self.posts[-1][1], {"postprocess": body["postprocess"], "output_name": job["output_name"]})
         status, duplicate = await self.request("POST", f"/v1/images/{self.source_image_id}/postprocess-jobs", body, "post")
         self.assertEqual((status, duplicate["id"]), (200, job["id"]))
         status, listed = await self.request("GET", f"/v1/postprocess-jobs?source_image_id={self.source_image_id}")

@@ -80,7 +80,8 @@ class CoreValidation:
             "type": "generation", "server_id": self.config.get("generation_server_id", "generation-local"),
             "image_id": image["generation_image_id"], "sha256": image["sha256"]},
             "positive_prompt": gen["positive_prompt"], "negative_prompt": gen["negative_prompt"],
-            "negative_sources": task["snapshot"].get("negative_sources", {"global": gen["negative_prompt"], "character": ""})},
+            "negative_sources": task["snapshot"].get("negative_sources", {"global": gen["negative_prompt"], "character": ""}),
+            **({"positive_check": copy.deepcopy(task["snapshot"]["positive_check"])} if isinstance(task["snapshot"].get("positive_check"), list) else {})},
             generation_attempt_id=task["id"], profile=profile, provider=provider,
             expected_output={"width": self.output_dimension(task, "width"), "height": self.output_dimension(task, "height"), "media_type": image["media_type"], "alpha": self.output_alpha(task)},
             generation_settings={key: gen[key] for key in ("seed", "steps", "cfg") if key in gen} or None)
