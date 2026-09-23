@@ -238,6 +238,10 @@ def list_images(core, query):
         grouped, group_run_id, reference_revision = _group_status(image["id"], statuses[group["id"]])
         if (single_filter is not None and single != single_filter) or (group_filter is not None and grouped != group_filter):
             continue
-        projected.append(_image_item(image, group, created_at, single, (latest.get(image["id"]) or {}).get("id"), grouped, group_run_id, reference_revision))
+        own = latest.get(image["id"])
+        shared = None if own else (image.get("validation") or {}).get("shared_from_image_id")
+        item = _image_item(image, group, created_at, single, (own or (image.get("validation") if shared else None) or {}).get("id"), grouped, group_run_id, reference_revision)
+        item["single_validation_shared_from_image_id"] = shared
+        projected.append(item)
     projected = _ordered(projected)
     return {"items": projected[offset:offset + limit], "limit": limit, "offset": offset, "total": len(projected)}

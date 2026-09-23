@@ -32,6 +32,8 @@
 
 ### 재생성(Core)
 - 재생성 정책·API는 [REST API](../api/rest-api.md)를 따른다.
+- [구현] ADR-0025 E: Core는 한 생성 시도의 PNG·WebP 중 대표 이미지(PNG 우선) 하나만 자동 단일 검증하고 결과를 다른 형식에 `shared_from_image_id`로 공유한다. Validation 요청 형식·평가 버전은 바뀌지 않는다. 사용자가 특정 이미지를 수동 재검증하면 그 이미지에만 적용된다.
+- [구현] ADR-0025 F: 불합격인데 유효한 제안이 없으면(D로 제안을 버린 경우 포함) Core가 상한 안에서 Seed만 새로 정해 자동 재생성한다(`change.kind=seed_only`). `error`는 자동 재생성하지 않는다. 상세는 [Core·Generation 현행 사양](core-generation.md).
 - [제한] 제안 변경값의 실제 개선 효과는 미평가. Prompt/모델/LoRA 자동 변경·묶음 기반 자동 재생성은 범위 밖.
 
 ### 묶음 일관성(현행 group evaluation_version=9)
