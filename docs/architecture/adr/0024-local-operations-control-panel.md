@@ -1,8 +1,8 @@
 # ADR-0024: 로컬 운영 제어판과 Frontend 운영 현황
 
-- 상태: Proposed
+- 상태: Accepted
 - 작성일: 2026-09-23
-- 확정일: 미확정
+- 확정일: 2026-09-23
 - Supersedes: 없음
 - Superseded by: 없음
 - 관련 요구사항 / ADR: [roadmap 2026-09-23 절](../../requirements/roadmap.md), [현행 정책 §4](../../policies.md), [로컬 실행·운영](../../development/operations.md), [ADR-0003](0003-generation-execution-and-queue.md), [ADR-0016](0016-validation-execution-and-gpu-sharing.md)
@@ -50,7 +50,7 @@ Frontend 현황 경로:
 
 ## 제안 / 결정
 
-Proposed. 대안 **B + F1**을 제안한다.
+2026-09-23 사용자 확정: 대안 **B + F1**을 채택한다. Generation·Validation·Bridge의 실행 중 개별 on/off 제외, 제어판 실행 ComfyUI가 Stability Matrix 화면에 보이지 않는 점, 실행기 패키지 이동과 종료 신호 처리 추가를 사용자가 확인했다.
 
 ### 프로세스 구조
 
@@ -79,8 +79,9 @@ Proposed. 대안 **B + F1**을 제안한다.
 ### 종료 안전 규칙
 
 - 제어판이 시작하고 기록과 일치하는 프로세스만 종료한다. 불일치하면 거부한다.
-- 서비스 묶음 종료 전 Core REST로 활성 작업(Task·계획·후처리·검증·묶음·GPU owner/waiting·Bridge 미전달)을 조회한다. 하나라도 있으면 종료를 거절하고 개수를 보여 준다. 강제 종료 버튼은 두지 않는다.
-- 종료 신호는 `CTRL_BREAK_EVENT`로 보내고, 실행기에 SIGBREAK를 SIGINT와 같은 안전 종료 경로로 처리하도록 추가한다. 실행기 자체의 활성 작업 검사도 유지한다(이중 확인).
+- 서비스 묶음은 활성 작업(Task·계획·후처리·검증·묶음·GPU owner/waiting·Generation/Validation Job·Bridge 미전달)이 하나라도 있으면 종료를 거절하고 개수를 보여 준다. 강제 종료 버튼은 두지 않는다.
+- 제어판의 서비스 묶음 종료 요청은 `.atelierx/control/`의 **종료 요청 파일**로 전달한다. 실행기는 기존 5초 상태 확인 주기에 요청을 읽어 Ctrl+C와 같은 안전 종료 경로로 처리하고, 수락 여부와 활성 작업 개수를 응답 파일에 남긴다. Windows 콘솔 신호는 제어판 재시작 뒤 이미 떠 있는 자식에게 전달되지 않기 때문이다(구현 보완, 2026-09-23).
+- 실행기는 SIGBREAK(`Ctrl+Break`)도 SIGINT와 같은 안전 종료 경로로 처리한다. 활성 작업 검사는 실행기 한 곳에서 수행해 기준을 하나로 유지한다.
 - ComfyUI 종료 전 `/queue`가 비어 있고 GPU owner가 없어야 한다. LM Studio 종료 전 `lms ps` idle과 GPU owner 없음을 확인한다.
 - 제어판은 모델 다운로드·설치, ComfyUI 큐 조작, DB 수정을 하지 않는다.
 
@@ -134,8 +135,8 @@ Proposed. 대안 **B + F1**을 제안한다.
 
 ## 문서 반영
 
-- [ ] overview 갱신
-- [ ] ADR 목록 및 backlog 갱신
-- [ ] 관련 요구사항 / 모듈 / 개발 문서 갱신 또는 해당 없음 기록
-- [ ] 기존 ADR 상태 및 supersede 관계 확인
-- [ ] 미결정 사항이 확정 내용에 섞이지 않았는지 확인
+- [x] overview 갱신
+- [x] ADR 목록 및 backlog 갱신
+- [x] 관련 요구사항 / 모듈 / 개발 문서 갱신 또는 해당 없음 기록
+- [x] 기존 ADR 상태 및 supersede 관계 확인
+- [x] 미결정 사항이 확정 내용에 섞이지 않았는지 확인
