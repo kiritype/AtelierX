@@ -136,6 +136,15 @@ items는 1..32개의 Task 입력이며 group_id는 상위 경로에서 상속하
 
 Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변경 요청의 `Origin`도 같을 때만 처리한다. Core는 `Cf-Access-Jwt-Assertion`의 RS256 signature를 issuer JWKS로 확인하고 issuer, audience, `exp`, `iat`, 허용 email을 검증한다. JWKS는 서버에서 제한된 캐시로만 조회한다. 설정이 없는 현재 Core에서는 인증된 GET이 `configured:false` 상태를 반환하고, Bearer 없는 요청은 기존 middleware의 401을 유지한다. 이 경로가 없는 구버전 Core는 인증된 조회에서 404를 반환한다.
 
+### 운영 제어판 현황 — ADR-0024
+
+`GET /v1/operations/status`는 기존 Core 인증(Bearer 또는 Access)을 요구하는 읽기 전용 경로다. Core는 `--operations-status-url`(loopback `http`만: `127.0.0.1`·`localhost`·`::1`)과 `--operations-token-file`로 받은 제어판에 요청마다 토큰 파일을 다시 읽어 `GET /status`를 2초 timeout, redirect 없이 조회한다. 토큰과 제어판 주소는 응답·로그에 넣지 않으며 응답은 `Cache-Control: no-store`다.
+
+- 성공: `{control_panel:"available",generated_at,items,dependencies}`. `items[]`는 `id`(`services|comfyui|lmstudio|tunnel`), `label`, `state`(`running|external|stopped|starting|stopping|error`), `managed`, `pid`, `started_at`, `ports`, `autostart`, `last_error`와 `services`에만 `options{generation,validation,discord_bridge}`를 둔다. `dependencies[]`는 `id`, `label`, `status`(`ok|warning|missing|unknown`), `detail`이다.
+- Core는 위 필드만 형식·열거값을 검사해 전달한다. 문자열은 300자(식별자·시각은 더 짧게)로 자르고, 알 수 없는 항목·필드·잘못된 값은 버린다. 제어판 JSON을 그대로 전달하지 않는다.
+- 실패: HTTP 200 `{control_panel:"unavailable",reason,items:[],dependencies:[]}`. `reason`은 `not_configured`(설정 없음·비loopback URL), `token_missing`, `unreachable`(연결 실패·timeout), `unauthorized`(제어판 401/403), `invalid_response`(그 외 상태·redirect·형식 오류)다.
+- 시작·종료·설정 변경·로그 조회 경로는 없다. 조작은 이 PC의 제어판에서만 한다.
+
 ## Core
 
 ### 경로 목록
@@ -145,6 +154,7 @@ Access 경로는 요청 host가 `public_origin`과 정확히 일치하고, 변�
 | Method | 경로 | 입력 / 응답 |
 |---|---|---|
 | GET | `/health` | 서비스 상태 |
+| GET | `/v1/operations/status` | 운영 제어판 현황(읽기 전용). 위 운영 제어판 현황 절 |
 | GET | `/v1/{kind}` | 선택 query `parent_id`, `limit`(기본 50, 1~200), `offset`(기본 0). `{items,limit,offset}` |
 | POST | `/v1/{kind}` | 아래 Entity 입력 → 201 Entity |
 | GET | `/v1/{kind}/{id}` | Entity |
