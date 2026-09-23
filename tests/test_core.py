@@ -345,6 +345,39 @@ class CoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.server.app[CORE].store.task(task["id"]), completed)
 
 
+    async def test_fragment_negatives_compose_after_character_in_selection_order(self):
+        _, character, _, group = await self.setup_group()
+        await self.request("PATCH", "/v1/settings", {"revision": 1, "negative": "low quality"})
+        await self.request("PATCH", "/v1/characters/" + character["id"], {"revision": 1, "negative_prompt": "beard"})
+        status, variant = await self.request("POST", "/v1/prompt-fragments", {"name": "variant", "number": "1", "body": "standing pose", "negative": "sitting", "include": {"upper": True, "lower": False}})
+        self.assertEqual((status, variant["negative"]), (201, "sitting"))
+        _, first = await self.request("POST", "/v1/prompt-fragments", {"name": "light", "body": "rim light", "common": True, "negative": "lens flare", "include": {"upper": False, "lower": False}})
+        _, empty = await self.request("POST", "/v1/prompt-fragments", {"name": "plain", "body": "soft focus", "common": True, "include": {"upper": False, "lower": False}})
+        _, second = await self.request("POST", "/v1/prompt-fragments", {"name": "bg", "body": "white background", "common": True, "negative": "text, logo", "include": {"upper": False, "lower": False}})
+        commons = [{"id": item["id"], "revision": 1} for item in (second, empty, first)]
+        base = {"group_id": group["id"], "generation_inputs": GEN, "fragment": {"id": variant["id"], "revision": 1}, "common_fragments": commons}
+        status, preview = await self.request("POST", "/v1/prompts/preview", base)
+        self.assertEqual(status, 200)
+        snapshot = preview["snapshot"]
+        self.assertEqual(snapshot["negative_sources"], {"global": "low quality", "character": "beard", "fragment": "text, logo, lens flare, sitting"})
+        self.assertEqual(snapshot["generation_inputs"]["negative_prompt"], "low quality, beard, text, logo, lens flare, sitting")
+        self.assertEqual(snapshot["fragment"]["negative"], "sitting")
+        self.assertNotIn("negative", snapshot["common_fragments"][1])
+        self.assertNotIn("sitting", snapshot["generation_inputs"]["positive_prompt"])
+        # Fragment Negatives never join the character forbidden-term conflict check.
+        _, overlap = await self.request("POST", "/v1/prompt-fragments", {"name": "overlap", "number": "2", "body": "standing pose", "negative": "standing pose", "include": {"upper": True, "lower": False}})
+        status, _ = await self.request("POST", "/v1/prompts/preview", dict(base, fragment={"id": overlap["id"], "revision": 1}))
+        self.assertEqual(status, 200)
+        # Only the per-image fragment Negative remains when commons have none.
+        _, variant_only = await self.request("POST", "/v1/prompts/preview", dict(base, common_fragments=[{"id": empty["id"], "revision": 1}]))
+        self.assertEqual(variant_only["snapshot"]["negative_sources"]["fragment"], "sitting")
+        # Without fragment Negatives the snapshot keeps its previous two-key shape.
+        _, legacy = await self.request("POST", "/v1/prompts/preview", self.payload(group))
+        self.assertEqual(legacy["snapshot"]["negative_sources"], {"global": "low quality", "character": "beard"})
+        status, task = await self.request("POST", "/v1/tasks", dict(base, preview_hash=preview["preview_hash"]), "fragment-negative")
+        self.assertIn(status, (200, 201, 202))
+        self.assertEqual(task["snapshot"]["negative_sources"]["fragment"], "text, logo, lens flare, sitting")
+
     async def test_character_negative_snapshot_conflicts_and_stale_preview(self):
         work, character, outfit, group = await self.setup_group()
         await self.request("PATCH", "/v1/settings", {"revision": 1, "negative": "low quality"})

@@ -26,12 +26,32 @@ test("fragment save body sends a string number only for per-image fragments", ()
   assert.equal(draftChanged(draft, {id: "a", revision: 2, number: "10", name: " Smile ", body: " smile ", include: {upper: true, lower: false, accessories: true, hands: true}}), false);
   draft.include.hands = false;
   assert.equal(draftChanged(draft, {id: "a", number: "10", name: " Smile ", body: " smile ", include: {upper: true, lower: false}}), true);
-  assert.deepEqual(fragmentSaveBody(draft), {name: "Smile", body: "smile", category_id: null, common: false, number: "10", include: {upper: true, lower: false, accessories: true, hands: false}});
+  assert.deepEqual(fragmentSaveBody(draft), {name: "Smile", body: "smile", negative: "", category_id: null, common: false, number: "10", include: {upper: true, lower: false, accessories: true, hands: false}});
   assert.equal(fragmentSaveBody({...draft, common: true}).number, null);
   assert.match(fragmentValidationError({...draft, number: "a/b"}), /문자/);
   assert.equal(fragmentValidationError({...draft, common: true, number: ""}), null);
   assert.equal(new URL(numberCheckPath("12 (a)", "frag-1"), "https://x.test").searchParams.get("number"), "12 (a)");
   assert.equal(new URL(numberCheckPath("12"), "https://x.test").searchParams.has("exclude_id"), false);
+});
+
+test("fragment Negative is optional, tracked as a change and sent for common and per-image fragments", () => {
+  const legacy = {id: "a", revision: 1, number: "1", name: "Pose", body: "pose", include: {upper: true, lower: true}};
+  const draft = fragmentDraft(legacy);
+  assert.equal(draft.negative, "");
+  assert.equal(draftChanged(draft, legacy), false);
+  assert.equal(draftChanged(draft, {...legacy, negative: ""}), false);
+  draft.negative = " hat, mask ";
+  assert.equal(draftChanged(draft, legacy), true);
+  assert.equal(fragmentSaveBody(draft).negative, "hat, mask");
+  const common = fragmentDraft({id: "c", revision: 3, number: null, name: "Light", body: "rim light", negative: "lens flare", common: true, include: {upper: false, lower: false}});
+  assert.equal(common.negative, "lens flare");
+  assert.deepEqual([fragmentSaveBody(common).negative, fragmentSaveBody(common).number], ["lens flare", null]);
+  common.negative = "";
+  assert.equal(fragmentSaveBody(common).negative, "");
+  const fresh = fragmentDraft();
+  assert.equal(draftChanged(fresh, null), false);
+  fresh.negative = "blur";
+  assert.equal(draftChanged(fresh, null), true);
 });
 
 test("duplicate number messages name the other fragments and surface save warnings", () => {

@@ -1,10 +1,17 @@
 # 전역 프롬프트 조각과 제작 계획 API
 
-## 2026-09-23 조각 Negative 사용자 결정 (미구현)
+## 2026-09-23 조각 Negative
 
-- 이미지별 조각과 공통 적용 조각 모두 선택적 Negative 본문을 가진다. 생성 Negative에는 전역·캐릭터 Negative와 함께 선택된 공통 조각·이미지별 조각의 Negative가 모두 들어간다.
-- 해상도는 조각에 두지 않고 제작 계획의 생성 설정이 정한다.
-- 필드명, 합성 순서, `negative_sources` 확장과 Validation 재현 검사, 조각 Negative의 검사 대상 여부는 구현 설계에서 정하고 이 절을 갱신한다.
+사용자 승인(2026-09-23). 이미지별 조각(`common=false`)과 공통 적용 조각(`common=true`) 모두 선택적 Negative를 갖는다.
+
+- **필드:** 조각 문서의 `negative`(문자열, 최대 20,000자). `POST /v1/prompt-fragments`와 `PATCH /v1/prompt-fragments/{id}`에서 선택적으로 보낸다. 문자열이 아니거나 길이를 넘으면 400 `CORE_FRAGMENT_INVALID`다. 공백만인 값·빈 값은 "없음"이며 문서에 키를 쓰지 않는다. PATCH에서 `negative`를 생략하면 기존 값을 유지하고, 빈 문자열을 보내면 지운다(새 revision 문서에서 키가 빠진다). Frontend는 앞뒤 공백을 제거해 항상 보낸다.
+- **과거 문서 호환:** 키가 없는 조각·revision 문서는 Negative가 빈 값인 것으로 해석한다. 기존 revision 이력은 다시 쓰지 않으며, Negative가 없는 조각의 새 문서·snapshot 바이트도 이전과 같다.
+- **snapshot:** 조각 snapshot은 Negative가 있을 때만 `negative`를 더한다(`{id, revision, body, include, number|common, negative?}`). 제작 계획·Task snapshot은 선택 당시 값을 고정한다.
+- **합성 순서:** 생성 Negative = 전역 설정 `negative` → 캐릭터 `negative_prompt` → 선택한 공통 적용 조각 Negative(지정 순서) → 이미지별 조각 Negative. 빈 항목은 건너뛰고 `", "`로 합친다. 해상도는 조각에 두지 않고 계획의 생성 설정이 정한다.
+- **`negative_sources`:** Task snapshot과 Validation 요청의 출처는 `{global, character}`에 조각 Negative가 있을 때만 `fragment` 키를 더한다. `fragment`는 공통 조각(지정 순서) → 이미지별 조각 Negative를 `", "`로 이미 합친 문자열이다. 조각 Negative가 없으면 키를 쓰지 않으므로 기존 snapshot·preview_hash는 그대로다. `composition_version`은 올리지 않는다.
+- **Validation 재현 규칙:** Validation은 `negative_sources`가 `{global, character}` 또는 `{global, character, fragment}`일 때만 받는다. 공백뿐인 항목을 뺀 global → character → fragment를 `", "`로 합친 값이 `negative_prompt`와 같아야 하며 다르면 400 `VAL_INVALID_INPUT`이다. 과거 요청(키 없음·출처 생략)은 기존 규칙 그대로 유효하다. ADR-0027의 `consistency` 출처(참조 배경 억제 문구, 생성 전용·검사 제외)를 구현할 때 이 허용 키와 재현 순서에 함께 추가한다.
+- **검사 제외:** 조각 Negative는 생성 전용이다. VLM Negative 검사 항목은 계속 `negative_sources.character`만으로 만든다. 캐릭터 금지 요소와 Positive의 충돌 검사(`CORE_PROMPT_CONFLICT`)도 캐릭터 Negative만 대상으로 하며, 조각 Negative에는 새 충돌 거절을 두지 않는다.
+- **화면:** 전역 조각 편집에서 이미지별·공통 조각 모두 "Negative (선택)" 입력을 제공하고 변경 여부를 추적한다. 목록에는 Negative가 있을 때 앞부분을 표시한다. 생성 준비·진행 화면은 Core가 합성한 전체 Negative를 그대로 보여준다.
 
 ## 2026-09-23 사용자 입력 조각 번호·손 포함 — ADR-0026
 
@@ -31,12 +38,12 @@ Positive는 전역 품질 → 캐릭터 외형 → 선택한 상의/하의/액�
 
 2026-09-22 공통 적용 확장: 조각의 선택적 `common` boolean은 기본 false(이미지별 생성)다. true이면 공통 적용 프롬프트이며 의상 포함 체크를 UI에서 숨긴다. 저장된 `include`는 보존하지만 공통 합성에는 사용하지 않는다. 기존 조각·과거 revision/snapshot은 자동 변환하지 않는다.
 
-Core preview/Task/제작 계획에 선택적 `common_fragments: [{id, revision}]`을 지정한다. 각 참조는 활성 공통 조각이어야 하고 중복을 허용하지 않는다. 이미지별 `fragment` 또는 계획의 `fragments`는 공통 조각을 받을 수 없다. 공통 본문은 지정 순서대로 전역 품질·외형·의상 뒤, 이미지별 조각 본문 앞에 포함되며 revision과 본문을 snapshot에 고정한다. 공통 적용은 장수를 늘리지 않으며 제작 계획에는 이미지별 조각을 적어도 하나 선택해야 한다. 상의/하의/액세서리 포함은 이미지별 조각에서 결정한다. Negative·검사·재생성 정책은 유지한다.
+Core preview/Task/제작 계획에 선택적 `common_fragments: [{id, revision}]`을 지정한다. 각 참조는 활성 공통 조각이어야 하고 중복을 허용하지 않는다. 이미지별 `fragment` 또는 계획의 `fragments`는 공통 조각을 받을 수 없다. 공통 본문은 지정 순서대로 전역 품질·외형·의상 뒤, 이미지별 조각 본문 앞에 포함되며 revision과 본문을 snapshot에 고정한다. 공통 적용은 장수를 늘리지 않으며 제작 계획에는 이미지별 조각을 적어도 하나 선택해야 한다. 상의/하의/액세서리 포함은 이미지별 조각에서 결정한다. Negative·검사·재생성 정책은 유지한다(조각 Negative는 2026-09-23 절로 확장).
 
 - `GET /v1/prompt-fragment-categories`: 사용자 관리 단일 단계 분류 목록을 `archived`, `limit`(최대 200), `offset`으로 조회한다. 응답은 `{items, total, limit, offset}`이다.
 - `POST /v1/prompt-fragment-categories`: `{name}`으로 분류를 만든다. `GET`/`PATCH /v1/prompt-fragment-categories/{id}`는 현재 분류 조회와 revision 기반 이름 변경·보관 처리를 제공한다. 분류는 `{id, name, revision, archived, created_at, updated_at}`이다.
 - `GET /v1/prompt-fragments`: `archived`, `category_id`, `q`, `limit`(최대 200), `offset`으로 조회하며 `{items, total, limit, offset}`을 반환한다. `category_id=uncategorized`는 미분류 조각만 뜻한다. `q` 검색 규칙은 위 ADR-0026 절을 따른다.
-- `POST /v1/prompt-fragments`: `{name, number, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)·`common`을 더할 수 있다. 공통 조각은 `number`를 보내지 않는다.
+- `POST /v1/prompt-fragments`: `{name, number, body, include: {upper: true, lower: false}}`에 선택적 `category_id`(또는 `null`)·`common`·`negative`(위 조각 Negative 절)를 더할 수 있다. 공통 조각은 `number`를 보내지 않는다.
 - `GET /v1/prompt-fragments/number-check`: 번호 중복 확인(위 절).
 - `GET /v1/prompt-fragments/{id}`: 현재 문서 조회.
 - `PATCH /v1/prompt-fragments/{id}`: 현재 `revision`과 변경 필드로 수정·보관 처리.

@@ -30,7 +30,7 @@ function field(labelText, control, hint = "") {
   return el("label", {class: "field", for: id}, [el("span", {text: labelText}), control, hint ? el("small", {class: "muted", text: hint}) : null]);
 }
 function input(value, oninput, attrs = {}) { return el("input", {type: "text", value: value ?? "", oninput: (event) => oninput(event.target.value), ...attrs}); }
-function textarea(value, oninput) { const control = el("textarea", {rows: "8", oninput: (event) => oninput(event.target.value)}); control.value = value ?? ""; return control; }
+function textarea(value, oninput, rows = "8") { const control = el("textarea", {rows, oninput: (event) => oninput(event.target.value)}); control.value = value ?? ""; return control; }
 
 export function initialFragmentState(state) {
   state.limit ||= 25; state.offset ||= 0; state.query ||= ""; state.categoryId ??= ""; state.showArchived ||= false;
@@ -54,22 +54,22 @@ export function prepareNewRouteState(state, routeId) {
 }
 const numberText = (value) => value === null || value === undefined ? "" : String(value);
 export function fragmentDraft(item = null) {
-  return item ? {id: item.id, revision: item.revision, number: numberText(item.number), name: item.name, body: item.body,
+  return item ? {id: item.id, revision: item.revision, number: numberText(item.number), name: item.name, body: item.body, negative: item.negative ?? "",
     category_id: item.category_id ?? null, common: Boolean(item.common), include: normalizeFragmentInclude(item.include)} :
-    {number: "", name: "", body: "", category_id: null, common: false, include: defaultFragmentInclude()};
+    {number: "", name: "", body: "", negative: "", category_id: null, common: false, include: defaultFragmentInclude()};
 }
 export function draftChanged(draft, item) {
   if (!draft) return false;
-  if (!item) return Boolean(draft.name || draft.body || draft.category_id || draft.number);
+  if (!item) return Boolean(draft.name || draft.body || draft.negative || draft.category_id || draft.number);
   const saved = normalizeFragmentInclude(item.include);
-  return draft.name !== item.name || draft.body !== item.body || (draft.category_id ?? null) !== (item.category_id ?? null) || Boolean(draft.common) !== Boolean(item.common) ||
+  return draft.name !== item.name || draft.body !== item.body || (draft.negative ?? "") !== (item.negative ?? "") || (draft.category_id ?? null) !== (item.category_id ?? null) || Boolean(draft.common) !== Boolean(item.common) ||
     (!draft.common && numberText(draft.number) !== numberText(item.number)) ||
     OUTFIT_PARTS.some((name) => Boolean(draft.include[name]) !== saved[name]);
 }
 export function fragmentSaveBody(draft) {
   const common = Boolean(draft.common);
   const include = normalizeFragmentInclude(draft.include);
-  return {name: String(draft.name).trim(), body: String(draft.body).trim(), category_id: draft.category_id || null, common,
+  return {name: String(draft.name).trim(), body: String(draft.body).trim(), negative: String(draft.negative ?? "").trim(), category_id: draft.category_id || null, common,
     number: common ? null : numberText(draft.number), include: {upper: include.upper, lower: include.lower, accessories: include.accessories, hands: include.hands}};
 }
 export function fragmentValidationError(draft) {
@@ -227,7 +227,7 @@ export async function mount(container, ctx) {
       el("ul", {class: "fragment-category-list"}, rows), categoryForm || button("+ 카테고리", () => { state.categoryEditor = {name: ""}; render(); }, {secondary: true})]);
   };
   const listPanel = () => {
-    const rows = state.fragments.map((item) => el("li", {class: `fragment-row${state.selected?.id === item.id ? " selected" : ""}`}, [button(item.common ? item.name : fragmentLabel(item), () => select(item, true), {secondary: true}), el("span", {class: "badge", text: item.common ? "공통 적용" : "이미지별"}), item.common ? null : el("small", {class: "muted", text: fragmentIncludeSummary(item.include)}), el("p", {class: "muted", text: String(item.body || "").slice(0, 120)})]));
+    const rows = state.fragments.map((item) => el("li", {class: `fragment-row${state.selected?.id === item.id ? " selected" : ""}`}, [button(item.common ? item.name : fragmentLabel(item), () => select(item, true), {secondary: true}), el("span", {class: "badge", text: item.common ? "공통 적용" : "이미지별"}), item.common ? null : el("small", {class: "muted", text: fragmentIncludeSummary(item.include)}), el("p", {class: "muted", text: String(item.body || "").slice(0, 120)}), item.negative ? el("p", {class: "muted", text: `Negative: ${String(item.negative).slice(0, 80)}`}) : null]));
     const from = state.total ? state.offset + 1 : 0;
     return el("section", {class: "fragment-list-panel panel"}, [el("h2", {text: "전역 조각"}),
       field("검색", input(state.query, (value) => { state.query = value; }, {placeholder: "이름 또는 Prompt 검색"})),
@@ -269,6 +269,7 @@ export async function mount(container, ctx) {
       el("p", {class: "badge", text: editor.common ? "공통 적용 프롬프트" : "이미지별 조각"}),
       numberField,
       field("이름", input(editor.name, (value) => { editor.name = value; state.dirty = true; })), field("카테고리", category), field("Prompt 본문", textarea(editor.body, (value) => { editor.body = value; state.dirty = true; })),
+      field("Negative (선택)", textarea(editor.negative, (value) => { editor.negative = value; state.dirty = true; }, "3"), "생성에만 쓰는 제외 조건입니다. 전역·캐릭터 Negative 뒤에 붙으며 VLM 검사 대상이 아닙니다."),
       field("공통 적용 프롬프트로 사용", el("input", {type: "checkbox", checked: editor.common, onchange: (event) => { editor.common = event.target.checked; state.dirty = true; state.numberConfirm = null; render(); }}), "모든 선택 이미지에 본문만 덧붙입니다. 공통 조각은 번호가 없습니다."),
       editor.common ? el("p", {class: "muted", text: "공통 조각은 의상 상의·하의·액세서리·손 포함 여부를 바꾸지 않습니다."}) : el("div", {class: "grid"}, OUTFIT_PARTS.map(includeToggle)),
       numberConfirm,

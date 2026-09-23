@@ -220,7 +220,7 @@ framing은 `upper_body|full_body|custom`. 기존 두 값의 include는 `appearan
 
 generation_inputs: 모델/encoder/VAE/sampler/scheduler 이름 문자열, width/height 256~1920의 16배수, seed는 Core 입력에서 -1(이미지별 무작위) 또는 0~2^64−1 정수, steps 1~100 정수, cfg 0~20 유한수. Core는 무작위 Seed를 실행 전 고정·저장하며 Generation에는 0 이상의 실제 값만 보낸다. loras는 선택 배열 `[{"name":"등록 파일명","strength":0.35}]`, strength −100~100 유한수. 실제 등록/지원 범위는 Generation이 추가 검사한다. JavaScript의 정수 정밀도 한계에 유의하며 현재 문자열 seed는 지원하지 않는다.
 
-snapshot에는 `composition_version`(신규 4, 과거 2·3), `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`(신규는 `output_name` 포함), `character_revision`, `negative_sources`, `positive_check`, `output_name_prefix` 및 선택 `postprocess`가 저장된다. custom 구도의 `prompt_inputs`는 버전 4에서도 유지한다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
+snapshot에는 `composition_version`(신규 4, 과거 2·3), `group`, `settings`, `inclusion`, `generation_endpoint`, `generation_inputs`(신규는 `output_name` 포함), `character_revision`, `negative_sources`(조각 Negative가 있을 때만 `fragment` 키 추가), `positive_check`, `output_name_prefix` 및 선택 `postprocess`가 저장된다. custom 구도의 `prompt_inputs`는 버전 4에서도 유지한다. preview_hash를 보내면 제출 시 최신 preview와 비교해 변경을 감지한다.
 
 Task 주요 응답: `id,group_id,state,created_at,snapshot,generation_job_id,images,error,validation,automatic_attempts_used`. 생성 상태는 `queued → dispatching → generation_pending|generating → generated|failed`. 기본은 생성만 수행한다. 선택 `validation: {"provider_id":"local-vision","profile_id":"single-default"}`를 보내면 Core가 선택의 Profile·Provider·endpoint를 snapshot에 고정하고, 생성된 각 출력 이미지의 단일 검증을 자동 접수한다. Client가 종료되어도 Core가 진행한다. 수동 검증 POST도 유지한다.
 
@@ -291,9 +291,9 @@ Core는 신규 Task의 단일 검증 요청에 `image.positive_check: [{text, so
 
 ### Negative 출처 계약 — ADR-0023
 
-`image.negative_prompt`는 실제 생성에 사용한 전체 Negative다. `negative_sources`는 정확히 `{global:string,character:string}`다. 공백뿐인 항목을 제외한 전역 → 캐릭터 원문을 `, `로 합친 값이 전체 문구와 일치해야 한다. 다르면 400 `VAL_INVALID_INPUT`이다.
+`image.negative_prompt`는 실제 생성에 사용한 전체 Negative다. `negative_sources`는 `{global:string,character:string}`이며, (2026-09-23) 조각 Negative가 있으면 선택 `fragment:string`(공통 조각 지정 순서 → 이미지별 조각 Negative를 `, `로 합친 값)을 더한다. 그 밖의 키는 거절한다. 공백뿐인 항목을 제외한 전역 → 캐릭터 → 조각 원문을 `, `로 합친 값이 전체 문구와 일치해야 한다. 다르면 400 `VAL_INVALID_INPUT`이다. `fragment`가 없는 과거 요청·snapshot은 그대로 유효하다. 상세는 [조각 Negative](prompt-fragments-production-plans.md#2026-09-23-조각-negative)를 따른다.
 
-**검사 대상은 character만이다.** global은 실제 생성 기록으로 보존하되 AI 검사에 전달하지 않는다. `profile.negative_prompt=false`이면 character도 검사하지 않는다. 출처 생략은 전체 문구가 global인 것으로 해석하며 금지 요소로 추측하지 않는다. 기존 Core snapshot에도 같은 호환 규칙을 적용한다. 과거 완료 판정은 보존한다.
+**검사 대상은 character만이다.** fragment는 생성 전용이며 AI 검사에 전달하지 않는다. global은 실제 생성 기록으로 보존하되 AI 검사에 전달하지 않는다. `profile.negative_prompt=false`이면 character도 검사하지 않는다. 출처 생략은 전체 문구가 global인 것으로 해석하며 금지 요소로 추측하지 않는다. 기존 Core snapshot에도 같은 호환 규칙을 적용한다. 과거 완료 판정은 보존한다.
 
 캐릭터의 `beard`는 이미지에 수염이 있으면 불합격이다. 전역의 `beard`는 검증 불합격 사유가 아니다. 다만 두 경우 모두 생성에는 사용된다. Core는 대표 추상 품질 문구를 `CORE_CHARACTER_NEGATIVE_INVALID`로 안내하고, 정확히 같은 Positive 항목은 `CORE_PROMPT_CONFLICT`로 안내한다. 동의어·문장 전체의 충돌 분석은 아직 제공하지 않는다.
 

@@ -236,7 +236,13 @@ class Core:
             invalid("Each postprocess stage must be an object")
         if "upscale" in postprocess:
             validate_postprocess_settings({"upscale": postprocess["upscale"]})
-        negative_sources ={"global": settings["negative"], "character": character.get("negative_prompt", "")}
+        negative_sources = {"global": settings["negative"], "character": character.get("negative_prompt", "")}
+        # Fragment Negatives are generation-only: selected common fragments in
+        # order, then the image-variant fragment. The key is omitted when empty so
+        # snapshots and preview hashes without fragment Negatives stay unchanged.
+        fragment_negative = ", ".join(part for part in (*(item.get("negative", "") for item in common_fragments), (fragment or {}).get("negative", "")) if part.strip())
+        if fragment_negative:
+            negative_sources["fragment"] = fragment_negative
         negative = ", ".join(part for part in negative_sources.values() if part.strip())
         positive_terms = {entry["requirement"].strip().casefold() for part in clauses(positive) for entry in expanded_clause(part)}
         forbidden_terms = {entry["requirement"].strip().casefold() for part in clauses(negative_sources["character"]) for entry in expanded_clause(part)}
