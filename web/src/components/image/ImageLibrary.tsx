@@ -1,0 +1,350 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { ApiError, del, get, put } from '../../api';
+import { t, tm } from '../../i18n';
+import TagInput from '../TagInput';
+import { useToast } from '../Toasts';
+import GenSettings, { type GenerationSettings } from './GenSettings';
+
+type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets';
+const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets'];
+type Item = {
+  id: string;
+  name: string;
+  prompt: string[];
+  negative?: string[];
+  scope?: 'global' | 'work';
+  overrides?: boolean;
+  rating?: string;
+  composition?: string;
+  suggest_slots?: string[];
+  target?: 'positive' | 'negative';
+  default?: boolean;
+  slot?: string;
+  model_family?: string;
+};
+type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings; common: string[]; styles: string[] };
+type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[] };
+
+// Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
+export default function ImageLibrary({ workId }: { workId: string }) {
+  const [kind, setKind] = useState<Kind>('expressions');
+  return (
+    <div className="image-lib">
+      <div className="image-lib-kinds">
+        {KINDS.map((k) => (
+          <div key={k} className={`tree-row${kind === k ? ' sel' : ''}`} onClick={() => setKind(k)}>
+            {t(`lib.kind.${k}`)}
+          </div>
+        ))}
+      </div>
+      {kind === 'presets' ? <Presets workId={workId} /> : <Items key={kind} workId={workId} kind={kind} />}
+    </div>
+  );
+}
+
+function useFail() {
+  const toast = useToast();
+  return (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+}
+
+function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'> }) {
+  const qc = useQueryClient();
+  const fail = useFail();
+  const key = ['image-lib', kind, workId];
+  const items = useQuery<Record<string, Item>>({ queryKey: key, queryFn: () => get(`/api/image/library/${kind}?work=${workId}`) });
+  const rules = useQuery<Rules>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
+  const compositions = useQuery<Record<string, Item>>({
+    queryKey: ['image-lib', 'compositions', workId],
+    queryFn: () => get(`/api/image/library/compositions?work=${workId}`),
+    enabled: kind === 'expressions',
+  });
+  const [selected, setSelected] = useState<string | null>(null);
+  const [draft, setDraft] = useState<(Item & { scope: 'global' | 'work' }) | null>(null);
+  const [filter, setFilter] = useState('');
+  const list = Object.values(items.data ?? {}).filter((i) => !filter || `${i.id} ${i.name}`.toLowerCase().includes(filter.toLowerCase()));
+
+  useEffect(() => {
+    const item = selected ? items.data?.[selected] : null;
+    setDraft(item ? { ...item, scope: item.scope ?? 'global' } : null);
+  }, [selected, items.data]);
+
+  async function save() {
+    if (!draft) return;
+    try {
+      const { id, scope, ...item } = draft;
+      const result = await put(`/api/image/library/${kind}/${id}`, { scope, work: workId, item });
+      qc.setQueryData(key, result);
+      setSelected(id);
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function create() {
+    const ident = prompt(t('lib.new_id'));
+    if (!ident) return;
+    const blank: Item & { scope: 'global' | 'work' } = {
+      id: ident,
+      name: ident,
+      prompt: [],
+      negative: [],
+      scope: 'work',
+      ...(kind === 'expressions' ? { rating: rules.data?.ratings[0]?.id } : {}),
+      ...(kind === 'common' ? { target: 'positive' as const, default: true } : {}),
+      ...(kind === 'outfits' ? { slot: rules.data?.slots[0]?.id } : {}),
+    };
+    setSelected(null);
+    setDraft(blank);
+  }
+
+  return (
+    <>
+      <div className="image-lib-list">
+        <div className="row pad" style={{ paddingBottom: 4 }}>
+          <input className="grow" placeholder={t('lib.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <button onClick={create}>+</button>
+        </div>
+        {list.map((item) => (
+          <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => setSelected(item.id)}>
+            <span className="grow">
+              {item.name} <span className="faint mono">{item.id}</span>
+            </span>
+            <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
+          </div>
+        ))}
+        {list.length === 0 && <div className="empty">{t('lib.empty')}</div>}
+      </div>
+      <div className="image-lib-edit pad col">
+        {!draft ? (
+          <p className="faint">{t(`lib.about.${kind}`)}</p>
+        ) : (
+          <>
+            <div className="row">
+              <strong className="grow">
+                {draft.id}
+                {draft.overrides && <span className="faint"> · {t('lib.overrides')}</span>}
+              </strong>
+              <select value={draft.scope} onChange={(e) => setDraft({ ...draft, scope: e.target.value as 'global' | 'work' })}>
+                <option value="work">{t('lib.scope.work')}</option>
+                <option value="global">{t('lib.scope.global')}</option>
+              </select>
+            </div>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.name')}</span>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            </label>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{kind === 'common' && draft.target === 'negative' ? t('lib.negative_tags') : t('lib.prompt')}</span>
+              <TagInput values={draft.prompt} onChange={(prompt) => setDraft({ ...draft, prompt })} placeholder={t('lib.tag_hint')} />
+            </label>
+            {kind !== 'common' && (
+              <label className="col" style={{ gap: 2 }}>
+                <span className="muted">{t('lib.negative')}</span>
+                <TagInput values={draft.negative ?? []} onChange={(negative) => setDraft({ ...draft, negative })} />
+              </label>
+            )}
+            {kind === 'expressions' && (
+              <div className="row">
+                <label className="col" style={{ gap: 2 }}>
+                  <span className="muted">{t('lib.rating')}</span>
+                  <select value={draft.rating} onChange={(e) => setDraft({ ...draft, rating: e.target.value })}>
+                    {rules.data?.ratings.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="col" style={{ gap: 2 }}>
+                  <span className="muted">{t('lib.composition')}</span>
+                  <select value={draft.composition ?? ''} onChange={(e) => setDraft({ ...draft, composition: e.target.value || undefined })}>
+                    <option value="">—</option>
+                    {Object.values(compositions.data ?? {}).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
+            {kind === 'compositions' && (
+              <div className="col" style={{ gap: 2 }}>
+                <span className="muted">{t('lib.suggest_slots')}</span>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  {rules.data?.slots.map((slot) => (
+                    <label key={slot.id} className="row" style={{ gap: 4 }}>
+                      <input
+                        type="checkbox"
+                        checked={(draft.suggest_slots ?? []).includes(slot.id)}
+                        onChange={(e) =>
+                          setDraft({
+                            ...draft,
+                            suggest_slots: e.target.checked ? [...(draft.suggest_slots ?? []), slot.id] : (draft.suggest_slots ?? []).filter((s) => s !== slot.id),
+                          })
+                        }
+                      />
+                      {slot.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            {kind === 'common' && (
+              <div className="row">
+                <select value={draft.target} onChange={(e) => setDraft({ ...draft, target: e.target.value as 'positive' | 'negative' })}>
+                  <option value="positive">{t('lib.target.positive')}</option>
+                  <option value="negative">{t('lib.target.negative')}</option>
+                </select>
+                <label className="row" style={{ gap: 4 }}>
+                  <input type="checkbox" checked={draft.default !== false} onChange={(e) => setDraft({ ...draft, default: e.target.checked })} />
+                  {t('lib.default_on')}
+                </label>
+              </div>
+            )}
+            {kind === 'outfits' && (
+              <label className="col" style={{ gap: 2 }}>
+                <span className="muted">{t('lib.slot')}</span>
+                <select value={draft.slot} onChange={(e) => setDraft({ ...draft, slot: e.target.value })}>
+                  {rules.data?.slots.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.family')}</span>
+              <select value={draft.model_family ?? ''} onChange={(e) => setDraft({ ...draft, model_family: e.target.value || undefined })}>
+                <option value="">{t('lib.family_any')}</option>
+                <option value="anima">Anima</option>
+                <option value="sdxl">SDXL·IL</option>
+                <option value="shared">{t('lib.family_shared')}</option>
+              </select>
+            </label>
+            <div className="row">
+              <button className="primary" onClick={save}>
+                {t('common.save')}
+              </button>
+              {draft.scope && items.data?.[draft.id]?.scope === draft.scope && (
+                <button
+                  className="danger"
+                  onClick={async () => {
+                    if (!confirm(t('lib.delete_confirm', { id: draft.id }))) return;
+                    try {
+                      qc.setQueryData(key, await del(`/api/image/library/${kind}/${draft.id}?scope=${draft.scope}&work=${workId}`));
+                      setSelected(null);
+                    } catch (err) {
+                      fail(err);
+                    }
+                  }}
+                >
+                  {t('common.delete')}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Presets({ workId }: { workId: string }) {
+  const qc = useQueryClient();
+  const fail = useFail();
+  const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
+  const commons = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
+  const styles = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'styles', workId], queryFn: () => get(`/api/image/library/styles?work=${workId}`) });
+  const [draft, setDraft] = useState<Preset | null>(null);
+
+  const toggle = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
+  return (
+    <>
+      <div className="image-lib-list">
+        <div className="row pad" style={{ paddingBottom: 4 }}>
+          <span className="grow faint">{t('lib.presets_note')}</span>
+          <button
+            onClick={() => {
+              const ident = prompt(t('lib.new_id'));
+              if (ident) setDraft({ id: ident, name: ident, family: 'anima', settings: { family: 'anima' }, common: [], styles: [] });
+            }}
+          >
+            +
+          </button>
+        </div>
+        {(presets.data ?? []).map((p) => (
+          <div key={p.id} className={`list-row${draft?.id === p.id ? ' sel' : ''}`} onClick={() => setDraft({ ...p, settings: { ...p.settings, family: p.family } })}>
+            <span className="grow">{p.name}</span>
+            <span className="chip">{p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}</span>
+          </div>
+        ))}
+      </div>
+      <div className="image-lib-edit pad col">
+        {!draft ? (
+          <p className="faint">{t('lib.about.presets')}</p>
+        ) : (
+          <>
+            <strong>{draft.id}</strong>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.name')}</span>
+              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            </label>
+            <GenSettings value={draft.settings} onChange={(settings) => setDraft({ ...draft, settings, family: settings.family ?? 'anima' })} />
+            <div className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.kind.common')}</span>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                {Object.values(commons.data ?? {}).map((c) => (
+                  <label key={c.id} className="row" style={{ gap: 4 }}>
+                    <input type="checkbox" checked={draft.common.includes(c.id)} onChange={(e) => setDraft({ ...draft, common: toggle(draft.common, c.id, e.target.checked) })} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+              <span className="faint">{t('lib.preset_common_note')}</span>
+            </div>
+            <div className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.kind.styles')}</span>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                {Object.values(styles.data ?? {}).map((s) => (
+                  <label key={s.id} className="row" style={{ gap: 4 }}>
+                    <input type="checkbox" checked={draft.styles.includes(s.id)} onChange={(e) => setDraft({ ...draft, styles: toggle(draft.styles, s.id, e.target.checked) })} />
+                    {s.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="row">
+              <button
+                className="primary"
+                onClick={async () => {
+                  try {
+                    qc.setQueryData(['image-presets'], await put(`/api/image/presets/${draft.id}`, draft));
+                  } catch (err) {
+                    fail(err);
+                  }
+                }}
+              >
+                {t('common.save')}
+              </button>
+              {(presets.data ?? []).some((p) => p.id === draft.id) && (
+                <button
+                  className="danger"
+                  onClick={async () => {
+                    if (!confirm(t('lib.delete_confirm', { id: draft.id }))) return;
+                    qc.setQueryData(['image-presets'], await del(`/api/image/presets/${draft.id}`));
+                    setDraft(null);
+                  }}
+                >
+                  {t('common.delete')}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}

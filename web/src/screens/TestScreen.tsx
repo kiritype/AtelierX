@@ -1,0 +1,376 @@
+import { useQuery } from '@tanstack/react-query';
+import { useRef, useState } from 'react';
+import { askConsent, get } from '../api';
+import { t, tm } from '../i18n';
+import JsxPreview from '../components/JsxPreview';
+import MessageMarkdown from '../components/MessageMarkdown';
+import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
+import type { TreeEntry, WorkInfo } from '../types';
+
+type Context = {
+  main: string | null;
+  picked: { path: string; name: string; reason: string; keyword: string | null; size: number }[];
+  skipped: { path: string; name: string; why: string }[];
+  lorebook: { path: string; id: string | null; name: string; kind: string }[];
+  components: { path: string; id: string | null; name: string }[];
+  system: string;
+  system_size: number;
+};
+type Turn = {
+  role: 'user' | 'assistant';
+  text: string;
+  context?: Context;
+  start?: boolean;
+  thinking?: number;
+  error?: string;
+  stopped?: boolean;
+};
+type Segment = { text: string } | { component: string; attrs: Record<string, unknown>; raw: string };
+
+function flatten(entries: TreeEntry[]): TreeEntry[] {
+  return entries.flatMap((e) => (e.type === 'folder' ? flatten(e.children ?? []) : [e]));
+}
+
+// Attribute values follow the preset's json_lenient reading: JSON with single quotes or trailing commas allowed.
+function readValue(raw: string): unknown {
+  for (const candidate of [raw, raw.replace(/,\s*([}\]])/g, '$1'), raw.replace(/'/g, '"')]) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* try the next form */
+    }
+  }
+  return raw;
+}
+
+// Split a reply into text and component calls (`<Name attr='…' />`) for the work's JSX items.
+export function splitReply(text: string, names: string[]): Segment[] {
+  if (!names.length) return [{ text }];
+  const pattern = new RegExp(`<(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})((?:\\s+[\\w-]+=(?:'[^']*'|"[^"]*"))*)\\s*/>`, 'g');
+  const out: Segment[] = [];
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index! > last) out.push({ text: text.slice(last, match.index) });
+    const attrs: Record<string, unknown> = {};
+    for (const a of match[2].matchAll(/([\w-]+)=(?:'([^']*)'|"([^"]*)")/g)) attrs[a[1]] = readValue(a[2] ?? a[3]);
+    out.push({ component: match[1], attrs, raw: match[0] });
+    last = match.index! + match[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
+
+export default function TestScreen({ workId, openItem }: { workId: string; openItem: (path: string) => void }) {
+  const info = useQuery<WorkInfo>({ queryKey: ['work', workId], queryFn: () => get(`/api/works/${workId}`) });
+  const tree = useQuery<TreeEntry[]>({ queryKey: ['tree', workId], queryFn: () => get(`/api/works/${workId}/tree`) });
+  const starts = flatten(tree.data ?? []).filter((e) => e.kind === 'start' && e.enabled !== false);
+  const [slide, setSlide] = useState(0);
+  const startEntry = slide < starts.length ? starts[slide] : null;
+  const startItem = useQuery({
+    queryKey: ['file', workId, startEntry?.path],
+    queryFn: () => get(`/api/works/${workId}/file?path=${encodeURIComponent(startEntry!.path)}`),
+    enabled: !!startEntry,
+  });
+  const [persona, setPersona] = useState({ name: '', description: '' });
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [previousInputs, setPreviousInputs] = useState<string[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const abort = useRef<AbortController | null>(null);
+  const [llm, setLlm] = useState<LlmOverride | undefined>();
+  const [selected, setSelected] = useState<number | null>(null);
+  const [rawShown, setRawShown] = useState<Set<number>>(new Set());
+  const log = useRef<HTMLDivElement>(null);
+
+  const started = turns.some((turn) => turn.role === 'user');
+  const userName = persona.name || '사용자';
+  const startText = startEntry && startItem.data ? startItem.data.body.trim().replaceAll('{{user}}', userName) : null;
+  // Before the first message the start situation is the bot's first turn; it follows the slide.
+  const shown: Turn[] = started ? turns : startText ? [{ role: 'assistant', text: startText, start: true }] : [];
+
+  const lastWithContext = [...shown.keys()].reverse().find((n) => shown[n].context);
+  const focus = selected !== null && shown[selected]?.context ? selected : lastWithContext;
+  const context = focus !== undefined ? shown[focus].context : undefined;
+  const components = (context ?? shown.find((x) => x.context)?.context)?.components ?? flatten(tree.data ?? [])
+    .filter((entry) => entry.kind === 'jsx' && entry.enabled !== false)
+    .map((entry) => ({ path: entry.path, id: entry.id ?? null, name: entry.name.replace(/\.jsx$/i, '') }));
+  const componentNames = components.map((c) => c.name);
+  const rules = info.data?.effective.values.jsx ?? {};
+
+  async function sendOne(message: string, history: Turn[]) {
+    const plain = history.map(({ role, text }) => ({ role, text }));
+    let reply: Turn = { role: 'assistant', text: '' };
+    setTurns([...history, { role: 'user', text: message }, reply]);
+    const controller = new AbortController();
+    abort.current = controller;
+    try {
+      const url = `/api/works/${workId}/chat/send`;
+      const request = () =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ llm, history: plain, message, persona: persona.name ? persona : null }),
+          signal: controller.signal,
+        });
+      let response = await request();
+      if (response.status === 428) {
+        const error = (await response.json()).error;
+        if (!(await askConsent(error, url))) throw new Error(tm(error));
+        response = await request();
+      }
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.text ?? response.statusText);
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop()!;
+        for (const raw of events) {
+          const type = /event: (\w+)/.exec(raw)?.[1];
+          const data = /data: (.*)/s.exec(raw)?.[1];
+          if (!type || data === undefined) continue;
+          if (type === 'context') reply = { ...reply, context: JSON.parse(data) };
+          if (type === 'thinking') reply = { ...reply, thinking: Number(data) };
+          if (type === 'delta') reply = { ...reply, text: reply.text + JSON.parse(data) };
+          if (type === 'error') reply = { ...reply, error: tm(JSON.parse(data)) };
+          setTurns([...history, { role: 'user', text: message }, reply]);
+        }
+        log.current?.scrollTo(0, log.current.scrollHeight);
+      }
+    } catch (err) {
+      if (controller.signal.aborted) reply = { ...reply, stopped: true };
+      else reply = { ...reply, error: String((err as Error).message ?? err) };
+    } finally {
+      abort.current = null;
+    }
+    reply = { ...reply, text: reply.text.trimEnd(), thinking: undefined };
+    const next = [...history, { role: 'user' as const, text: message }, reply];
+    setTurns(next);
+    setSelected(null);
+    return next;
+  }
+
+  async function send() {
+    const message = input.trim();
+    if (!message || busy) return;
+    setInput('');
+    setBusy(true);
+    try {
+      await sendOne(message, shown);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function reset() {
+    const mine = turns.filter((x) => x.role === 'user').map((x) => x.text);
+    if (mine.length) setPreviousInputs(mine);
+    setTurns([]);
+    setSelected(null);
+    setRawShown(new Set());
+  }
+
+  async function replay() {
+    if (busy || !previousInputs.length) return;
+    setBusy(true);
+    try {
+      let history: Turn[] = startText ? [{ role: 'assistant', text: startText, start: true }] : [];
+      for (const message of previousInputs) history = await sendOne(message, history);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const called = new Set(
+    focus !== undefined ? splitReply(shown[focus].text, componentNames).flatMap((s) => ('component' in s ? [s.component] : [])) : [],
+  );
+  const picked = new Map(context?.picked.map((p) => [p.path, p]) ?? []);
+
+  return (
+    <div className="test-screen">
+      <div className="test-bar">
+        <strong>{t('test.title')}</strong>
+        <RunLlmSelector task="chat_test" value={llm} onChange={setLlm} disabled={busy} />
+        <input placeholder={t('chat.persona_name')} value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} />
+        <input className="grow" placeholder={t('chat.persona_desc')} value={persona.description} onChange={(e) => setPersona({ ...persona, description: e.target.value })} />
+        <button onClick={reset} disabled={busy}>
+          {t('chat.new')}
+        </button>
+        <button onClick={replay} disabled={busy || started || !previousInputs.length} title={t('test.replay_hint')}>
+          {t('test.replay', { n: previousInputs.length })}
+        </button>
+      </div>
+      <div className="test-body">
+        <div className="test-chat">
+          <div className={`start-slider${started ? ' locked' : ''}`}>
+            <button className="ghost" disabled={started || slide === 0} onClick={() => setSlide(slide - 1)}>
+              ‹
+            </button>
+            <div className="grow">
+              <div className="faint">
+                {t('test.start')} {starts.length ? `${Math.min(slide + 1, starts.length + 1)}/${starts.length + 1}` : ''} ·{' '}
+                {startEntry ? startEntry.name : t('test.no_start')}
+                {started && ` · ${t('test.start_locked')}`}
+              </div>
+            </div>
+            <button className="ghost" disabled={started || slide >= starts.length} onClick={() => setSlide(slide + 1)}>
+              ›
+            </button>
+          </div>
+          <div className="chat-log" ref={log}>
+            {shown.length === 0 && <div className="empty">{t('chat.empty')}</div>}
+            {shown.map((turn, n) => (
+              <div
+                key={n}
+                className={`msg ${turn.role === 'user' ? 'user' : 'bot'}${n === focus ? ' focus' : ''}`}
+                onClick={() => turn.context && setSelected(n)}
+              >
+                {turn.start && <div className="faint" style={{ fontSize: 11 }}>{t('test.start')}</div>}
+                {turn.role === 'assistant' && !turn.text && turn.thinking !== undefined && (
+                  <span className="faint">{t('test.thinking', { n: turn.thinking.toLocaleString() })}</span>
+                )}
+                {turn.role === 'assistant' && !turn.text && turn.thinking === undefined && !turn.error && !turn.stopped && busy && n === shown.length - 1 && (
+                  <span className="faint">{t('test.waiting')}</span>
+                )}
+                {turn.role === 'assistant' && !rawShown.has(n) ? <Reply text={turn.text} workId={workId} components={components} rules={rules} /> : turn.text}
+                {turn.error && <div className="error-text">{turn.error}</div>}
+                {turn.stopped && <div className="faint">{t('test.stopped')}</div>}
+                {turn.role === 'assistant' && turn.text && (
+                  <div className="ctx-line">
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const next = new Set(rawShown);
+                        if (next.has(n)) next.delete(n);
+                        else next.add(n);
+                        setRawShown(next);
+                      }}
+                    >
+                      {rawShown.has(n) ? t('test.rendered') : t('test.raw')}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="row">
+            <textarea
+              className="grow"
+              rows={2}
+              value={input}
+              placeholder={t('chat.input')}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            {busy ? (
+              <button onClick={() => abort.current?.abort()}>{t('test.stop')}</button>
+            ) : (
+              <button className="primary" onClick={send}>
+                {t('chat.send')}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="test-side">
+          <div className="section-title">{t('test.loaded')}</div>
+          {!context && <div className="faint">{t('test.loaded_empty')}</div>}
+          {context && (
+            <>
+              <div className="load-row on">
+                ● <span className="grow">{t('kind.main')}</span>
+                {context.main ? (
+                  <a href="#" onClick={(e) => (e.preventDefault(), openItem(context.main!))}>
+                    {context.main}
+                  </a>
+                ) : (
+                  <span className="error-text">{t('test.no_main')}</span>
+                )}
+                <span className="faint">{t('test.always')}</span>
+              </div>
+              <div className="section-title">{t('kind.lorebook')}</div>
+              {context.lorebook.map((item) => {
+                const hit = picked.get(item.path);
+                const skip = context.skipped.find((s) => s.path === item.path);
+                return (
+                  <div key={item.path} className={`load-row${hit ? ' on' : ''}`}>
+                    {hit ? '●' : '○'}{' '}
+                    <a href="#" className="grow" onClick={(e) => (e.preventDefault(), openItem(item.path))}>
+                      {item.name}
+                    </a>
+                    <span className="faint">
+                      {hit
+                        ? hit.reason === 'always'
+                          ? t('test.always')
+                          : t('test.keyword', { k: hit.keyword })
+                        : skip
+                          ? t(`chat.skip.${skip.why}`)
+                          : t('test.not_this_turn')}
+                    </span>
+                  </div>
+                );
+              })}
+              {context.lorebook.length === 0 && <div className="faint">{t('chat.no_lore')}</div>}
+              <div className="section-title">JSX</div>
+              {context.components.map((c) => (
+                <div key={c.path} className={`load-row${called.has(c.name) ? ' on' : ''}`}>
+                  {called.has(c.name) ? '◆' : '◇'}{' '}
+                  <a href="#" className="grow" onClick={(e) => (e.preventDefault(), openItem(c.path))}>
+                    {c.name}
+                  </a>
+                  <span className="faint">{called.has(c.name) ? t('test.called') : t('test.not_called')}</span>
+                </div>
+              ))}
+              {context.components.length === 0 && <div className="faint">{t('test.no_jsx')}</div>}
+              <div className="faint" style={{ marginTop: 8 }}>
+                {t('test.size', { size: context.system_size, n: context.picked.length })}
+              </div>
+              <p className="faint">{t('test.platform_note')}</p>
+              <details>
+                <summary>{t('chat.raw')}</summary>
+                <pre className="mono" style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
+                  {context.system}
+                </pre>
+              </details>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type Rules = { hooks?: string[]; globals?: { name: string; stub?: string }[] };
+
+function Reply({ text, workId, components, rules }: { text: string; workId: string; components: Context['components']; rules: Rules }) {
+  return <MessageMarkdown text={text} component={(raw) => {
+    const segments = splitReply(raw.trim(), components.map((c) => c.name));
+    if (!segments.some((segment) => 'component' in segment)) return null;
+    return segments.map((segment, index) => 'component' in segment
+      ? <ComponentCall key={index} workId={workId} path={components.find((c) => c.name === segment.component)!.path} name={segment.component} props={segment.attrs} rules={rules} />
+      : <span key={index}>{segment.text}</span>);
+  }} />;
+}
+
+// A component call inside a reply, drawn with the work's current source in the sandboxed preview.
+function ComponentCall({ workId, path, name, props, rules }: { workId: string; path: string; name: string; props: unknown; rules: Rules }) {
+  const item = useQuery<{ body: string }>({
+    queryKey: ['item', workId, path],
+    queryFn: () => get(`/api/works/${workId}/file?path=${encodeURIComponent(path)}`),
+  });
+  if (!item.data) return null;
+  return (
+    <div className="component-call">
+      <JsxPreview code={item.data.body} name={name} props={props} hooks={rules.hooks ?? []} globals={rules.globals ?? []} theme="inline" autoHeight />
+    </div>
+  );
+}
