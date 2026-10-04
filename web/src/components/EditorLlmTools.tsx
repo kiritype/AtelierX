@@ -4,6 +4,7 @@ import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
 import type { TreeEntry } from '../types';
 import { useToast } from './Toasts';
+import { MenuButton } from './MenuBar';
 import { Dialog } from './ui';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 
@@ -37,10 +38,14 @@ export default function EditorLlmTools({ workId, path, beforeRun }: { workId: st
     } finally { setBusy(false); }
   };
   return <>
-    <select aria-label={t('llm_tools.title')} className="llm-tools-menu" value="" onChange={(e) => { setAction(e.target.value as Action); setInstructions(''); setCompare([]); setLlm(undefined); }}>
-      <option value="">{t('llm_tools.title')} ▾</option>
-      {(['compression', 'content_review', 'consistency', 'format'] as Action[]).map((item) => <option key={item} value={item}>{t(`llm_tools.${item}`)}</option>)}
-    </select>
+    <MenuButton
+      className="llm-tools-menu"
+      label={t('llm_tools.title')}
+      items={(['compression', 'content_review', 'consistency', 'format'] as Action[]).map((item) => ({
+        label: t(`llm_tools.${item}`),
+        run: () => { setAction(item); setInstructions(''); setCompare([]); setLlm(undefined); },
+      }))}
+    />
     {action && <Dialog title={t(`llm_tools.${action}`)} onClose={() => !busy && setAction('')} actions={<button className="primary" disabled={busy || (action === 'consistency' && !compare.length) || (action === 'compression' && target !== '' && (!Number.isInteger(Number(target)) || Number(target) <= 0))} onClick={run}>{t('llm_tools.run')}</button>}>
       <div className="col">
         <p>{t('llm_tools.scope', { path })}</p>

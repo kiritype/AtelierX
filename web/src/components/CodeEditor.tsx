@@ -1,18 +1,47 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { markdown } from '@codemirror/lang-markdown';
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
+import { tags } from '@lezer/highlight';
 import { useEffect, useRef } from 'react';
 
-const theme = EditorView.theme({
-  '&': { fontSize: '13px', backgroundColor: 'var(--panel)', color: 'var(--text)' },
-  '.cm-content': { fontFamily: 'var(--mono)', padding: '12px 0', caretColor: 'var(--text)' },
+const base = {
+  '&': { backgroundColor: 'var(--panel)', color: 'var(--text)' },
+  '.cm-content': { padding: '14px 0', caretColor: 'var(--text)' },
   '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--text-3)', border: 'none' },
   '.cm-activeLine': { backgroundColor: 'transparent' },
-  '.cm-line': { padding: '0 16px' },
+  '.cm-line': { padding: '0 20px' },
+};
+
+// Prose (prompts, lorebook, characters, notes) reads like a document; JSX keeps a fixed-width font.
+const proseTheme = EditorView.theme({
+  ...base,
+  '&': { ...base['&'], fontSize: 'var(--editor-size)' },
+  '.cm-content': { ...base['.cm-content'], fontFamily: 'var(--sans)', lineHeight: '1.6', maxWidth: '920px' },
+  '.cm-gutters': { ...base['.cm-gutters'], fontFamily: 'var(--mono)', fontSize: '12px' },
 });
+const codeTheme = EditorView.theme({
+  ...base,
+  '&': { ...base['&'], fontSize: '13px' },
+  '.cm-content': { ...base['.cm-content'], fontFamily: 'var(--mono)' },
+});
+
+// Headings stand out by size and weight instead of the default underline; the `#` marks stay visible.
+const markdownStyle = HighlightStyle.define([
+  { tag: tags.heading1, fontSize: '1.4em', fontWeight: '700' },
+  { tag: tags.heading2, fontSize: '1.2em', fontWeight: '700' },
+  { tag: [tags.heading3, tags.heading4, tags.heading5, tags.heading6], fontWeight: '700' },
+  { tag: tags.processingInstruction, color: 'var(--accent)' },
+  { tag: tags.strong, fontWeight: '700' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.link, color: 'var(--accent)' },
+  { tag: tags.url, color: 'var(--text-3)' },
+  { tag: tags.quote, color: 'var(--text-2)' },
+  { tag: tags.monospace, fontFamily: 'var(--mono)', fontSize: '0.92em' },
+  { tag: tags.contentSeparator, color: 'var(--text-3)' },
+]);
 
 // The editor owns its text; the parent gets changes through onChange and replaces the text only when `doc` changes
 // identity from outside (reload from disk).
@@ -44,9 +73,9 @@ export default function CodeEditor({
           ...historyKeymap,
         ]),
         EditorView.lineWrapping,
-        syntaxHighlighting(defaultHighlightStyle),
-        language === 'jsx' ? javascript({ jsx: true }) : markdown(),
-        theme,
+        ...(language === 'jsx'
+          ? [syntaxHighlighting(defaultHighlightStyle), javascript({ jsx: true }), codeTheme]
+          : [syntaxHighlighting(markdownStyle), markdown(), proseTheme]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) handlers.current.onChange(update.state.doc.toString());
         }),

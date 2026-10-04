@@ -6,6 +6,7 @@ import type { Tab, TreeEntry, WorkInfo } from '../types';
 import FileTree from './FileTree';
 import RenameDialog from './RenameDialog';
 import { useToast } from './Toasts';
+import { Icon } from './icons';
 
 export type PanelKey = 'files' | 'search' | 'image' | 'drafts' | 'history' | 'trash';
 
@@ -57,7 +58,7 @@ function SearchPanel({ workId, open, renamePath }: Props) {
       <div className="side-head">
         <span className="grow">{t('panel.search')}</span>
         <button className="ghost" title={t('rename.title')} onClick={() => setRenaming(true)}>
-          ⇄
+          {t('rename.title')}
         </button>
       </div>
       {renaming && <RenameDialog workId={workId} initial={query} renamePath={renamePath} onClose={() => setRenaming(false)} />}
@@ -99,7 +100,7 @@ function ImagePanel({ workId, open }: Props) {
       {characters.length === 0 && <div className="empty">{t('image.no_characters')}</div>}
       {characters.map((c) => (
         <div key={c.path} className="tree-row" onClick={() => open({ type: 'item', path: c.path })}>
-          👤 <span className="grow">{c.name.replace(/\.md$/, '')}</span> <span className="faint">{c.id}</span>
+          <Icon name="character" /> <span className="grow">{c.name.replace(/\.md$/, '')}</span> <span className="faint">{c.id}</span>
         </div>
       ))}
       <div className="empty faint">{t('image.library_later')}</div>
@@ -161,7 +162,7 @@ function HistoryPanel({ workId, open }: Props) {
           <span className="grow">
             {s.created_at?.slice(5, 16).replace('T', ' ')} · {t(`reason.${s.reason}`)}
             {s.label && <div className="muted">{s.label}</div>}
-            {s.release && <span className="chip accent">🚀 {s.release.note}</span>}
+            {s.release && <span className="chip accent"><Icon name="release" size={12} /> {s.release.note}</span>}
           </span>
           <button
             className="ghost"
@@ -173,8 +174,9 @@ function HistoryPanel({ workId, open }: Props) {
               await patch(`/api/works/${workId}/snapshots/${s.id}`, { release: note || null });
               qc.invalidateQueries({ queryKey: ['snapshots', workId] });
             }}
+            aria-label={t('history.mark_release')}
           >
-            🚀
+            <Icon name="release" />
           </button>
         </div>
       ))}
@@ -231,7 +233,7 @@ function TrashPanel({ workId }: Props) {
               reload();
             }}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       ))}

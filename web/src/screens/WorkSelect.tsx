@@ -5,6 +5,7 @@ import { useToast } from '../components/Toasts';
 import { ChipsInput, ContextMenu, Dialog, formatBytes, type MenuItem } from '../components/ui';
 import { t, tm } from '../i18n';
 import type { WorkCard } from '../types';
+import { Icon } from '../components/icons';
 
 export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) => void; onLock: () => void }) {
   const qc = useQueryClient();
@@ -49,7 +50,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
       <div className="row">
         <h2 className="grow">AtelierX</h2>
         <button className="ghost" onClick={() => setDialog('trash')}>
-          🗑 {t('works.trash')}
+          <Icon name="trash" /> {t('works.trash')}
         </button>
         <button
           className="ghost"
@@ -58,7 +59,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
             onLock();
           }}
         >
-          🔒 {t('common.lock')}
+          <Icon name="lock" /> {t('common.lock')}
         </button>
       </div>
       <div className="row">

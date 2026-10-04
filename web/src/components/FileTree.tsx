@@ -7,8 +7,8 @@ import { useToast } from './Toasts';
 import AuthoringDialog from './AuthoringDialog';
 import RenameDialog from './RenameDialog';
 import { ContextMenu, type MenuItem } from './ui';
+import { Icon, KindIcon } from './icons';
 
-const ICON: Record<string, string> = { main: '📜', start: '🎬', lorebook: '📄', character: '👤', jsx: '⚛', note: '🗒' };
 
 type Pending = { parent: string; type: 'file' | 'folder' } | { rename: string } | null;
 
@@ -117,7 +117,7 @@ export default function FileTree({
     if (pending && 'parent' in pending && pending.parent === parent) {
       rows.push(
         <div key="__new" className="tree-row" style={{ paddingLeft: 8 + depth * 14 }}>
-          {pending.type === 'folder' ? '📁' : '📄'}
+          <Icon name={pending.type === 'folder' ? 'folder' : 'file'} />
           <NameInput onDone={submitPending} placeholder={pending.type === 'file' ? t('tree.file_hint') : ''} />
         </div>,
       );
@@ -161,8 +161,8 @@ export default function FileTree({
           onKeyDown={(e) => e.key === 'F2' && setPending({ rename: entry.path })}
           tabIndex={0}
         >
-          <span style={{ width: 12, color: 'var(--text-3)' }}>{isFolder ? (isCollapsed ? '▸' : '▾') : ''}</span>
-          <span>{isFolder ? '📁' : entry.kind ? ICON[entry.kind] : '·'}</span>
+          <span className="twisty">{isFolder && <Icon name={isCollapsed ? 'expand' : 'collapse'} size={14} />}</span>
+          {isFolder ? <Icon name="folder" /> : entry.type === 'item' ? <KindIcon kind={entry.kind} /> : <Icon name="file" />}
           {renaming ? (
             <NameInput initial={entry.name} onDone={submitPending} />
           ) : (
@@ -170,8 +170,8 @@ export default function FileTree({
               {entry.name}
             </span>
           )}
-          {entry.meta_error && <span style={{ color: 'var(--danger)' }}>!</span>}
-          {entry.id && <span className="faint">{entry.id}</span>}
+          {entry.meta_error && <span style={{ color: 'var(--danger)', display: 'inline-flex' }}><Icon name="warning" size={14} /></span>}
+          {entry.id && <span className="tree-id">{entry.id}</span>}
         </div>,
       );
       if (isFolder && !isCollapsed) rows.push(render(entry.children ?? [], depth + 1, entry.path));
@@ -194,21 +194,21 @@ export default function FileTree({
     >
       <div className="side-head">
         <span className="grow">{t('panel.files')}</span>
-        <button className="ghost" title={t('authoring.title')} onClick={() => setAuthoring(true)}>
-          ✨
+        <button className="ghost icon-button" title={t('authoring.title')} aria-label={t('authoring.title')} onClick={() => setAuthoring(true)}>
+          <Icon name="authoring" />
         </button>
-        <button className="ghost" title={t('tree.new_file')} onClick={() => setPending({ parent: '', type: 'file' })}>
-          ＋📄
+        <button className="ghost icon-button" title={t('tree.new_file')} aria-label={t('tree.new_file')} onClick={() => setPending({ parent: '', type: 'file' })}>
+          <Icon name="newFile" />
         </button>
-        <button className="ghost" title={t('tree.new_folder')} onClick={() => setPending({ parent: '', type: 'folder' })}>
-          ＋📁
+        <button className="ghost icon-button" title={t('tree.new_folder')} aria-label={t('tree.new_folder')} onClick={() => setPending({ parent: '', type: 'folder' })}>
+          <Icon name="newFolder" />
         </button>
       </div>
       <div className="tree">
         {tree.data && tree.data.length === 0 && !pending && (
           <div className="empty">
             <p>{t('tree.empty')}</p>
-            <button onClick={() => setAuthoring(true)}>✨ {t('authoring.title')}</button>
+            <button className="with-icon" onClick={() => setAuthoring(true)}><Icon name="authoring" /> {t('authoring.title')}</button>
           </div>
         )}
         {tree.data && render(tree.data, 0, '')}

@@ -17,6 +17,7 @@ import RelationsTab from '../components/RelationsTab';
 import ReviewTab from '../components/ReviewTab';
 import { useToast } from '../components/Toasts';
 import { ContextMenu, Dialog, ErrorBoundary, formatBytes, type MenuItem } from '../components/ui';
+import { Icon, type IconName } from '../components/icons';
 import WorkSettings from '../components/WorkSettings';
 import ImageScreen from './ImageScreen';
 import TestScreen from './TestScreen';
@@ -27,15 +28,15 @@ import { t, tm } from '../i18n';
 import { tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
 
 // Most entries toggle a side panel; relations and glossary open as editor tabs.
-const ACTIVITY: ({ key: PanelKey; icon: string } | { tab: 'relations' | 'glossary'; icon: string })[] = [
-  { key: 'files', icon: '📁' },
-  { key: 'search', icon: '🔍' },
-  { tab: 'relations', icon: '🔗' },
-  { tab: 'glossary', icon: '📖' },
-  { key: 'image', icon: '🖼' },
-  { key: 'drafts', icon: '📥' },
-  { key: 'history', icon: '🕘' },
-  { key: 'trash', icon: '🗑' },
+const ACTIVITY: ({ key: PanelKey; icon: IconName } | { tab: 'relations' | 'glossary'; icon: IconName })[] = [
+  { key: 'files', icon: 'files' },
+  { key: 'search', icon: 'search' },
+  { tab: 'relations', icon: 'relations' },
+  { tab: 'glossary', icon: 'glossary' },
+  { key: 'image', icon: 'image' },
+  { key: 'drafts', icon: 'drafts' },
+  { key: 'history', icon: 'history' },
+  { key: 'trash', icon: 'trash' },
 ];
 
 export default function WorkWindow({ workId, onLeave, onLock }: { workId: string; onLeave: () => void; onLock: () => void }) {
@@ -307,24 +308,25 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     <div className="window">
       <div className="topbar" style={{ position: 'relative' }}>
         <span className="title" onClick={leave} title={t('window.back_to_works')}>
-          {info.data.name} ▾
+          {info.data.name} <Icon name="menu" size={14} />
         </span>
         <MenuBar menus={menus} />
         <button className={testing ? 'primary' : 'ghost'} onClick={() => setTesting(!testing)}>
           {testing ? t('test.back') : t('test.open')}
         </button>
         <span className="grow" />
-        <button className="ghost" onClick={() => setQuickOpen(true)} title="Ctrl+P">
-          🔍
+        <button className="ghost icon-button" onClick={() => setQuickOpen(true)} title={`${t('editor.quick_open')} (Ctrl+P)`} aria-label={t('editor.quick_open')}>
+          <Icon name="search" size={18} />
         </button>
-        <button className="ghost" onClick={() => setShowJobs((v) => !v)}>
-          ⧗ {running.length || ''}
+        <button className="ghost icon-button" onClick={() => setShowJobs((v) => !v)} title={t('jobs.title')} aria-label={t('jobs.title')}>
+          <Icon name="jobs" size={18} />
+          {running.length > 0 && <span className="count">{running.length}</span>}
         </button>
-        <button className="ghost" onClick={() => open({ type: 'settings' })}>
-          ⚙
+        <button className="ghost icon-button" onClick={() => open({ type: 'settings' })} title={t('window.settings')} aria-label={t('window.settings')}>
+          <Icon name="settings" size={18} />
         </button>
-        <button className="ghost" onClick={lock} title="Ctrl+Shift+L">
-          🔒
+        <button className="ghost icon-button" onClick={lock} title={`${t('common.lock')} (Ctrl+Shift+L)`} aria-label={t('common.lock')}>
+          <Icon name="lock" size={18} />
         </button>
         {showJobs && (
           <JobsPopover jobs={jobs.data ?? []} onClose={() => setShowJobs(false)} openDraft={(draft) => open({ type: 'review', draft })} />
@@ -354,7 +356,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                 title={t(`panel.${a.tab}`)}
                 onClick={() => open({ type: a.tab })}
               >
-                {a.icon}
+                <Icon name={a.icon} size={20} />
+                <span className="label">{t(`panel.${a.tab}`)}</span>
               </button>
             ) : (
               <button
@@ -363,14 +366,16 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                 title={t(`panel.${a.key}`)}
                 onClick={() => setPanel(panel === a.key ? null : a.key)}
               >
-                {a.icon}
+                <Icon name={a.icon} size={20} />
+                <span className="label">{t(`panel.${a.key}`)}</span>
                 {a.key === 'drafts' && pendingDrafts > 0 && <span className="dot">{pendingDrafts}</span>}
               </button>
             ),
           )}
           <span className="grow" />
-          <button title={t('aux.toggle')} onClick={() => setAux(aux ? null : 'check')}>
-            ◨
+          <button className={aux ? 'on' : ''} title={t('aux.toggle')} onClick={() => setAux(aux ? null : 'check')}>
+            <Icon name="aux" size={20} />
+            <span className="label">{t('aux.toggle')}</span>
           </button>
         </div>
         <div className="side">
@@ -400,16 +405,18 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                     setTabMenu({ key, x: e.clientX, y: e.clientY });
                   }}
                 >
-                  {pinned.includes(key) && <span title={t('tabs.pin')}>📌 </span>}{tabTitle(tab)}
-                  {status[key]?.dirty && ' ●'}
+                  {pinned.includes(key) && <span className="pin" title={t('tabs.pin')}><Icon name="pin" size={13} /></span>}
+                  <span className="tab-title">{tabTitle(tab)}</span>
+                  {status[key]?.dirty && <span className="dirty" title={t('status.unsaved')}>●</span>}
                   <button
                     className="x"
+                    aria-label={t('tabs.close')}
                     onClick={(e) => {
                       e.stopPropagation();
                       close(key);
                     }}
                   >
-                    ×
+                    <Icon name="close" size={14} />
                   </button>
                 </div>
               );
@@ -498,8 +505,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         <span>{t('status.preset', { name: effective?.linked?.join(', ') || 'generic' })}</span>
         <span className="grow" />
         {running[0] && (
-          <span>
-            ⧗ {running[0].title} {running[0].progress}%
+          <span className="row" style={{ gap: 4 }}>
+            <Icon name="jobs" size={13} /> {running[0].title} {running[0].progress}%
           </span>
         )}
       </div>
