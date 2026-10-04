@@ -25,6 +25,21 @@ AtelierX는 스테이징 단계입니다. 현재 Windows x64 포터블 패키지
 코드 변경에 맞는 기존 검사와 코드 규칙을 적용해 주세요. 실제 서비스를 실행하지 않았다면 외부 제공자,
 ComfyUI, 모델, 학습 도구를 검증했다고 보고하지 마세요.
 
+## 브랜치와 릴리스
+
+이유는 [결정 0020](docs/decisions/0020-branch-flow.md)에 있습니다.
+
+- 작업은 `feat/*`, `fix/*`, `docs/*`, `ci/*` 브랜치에서 합니다. 변경 하나에 브랜치 하나, 작업 폴더도 따로 씁니다
+  (`git worktree add ../atelierx-worktrees/<이름> -b feat/<이름> dev`). 동시에 하는 작업끼리 작업 폴더를 같이 쓰지 않습니다.
+- PR은 `dev`로 엽니다. `test` 검사를 통과해야 하고 승인은 필수가 아닙니다. 합칠 때는 squash 또는 rebase를 씁니다.
+- `staging`과 `main`에는 작업 커밋을 올리지 않습니다. 이미 `test`를 통과한 커밋으로 앞으로 옮기기만 합니다:
+  `git push origin <커밋>:staging`, 그다음 `git push origin <커밋>:main`. 옮기는 시점은 관리자가 정합니다.
+- `staging`에 push하면 Windows 패키지를 만들어 시험판 `vX.Y.Z-rc.N`으로 올립니다. 후보를 검증하는 동안 `staging`은 움직이지 않습니다.
+- 검증이 끝나면 `main`을 후보 커밋으로 옮기고, **Release** 워크플로를 후보 태그로 실행합니다. 후보의 파일을 그대로
+  `vX.Y.Z`로 공개합니다.
+- 급한 수정: `main`에서 `fix/*` 브랜치를 만들고, 수정 내용을 `main`·`dev`·진행 중인 `staging` 후보에 모두 반영합니다.
+  후보가 바뀌면 다시 검증합니다.
+
 ## 라이선스
 
 기여한 내용은 이 저장소와 같은 [MIT 라이선스](LICENSE)로 공개됩니다.
