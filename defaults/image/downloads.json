@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "groups": [
+    {
+      "id": "training_base",
+      "name": {"ko": "LoRA 학습용 Anima 기반 모델", "en": "Anima base for LoRA training"},
+      "about": {"ko": "LoRA 학습의 기반 모델(DiT·텍스트 인코더·VAE). 받으면 학습 설정에 자동으로 들어갑니다.", "en": "The base model for LoRA training (DiT, text encoder, VAE). Filled into the training settings once downloaded."},
+      "license": {"name": "CircleStone Labs Non-Commercial License (+ NVIDIA Open Model License)", "url": "https://huggingface.co/circlestone-labs/Anima"},
+      "items": [
+        {"id": "anima_base_dit", "file": "anima-base-v1.0.safetensors", "folder": "diffusion_models", "training": "dit",
+         "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-base-v1.0.safetensors",
+         "size": 4182218328, "sha256": "bd43b7cffe1ed1153d9c41e7beb2f18cb1273eafbaa3af3edd6a173dc90a006e"},
+        {"id": "anima_text_encoder", "file": "qwen_3_06b_base.safetensors", "folder": "text_encoders", "training": "text_encoder",
+         "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors",
+         "size": 1192135096, "sha256": "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba"},
+        {"id": "anima_vae", "file": "qwen_image_vae.safetensors", "folder": "vae", "training": "vae",
+         "url": "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors",
+         "size": 253806246, "sha256": "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f"}
+      ]
+    },
+    {
+      "id": "detectors",
+      "name": {"ko": "감지 모델 (디테일러·배경·검열)", "en": "Detectors (detailer, background, censor)"},
+      "about": {"ko": "디테일러의 얼굴·손 감지, 사람 분할(배경 나누기), SAM. 눈·검열 감지 모델은 Civitai에서 직접 받아 ultralytics/segm 폴더에 넣습니다.", "en": "Face and hand detection for the detailer, person segmentation, SAM. The eye and censor detectors come from Civitai; put them in ultralytics/segm yourself."},
+      "license": {"name": "Apache-2.0 (adetailer, SAM)", "url": "https://huggingface.co/Bingsu/adetailer"},
+      "items": [
+        {"id": "face_yolov8m", "file": "face_yolov8m.pt", "folder": "ultralytics_bbox",
+         "url": "https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt",
+         "size": 52026019, "sha256": "717923c19b3f4bbf5250b728f1fa6b2cb72a33aed1d236ea9caf0e21ad943e5f"},
+        {"id": "hand_yolov8s", "file": "hand_yolov8s.pt", "folder": "ultralytics_bbox",
+         "url": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov8s.pt",
+         "size": 22507643, "sha256": "70b540063fbc385736d8258970744a4afbc4cbf7932134bae3b24cdadeadec06"},
+        {"id": "person_yolov8m_seg", "file": "person_yolov8m-seg.pt", "folder": "ultralytics_segm",
+         "url": "https://huggingface.co/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt",
+         "size": 54827683, "sha256": "c8ab26f517173b1fe8342d336a09f443eb61cb08dcbfc78d53fff4c2547ae81e"},
+        {"id": "person_yolov8n_seg", "file": "person_yolov8n-seg.pt", "folder": "ultralytics_segm",
+         "url": "https://huggingface.co/Bingsu/adetailer/resolve/main/person_yolov8n-seg.pt",
+         "size": 6777003, "sha256": "38fc8aaae97cb6e70be4ec44770005b26ed473471362afcda62a0037d7ccf432"},
+        {"id": "sam_vit_b", "file": "sam_vit_b_01ec64.pth", "folder": "sams",
+         "url": "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth",
+         "size": 375042383},
+        {"id": "pit_eye", "file": "PitEyeDetailer-v2-seg.pt", "folder": "ultralytics_segm",
+         "manual": "https://civitai.com/search/models?query=PitEyeDetailer"},
+        {"id": "nsfw_segm", "file": "ntd11_anime_nsfw_segm_v5-variant1.pt", "folder": "ultralytics_segm",
+         "manual": "https://civitai.com/search/models?query=anime%20nsfw%20segmentation"}
+      ]
+    },
+    {
+      "id": "upscalers",
+      "name": {"ko": "업스케일 모델", "en": "Upscale models"},
+      "about": {"ko": "이미지 도구의 업스케일에 씁니다. 비상업 라이선스입니다.", "en": "Used by upscaling in the image tools. Non-commercial license."},
+      "license": {"name": "CC BY-NC-SA 4.0", "url": "https://huggingface.co/Kim2091/2x-AnimeSharpV4"},
+      "items": [
+        {"id": "animesharp_fast", "file": "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors", "folder": "upscale_models",
+         "url": "https://huggingface.co/Kim2091/2x-AnimeSharpV4/resolve/main/2x-AnimeSharpV4_Fast_RCAN_PU.safetensors",
+         "size": 31359158, "sha256": "b641c9eb10b43f26538177aa8f0fef8b9fc2a153afd1431d0a062a84c49ce6d0"},
+        {"id": "animesharp", "file": "2x-AnimeSharpV4_RCAN.safetensors", "folder": "upscale_models",
+         "url": "https://huggingface.co/Kim2091/2x-AnimeSharpV4/resolve/main/2x-AnimeSharpV4_RCAN.safetensors",
+         "size": 31053198, "sha256": "6470bb91d6622d6acdff81132c1a8615b961b919ce2b9a01ce993378500cfbe1"},
+        {"id": "ultrasharp", "file": "4x-UltraSharp.safetensors", "folder": "upscale_models",
+         "url": "https://huggingface.co/Kim2091/UltraSharp/resolve/main/4x-UltraSharp.safetensors",
+         "size": 66864028, "sha256": "36a340b5509b699d2c06cb445ddc1d3d39199ac734d889ed6d7915f60e05bcbc"}
+      ]
+    }
+  ]
+}

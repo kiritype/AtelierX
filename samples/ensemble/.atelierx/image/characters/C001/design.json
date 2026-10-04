@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "trigger": "w002_c001",
+  "appearance": {
+    "prompt": ["1girl", "solo", "black hair", "long hair", "straight hair", "brown eyes"],
+    "negative": [],
+    "source": {"section": "appearance", "hash": "sample"}
+  },
+  "outfits": {
+    "o01": {
+      "name": "교복",
+      "slots": {
+        "top": {"prompt": ["navy blazer", "white blouse", "navy ribbon"]},
+        "bottom": {"prompt": ["navy plaid skirt", "black pantyhose"]},
+        "shoes": {"prompt": ["brown loafers"]}
+      },
+      "negative": [],
+      "source": {"section": "outfit", "heading": "교복", "hash": "sample"}
+    }
+  },
+  "default_outfit": "o01"
+}

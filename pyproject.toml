@@ -1,0 +1,52 @@
+[project]
+name = "atelierx"
+version = "0.0.1"
+description = "RP chatbot authoring tool"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "starlette>=0.47",
+    "uvicorn>=0.35",
+    "ruamel.yaml>=0.18",
+    "cryptography>=45",
+    "watchfiles>=1.1",
+    "httpx>=0.28",
+    "pillow>=11",
+]
+
+[dependency-groups]
+packaging = [
+    "pywebview==6.2.1",
+    "pyinstaller==6.22.3",
+]
+dev = [
+    "pytest>=8",
+    "httpx>=0.28",
+    "ruff>=0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["server/atelierx"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["server"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["server", "tests"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint.per-file-ignores]
+# Ported image-module code (decision 0018): workers deliberately catch everything to keep running.
+"server/atelierx/image/**" = ["BLE001", "C408", "TRY004", "PLW1510"]
+# ComfyUI node pack (runs inside ComfyUI, ported): its type checks raise ValueError as ComfyUI expects.
+"comfy_nodes/**" = ["C408", "TRY004"]

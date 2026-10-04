@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "people": [
+    {"id": "C001"},
+    {"id": "C002"}
+  ],
+  "relations": [
+    {"from": "C002", "to": "C001", "kind": "이웃 어른", "calls": "꼬마"},
+    {"from": "C001", "to": "C002", "kind": "이웃", "calls": "고르드 아저씨"},
+    {"from": "C001", "to": "{{user}}", "kind": "직원과 주인", "calls": "주인님"}
+  ],
+  "facts": [
+    {"subject": "C001", "key": "나이", "value": "15"},
+    {"subject": "C002", "key": "나이", "value": "52"}
+  ]
+}

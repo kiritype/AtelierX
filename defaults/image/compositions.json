@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "items": {
+    "upper_front": {"name": "상반신 정면", "prompt": ["upper body", "straight-on", "looking at viewer"], "negative": [], "suggest_slots": ["hands", "top"]},
+    "portrait": {"name": "얼굴 위주", "prompt": ["portrait", "looking at viewer"], "negative": [], "suggest_slots": []},
+    "cowboy": {"name": "허벅지까지", "prompt": ["cowboy shot", "looking at viewer"], "negative": [], "suggest_slots": ["hands", "top", "bottom"]},
+    "full_body": {"name": "전신", "prompt": ["full body", "standing", "looking at viewer"], "negative": [], "suggest_slots": ["full", "hands", "top", "bottom", "shoes"]}
+  }
+}

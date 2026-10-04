@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "layout_version": 1,
+  "id": "W001",
+  "tags": ["샘플"],
+  "scale": "single",
+  "language": "ko",
+  "overrides": {},
+  "character_sections": {},
+  "char": "C001",
+  "llm_consent": [],
+  "order": {
+    "": ["메인.md", "시작 상황.md", "인물", "장소", "메모"]
+  },
+  "created_at": "2026-10-03T09:00:00+09:00",
+  "updated_at": "2026-10-03T09:00:00+09:00"
+}

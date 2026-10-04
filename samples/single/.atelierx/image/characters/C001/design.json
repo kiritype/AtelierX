@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "trigger": "w001_c001",
+  "appearance": {
+    "prompt": ["1girl", "solo", "brown hair", "short hair", "side-swept bangs", "brown eyes", "slender"],
+    "negative": [],
+    "source": {"section": "appearance", "hash": "sample"}
+  },
+  "outfits": {
+    "o01": {
+      "name": "근무복",
+      "slots": {
+        "top": {"prompt": ["white shirt", "sleeves rolled up", "navy apron"]},
+        "bottom": {"prompt": ["black pants"]},
+        "shoes": {"prompt": ["brown shoes"]}
+      },
+      "negative": [],
+      "source": {"section": "outfit", "heading": "근무복", "hash": "sample"}
+    },
+    "o02": {
+      "name": "쉬는 날",
+      "slots": {
+        "top": {"prompt": ["cream sweater"]},
+        "bottom": {"prompt": ["light blue jeans"]},
+        "shoes": {"prompt": ["white sneakers"]}
+      },
+      "negative": [],
+      "source": {"section": "outfit", "heading": "쉬는 날", "hash": "sample"}
+    }
+  },
+  "default_outfit": "o01"
+}

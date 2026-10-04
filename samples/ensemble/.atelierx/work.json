@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "layout_version": 1,
+  "id": "W002",
+  "tags": ["샘플"],
+  "scale": "ensemble",
+  "language": "ko",
+  "overrides": {},
+  "character_sections": {},
+  "llm_consent": [],
+  "order": {
+    "": ["메인.md", "시작 상황.md", "인물", "세계관"],
+    "인물": ["한서윤.md", "김도현.md", "박지우.md"]
+  },
+  "created_at": "2026-10-03T09:00:00+09:00",
+  "updated_at": "2026-10-03T09:00:00+09:00"
+}

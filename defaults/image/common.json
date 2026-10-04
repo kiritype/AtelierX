@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "items": {
+    "quality": {"name": "품질 기본", "target": "positive", "prompt": ["masterpiece", "best quality"]},
+    "background_simple": {"name": "단색 배경", "target": "positive", "prompt": ["simple background", "white background"]},
+    "negative_basic": {"name": "기본 negative", "target": "negative", "prompt": ["lowres", "bad anatomy", "bad hands", "extra fingers", "blurry", "watermark", "text"]}
+  }
+}

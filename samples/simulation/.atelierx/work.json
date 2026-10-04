@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "layout_version": 1,
+  "id": "W003",
+  "tags": ["샘플"],
+  "scale": "simulation",
+  "language": "ko",
+  "overrides": {},
+  "character_sections": {},
+  "llm_consent": [],
+  "order": {
+    "": ["메인.md", "시작 상황.md", "시스템", "장소", "인물", "UI"],
+    "장소": ["여관.md", "던전 입구.md", "시장.md"]
+  },
+  "created_at": "2026-10-03T09:00:00+09:00",
+  "updated_at": "2026-10-03T09:00:00+09:00"
+}

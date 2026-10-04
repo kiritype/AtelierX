@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "order": ["common", "style", "composition", "trigger", "appearance", "expression", "outfit"],
+  "slots": [
+    {"id": "full", "name": "전체"},
+    {"id": "hands", "name": "손"},
+    {"id": "top", "name": "상의"},
+    {"id": "bottom", "name": "하의"},
+    {"id": "shoes", "name": "신발"}
+  ],
+  "ratings": [
+    {"id": "general", "name": "일반"}
+  ]
+}

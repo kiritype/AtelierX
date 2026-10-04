@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "people": [
+    {"id": "C001"},
+    {"id": "C002"},
+    {"id": "C003"},
+    {"id": "N01", "name": "담임 선생님", "note": "로어북 없는 인물. 국어 담당"}
+  ],
+  "relations": [
+    {"from": "C001", "to": "C002", "kind": "친구", "calls": "도현아", "note": "초등학교부터"},
+    {"from": "C002", "to": "C001", "kind": "친구", "calls": "반장"},
+    {"from": "C001", "to": "C003", "kind": "후배처럼 챙김", "calls": "지우야"},
+    {"from": "C003", "to": "C001", "kind": "따름", "calls": "서윤 언니"},
+    {"from": "C002", "to": "C003", "kind": "같은 반", "calls": "지우"},
+    {"from": "C003", "to": "C002", "kind": "같은 반", "calls": "김도현"},
+    {"from": "C001", "to": "{{user}}", "kind": "반장과 전학생", "calls": "전학생"},
+    {"from": "C002", "to": "{{user}}", "kind": "같은 반", "calls": "전학생"}
+  ],
+  "facts": [
+    {"subject": "C001", "key": "나이", "value": "17"},
+    {"subject": "C002", "key": "나이", "value": "17"},
+    {"subject": "C003", "key": "나이", "value": "16"},
+    {"subject": "C001", "key": "동아리", "value": "도서부"},
+    {"subject": "C002", "key": "동아리", "value": "농구부"},
+    {"subject": "C003", "key": "동아리", "value": "미술부"}
+  ]
+}
