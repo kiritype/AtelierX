@@ -141,7 +141,10 @@ def main():
                 text_select=True,
                 confirm_close=True,
                 localization={
-                    'global.quitConfirmation': 'AtelierX를 종료할까요? 저장하지 않은 변경 사항이 사라질 수 있습니다.'
+                    'global.quitConfirmation': (
+                        'AtelierX를 종료할까요? 저장하지 않은 변경 사항이 사라질 수 있습니다.\n'
+                        '진행 중인 LoRA 학습·설치와 앱에서 시작한 ComfyUI도 함께 종료됩니다.'
+                    )
                 },
             )
             webview.start(gui='edgechromium', private_mode=True, storage_path=str(paths.state / 'webview'))

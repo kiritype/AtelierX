@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from PIL import Image
 
 from ...core.i18n import Msg, message_of
-from ...core.proc import NO_WINDOW
+from ...core.proc import NO_WINDOW, stop_tree
 from ..util import code, now
 from . import models, setup, store
 
@@ -233,15 +233,21 @@ class LoraTrainer:
                     Msg('server.trainer.this_training_is_not_running', 'This training is not running.')
                 )
             self.cancel_requested = True
-            if self.process and self.process.poll() is None:
-                # The trainer starts worker processes of its own; stop the whole tree.
-                subprocess.call(
-                    ['taskkill', '/PID', str(self.process.pid), '/T', '/F'],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=NO_WINDOW,
-                )
+            # The trainer starts worker processes of its own; stop the whole tree.
+            stop_tree(self.process)
         return {'ok': True}
+
+    def shutdown(self, timeout=10):
+        """The app is closing: a training run stops with it and is recorded as cancelled."""
+        with self.lock:
+            if self.active is None:
+                return
+            self.cancel_requested = True
+            process = self.process
+        stop_tree(process)
+        deadline = time.monotonic() + timeout
+        while self.active is not None and time.monotonic() < deadline:
+            time.sleep(0.1)
 
     # --- the run itself -----------------------------------------------------------------------------------------
     def _check_cancel(self):

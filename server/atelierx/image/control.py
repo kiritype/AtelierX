@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..core.i18n import Msg, message_of
+from ..core.proc import stop_tree
 from .util import atomic_json, settings_file
 
 
@@ -194,6 +195,10 @@ class ComfyControl:
             threading.Thread(target=self._run, args=(action,), daemon=True).start()
         return {'ok': True, 'operation': action}
 
+    def shutdown(self):
+        """The app is closing: stop the ComfyUI it started. A ComfyUI started elsewhere keeps running."""
+        stop_tree(self.process)
+
     def _start(self):
         config = self.config
         python = Path(config['python_path'])
@@ -266,9 +271,7 @@ class ComfyControl:
                             'Timed out waiting for the current image, so the control action was cancelled.',
                         )
                     )
-                if self.process is not None and self.process.poll() is None:
-                    self.process.terminate()
-                    self.process.wait(timeout=30)
+                stop_tree(self.process, timeout=30)
                 if action == 'restart':
                     self._start()
             else:
