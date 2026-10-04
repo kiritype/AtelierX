@@ -381,7 +381,7 @@ def main(argv=None):
         if "run_dir" in locals():
             report_path = run_dir / "report.json"
             report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            print(json.dumps(report, ensure_ascii=False, indent=2))
+            print(json.dumps(report, ensure_ascii=True, indent=2))
     return return_code
 
 
