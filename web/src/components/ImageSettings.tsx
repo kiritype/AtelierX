@@ -403,6 +403,10 @@ function ReviewSection() {
 }
 
 type Training = { trainer_dir: string; trainer_python: string; lora_dir: string; bases: Record<string, { dit: string; text_encoder: string; vae: string }> };
+type InstallStatus = {
+  run: { section: string; status: string; log: string[]; error?: any; started_at?: string } | null;
+  models?: { groups?: { id: string; license?: { name: string; url: string }; items: { size?: number; installed?: string | null }[] }[] };
+};
 
 // LoRA training (23-lora-training): the separately installed trainer, where finished LoRAs go, and the training models.
 function TrainingSection() {
@@ -410,12 +414,61 @@ function TrainingSection() {
   const toast = useToast();
   const fail = useFail();
   const status = useQuery<any>({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
+  const installs = useQuery<InstallStatus>({
+    queryKey: ['installs'],
+    queryFn: () => get('/api/image/installs'),
+    refetchInterval: (q) => ((q.state.data as InstallStatus | undefined)?.run?.status === 'running' ? 1200 : 15000),
+  });
+  const connection = useQuery<Connection>({ queryKey: ['image-connection'], queryFn: () => get('/api/image/connection'), refetchInterval: 4000 });
   const [form, setForm] = useState<Training | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const logRef = useRef<HTMLPreElement>(null);
+  const previousRun = useRef<{ id: string; status: string } | null>(null);
+  const pendingSetupFrom = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (status.data && !form) setForm(status.data.settings);
   }, [status.data, form]);
+  const run = installs.data?.run;
+  const running = run?.status === 'running';
+  const dirty = !!form && !!status.data && JSON.stringify(form) !== JSON.stringify(status.data.settings);
+  const modelGroup = installs.data?.models?.groups?.find((group) => group.id === 'training_base');
+  const modelBytes = modelGroup?.items.filter((item) => !item.installed).reduce((sum, item) => sum + (item.size ?? 0), 0);
+  const modelSize = modelBytes === undefined ? '5.6GB' : `${(modelBytes / 1e9).toFixed(1)}GB`;
+  useEffect(() => {
+    logRef.current?.scrollTo(0, logRef.current.scrollHeight);
+    const runId = run?.started_at ?? '';
+    const prior = previousRun.current;
+    const newRunFinished = !!run && run.section === 'training' && run.status !== 'running'
+      && ((prior?.id === runId && prior.status === 'running')
+        || (pendingSetupFrom.current !== undefined && runId !== pendingSetupFrom.current));
+    if (newRunFinished) {
+      pendingSetupFrom.current = undefined;
+      const formAtCompletion = form;
+      void (async () => {
+        await qc.invalidateQueries({ queryKey: ['training-status'] });
+        if (!dirty && status.data) {
+          const fresh = await qc.fetchQuery({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
+          setForm((current) => JSON.stringify(current) === JSON.stringify(formAtCompletion) ? fresh.settings : current);
+        }
+      })();
+    }
+    if (run) previousRun.current = { id: runId, status: run.status };
+  }, [run?.started_at, run?.status, run?.section, run?.log?.length, dirty, qc, status.data, form]);
   if (!form || !status.data) return null;
   const s = status.data;
+  async function prepare() {
+    setPreparing(true);
+    pendingSetupFrom.current = run?.started_at ?? null;
+    try {
+      await post('/api/image/installs/training', {});
+      await qc.invalidateQueries({ queryKey: ['installs'] });
+    } catch (err) {
+      pendingSetupFrom.current = undefined;
+      fail(err);
+    } finally {
+      setPreparing(false);
+    }
+  }
   const mark = (ok: boolean) => <span className={ok ? 'ok-text' : 'faint'}>{ok ? '✓' : '—'}</span>;
   const files = (base: 'official' | 'generation') =>
     (['dit', 'text_encoder', 'vae'] as const).map((key) => (
@@ -425,6 +478,7 @@ function TrainingSection() {
         </span>
         <input
           className="mono grow"
+          disabled={running || preparing}
           value={form.bases?.[base]?.[key] ?? ''}
           onChange={(e) => setForm({ ...form, bases: { ...form.bases, [base]: { ...(form.bases?.[base] ?? { dit: '', text_encoder: '', vae: '' }), [key]: e.target.value } } })}
         />
@@ -435,36 +489,58 @@ function TrainingSection() {
     <section className="col">
       <div className="section-title">{t('image_settings.training')}</div>
       <p className="faint">{t('image_settings.training_note')}</p>
-      <pre className="mono small">uv run python tools/install_trainer.py --yes</pre>
-      <label className="row" style={{ gap: 4 }}>
-        <span className="muted" style={{ minWidth: 110 }}>
-          {t('image_settings.training.trainer_dir')}
-        </span>
-        <input className="mono grow" placeholder="vendor/anima_lora" value={form.trainer_dir} onChange={(e) => setForm({ ...form, trainer_dir: e.target.value })} />
-        {mark(s.trainer_found)}
-        {s.trainer_found && !s.patched && <span className="warn-text small">{t('image_settings.training.not_patched')}</span>}
-      </label>
-      <label className="row" style={{ gap: 4 }}>
-        <span className="muted" style={{ minWidth: 110 }}>
-          {t('image_settings.training.python')}
-        </span>
-        <input className="mono grow" value={form.trainer_python} onChange={(e) => setForm({ ...form, trainer_python: e.target.value })} />
-        {mark(s.python_found)}
-      </label>
-      <label className="row" style={{ gap: 4 }}>
-        <span className="muted" style={{ minWidth: 110 }}>
-          {t('image_settings.training.lora_dir')}
-        </span>
-        <input className="mono grow" value={form.lora_dir} onChange={(e) => setForm({ ...form, lora_dir: e.target.value })} />
-        {mark(s.lora_dir_found)}
-      </label>
-      <div className="muted">{t('image_settings.training.official')}</div>
-      {files('official')}
-      <div className="muted">{t('image_settings.training.generation')}</div>
-      {files('generation')}
+      <div className="compose-card col">
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <strong className="grow">{t('image_settings.training.auto_title')}</strong>
+          <button className="primary" disabled={running || preparing || dirty || !connection.data?.status.connected} onClick={prepare}>
+            {preparing ? t('image_settings.training.preparing') : running && run?.section === 'training' ? t('image_settings.training.running') : t('image_settings.training.auto_button')}
+          </button>
+        </div>
+        <p className="faint small">{modelBytes === 0 ? t('image_settings.training.auto_about_ready') : t('image_settings.training.auto_about', { size: modelSize })}</p>
+        {modelGroup?.license && <span className="small">{t('install.license')}: <a href={modelGroup.license.url} target="_blank" rel="noreferrer">{modelGroup.license.name}</a></span>}
+        {!connection.data?.status.connected && <div className="warn-text small">{t('image_settings.training.comfy_required')}</div>}
+        {dirty && <div className="warn-text small">{t('image_settings.training.save_first')}</div>}
+        {running && <div className="faint small">{t(run?.section === 'training' ? 'image_settings.training.running' : 'image_settings.training.install_busy')}</div>}
+        {run?.section === 'training' && run.status !== 'running' && <div className={run.status === 'failed' ? 'error-text small' : 'ok-text small'}>{t(`install.status.${run.status}`)}</div>}
+        {run?.section === 'training' && run.error && <div className="error-text small">{message(run.error)}</div>}
+        {run?.section === 'training' && <pre ref={logRef} className="lora-log mono small">{run.log.join('\n') || '…'}</pre>}
+      </div>
+      <div className="row small" style={{ flexWrap: 'wrap', gap: 12 }}>
+        <span>{mark(s.trainer_found && s.patched)} {t('image_settings.training.ready_trainer')}</span>
+        <span>{mark(s.python_found)} {t('image_settings.training.ready_python')}</span>
+        <span>{mark(s.files?.['official.dit'] && s.files?.['official.text_encoder'] && s.files?.['official.vae'])} {t('image_settings.training.ready_models')}</span>
+        <span>{mark(s.lora_dir_found)} {t('image_settings.training.ready_output')}</span>
+      </div>
+      <details>
+        <summary>{t('image_settings.training.manual')}</summary>
+        <div className="col" style={{ marginTop: 8 }}>
+          <p className="faint small">{t('image_settings.training.manual_note')}</p>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted" style={{ minWidth: 110 }}>{t('image_settings.training.trainer_dir')}</span>
+            <input className="mono grow" disabled={running || preparing} placeholder="vendor/anima_lora" value={form.trainer_dir} onChange={(e) => setForm({ ...form, trainer_dir: e.target.value })} />
+            {mark(s.trainer_found)}
+            {s.trainer_found && !s.patched && <span className="warn-text small">{t('image_settings.training.not_patched')}</span>}
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted" style={{ minWidth: 110 }}>{t('image_settings.training.python')}</span>
+            <input className="mono grow" disabled={running || preparing} value={form.trainer_python} onChange={(e) => setForm({ ...form, trainer_python: e.target.value })} />
+            {mark(s.python_found)}
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted" style={{ minWidth: 110 }}>{t('image_settings.training.lora_dir')}</span>
+            <input className="mono grow" disabled={running || preparing} value={form.lora_dir} onChange={(e) => setForm({ ...form, lora_dir: e.target.value })} />
+            {mark(s.lora_dir_found)}
+          </label>
+          <div className="muted">{t('image_settings.training.official')}</div>
+          {files('official')}
+          <div className="muted">{t('image_settings.training.generation')}</div>
+          {files('generation')}
+        </div>
+      </details>
       <div>
         <button
           className="primary"
+          disabled={running || preparing}
           onClick={async () => {
             try {
               const saved = await put<Training>('/api/image/settings/training', form);

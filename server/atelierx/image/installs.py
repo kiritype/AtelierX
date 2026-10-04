@@ -32,7 +32,7 @@ from .util import now, read_json
 
 log = logging.getLogger(__name__)
 
-SECTIONS = ('tools', 'nodes', 'models', 'trainer')
+SECTIONS = ('tools', 'nodes', 'models', 'trainer', 'training')
 LOG_LINES = 600
 NODES_CHECK_TTL = 60
 TOOL_CHECK_TTL = 30.0
@@ -440,6 +440,7 @@ class Installs:
                     'Start the image server first; models go into the folders it reads.',
                 )
             )
+
         wanted = set(body.get('items') or [])
         models = self._models()
         for group in models['groups']:
@@ -464,6 +465,87 @@ class Installs:
                 )
         self._fill_training_models()
 
+    def _training_items(self):
+        """Manifest model entries explicitly marked as training bases."""
+        return [
+            item for group in self.manifest()['groups'] for item in group['items'] if item.get('training')
+        ]
+
+    def _install_training(self, body):
+        """Install only tagged training bases and the trainer, after checking model destinations."""
+        folders = self.model_folders()
+        if folders is None:
+            raise ValueError(
+                Msg(
+                    'server.installs.comfy_off',
+                    'Start the image server first; training models go into the folders it reads.',
+                )
+            )
+
+        settings = trainer_setup.settings(self.paths)
+        if not settings.get('lora_dir') and not comfy_locate.suggest_lora_dir(folders):
+            raise ValueError(
+                Msg(
+                    'server.installs.no_lora_folder',
+                    'The image server has no usable LoRA output folder. Add a LoRA folder in ComfyUI, or set one in Settings → Image → LoRA training.',
+                )
+            )
+
+        # Resolve every destination before downloading models or building the trainer environment.
+        items = self._training_items()
+        planned = []
+        for item in items:
+            installed = next(
+                (
+                    Path(folder) / item['file']
+                    for folder in folders.get(item['folder'], [])
+                    if (Path(folder) / item['file']).is_file()
+                ),
+                None,
+            )
+            target = self._target_folder(folders, item['folder'])
+            if installed is None and target is None:
+                raise ValueError(
+                    Msg(
+                        'server.installs.no_folder',
+                        'The image server has no folder for {kind}.',
+                        kind=item['folder'],
+                    )
+                )
+            planned.append((item, installed, target))
+
+        for item, installed, target in planned:
+            self._check()
+            if installed:
+                self._say(f'{item["file"]}: already installed ({installed})')
+                continue
+            self._say(f'{item["file"]} → {target}')
+            self._download(item['url'], target / item['file'], item.get('size'), item.get('sha256'))
+        self._fill_training_models()
+        self._check()
+        self._install_trainer(body)
+        status = trainer_setup.status(self.paths)
+        incomplete = []
+        if not status['trainer_found']:
+            incomplete.append('trainer files')
+        if not status['python_found']:
+            incomplete.append('trainer Python')
+        if not status['patched']:
+            incomplete.append('model-path patch')
+        if not status['lora_dir_found']:
+            incomplete.append('LoRA output folder')
+        incomplete.extend(
+            name for name, ready in status['files'].items() if name.startswith('official.') and not ready
+        )
+        if incomplete:
+            raise RuntimeError(
+                Msg(
+                    'server.installs.training_incomplete',
+                    'The trainer was installed, but setup still needs: {items}. Check Settings → Image → LoRA training; existing custom paths were preserved.',
+                    items=', '.join(incomplete),
+                )
+            )
+
     def _fill_training_models(self):
         """Put downloaded training-base files into the training settings where those are empty."""
         found = {}
@@ -473,8 +555,9 @@ class Installs:
                     found[item['training']] = item['installed']
         current = image_settings.get(self.paths, 'training')
         official = (current.get('bases') or {}).get('official') or {}
-        if found and not any(official.values()):
-            image_settings.save(self.paths, 'training', {'bases': {'official': {**official, **found}}})
+        missing = {key: path for key, path in found.items() if not str(official.get(key) or '').strip()}
+        if missing:
+            image_settings.save(self.paths, 'training', {'bases': {'official': {**official, **missing}}})
             self._say('Training settings: official Anima base files set.')
 
     def _fetch_repo(self, source, folder):

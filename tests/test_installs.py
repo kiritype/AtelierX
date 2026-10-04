@@ -7,13 +7,16 @@ from types import SimpleNamespace
 import pytest
 
 from atelierx.image import installs as installs_module
+from atelierx.image import settings as image_settings
 from atelierx.image.installs import Installs, apply_patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def make_installs(tmp_path):
-    runtime = SimpleNamespace(paths=SimpleNamespace(root=tmp_path, defaults=tmp_path))
+    runtime = SimpleNamespace(
+        paths=SimpleNamespace(root=tmp_path, defaults=tmp_path, config=tmp_path / 'config')
+    )
     return Installs(runtime)
 
 
@@ -87,6 +90,148 @@ def test_apply_patch_is_idempotent_and_refuses_other_versions():
     assert apply_patch(patched, patch) == patched
     with pytest.raises(ValueError):
         apply_patch('something else entirely', patch)
+
+
+def test_fill_training_models_preserves_individual_custom_and_generation_paths(tmp_path):
+    paths = SimpleNamespace(root=tmp_path, defaults=tmp_path, config=tmp_path / 'config')
+    installs = Installs(SimpleNamespace(paths=paths))
+    installs.run = {'log': []}
+    installed = {}
+    for key in ('dit', 'text_encoder', 'vae'):
+        path = tmp_path / f'{key}.safetensors'
+        path.write_bytes(b'model')
+        installed[key] = str(path)
+    manifest = {
+        'groups': [
+            {
+                'items': [
+                    {'id': key, 'file': f'{key}.safetensors', 'folder': key, 'training': key}
+                    for key in installed
+                ]
+            }
+        ]
+    }
+    installs.manifest = lambda: manifest
+    installs.model_folders = lambda: {key: [str(tmp_path)] for key in installed}
+    image_settings.save(
+        paths,
+        'training',
+        {
+            'bases': {
+                'official': {'dit': '', 'text_encoder': 'custom encoder.safetensors', 'vae': ''},
+                'generation': {
+                    'dit': 'generation dit',
+                    'text_encoder': 'generation text',
+                    'vae': 'generation vae',
+                },
+            }
+        },
+    )
+
+    installs._fill_training_models()
+
+    bases = image_settings.get(paths, 'training')['bases']
+    assert bases['official'] == {
+        'dit': installed['dit'],
+        'text_encoder': 'custom encoder.safetensors',
+        'vae': installed['vae'],
+    }
+    assert bases['generation'] == {
+        'dit': 'generation dit',
+        'text_encoder': 'generation text',
+        'vae': 'generation vae',
+    }
+
+
+def test_training_install_only_uses_tagged_items_reuses_files_and_installs_trainer(tmp_path, monkeypatch):
+    paths = SimpleNamespace(root=tmp_path, defaults=tmp_path, config=tmp_path / 'config')
+    installs = Installs(SimpleNamespace(paths=paths))
+    installs.run = {'log': []}
+    model_dir = tmp_path / 'models'
+    model_dir.mkdir()
+    existing = model_dir / 'dit.safetensors'
+    existing.write_bytes(b'existing')
+    manifest = {
+        'groups': [
+            {
+                'items': [
+                    {
+                        'id': 'dit',
+                        'file': 'dit.safetensors',
+                        'folder': 'diffusion_models',
+                        'training': 'dit',
+                        'url': 'mock:dit',
+                    },
+                    {
+                        'id': 'encoder',
+                        'file': 'encoder.safetensors',
+                        'folder': 'text_encoders',
+                        'training': 'text_encoder',
+                        'url': 'mock:encoder',
+                    },
+                    {
+                        'id': 'vae',
+                        'file': 'vae.safetensors',
+                        'folder': 'vae',
+                        'training': 'vae',
+                        'url': 'mock:vae',
+                    },
+                    {'id': 'unrelated', 'file': 'large.bin', 'folder': 'checkpoints', 'url': 'mock:other'},
+                ]
+            }
+        ]
+    }
+    installs.manifest = lambda: manifest
+    installs.model_folders = lambda: (
+        {kind: [str(model_dir)] for kind in ('diffusion_models', 'text_encoders', 'vae')}
+        | {'loras': [str(model_dir / 'loras')]}
+    )
+    (model_dir / 'loras').mkdir()
+    downloads = []
+
+    def download(url, target, *_args, **_kwargs):
+        downloads.append(url)
+        Path(target).write_bytes(url.encode())
+
+    monkeypatch.setattr(installs, '_download', download)
+    monkeypatch.setattr(installs, '_fill_training_models', lambda: None)
+    trainer_calls = []
+    monkeypatch.setattr(installs, '_install_trainer', lambda body: trainer_calls.append(body))
+    monkeypatch.setattr(
+        installs_module.trainer_setup,
+        'status',
+        lambda _paths: {
+            'trainer_found': True,
+            'python_found': True,
+            'patched': True,
+            'lora_dir_found': True,
+            'files': {'official.dit': True, 'official.text_encoder': True, 'official.vae': True},
+        },
+    )
+
+    installs._install_training({'source': 'test'})
+
+    assert downloads == ['mock:encoder', 'mock:vae']
+    assert trainer_calls == [{'source': 'test'}]
+    assert (model_dir / 'encoder.safetensors').read_bytes() == b'mock:encoder'
+    assert (model_dir / 'vae.safetensors').read_bytes() == b'mock:vae'
+    assert not (model_dir / 'large.bin').exists()
+
+
+def test_training_install_preflights_model_folders_before_trainer(tmp_path, monkeypatch):
+    installs = make_installs(tmp_path)
+    installs.run = {'log': []}
+    loras = tmp_path / 'loras'
+    loras.mkdir()
+    installs.model_folders = lambda: {'diffusion_models': [], 'loras': [str(loras)]}
+    installs.manifest = lambda: {
+        'groups': [{'items': [{'file': 'dit.safetensors', 'folder': 'diffusion_models', 'training': 'dit'}]}]
+    }
+    trainer = []
+    monkeypatch.setattr(installs, '_install_trainer', lambda _body: trainer.append(True))
+    with pytest.raises(ValueError, match='no folder for diffusion_models'):
+        installs._install_training({})
+    assert trainer == []
 
 
 def test_model_downloads_check_hashes_and_fill_training_settings(unlocked, tmp_path):
