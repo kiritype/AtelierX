@@ -1,15 +1,19 @@
 def test_platform_settings_crud_and_usage_guard(unlocked):
     c = unlocked
-    created = c.post('/api/platforms', json={'id': 'my_platform', 'name': 'Mine'} )
+    created = c.post('/api/platforms', json={'id': 'my_platform', 'name': 'Mine'})
     assert created.status_code == 200
     assert created.json()['count'] == 'utf8_bytes'
 
     doc = created.json()
     doc['custom_rule'] = {'kept': True}
     c.put('/api/platforms/my_platform', json=doc)
-    saved = c.put('/api/platforms/my_platform', json={
-        'name': 'Renamed', 'limits': {'main': {'max': 0}, 'lorebook_entry': {'max': 120}},
-    })
+    saved = c.put(
+        '/api/platforms/my_platform',
+        json={
+            'name': 'Renamed',
+            'limits': {'main': {'max': 0}, 'lorebook_entry': {'max': 120}},
+        },
+    )
     assert saved.status_code == 200
     assert saved.json()['count'] == 'utf8_bytes'
     assert saved.json()['custom_rule'] == {'kept': True}
@@ -43,9 +47,15 @@ def test_lorebook_entry_limit_only_checks_lorebook_and_character(unlocked):
     c = unlocked
     wid = c.post('/api/works', json={'name': 'Limit kinds'}).json()['id']
     c.post('/api/platforms', json={'id': 'kind_limits', 'name': 'Kind limits'})
-    c.put('/api/platforms/kind_limits', json={'limits': {
-        'main': {'max': 1}, 'lorebook_entry': {'max': 1},
-    }})
+    c.put(
+        '/api/platforms/kind_limits',
+        json={
+            'limits': {
+                'main': {'max': 1},
+                'lorebook_entry': {'max': 1},
+            }
+        },
+    )
     c.patch(f'/api/works/{wid}', json={'tags': ['kind_limits']})
     for path, kind, ident in (
         ('main.md', 'main', 'M001'),
@@ -56,11 +66,18 @@ def test_lorebook_entry_limit_only_checks_lorebook_and_character(unlocked):
     ):
         c.post(f'/api/works/{wid}/file', json={'path': path, 'kind': kind})
         current = c.get(f'/api/works/{wid}/file', params={'path': path}).json()
-        c.put(f'/api/works/{wid}/file', params={'path': path}, json={
-            'meta': {'id': ident}, 'body': 'long enough to exceed one byte', 'base_hash': current['hash'],
-        })
+        c.put(
+            f'/api/works/{wid}/file',
+            params={'path': path},
+            json={
+                'meta': {'id': ident},
+                'body': 'long enough to exceed one byte',
+                'base_hash': current['hash'],
+            },
+        )
     errors = {
-        issue['path'] for issue in c.get(f'/api/works/{wid}/check').json()
+        issue['path']
+        for issue in c.get(f'/api/works/{wid}/check').json()
         if issue['message']['key'] == 'check.too_big'
     }
     assert errors == {'main.md', 'entry.md', 'person.md'}
@@ -72,9 +89,16 @@ def test_platform_malformed_limits_and_non_gui_count_preserved(unlocked):
     c.post('/api/platforms', json={'id': 'legacy', 'name': 'Legacy'})
     malformed = c.put('/api/platforms/legacy', json={'limits': []})
     assert malformed.status_code == 400
-    saved = c.put('/api/platforms/legacy', json={'count': 'chars', 'limits': {
-        'main': {'max': None}, 'lorebook_entry': {'max': 200},
-    }})
+    saved = c.put(
+        '/api/platforms/legacy',
+        json={
+            'count': 'chars',
+            'limits': {
+                'main': {'max': None},
+                'lorebook_entry': {'max': 200},
+            },
+        },
+    )
     assert saved.status_code == 200
     assert saved.json()['count'] == 'chars'
 
@@ -100,4 +124,3 @@ def test_platform_delete_rejects_traversal_and_external_symlink(paths, tmp_path)
     with pytest.raises(AppError):
         presets.delete('escape', [], {})
     assert (outside / 'keep.txt').read_text(encoding='utf-8') == 'keep'
-

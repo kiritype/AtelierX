@@ -5,7 +5,11 @@ def test_design_crud_revision_and_retired_outfit_ids(unlocked):
     loaded = c.get(url).json()
     assert loaded['revision']
     design = loaded['design']
-    design['outfits']['custom'] = {'name': '추가 의상', 'slots': {'top': {'prompt': ['blue shirt']}}, 'negative': []}
+    design['outfits']['custom'] = {
+        'name': '추가 의상',
+        'slots': {'top': {'prompt': ['blue shirt']}},
+        'negative': [],
+    }
     saved = c.put(url, json={'design': design, 'base_revision': loaded['revision']})
     assert saved.status_code == 200
     assert saved.json()['design']['outfits']['custom']['name'] == '추가 의상'
@@ -25,8 +29,13 @@ def test_design_crud_revision_and_retired_outfit_ids(unlocked):
     assert 'custom' in removed.json()['design']['retired_outfit_ids']
     stale = c.put(url, json={'design': updated, 'base_revision': revision})
     assert stale.status_code == 409
-    invalid = c.put(url, json={'design': {**removed.json()['design'], 'default_outfit': 'missing'},
-                               'base_revision': removed.json()['revision']})
+    invalid = c.put(
+        url,
+        json={
+            'design': {**removed.json()['design'], 'default_outfit': 'missing'},
+            'base_revision': removed.json()['revision'],
+        },
+    )
     assert invalid.status_code == 400
 
 
@@ -51,16 +60,23 @@ def test_empty_design_create_delete_last_outfit_and_preserve_reference(unlocked)
     wid = c.post('/api/works', json={'name': '디자인 없는 작품'}).json()['id']
     c.post(f'/api/works/{wid}/folder', json={'path': '인물'})
     item = c.post(f'/api/works/{wid}/file', json={'path': '인물/테스트'}).json()
-    c.put(f'/api/works/{wid}/file?path=인물/테스트.md', json={
-        'meta': {'id': 'C101', 'kind': 'character'}, 'body': '## 외모\n짧은 머리\n', 'base_hash': item['hash'],
-    })
+    c.put(
+        f'/api/works/{wid}/file?path=인물/테스트.md',
+        json={
+            'meta': {'id': 'C101', 'kind': 'character'},
+            'body': '## 외모\n짧은 머리\n',
+            'base_hash': item['hash'],
+        },
+    )
     url = f'/api/works/{wid}/image/characters/C101'
     loaded = c.get(url).json()
     assert loaded['design'] is None and loaded['revision'] is None
     design = {
         'schema_version': 1,
         'appearance': {'prompt': ['1girl'], 'negative': []},
-        'outfits': {'o01': {'name': '한 벌', 'slots': {'top': {'ref': 'work:foo', 'prompt': []}}, 'negative': []}},
+        'outfits': {
+            'o01': {'name': '한 벌', 'slots': {'top': {'ref': 'work:foo', 'prompt': []}}, 'negative': []}
+        },
         'default_outfit': 'o01',
     }
     created = c.put(url, json={'design': design, 'base_revision': None})
@@ -105,7 +121,9 @@ def test_conversion_apply_refuses_a_newer_manual_design(unlocked):
         time.sleep(0.05)
     assert job['status'] == 'done', job
     fresh_id = job['result']['draft']
-    rejected = c.post(f'/api/works/{wid}/drafts/{fresh_id}/apply', json={'design': {'outfits': [], 'appearance': {}}})
+    rejected = c.post(
+        f'/api/works/{wid}/drafts/{fresh_id}/apply', json={'design': {'outfits': [], 'appearance': {}}}
+    )
     assert rejected.status_code == 400
     applied = c.post(f'/api/works/{wid}/drafts/{fresh_id}/apply', json={})
     assert applied.status_code == 200
@@ -121,7 +139,12 @@ def test_conversion_reconcile_keeps_user_added_outfits_and_never_reuses_removed_
     prior = {
         'appearance': {'prompt': ['custom'], 'negative': []},
         'outfits': {
-            'o01': {'name': '기본', 'slots': {}, 'negative': [], 'source': {'section': 'outfit', 'heading': None}},
+            'o01': {
+                'name': '기본',
+                'slots': {},
+                'negative': [],
+                'source': {'section': 'outfit', 'heading': None},
+            },
             'o02': {'name': '추가', 'slots': {}, 'negative': []},
         },
         'retired_outfit_ids': ['o03'],
@@ -131,8 +154,18 @@ def test_conversion_reconcile_keeps_user_added_outfits_and_never_reuses_removed_
     generated = {
         'appearance': {'prompt': ['converted'], 'negative': []},
         'outfits': {
-            'o01': {'name': '기본', 'slots': {}, 'negative': [], 'source': {'section': 'outfit', 'heading': None}},
-            'o02': {'name': '새 항목', 'slots': {}, 'negative': [], 'source': {'section': 'outfit', 'heading': '새 항목'}},
+            'o01': {
+                'name': '기본',
+                'slots': {},
+                'negative': [],
+                'source': {'section': 'outfit', 'heading': None},
+            },
+            'o02': {
+                'name': '새 항목',
+                'slots': {},
+                'negative': [],
+                'source': {'section': 'outfit', 'heading': '새 항목'},
+            },
         },
         'default_outfit': 'o01',
     }

@@ -1,4 +1,5 @@
 """Build and validate an offline manual from the VitePress Markdown sources."""
+
 from __future__ import annotations
 
 import argparse

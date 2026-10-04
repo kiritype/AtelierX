@@ -31,7 +31,9 @@ def test_compression_guideline_settings_read_save_reload_and_keep_default(unlock
 def test_compression_guideline_settings_reject_stale_and_invalid_body(unlocked):
     endpoint = '/api/settings/compression-guideline'
     first = unlocked.get(endpoint).json()
-    assert unlocked.put(endpoint, json={'text': 'first', 'base_revision': first['revision']}).status_code == 200
+    assert (
+        unlocked.put(endpoint, json={'text': 'first', 'base_revision': first['revision']}).status_code == 200
+    )
 
     stale = unlocked.put(endpoint, json={'text': 'overwrite', 'base_revision': first['revision']})
     assert stale.status_code == 409

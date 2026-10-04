@@ -98,7 +98,13 @@ class Drafts:
         if doc['status'] != 'pending':
             raise AppError(Msg('server.drafts.not_pending', 'This draft has already been handled.'), 409)
         if mode == 'overwrite' and doc['target'].get('base_hash') != item['hash']:
-            raise AppError(Msg('server.drafts.stale', 'The source changed after this draft was created. Review a new result or save as a new file.'), 409)
+            raise AppError(
+                Msg(
+                    'server.drafts.stale',
+                    'The source changed after this draft was created. Review a new result or save as a new file.',
+                ),
+                409,
+            )
         if mode == 'overwrite':
             self.work.save_item(rel, {}, text, item['hash'])
             result_path = rel

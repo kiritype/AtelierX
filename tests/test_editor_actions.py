@@ -22,17 +22,26 @@ def _make_work(client):
     ):
         client.post(f'/api/works/{wid}/file', json={'path': path, 'kind': kind})
         initial = client.get(f'/api/works/{wid}/file', params={'path': path}).json()
-        client.put(f'/api/works/{wid}/file', params={'path': path}, json={
-            'meta': {'id': ident}, 'body': text, 'base_hash': initial['hash'],
-        })
+        client.put(
+            f'/api/works/{wid}/file',
+            params={'path': path},
+            json={
+                'meta': {'id': ident},
+                'body': text,
+                'base_hash': initial['hash'],
+            },
+        )
     return wid, paths
 
 
 def _install_fake_connection(client, monkeypatch):
     providers = client.get('/api/providers').json()
     providers['providers']['fake'] = {
-        'name': 'Fake local', 'type': 'openai_compatible', 'base_url': 'http://localhost:1234/v1',
-        'default_model': 'fake-model', 'trusted': True,
+        'name': 'Fake local',
+        'type': 'openai_compatible',
+        'base_url': 'http://localhost:1234/v1',
+        'default_model': 'fake-model',
+        'trusted': True,
     }
     providers['tasks']['consistency'] = {'provider': 'fake'}
     providers['tasks']['compression'] = {'provider': 'fake'}
@@ -45,7 +54,9 @@ def _install_fake_connection(client, monkeypatch):
         if task == 'compression':
             text = json.dumps({'text': 'Hello {{user}}.\n\n<StatusPanel value="x" />', 'note': 'tidy'})
         else:
-            text = json.dumps({'issues': [{'reason': 'age differs', 'evidence': 'age is 17', 'path': '인물.md'}]})
+            text = json.dumps(
+                {'issues': [{'reason': 'age differs', 'evidence': 'age is 17', 'path': '인물.md'}]}
+            )
         return {'text': text, 'provider': 'fake', 'model': 'fake-model', 'usage': None}
 
     monkeypatch.setattr(llm, 'complete', complete)
@@ -57,7 +68,9 @@ def test_editor_review_and_explicit_consistency_use_json_llm(unlocked, monkeypat
     wid, paths = _make_work(client)
     calls = _install_fake_connection(client, monkeypatch)
 
-    response = client.post(f'/api/works/{wid}/editor/content-review', json={'path': paths[0], 'instruction': 'Focus on clarity.'})
+    response = client.post(
+        f'/api/works/{wid}/editor/content-review', json={'path': paths[0], 'instruction': 'Focus on clarity.'}
+    )
     assert response.status_code == 200
     job = _finished_job(client, response.json()['id'])
     assert job['status'] == 'done'
@@ -94,23 +107,33 @@ def test_format_preserves_syntax_and_rejects_stale_or_review_apply(unlocked, mon
     assert '편집자' in calls[0][1][0]['content']
 
     changed = original['body'] + '\nnew line'
-    client.put(f'/api/works/{wid}/file', params={'path': paths[0]}, json={
-        'meta': None, 'body': changed, 'base_hash': original['hash'],
-    })
+    client.put(
+        f'/api/works/{wid}/file',
+        params={'path': paths[0]},
+        json={
+            'meta': None,
+            'body': changed,
+            'base_hash': original['hash'],
+        },
+    )
     stale = client.post(f'/api/works/{wid}/editor-drafts/{draft_id}/apply', json={'candidate': 0})
     assert stale.status_code == 409
     readonly = client.post(f'/api/works/{wid}/editor-drafts/{draft_id}/apply', json={'candidate': 0})
     assert readonly.status_code == 409
 
     latest = client.get(f'/api/works/{wid}/file', params={'path': paths[0]}).json()
-    applied_job = _finished_job(client, client.post(
-        f'/api/works/{wid}/editor/format', json={'path': paths[0], 'mode': 'tidy'}
-    ).json()['id'])
+    applied_job = _finished_job(
+        client,
+        client.post(f'/api/works/{wid}/editor/format', json={'path': paths[0], 'mode': 'tidy'}).json()['id'],
+    )
     applied = client.post(
         f'/api/works/{wid}/drafts/{applied_job["result"]["draft"]}/apply', json={'candidate': 0}
     )
     assert applied.status_code == 200
-    assert client.get(f'/api/works/{wid}/file', params={'path': paths[0]}).json()['meta']['id'] == latest['meta']['id']
+    assert (
+        client.get(f'/api/works/{wid}/file', params={'path': paths[0]}).json()['meta']['id']
+        == latest['meta']['id']
+    )
 
 
 def test_format_syntax_guard():

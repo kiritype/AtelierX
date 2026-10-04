@@ -228,7 +228,9 @@ def test_image_review_run_override_requires_selected_consent_and_is_kept_on_roun
     c.put('/api/image/review/settings', json={'enabled': True})
     providers = c.get('/api/providers').json()
     providers['providers']['remote'] = {
-        'name': 'Remote', 'type': 'openai_compatible', 'base_url': 'https://llm.example.com/v1',
+        'name': 'Remote',
+        'type': 'openai_compatible',
+        'base_url': 'https://llm.example.com/v1',
         'default_model': 'review-model',
     }
     c.put('/api/providers', json=providers)

@@ -26,7 +26,9 @@ def main(source):
             if key not in ours and key in theirs:
                 ours[key] = theirs[key]
                 added += 1
-        target.write_text(json.dumps(ours, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+        target.write_text(
+            json.dumps(ours, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n'
+        )
         missing = sorted(k for k in used if k not in ours)
         print(f'{lang}: +{added}, still missing {len(missing)}: {missing[:8]}')
 

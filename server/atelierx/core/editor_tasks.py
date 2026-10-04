@@ -50,14 +50,23 @@ def format_messages(path, body, mode='tidy', template='', instruction='', guidel
 
 
 def issues_ok(data):
-    return isinstance(data, dict) and isinstance(data.get('issues'), list) and all(
-        isinstance(row, dict) and isinstance(row.get('reason'), str) and isinstance(row.get('evidence'), str)
-        and isinstance(row.get('path'), str) for row in data['issues']
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get('issues'), list)
+        and all(
+            isinstance(row, dict)
+            and isinstance(row.get('reason'), str)
+            and isinstance(row.get('evidence'), str)
+            and isinstance(row.get('path'), str)
+            for row in data['issues']
+        )
     )
 
 
 def edit_ok(data):
-    return isinstance(data, dict) and isinstance(data.get('text'), str) and isinstance(data.get('note', ''), str)
+    return (
+        isinstance(data, dict) and isinstance(data.get('text'), str) and isinstance(data.get('note', ''), str)
+    )
 
 
 PLACEHOLDER = re.compile(r'\{\{[^{}]+\}\}')
@@ -70,5 +79,3 @@ def preserves_protected(original, edited):
         if Counter(pattern.findall(original)) != Counter(pattern.findall(edited)):
             return False
     return True
-
-

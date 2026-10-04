@@ -32,7 +32,9 @@ def _guideline(s, work, name):
 def _item(work, path):
     item = work.get_item(path)
     if item['meta_error']:
-        raise AppError(Msg('server.editor.invalid_metadata', 'Fix the item metadata before using this action.'), 400)
+        raise AppError(
+            Msg('server.editor.invalid_metadata', 'Fix the item metadata before using this action.'), 400
+        )
     if not path.lower().endswith('.md'):
         raise AppError(Msg('server.editor.markdown_only', 'This action supports Markdown content only.'), 400)
     return item
@@ -57,9 +59,16 @@ async def run_action(request):
     if action == 'consistency':
         paths = data.get('compare_paths')
         if not isinstance(paths, list) or len(paths) < 2 or any(not isinstance(p, str) for p in paths):
-            raise AppError(Msg('server.editor.compare_paths_required', 'Choose at least two paths to compare explicitly.'), 400)
+            raise AppError(
+                Msg(
+                    'server.editor.compare_paths_required', 'Choose at least two paths to compare explicitly.'
+                ),
+                400,
+            )
         if len(set(paths)) != len(paths):
-            raise AppError(Msg('server.editor.compare_paths_duplicate', 'Comparison paths must be unique.'), 400)
+            raise AppError(
+                Msg('server.editor.compare_paths_duplicate', 'Comparison paths must be unique.'), 400
+            )
         items = [_item(work, path) for path in paths]
     else:
         item = _item(work, data.get('path', ''))
@@ -76,15 +85,21 @@ async def run_action(request):
                 result = {'issues': []}
         else:
             if action == 'content-review':
-                messages = editor_tasks.review_messages(items[0]['path'], items[0]['body'], guideline, instruction)
+                messages = editor_tasks.review_messages(
+                    items[0]['path'], items[0]['body'], guideline, instruction
+                )
                 check = editor_tasks.issues_ok
             elif action == 'consistency':
                 messages = editor_tasks.consistency_messages(items, guideline, instruction)
                 check = editor_tasks.issues_ok
             else:
                 messages = editor_tasks.format_messages(
-                    items[0]['path'], items[0]['body'], mode, str(data.get('template') or ''),
-                    str(data.get('instruction') or ''), guideline,
+                    items[0]['path'],
+                    items[0]['body'],
+                    mode,
+                    str(data.get('template') or ''),
+                    str(data.get('instruction') or ''),
+                    guideline,
                 )
                 check = editor_tasks.edit_ok
             result, answer = await llm_tasks.ask_json(
@@ -93,31 +108,63 @@ async def run_action(request):
             model = {'provider': answer['provider'], 'name': answer['model']}
 
         if action == 'format' and not editor_tasks.preserves_protected(items[0]['body'], result['text']):
-            raise AppError(Msg('server.editor.protected_syntax_changed', 'Formatting removed or changed a reserved placeholder or JSX tag.'), 422)
+            raise AppError(
+                Msg(
+                    'server.editor.protected_syntax_changed',
+                    'Formatting removed or changed a reserved placeholder or JSX tag.',
+                ),
+                422,
+            )
 
         if action == 'content-review':
-            target = {'scope': 'item', 'id': items[0]['meta'].get('id'), 'path': items[0]['path'], 'base_hash': items[0]['hash']}
-            candidates = [{'issues': [{**issue, 'path': issue.get('path') or items[0]['path']} for issue in result['issues']]}]
+            target = {
+                'scope': 'item',
+                'id': items[0]['meta'].get('id'),
+                'path': items[0]['path'],
+                'base_hash': items[0]['hash'],
+            }
+            candidates = [
+                {
+                    'issues': [
+                        {**issue, 'path': issue.get('path') or items[0]['path']} for issue in result['issues']
+                    ]
+                }
+            ]
             draft_kind = 'content_review'
         elif action == 'consistency':
             target = {'scope': 'items', 'paths': paths, 'base_hashes': {i['path']: i['hash'] for i in items}}
             candidates = [{'issues': result['issues']}]
             draft_kind = 'content_review'
         else:
-            target = {'scope': 'item', 'id': items[0]['meta'].get('id'), 'path': items[0]['path'], 'base_hash': items[0]['hash']}
+            target = {
+                'scope': 'item',
+                'id': items[0]['meta'].get('id'),
+                'path': items[0]['path'],
+                'base_hash': items[0]['hash'],
+            }
             candidates = [{'text': result['text'], 'note': result.get('note', '')}]
             draft_kind = 'text_edit'
         draft = Drafts(work).create(
-            draft_kind, target,
-            {'action': action, 'original': items[0]['body'] if action != 'consistency' else None,
-             'compare_paths': paths if action == 'consistency' else None,
-             'mode': data.get('mode'), 'template': data.get('template'), 'instruction': instruction},
-            candidates, model=model, guidelines=['consistency.md' if task == 'consistency' else 'platform.md'],
+            draft_kind,
+            target,
+            {
+                'action': action,
+                'original': items[0]['body'] if action != 'consistency' else None,
+                'compare_paths': paths if action == 'consistency' else None,
+                'mode': data.get('mode'),
+                'template': data.get('template'),
+                'instruction': instruction,
+            },
+            candidates,
+            model=model,
+            guidelines=['consistency.md' if task == 'consistency' else 'platform.md'],
         )
         s.events.publish('draft', {'work': work.id, 'id': draft['id']})
         return {'draft': draft['id']}
 
-    return _ok(s.jobs.submit(task, f'편집기 · {work.name}', runner, gpu=(action == 'format'), work_id=work.id))
+    return _ok(
+        s.jobs.submit(task, f'편집기 · {work.name}', runner, gpu=(action == 'format'), work_id=work.id)
+    )
 
 
 async def apply_edit(request):

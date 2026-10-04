@@ -38,7 +38,7 @@ from . import editor_routes, image_routes, lora_routes, tool_routes
 class State:
     def __init__(self, paths, dev=False, kdf=None):
         self.paths = paths
-        self.cookie_name = COOKIE + "_" + sha256_text(str(paths.root.resolve()).casefold())[:12]
+        self.cookie_name = COOKIE + '_' + sha256_text(str(paths.root.resolve()).casefold())[:12]
         self.dev = dev
         ensure_layout(paths)
         self.vault = Vault(paths.vault_file, kdf=kdf)
@@ -122,7 +122,9 @@ async def handle_app_error(request, error):
 # --- auth ------------------------------------------------------------------------------------------------------
 def _session_response(request, value):
     response = ok(value)
-    response.set_cookie(st(request).cookie_name, st(request).sessions.issue(), httponly=True, samesite='strict')
+    response.set_cookie(
+        st(request).cookie_name, st(request).sessions.issue(), httponly=True, samesite='strict'
+    )
     return response
 
 
@@ -576,7 +578,13 @@ async def draft_apply(request):
         current = read_json(design_path)
         expected = doc['target'].get('base_design_revision')
         if image_designs.revision(current) != expected:
-            raise AppError(Msg('server.image.design.stale', 'The character design changed after this conversion draft was created.'), 409)
+            raise AppError(
+                Msg(
+                    'server.image.design.stale',
+                    'The character design changed after this conversion draft was created.',
+                ),
+                409,
+            )
         submitted = data.get('design', doc['candidates'][0]['design'])
         image_designs.validate(submitted)
         merged = image_designs.reconcile_conversion(current, submitted)
@@ -893,7 +901,9 @@ async def compress(request):
     locked = [int(n) for n in data.get('locked', [])]
     target = data.get('target_size')
     if target is not None and (isinstance(target, bool) or not isinstance(target, int) or target <= 0):
-        raise AppError(Msg('server.editor.bad_target', 'Target size must be a positive number of bytes.'), 400)
+        raise AppError(
+            Msg('server.editor.bad_target', 'Target size must be a positive number of bytes.'), 400
+        )
     instruction = str(data.get('instructions') or '').strip()
 
     async def runner(progress):
@@ -973,7 +983,9 @@ async def image_design_update(request):
     design_path = image_designs.character_design_path(work, cid)
     previous = read_json(design_path)
     if data.get('base_revision') != image_designs.revision(previous):
-        raise AppError(Msg('server.image.design.stale', 'The character design changed after it was loaded.'), 409)
+        raise AppError(
+            Msg('server.image.design.stale', 'The character design changed after it was loaded.'), 409
+        )
     merged = image_designs.prepare_update(previous, data.get('design'))
     Snapshots(work).create('before_edit', '이미지 디자인 수정 전', force=True)
     write_json(design_path, merged)
@@ -1068,7 +1080,12 @@ async def image_convert(request):
         design = image_designs.reconcile_conversion(old, design)
         draft = Drafts(work).create(
             'image_prompt',
-            {'id': cid, 'path': item['path'], 'base_hash': item['hash'], 'base_design_revision': base_design_revision},
+            {
+                'id': cid,
+                'path': item['path'],
+                'base_hash': item['hash'],
+                'base_design_revision': base_design_revision,
+            },
             {'parts': 'all', 'previous_design': old},
             [{'round': 1, 'design': design}],
             model=model,

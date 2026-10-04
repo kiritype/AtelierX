@@ -41,9 +41,18 @@ def main():
     if not (ROOT / 'web/dist/index.html').is_file():
         parser.error('Build web/dist before packaging.')
     output.mkdir(parents=True)
-    run(sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
-        '--distpath', str(output), '--workpath', str(ROOT / 'notes' / 'packaging' / f'build-{stamp}'),
-        str(ROOT / 'packaging' / 'atelierx.spec'))
+    run(
+        sys.executable,
+        '-m',
+        'PyInstaller',
+        '--noconfirm',
+        '--clean',
+        '--distpath',
+        str(output),
+        '--workpath',
+        str(ROOT / 'notes' / 'packaging' / f'build-{stamp}'),
+        str(ROOT / 'packaging' / 'atelierx.spec'),
+    )
     bundle = output / 'AtelierX'
     shutil.copy2(ROOT / 'LICENSE', bundle / 'LICENSE')
     shutil.copy2(ROOT / 'packaging' / 'PORTABLE_README.txt', bundle / '읽어주세요.txt')
@@ -51,7 +60,8 @@ def main():
     run(sys.executable, 'tools/build_manual.py')
     shutil.copytree(ROOT / 'dist' / 'manual', bundle / 'manual')
     manifest = {
-        'version': '0.0.1', 'built_at': datetime.now().astimezone().isoformat(),
+        'version': '0.0.1',
+        'built_at': datetime.now().astimezone().isoformat(),
         'python': sys.version.split()[0],
         'dependencies': dict(sorted((d.metadata['Name'], d.version) for d in distributions())),
         'files': {},
@@ -61,8 +71,12 @@ def main():
         raise RuntimeError('Mutable or private folders entered the bundle.')
     for file in sorted(bundle.rglob('*')):
         if file.is_file():
-            manifest['files'][file.relative_to(bundle).as_posix()] = hashlib.sha256(file.read_bytes()).hexdigest()
-    (bundle / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
+            manifest['files'][file.relative_to(bundle).as_posix()] = hashlib.sha256(
+                file.read_bytes()
+            ).hexdigest()
+    (bundle / 'BUILD-MANIFEST.json').write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8'
+    )
     archive = output / 'AtelierX-0.0.1-windows-x64.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:
         for file in sorted(bundle.rglob('*')):

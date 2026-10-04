@@ -54,20 +54,54 @@ class Providers:
                 project = provider.get('vertex_project')
                 location = provider.get('vertex_location')
                 if provider.get('type') != 'vertex_openai':
-                    raise AppError(Msg('server.llm.invalid_vertex_type', 'Vertex preset requires the Vertex OpenAI connection type.'))
+                    raise AppError(
+                        Msg(
+                            'server.llm.invalid_vertex_type',
+                            'Vertex preset requires the Vertex OpenAI connection type.',
+                        )
+                    )
                 if not isinstance(project, str) or not VERTEX_PROJECT.fullmatch(project):
-                    raise AppError(Msg('server.llm.invalid_vertex_project', 'Enter a valid Google Cloud project ID.'))
-                if not isinstance(location, str) or not (location == 'global' or VERTEX_LOCATION.fullmatch(location)):
-                    raise AppError(Msg('server.llm.invalid_vertex_location', 'Enter a valid Vertex AI location.'))
-                host = 'aiplatform.googleapis.com' if location == 'global' else f'{location}-aiplatform.googleapis.com'
-                provider['base_url'] = f'https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi'
+                    raise AppError(
+                        Msg('server.llm.invalid_vertex_project', 'Enter a valid Google Cloud project ID.')
+                    )
+                if not isinstance(location, str) or not (
+                    location == 'global' or VERTEX_LOCATION.fullmatch(location)
+                ):
+                    raise AppError(
+                        Msg('server.llm.invalid_vertex_location', 'Enter a valid Vertex AI location.')
+                    )
+                host = (
+                    'aiplatform.googleapis.com'
+                    if location == 'global'
+                    else f'{location}-aiplatform.googleapis.com'
+                )
+                provider['base_url'] = (
+                    f'https://{host}/v1/projects/{project}/locations/{location}/endpoints/openapi'
+                )
             if provider.get('type') == 'mock':
                 continue
             url = urlparse(provider.get('base_url') or '')
-            if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password or url.query or url.fragment:
-                raise AppError(Msg('server.llm.invalid_url', 'Use an HTTP(S) base URL without credentials, query or fragment.'))
+            if (
+                url.scheme not in ('http', 'https')
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+            ):
+                raise AppError(
+                    Msg(
+                        'server.llm.invalid_url',
+                        'Use an HTTP(S) base URL without credentials, query or fragment.',
+                    )
+                )
             if provider.get('key') and not str(provider['key']).startswith('secret:'):
-                raise AppError(Msg('server.llm.secret_reference', 'Save credentials in Settings and select the saved entry.'))
+                raise AppError(
+                    Msg(
+                        'server.llm.secret_reference',
+                        'Save credentials in Settings and select the saved entry.',
+                    )
+                )
         write_json(self.file, doc)
         return doc
 
@@ -159,7 +193,12 @@ class Providers:
         if key and str(key).startswith('secret:'):
             secret = self.vault.reveal(str(key)[len('secret:') :])
             if not secret:
-                raise AppError(Msg('server.llm.missing_key', 'The selected credential is missing or empty. Save it in Settings.'))
+                raise AppError(
+                    Msg(
+                        'server.llm.missing_key',
+                        'The selected credential is missing or empty. Save it in Settings.',
+                    )
+                )
             return {'Authorization': f'Bearer {secret}'}
         return {}
 
@@ -184,7 +223,10 @@ class Providers:
             403: 'Check API access, project permissions and enabled services.',
             404: 'Check the API base URL and model ID. Model listing may be unsupported.',
             429: 'Quota or rate limit reached. Check the service account and retry later.',
-        }.get(response.status_code, 'The service rejected the request. Check its supported parameters and status.')
+        }.get(
+            response.status_code,
+            'The service rejected the request. Check its supported parameters and status.',
+        )
         return AppError(
             Msg(
                 'server.llm.http_error',
@@ -206,7 +248,9 @@ class Providers:
             return ['mock']
         if provider.get('type') == 'vertex_openai':
             # Vertex's OpenAI endpoint does not provide the usual model catalog.
-            return list(dict.fromkeys([m for m in [provider.get('default_model'), *provider.get('models', {})] if m]))
+            return list(
+                dict.fromkeys([m for m in [provider.get('default_model'), *provider.get('models', {})] if m])
+            )
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(20, connect=5)) as client:
                 response = await client.get(self._url(provider, '/models'), headers=self._headers(provider))
@@ -222,13 +266,21 @@ class Providers:
         messages = [{'role': 'user', 'content': 'Reply with the single word OK.'}]
         result = await self.complete('connection_test', messages, override=override)
         if not result['text']:
-            raise AppError(Msg('server.llm.empty_test', 'The service returned no visible answer. Check the model and token limit.'), 502)
+            raise AppError(
+                Msg(
+                    'server.llm.empty_test',
+                    'The service returned no visible answer. Check the model and token limit.',
+                ),
+                502,
+            )
         pieces = []
         async for event in self.stream('connection_test', messages, override=override):
             if event['type'] == 'text':
                 pieces.append(event['text'])
         if not ''.join(pieces).strip():
-            raise AppError(Msg('server.llm.empty_stream', 'The streaming test returned no visible answer.'), 502)
+            raise AppError(
+                Msg('server.llm.empty_stream', 'The streaming test returned no visible answer.'), 502
+            )
         return {'ok': True, 'model': result['model'], 'completion': True, 'stream': True}
 
     def _log_usage(self, provider, model, task, work_id, usage):

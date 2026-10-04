@@ -20,6 +20,7 @@ from .core.paths import AppPaths
 
 logger = logging.getLogger(__name__)
 
+
 def bind_loopback(port=0):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -32,10 +33,14 @@ def bind_loopback(port=0):
 
 
 def check_resources(paths):
-    required = [paths.web / 'index.html', paths.web / 'preview.html',
-                paths.defaults / 'guidelines' / 'compression.md', paths.samples,
-                paths.defaults.parent / 'comfy_nodes' / 'nodes.json',
-                paths.defaults.parent / 'trainer' / 'anima_lora' / 'preprocess-model-paths.patch']
+    required = [
+        paths.web / 'index.html',
+        paths.web / 'preview.html',
+        paths.defaults / 'guidelines' / 'compression.md',
+        paths.samples,
+        paths.defaults.parent / 'comfy_nodes' / 'nodes.json',
+        paths.defaults.parent / 'trainer' / 'anima_lora' / 'preprocess-model-paths.patch',
+    ]
     missing = [str(path) for path in required if not path.exists()]
     if missing:
         raise RuntimeError('Missing packaged resources: ' + ', '.join(missing))
@@ -45,8 +50,12 @@ def configure_logging(root):
     logs = root / 'state' / 'logs'
     logs.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(logs / 'desktop.log', maxBytes=2_000_000, backupCount=2, encoding='utf-8')
-    logging.basicConfig(level=logging.INFO, handlers=[handler],
-                        format='%(asctime)s %(levelname)s %(name)s %(message)s', force=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[handler],
+        format='%(asctime)s %(levelname)s %(name)s %(message)s',
+        force=True,
+    )
     # Windowed executables do not have stdout/stderr; third-party libraries may still write to them.
     if sys.stdout is None:
         sys.stdout = open(os.devnull, 'w', encoding='utf-8')  # noqa: SIM115 - process lifetime stream
@@ -57,6 +66,7 @@ def configure_logging(root):
 def show_error(message):
     if sys.platform == 'win32':
         import ctypes
+
         ctypes.windll.user32.MessageBoxW(None, message, 'AtelierX', 0x10)
     elif sys.stderr:
         print(message, file=sys.stderr)
@@ -79,6 +89,7 @@ def main():
         lock_file = open(paths.state / 'desktop.lock', 'a+b')  # noqa: SIM115 - released in finally
         if sys.platform == 'win32':
             import msvcrt
+
             lock_file.seek(0)
             if not lock_file.read(1):
                 lock_file.write(b'0')
@@ -93,8 +104,9 @@ def main():
         sock = bind_loopback(args.port)
         port = sock.getsockname()[1]
         url = f'http://127.0.0.1:{port}'
-        server = uvicorn.Server(uvicorn.Config(app, log_config=None, access_log=False,
-                                              loop='asyncio', http='h11', ws='none'))
+        server = uvicorn.Server(
+            uvicorn.Config(app, log_config=None, access_log=False, loop='asyncio', http='h11', ws='none')
+        )
         thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True)
         thread.start()
         deadline = time.monotonic() + 30
@@ -105,8 +117,10 @@ def main():
         write_json(ready, {'url': url, 'pid': os.getpid(), 'root': str(paths.root)})
         logger.info('Desktop ready at %s', url)
         if args.headless:
+
             def stop(_signum, _frame):
                 server.should_exit = True
+
             for sig in (signal.SIGINT, signal.SIGTERM):
                 signal.signal(sig, stop)
             if hasattr(signal, 'SIGBREAK'):
@@ -115,19 +129,30 @@ def main():
                 thread.join(0.25)
         else:
             import webview
+
             webview.settings['ALLOW_DOWNLOADS'] = True
             webview.settings['ALLOW_FILE_URLS'] = False
-            webview.create_window('AtelierX', url, width=1440, height=960, min_size=(960, 640),
-                                  text_select=True, confirm_close=True,
-                                  localization={'global.quitConfirmation': 'AtelierX를 종료할까요? 저장하지 않은 변경 사항이 사라질 수 있습니다.'})
-            webview.start(gui='edgechromium', private_mode=True,
-                          storage_path=str(paths.state / 'webview'))
+            webview.create_window(
+                'AtelierX',
+                url,
+                width=1440,
+                height=960,
+                min_size=(960, 640),
+                text_select=True,
+                confirm_close=True,
+                localization={
+                    'global.quitConfirmation': 'AtelierX를 종료할까요? 저장하지 않은 변경 사항이 사라질 수 있습니다.'
+                },
+            )
+            webview.start(gui='edgechromium', private_mode=True, storage_path=str(paths.state / 'webview'))
         return 0
     except Exception:
         logger.exception('Desktop startup or runtime failed')
         if not args.headless:
-            show_error('AtelierX를 실행하지 못했습니다.\nWindows WebView2 Runtime 설치 여부와 '
-                       '앱 폴더 쓰기 권한을 확인하세요.\n자세한 내용: state/logs/desktop.log')
+            show_error(
+                'AtelierX를 실행하지 못했습니다.\nWindows WebView2 Runtime 설치 여부와 '
+                '앱 폴더 쓰기 권한을 확인하세요.\n자세한 내용: state/logs/desktop.log'
+            )
         return 1
     finally:
         if server is not None:

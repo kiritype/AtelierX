@@ -125,7 +125,9 @@ def test_compress_run_mock_override_does_not_change_saved_task_connection(unlock
     wid = c.post('/api/samples/single/install').json()['id']
     providers = c.get('/api/providers').json()
     providers['providers']['remote'] = {
-        'name': 'Remote', 'type': 'openai_compatible', 'base_url': 'https://llm.example.com/v1',
+        'name': 'Remote',
+        'type': 'openai_compatible',
+        'base_url': 'https://llm.example.com/v1',
         'default_model': 'remote-model',
     }
     providers['tasks']['compression'] = {'provider': 'remote', 'model': 'saved-model'}

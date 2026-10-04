@@ -11,19 +11,25 @@ from ..core.i18n import AppError, Msg
 def character_design_path(work, character_id):
     """Return a contained design path for a syntactically safe character ID."""
     if not isinstance(character_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,32}', character_id):
-        raise AppError(Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404)
+        raise AppError(
+            Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404
+        )
     app_root = work.app.resolve()
     unresolved_root = app_root / 'image' / 'characters'
     root = unresolved_root.resolve()
     try:
         root.relative_to(app_root)
     except ValueError:
-        raise AppError(Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404) from None
+        raise AppError(
+            Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404
+        ) from None
     path = (root / character_id / 'design.json').resolve()
     try:
         path.relative_to(root)
     except ValueError:
-        raise AppError(Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404) from None
+        raise AppError(
+            Msg('server.image.no_character', 'Character {id} was not found.', id=character_id), 404
+        ) from None
     return path
 
 
@@ -53,7 +59,9 @@ def validate(design):
     if not tags(appearance.get('prompt', [])) or not tags(appearance.get('negative', [])):
         invalid()
     source = appearance.get('source')
-    if source is not None and (not isinstance(source, dict) or any(not isinstance(v, (str, type(None))) for v in source.values())):
+    if source is not None and (
+        not isinstance(source, dict) or any(not isinstance(v, (str, type(None))) for v in source.values())
+    ):
         invalid()
     for outfit_id, outfit in outfits.items():
         if not isinstance(outfit_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', outfit_id):
@@ -72,10 +80,17 @@ def validate(design):
             if not tags(entry.get('negative', [])):
                 invalid()
             ref = entry.get('ref')
-            if not tags(prompt) or (ref is not None and (not isinstance(ref, str) or not re.fullmatch(r'(?:work|global):[A-Za-z0-9_-]{1,64}', ref))):
+            if not tags(prompt) or (
+                ref is not None
+                and (
+                    not isinstance(ref, str) or not re.fullmatch(r'(?:work|global):[A-Za-z0-9_-]{1,64}', ref)
+                )
+            ):
                 invalid()
         source = outfit.get('source')
-        if source is not None and (not isinstance(source, dict) or any(not isinstance(v, (str, type(None))) for v in source.values())):
+        if source is not None and (
+            not isinstance(source, dict) or any(not isinstance(v, (str, type(None))) for v in source.values())
+        ):
             invalid()
     default = design.get('default_outfit')
     if default is not None and default not in outfits:
@@ -134,17 +149,34 @@ def reconcile_conversion(previous, generated):
     used = set()
     for generated_id, outfit in (generated.get('outfits') or {}).items():
         source = outfit.get('source') or {}
-        match = next((key for key, old_outfit in available.items()
-                      if key not in used and (old_outfit.get('source') or {}).get('heading') == source.get('heading')
-                      and (old_outfit.get('source') or {}).get('section') == source.get('section')), None)
+        match = next(
+            (
+                key
+                for key, old_outfit in available.items()
+                if key not in used
+                and (old_outfit.get('source') or {}).get('heading') == source.get('heading')
+                and (old_outfit.get('source') or {}).get('section') == source.get('section')
+            ),
+            None,
+        )
         if match is None:
-            match = next((key for key, old_outfit in available.items()
-                          if key not in used and old_outfit.get('name') == outfit.get('name')), None)
+            match = next(
+                (
+                    key
+                    for key, old_outfit in available.items()
+                    if key not in used and old_outfit.get('name') == outfit.get('name')
+                ),
+                None,
+            )
         if match is None and generated_id not in old_outfits and generated_id not in retired:
             match = generated_id
         if match is None:
             number = 1
-            while f'o{number:02d}' in old_outfits or f'o{number:02d}' in retired or f'o{number:02d}' in new_outfits:
+            while (
+                f'o{number:02d}' in old_outfits
+                or f'o{number:02d}' in retired
+                or f'o{number:02d}' in new_outfits
+            ):
                 number += 1
             match = f'o{number:02d}'
         used.add(match)

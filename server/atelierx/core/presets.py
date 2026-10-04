@@ -88,7 +88,9 @@ class Presets:
     @staticmethod
     def _validate_id(preset_id):
         if not isinstance(preset_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', preset_id):
-            raise AppError(Msg('server.presets.invalid_id', 'Preset IDs may use letters, digits, _ and -.'), 400)
+            raise AppError(
+                Msg('server.presets.invalid_id', 'Preset IDs may use letters, digits, _ and -.'), 400
+            )
 
     def _safe_folder(self, preset_id):
         self._validate_id(preset_id)
@@ -138,8 +140,13 @@ class Presets:
                 current['limits'][key] = {'max': None}
         for key in ('main', 'lorebook_entry'):
             limit = current['limits'][key]
-            if not isinstance(limit, dict) or (limit.get('max') is not None and (not isinstance(limit['max'], int) or isinstance(limit['max'], bool) or limit['max'] < 0)):
-                raise AppError(Msg('server.presets.invalid_limit', 'Limits must be non-negative integers or unset.'), 400)
+            if not isinstance(limit, dict) or (
+                limit.get('max') is not None
+                and (not isinstance(limit['max'], int) or isinstance(limit['max'], bool) or limit['max'] < 0)
+            ):
+                raise AppError(
+                    Msg('server.presets.invalid_limit', 'Limits must be non-negative integers or unset.'), 400
+                )
         write_json(folder / 'preset.json', current)
         return current
 
@@ -151,7 +158,9 @@ class Presets:
         if settings.get('default_platform_preset') == preset_id:
             used_by.append('default')
         if used_by:
-            raise AppError(Msg('server.presets.in_use', 'Preset is in use: {uses}.', uses=', '.join(used_by)), 409)
+            raise AppError(
+                Msg('server.presets.in_use', 'Preset is in use: {uses}.', uses=', '.join(used_by)), 409
+            )
         self.get(preset_id)  # give a localized 404 for an unknown preset
         shutil.rmtree(folder, ignore_errors=False)
         return self.list()

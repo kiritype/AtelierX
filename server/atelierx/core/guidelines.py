@@ -17,11 +17,17 @@ def compression_settings(paths):
 
 def save_compression_settings(paths, data):
     """Save only the fixed global guideline path using optimistic concurrency."""
-    if not isinstance(data, dict) or not isinstance(data.get('text'), str) or not isinstance(data.get('base_revision'), str):
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get('text'), str)
+        or not isinstance(data.get('base_revision'), str)
+    ):
         raise AppError(Msg('server.guidelines.invalid', 'A text value and base revision are required.'), 400)
     current = compression_settings(paths)
     if data['base_revision'] != current['revision']:
-        raise AppError(Msg('server.guidelines.stale', 'The compression guideline changed after it was loaded.'), 409)
+        raise AppError(
+            Msg('server.guidelines.stale', 'The compression guideline changed after it was loaded.'), 409
+        )
     path = paths.data / 'guidelines' / COMPRESSION_GUIDELINE
     atomic_write_text(path, data['text'])
     return compression_settings(paths)
