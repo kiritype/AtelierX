@@ -1,0 +1,12 @@
+# Versioned license sources
+
+These supplemental texts and metadata notes are tied to the versions in the Windows packaging environment. The generator applies metadata fallbacks only to the exact versions listed in `tools/collect_licenses.py`.
+
+- **proxy_tools 0.1.0** — installed `METADATA` declares `License: MIT`; the upstream [`setup.py`](https://github.com/jtushman/proxy_tools/blob/master/setup.py) identifies version 0.1.0 and repeats MIT, while its [`LICENSE.txt`](https://github.com/jtushman/proxy_tools/blob/master/LICENSE.txt) contains BSD-style terms. This conflict is intentionally unresolved and surfaced in the generated notice. The supplemental file is copied from that upstream `LICENSE.txt`.
+- **clr-loader 0.3.1** — installed metadata has no license field; the versioned upstream [`LICENSE`](https://github.com/pythonnet/clr-loader/blob/v0.3.1/LICENSE) is MIT. The package's own `dist-info/licenses/LICENSE` is included by the collector.
+- **pyinstaller-hooks-contrib 2026.8** — the versioned upstream [`LICENSE`](https://github.com/pyinstaller/pyinstaller-hooks-contrib/blob/v2026.8/LICENSE) states GPL-2.0-or-later for standard hooks and Apache-2.0 for runtime hooks. Its package license file is included by the collector. This distribution is classified as a build tool in the inventory.
+- **Microsoft.Web.WebView2 SDK 1.0.3856.49** — this version was read from the bundled `Microsoft.Web.WebView2.*.dll` and `WebView2Loader.dll` file versions in the packaging artifact. The supplemental text is copied from the exact [NuGet license page](https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3856.49/License). The separately installed or Windows-provided WebView2 Runtime is outside this inventory.
+- **pythonnet 3.2.0** — the installed distribution's license file is copied by the collector; the versioned upstream [`LICENSE`](https://github.com/pythonnet/pythonnet/blob/v3.2.0/LICENSE) is MIT. The frozen `Python.Runtime.dll` comes from this distribution.
+- **pywebview 6.2.1** — the installed distribution's license file is copied by the collector; the versioned upstream [`LICENSE`](https://github.com/r0x0r/pywebview/blob/6.2.1/LICENSE) is BSD-3-Clause. `WebBrowserInterop.*.dll` and the Python wrapper files come from this distribution.
+
+The generated inventory records packaging inputs and shipped GUI binaries. It does not resolve the `proxy_tools` license discrepancy or constitute a legal review.

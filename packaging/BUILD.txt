@@ -1,0 +1,21 @@
+Windows 포터블 빌드
+
+빌드 환경: Windows x64, Python 3.12, Node.js, 설치된 web/node_modules.
+저장소 루트에서 실행합니다. 앱 실행 환경에는 Python/Node가 필요 없습니다.
+
+uv venv notes/packaging/build-venv --python 3.12
+uv pip install --python notes/packaging/build-venv/Scripts/python.exe -r packaging/requirements-windows.txt -e .
+notes/packaging/build-venv/Scripts/python.exe tools/build_windows.py
+
+빌드는 TypeScript 검사, Vite 빌드, PyInstaller 패키징을 순서대로 실행합니다.
+dist/<시간>/ 아래에 실행 폴더, ZIP, SHA256 파일을 만듭니다.
+기존 출력 폴더를 덮어쓰지 않습니다. BUILD-MANIFEST.json에 의존성과 파일 해시가 있습니다.
+
+격리 검증 (Python은 테스트 실행기에만 사용):
+notes/packaging/build-venv/Scripts/python.exe tools/smoke_package.py dist/<시간>/AtelierX/AtelierX.exe
+
+검증은 notes/packaging/isolated 아래 새 복사본과 임시 데이터를 만듭니다.
+대상 실행 파일은 System32만 있는 PATH에서 실행되며 개발 가상환경 설정을 제거합니다.
+기존 설정과 데이터는 사용하지 않습니다. 결과는 해당 검증 폴더의 report.json에 남습니다.
+이 검사는 같은 PC의 설치된 Windows 구성요소를 공유하므로 별도 OS 검증을 대체하지 않습니다.
+네이티브 WebView2 창 표시와 종료는 별도로 확인해야 합니다.
