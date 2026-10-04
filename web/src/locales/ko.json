@@ -1524,5 +1524,6 @@
   "server.installs.tool_unusable": "{name}을(를) 설치하거나 실행하지 못했습니다. 설치 로그를 확인하고 다시 시도하세요.",
   "server.installs.no_lora_folder": "이미지 생성 서버에 쓸 수 있는 LoRA 폴더가 없습니다. ComfyUI에 LoRA 폴더를 추가하거나 설정 → 이미지 → LoRA 학습에서 정하세요.",
   "server.installs.training_incomplete": "학습 도구는 설치했지만 아직 준비되지 않은 것이 있습니다: {items}. 설정 → 이미지 → LoRA 학습을 확인하세요. 직접 정한 경로는 그대로 두었습니다.",
-  "image_settings.training.auto_about_ready": "ComfyUI가 설치되어 실행 중이어야 합니다. 공식 학습 모델은 이미 있습니다. 학습 도구·Python 환경이 없으면 수 GB를 받습니다. 직접 지정한 경로가 비어 있지 않으면 유지합니다."
+  "image_settings.training.auto_about_ready": "ComfyUI가 설치되어 실행 중이어야 합니다. 공식 학습 모델은 이미 있습니다. 학습 도구·Python 환경이 없으면 수 GB를 받습니다. 직접 지정한 경로가 비어 있지 않으면 유지합니다.",
+  "install.action.repair": "설치가 끝나지 않음(다시 설치 필요)"
 }

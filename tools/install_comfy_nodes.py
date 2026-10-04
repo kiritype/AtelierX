@@ -12,6 +12,7 @@ with ComfyUI's own Python. Installed nodes are left alone (only their version is
 """
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -27,7 +28,7 @@ KINDS = {
     'venv': 'git install with venv',
     'unknown': 'unknown kind',
 }
-MARKS = {'install': '+', 'ok': '=', 'differs': '~', 'blocked': '!', 'skip': '-'}
+MARKS = {'install': '+', 'repair': '+', 'ok': '=', 'differs': '~', 'blocked': '!', 'skip': '-'}
 
 
 def describe(step):
@@ -35,6 +36,7 @@ def describe(step):
     name = f'{node["folder"]} {node["version"]} ({node["license"]})'
     text = {
         'install': f'install ({node["commit"][:7]})',
+        'repair': f'unfinished install; check out {node["commit"][:7]} and install its requirements again',
         'ok': 'installed',
         'differs': f'another version is installed ({(have or {}).get("version") or (have or {}).get("commit", "")[:7] or "?"}); left alone',
         'blocked': 'a folder or link with this name is in the way; skipped',
@@ -80,7 +82,9 @@ def main(argv=None):
 
     print(f'ComfyUI: {comfy} ({KINDS.get(comfy_locate.kind_of(comfy), "?")})')
     print(f'Python:  {python}')
-    result = node_install.plan(ROOT, comfy, features)
+    # The app's portable Git (Settings → Install) counts too.
+    git = shutil.which('git') or str(ROOT / 'bin' / 'git' / 'cmd' / 'git.exe')
+    result = node_install.plan(ROOT, comfy, features, git=git)
     print(f'Tested with ComfyUI {result["comfyui_version"]}')
     for step in result['steps']:
         print(describe(step))
@@ -105,7 +109,10 @@ def main(argv=None):
             ', '.join(result['legacy_packs']),
         )
 
-    todo = any(s['action'] == 'install' for s in result['steps']) or pack['action'] in ('install', 'update')
+    todo = any(s['action'] in ('install', 'repair') for s in result['steps']) or pack['action'] in (
+        'install',
+        'update',
+    )
     if not todo:
         print('\nNothing to do.')
         return 0
@@ -114,7 +121,7 @@ def main(argv=None):
             '\nRun again with --yes to carry this out. Third-party nodes keep their own licenses (see above).'
         )
         return 0
-    node_install.carry_out(ROOT, comfy, python, features)
+    node_install.carry_out(ROOT, comfy, python, features, git=git)
     print('\nDone. Restart ComfyUI.')
     return 0
 

@@ -301,7 +301,7 @@ class Installs:
             if cached and cached[0] > time.monotonic() and cached[1] == str(comfy):
                 plan = cached[2]
             else:
-                plan = node_install.plan(self.paths.defaults.parent, comfy)
+                plan = node_install.plan(self.paths.defaults.parent, comfy, git=self.git() or 'git')
                 self._nodes_cache = (time.monotonic() + NODES_CHECK_TTL, str(comfy), plan)
             nodes = {**plan, 'python': str(python) if python else None}
         with self.lock:

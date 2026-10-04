@@ -1424,5 +1424,6 @@
   "server.installs.tool_unusable": "Could not install or run {name}. Check the install log and retry.",
   "server.installs.no_lora_folder": "The image server has no usable LoRA output folder. Add a LoRA folder in ComfyUI, or set one in Settings → Image → LoRA training.",
   "server.installs.training_incomplete": "The trainer was installed, but setup still needs: {items}. Check Settings → Image → LoRA training; existing custom paths were preserved.",
-  "image_settings.training.auto_about_ready": "ComfyUI must be installed and running. The official training models are already there; the trainer and its Python environment take several GB if missing. Paths you set yourself are kept."
+  "image_settings.training.auto_about_ready": "ComfyUI must be installed and running. The official training models are already there; the trainer and its Python environment take several GB if missing. Paths you set yourself are kept.",
+  "install.action.repair": "unfinished install (to repair)"
 }

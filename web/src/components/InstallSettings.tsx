@@ -88,7 +88,7 @@ export default function InstallSettings() {
   if (!s) return <div className="faint">{t('install.checking')}</div>;
   const lang = getLanguage();
   const copy = readiness[lang === 'ko' ? 'ko' : 'en'];
-  const nodesTodo = s.nodes ? s.nodes.steps.filter((x) => x.action === 'install').length + (['install', 'update'].includes(s.nodes.pack.action) ? 1 : 0) : 0;
+  const nodesTodo = s.nodes ? s.nodes.steps.filter((x) => ['install', 'repair'].includes(x.action)).length + (['install', 'update'].includes(s.nodes.pack.action) ? 1 : 0) : 0;
   const nodesNeedReview = !!s.nodes && (
     s.nodes.steps.some((x) => ['blocked', 'differs'].includes(x.action))
     || ['blocked', 'missing_source'].includes(s.nodes.pack.action)
