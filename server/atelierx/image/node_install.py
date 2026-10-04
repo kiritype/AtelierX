@@ -177,7 +177,14 @@ def plan(app_dir, comfy, features=None, git='git'):
         have = installed.get(norm_repo(node['repo']))
         target = custom / node['folder']
         record = read_record(target) if target.is_dir() else None
-        finished = record and record.get('complete') and have and have['commit'] == node['commit']
+        # Complete only for the commit this app version asks for, and only when that commit is checked out.
+        finished = (
+            record
+            and record.get('complete')
+            and record.get('commit') == node['commit']
+            and have
+            and have['commit'] == node['commit']
+        )
         if not wanted:
             action = 'skip'
         elif record and norm_repo(record.get('repo')) == norm_repo(node['repo']) and not finished:
@@ -256,8 +263,9 @@ def carry_out(app_dir, comfy, python, features=None, log=print, git='git', env=N
                 # A half-made clone would block every retry; this folder did not exist before.
                 shutil.rmtree(target, ignore_errors=True)
                 raise
-            _write_record(target, node, complete=False)
-        else:
+        # Unfinished until every step below succeeds, also when an earlier install of another commit was complete.
+        _write_record(target, node, complete=False)
+        if step['action'] == 'repair':
             _run([git, '-C', target, 'fetch', '--quiet', 'origin'], log, env=env)
         _run([git, '-C', target, 'checkout', '--quiet', node['commit']], log, env=env)
         if (target / 'requirements.txt').is_file():

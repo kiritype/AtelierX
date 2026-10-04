@@ -125,3 +125,35 @@ def test_failed_clone_leaves_no_folder_in_the_way(tmp_path, monkeypatch):
         node_install.carry_out(app, comfy, 'python', ['tagger'], log=lambda _: None)
     step = next(s for s in node_install.plan(app, comfy, ['tagger'])['steps'] if s['id'] == 'wd14-tagger')
     assert step['action'] == 'install'
+
+
+def test_failed_repair_of_a_completed_install_stays_unfinished(tmp_path, monkeypatch):
+    app, comfy = make_app(tmp_path)
+    node = next(n for n in node_install.manifest(app)['nodes'] if n['id'] == 'wd14-tagger')
+    folder = comfy / 'custom_nodes' / node['folder']
+    old = {**node, 'commit': '1' * 40}
+    # Completed earlier for another commit; this app version asks for node['commit'].
+    fake_checkout(folder, node['repo'], old['commit'])
+    (folder / 'requirements.txt').write_text('onnxruntime\n', encoding='utf-8')
+    node_install._write_record(folder, old, complete=True)
+    step = next(s for s in node_install.plan(app, comfy, ['tagger'])['steps'] if s['id'] == 'wd14-tagger')
+    assert step['action'] == 'repair'
+
+    def checkout_then_pip_fails(cmd, log, cwd=None, env=None):
+        cmd = [str(c) for c in cmd]
+        if 'checkout' in cmd:
+            (folder / '.git' / 'refs' / 'heads' / 'main').write_text(cmd[-1] + '\n', encoding='utf-8')
+        elif 'pip' in cmd:
+            raise RuntimeError('pip failed')
+
+    monkeypatch.setattr(node_install, '_run', checkout_then_pip_fails)
+    with pytest.raises(RuntimeError):
+        node_install.carry_out(app, comfy, 'python', ['tagger'], log=lambda _: None)
+    # The new commit is checked out now, but its requirements failed: still unfinished, not "installed".
+    step = next(s for s in node_install.plan(app, comfy, ['tagger'])['steps'] if s['id'] == 'wd14-tagger')
+    assert step['action'] == 'repair'
+    assert node_install.read_record(folder) == {
+        **node_install.read_record(folder),
+        'commit': node['commit'],
+        'complete': False,
+    }
