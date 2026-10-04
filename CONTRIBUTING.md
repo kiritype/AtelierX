@@ -26,6 +26,25 @@ The design documents in [docs/](docs/README.md) are written in Korean.
 Follow the existing code conventions and run the relevant checks for code changes. Do not report external provider,
 ComfyUI, model or trainer validation unless those services were actually exercised.
 
+## Branches and releases
+
+See [decision 0020](docs/decisions/0020-branch-flow.md) for the reasons.
+
+- Work on a branch named `feat/*`, `fix/*`, `docs/*` or `ci/*`, one branch per change, in its own working folder
+  (`git worktree add ../atelierx-worktrees/<name> -b feat/<name> dev`). Do not share a working folder between
+  parallel tasks.
+- Open pull requests against `dev`. The `test` check must pass; approval is not required. Pull requests are merged by
+  squash or rebase.
+- `staging` and `main` take no work commits. They only move forward to a commit that already passed `test`:
+  `git push origin <commit>:staging`, later `git push origin <commit>:main`. These promotions are made only when the
+  maintainer decides.
+- A push to `staging` builds the Windows package and publishes it as the prerelease `vX.Y.Z-rc.N`. While a candidate
+  is being checked, `staging` does not move.
+- After the check, fast-forward `main` to the candidate's commit and run the **Release** workflow with the candidate
+  tag. It publishes the candidate's files unchanged as `vX.Y.Z`.
+- Urgent fix: branch `fix/*` from `main`, then bring the fix to `main`, `dev` and the current `staging` candidate.
+  A changed candidate is checked again.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the [MIT License](LICENSE).
