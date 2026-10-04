@@ -1,0 +1,63 @@
+name: Release
+
+# Publishes a checked prerelease candidate (vX.Y.Z-rc.N) as the release vX.Y.Z with the very same files.
+# Run it after the candidate's commit has been fast-forwarded to main (docs/decisions/0020).
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: 'Checked candidate tag, for example v0.0.1-rc.1'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      CANDIDATE: ${{ inputs.candidate }}
+    steps:
+      - name: Check the candidate is what main points at
+        id: check
+        run: |
+          set -euo pipefail
+          if [[ ! "$CANDIDATE" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]]; then
+            echo "::error::Not a candidate tag: $CANDIDATE"; exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          if [ "$(gh release view "$CANDIDATE" --repo "$REPO" --json isPrerelease --jq .isPrerelease)" != true ]; then
+            echo "::error::$CANDIDATE is not a prerelease candidate"; exit 1
+          fi
+          commit=$(gh api "repos/$REPO/commits/$CANDIDATE" --jq .sha)
+          main=$(gh api "repos/$REPO/commits/main" --jq .sha)
+          if [ "$commit" != "$main" ]; then
+            echo "::error::main is at $main, but $CANDIDATE was built from $commit. Fast-forward main first."; exit 1
+          fi
+          if gh release view "$version" --repo "$REPO" > /dev/null 2>&1; then
+            echo "::error::$version is already released"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Download and verify the candidate's files
+        run: |
+          set -euo pipefail
+          gh release download "$CANDIDATE" --repo "$REPO" --dir assets
+          cd assets && sha256sum -c ./*.sha256
+      - name: Publish the release
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+          COMMIT: ${{ steps.check.outputs.commit }}
+        run: |
+          set -euo pipefail
+          sum=$(cut -d' ' -f1 assets/*.sha256)
+          printf '%s\n\n%s\n' \
+            "The files of the checked candidate $CANDIDATE, unchanged (commit $COMMIT)." \
+            "SHA256 of the ZIP: $sum" > notes.md
+          gh release create "$VERSION" assets/* --repo "$REPO" --target "$COMMIT" --latest \
+            --title "AtelierX $VERSION" --notes-file notes.md
