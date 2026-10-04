@@ -62,6 +62,10 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
+        # Programs started by the app must not outlive it, still running and holding its log files open.
+        self.trainer.shutdown()
+        self.installs.shutdown()
+        self.control.shutdown()
 
     # --- connection ------------------------------------------------------------------------------------------------
     def connection(self):

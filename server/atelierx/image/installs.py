@@ -24,7 +24,7 @@ import zipfile
 from pathlib import Path
 
 from ..core.i18n import Msg, message_of
-from ..core.proc import NO_WINDOW
+from ..core.proc import NO_WINDOW, stop_tree
 from . import comfy_locate, node_install
 from . import settings as image_settings
 from .lora import setup as trainer_setup
@@ -340,14 +340,13 @@ class Installs:
     def cancel(self):
         with self.lock:
             self.cancel_requested = True
-            if self.process and self.process.poll() is None:
-                subprocess.call(
-                    ['taskkill', '/PID', str(self.process.pid), '/T', '/F'],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=NO_WINDOW,
-                )
+            stop_tree(self.process)
         return {'ok': True}
+
+    def shutdown(self):
+        """The app is closing: an install in progress stops with it."""
+        if self.run and self.run['status'] == 'running':
+            self.cancel()
 
     def _execute(self, work, body):
         try:
