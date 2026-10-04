@@ -93,7 +93,7 @@ function ConnectionSection() {
   return (
     <section className="col">
       <div className="section-title">{t('image_settings.connection')}</div>
-      <div className="row">
+      <div className="row wrap">
         <span className={`dot-status ${status.connected ? 'ok' : 'off'}`} />
         <strong>{status.connected ? t('image_settings.connected') : t('image_settings.disconnected')}</strong>
         {status.system?.comfyui_version && <span className="faint">ComfyUI {status.system.comfyui_version}</span>}

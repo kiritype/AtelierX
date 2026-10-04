@@ -13,6 +13,7 @@ import type { ImageView } from '../types';
 import JsxWorkbench from './JsxWorkbench';
 import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
+import { KindIcon } from './icons';
 
 export type EditorStatus = { dirty: boolean; size: number; unit: 'bytes' | 'chars' | 'tokens'; estimated: boolean; kind: Kind };
 
@@ -185,9 +186,10 @@ export default function ItemEditor({
         </div>
       )}
       {(current === 'body' || current === 'code') && (
-        <div className="form">
+        <div className="form meta-bar">
           <label>
             {t('form.kind')}
+            <KindIcon kind={kind} size={15} />
             <select value={kind} onChange={(e) => changeKind(e.target.value as Kind)}>
               {KINDS.map((k) => (
                 <option key={k} value={k}>

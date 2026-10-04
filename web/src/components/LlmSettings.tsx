@@ -89,7 +89,7 @@ export default function LlmSettings() {
       <div className="section-title">{t('llm.connections')}</div>
       {Object.entries(doc.providers).map(([id, provider]) => (
         <div key={id} className="col llm-provider">
-          <div className="row">
+          <div className="row wrap">
             <label className="col">{t('llm.connection_name')}<input style={{ width: 160 }} value={provider.name} onChange={(e) => setProvider(id, { name: e.target.value })} /></label>
             {provider.type === 'mock' ? (
               <span className="faint grow">{t('llm.mock')}</span>

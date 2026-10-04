@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { get } from '../api';
 import { t, tm } from '../i18n';
 import type { Issue } from '../types';
+import { Icon } from './icons';
 
 type AuxTab = 'check' | 'review';
 
@@ -47,7 +48,7 @@ function Checks({ workId, activePath, openItem }: { workId: string; activePath: 
   const list = issues.data ?? [];
   const mine = list.filter((i) => i.path === activePath);
   const rest = list.filter((i) => i.path !== activePath);
-  const icon = { error: '⛔', warning: '⚠', info: 'ⓘ' };
+  const icon = { error: 'error', warning: 'warning', info: 'info' } as const;
   const row = (issue: Issue, n: number) => (
     <div
       key={n}
@@ -55,20 +56,27 @@ function Checks({ workId, activePath, openItem }: { workId: string; activePath: 
       style={{ cursor: issue.path ? 'pointer' : 'default', alignItems: 'flex-start' }}
       onClick={() => issue.path && openItem(issue.path)}
     >
-      <span>{icon[issue.level]}</span>
+      <span className="issue-icon"><Icon name={icon[issue.level]} /></span>
       <span className="grow">
         {tm(issue.message)}
         {issue.path && <div className="faint">{issue.path}</div>}
       </span>
     </div>
   );
-  if (issues.data && list.length === 0) return <div className="empty">✓ {t('check.none')}</div>;
+  if (issues.data && list.length === 0) {
+    return (
+      <div className="status-card ok">
+        <Icon name="ok" size={18} />
+        <span>{t('check.none')}</span>
+      </div>
+    );
+  }
   return (
     <>
       {activePath && (
         <>
           <div className="section-title">{t('check.this_file')}</div>
-          {mine.length ? mine.map(row) : <div className="faint">✓ {t('check.none')}</div>}
+          {mine.length ? mine.map(row) : <div className="status-line ok"><Icon name="ok" size={14} /> {t('check.none')}</div>}
         </>
       )}
       <div className="section-title">{t('check.work')}</div>
