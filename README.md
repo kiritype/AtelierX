@@ -1,6 +1,6 @@
 # AtelierX
 
-[Download Windows staging](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://kiritype.github.io/AtelierX/)
+[Download Windows staging](https://github.com/kiritype/AtelierX/releases) · [User manual](https://kiritype.github.io/AtelierX/)
 
 English | [한국어](README.ko.md)
 
