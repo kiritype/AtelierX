@@ -134,9 +134,12 @@ def npm_packages() -> list[dict[str, Any]]:
         declared = manifest.get('license', info.get('license', 'Not declared in package metadata'))
         if isinstance(declared, dict):
             declared = json.dumps(declared, ensure_ascii=False, sort_keys=True)
+        # Some packages keep the license next to what they ship (Pretendard: dist/LICENSE.txt, SIL OFL).
         source_files = [
             file
-            for file in package_dir.iterdir()
+            for folder in (package_dir, package_dir / 'dist')
+            if folder.is_dir()
+            for file in folder.iterdir()
             if file.is_file() and file.name.upper().startswith(('LICENSE', 'COPYING', 'NOTICE', 'AUTHORS'))
         ]
         rows.append(
