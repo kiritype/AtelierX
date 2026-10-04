@@ -1,0 +1,118 @@
+name: CI
+
+# Branch flow (docs/decisions/0020): pull requests into dev, then verified commits are fast-forwarded to staging and
+# main. Every pull request and push runs the tests; the branch rules require the `test` check on the exact commit.
+# A push to staging also builds the Windows package and publishes it as a prerelease candidate (vX.Y.Z-rc.N).
+on:
+  pull_request:
+  push:
+    branches: [dev, staging, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install test dependencies
+        run: python -m pip install -e . pytest
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Backend tests
+        run: python -m pytest -q -p no:cacheprovider
+      - name: Frontend tests
+        working-directory: web
+        run: node node_modules/vitest/vitest.mjs run
+
+  package:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/staging')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+      - name: Isolated packaging environment
+        run: |
+          python -m venv notes/packaging/build-venv
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          notes/packaging/build-venv/Scripts/python.exe -m pip install -r packaging/requirements-windows.txt -e .
+      - name: Build package, licenses and manual
+        run: notes/packaging/build-venv/Scripts/python.exe tools/build_windows.py --output dist/staging
+      - name: Packaged API smoke test
+        run: python tools/smoke_package.py dist/staging/AtelierX/AtelierX.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atelierx-windows-staging
+          path: |
+            dist/staging/*.zip
+            dist/staging/*.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atelierx-manual
+          path: dist/manual/
+          if-no-files-found: error
+      # The candidate's files are the ones the user checks; release.yml publishes these same files, never a rebuild.
+      - name: Publish the prerelease candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $tags = @(gh api "repos/$env:REPO/git/matching-refs/tags/v$version-rc." | ConvertFrom-Json)
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $same = @($tags | Where-Object { $_.object.sha -eq $env:GITHUB_SHA })
+          if ($same.Count) {
+            Write-Output "This commit is already the candidate $($same[0].ref); nothing to publish."
+            exit 0
+          }
+          $tag = "v$version-rc.$($tags.Count + 1)"
+          $sum = (Get-Content dist/staging/*.zip.sha256).Split(' ')[0]
+          $notes = @(
+            "Release candidate for verification, built from $env:GITHUB_SHA on staging.",
+            '',
+            "SHA256 of the ZIP: $sum",
+            '',
+            "After it is checked, this commit is fast-forwarded to main and these same files are published as v$version."
+          ) -join "`n"
+          $files = (Get-ChildItem dist/staging/*.zip, dist/staging/*.sha256).FullName
+          gh release create $tag @files --repo $env:REPO --target $env:GITHUB_SHA --prerelease `
+            --title "AtelierX $tag" --notes $notes
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
