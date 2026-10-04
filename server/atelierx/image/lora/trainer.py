@@ -18,6 +18,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from PIL import Image
 
 from ...core.i18n import Msg, message_of
+from ...core.proc import NO_WINDOW
 from ..util import code, now
 from . import models, setup, store
 
@@ -238,6 +239,7 @@ class LoraTrainer:
                     ['taskkill', '/PID', str(self.process.pid), '/T', '/F'],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    creationflags=NO_WINDOW,
                 )
         return {'ok': True}
 
@@ -302,7 +304,7 @@ class LoraTrainer:
                     stdout=stream,
                     stderr=subprocess.STDOUT,
                     env=_child_env(env),
-                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    creationflags=NO_WINDOW,
                 )
             exit_code = self.process.wait()
         self._check_cancel()

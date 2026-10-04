@@ -24,6 +24,7 @@ import zipfile
 from pathlib import Path
 
 from ..core.i18n import Msg, message_of
+from ..core.proc import NO_WINDOW
 from . import comfy_locate, node_install
 from . import settings as image_settings
 from .lora import setup as trainer_setup
@@ -33,6 +34,7 @@ log = logging.getLogger(__name__)
 
 SECTIONS = ('tools', 'nodes', 'models', 'trainer')
 LOG_LINES = 600
+NODES_CHECK_TTL = 60
 TOOL_CHECK_TTL = 30.0
 TOOL_CHECK_TIMEOUT = 4.0
 UV_URL = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
@@ -86,6 +88,8 @@ class Installs:
         self.cancel_requested = False
         self._tool_cache = {}
         self._tool_lock = threading.Lock()
+        # The node check runs git in every custom_nodes folder; the page polls, so it is reused for a while.
+        self._nodes_cache = None  # (expires, comfy folder, result)
 
     # --- helpers --------------------------------------------------------------------------------------------------
     def _valid_tool(self, path):
@@ -110,7 +114,7 @@ class Installs:
                 errors='replace',
                 timeout=TOOL_CHECK_TIMEOUT,
                 check=False,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                creationflags=NO_WINDOW,
             )
             valid = done.returncode == 0 and bool((done.stdout or done.stderr).strip())
         except (OSError, subprocess.SubprocessError):
@@ -208,7 +212,7 @@ class Installs:
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                creationflags=NO_WINDOW,
             )
         for line in self.process.stdout:
             line = line.rstrip()
@@ -293,7 +297,12 @@ class Installs:
         comfy, python = self.comfy_dirs()
         nodes = None
         if comfy:
-            plan = node_install.plan(self.paths.defaults.parent, comfy)
+            cached = self._nodes_cache
+            if cached and cached[0] > time.monotonic() and cached[1] == str(comfy):
+                plan = cached[2]
+            else:
+                plan = node_install.plan(self.paths.defaults.parent, comfy)
+                self._nodes_cache = (time.monotonic() + NODES_CHECK_TTL, str(comfy), plan)
             nodes = {**plan, 'python': str(python) if python else None}
         with self.lock:
             run = dict(self.run, log=list(self.run['log'])) if self.run else None
@@ -336,6 +345,7 @@ class Installs:
                     ['taskkill', '/PID', str(self.process.pid), '/T', '/F'],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    creationflags=NO_WINDOW,
                 )
         return {'ok': True}
 
@@ -353,6 +363,7 @@ class Installs:
         with self.lock:
             self.run.update(status=status, error=error, finished_at=now())
             self.process = None
+        self._nodes_cache = None  # an install may have changed custom_nodes
 
     def _install_tools(self, body):
         wanted = body.get('items') or ['uv', 'git']
@@ -525,6 +536,7 @@ class Installs:
     # --- image server restart ---------------------------------------------------------------------------------------
     def restart_comfy(self):
         """Restart the image server after new nodes: through this app when it runs it, else through its manager."""
+        self._nodes_cache = None
         status = self.rt.control.status()
         if status.get('can_restart'):
             return self.rt.control.control('restart')

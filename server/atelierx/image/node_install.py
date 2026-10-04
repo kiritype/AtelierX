@@ -16,6 +16,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from ..core.proc import NO_WINDOW
+
 ACTIONS = ('install', 'ok', 'differs', 'blocked', 'skip')
 STAMP = '.atelierx-pack'
 
@@ -32,7 +34,12 @@ def norm_repo(url):
 def _git(folder, *args):
     try:
         done = subprocess.run(
-            ['git', '-C', str(folder), *args], capture_output=True, text=True, timeout=30, check=False
+            ['git', '-C', str(folder), *args],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.TimeoutExpired):
         return ''
@@ -140,6 +147,7 @@ def _run(cmd, log, cwd=None, env=None):
         encoding='utf-8',
         errors='replace',
         check=False,
+        creationflags=NO_WINDOW,
         # Child Pythons print in UTF-8 so their output can be read back on any console code page.
         env={**os.environ, 'PYTHONIOENCODING': 'utf-8', **(env or {})},
     )
