@@ -32,6 +32,23 @@ def bind_loopback(port=0):
     return sock
 
 
+def unblock_bundle(folder):
+    """Remove the "downloaded from the internet" mark (Zone.Identifier) from the bundled DLLs; returns how many.
+
+    Windows marks every file unpacked from a downloaded ZIP. .NET then refuses to load the marked DLLs, and the window
+    library (pythonnet) fails with "Failed to resolve Python.Runtime.Loader.Initialize". This is what "Unblock" in the
+    ZIP's properties would have done, limited to the app's own files.
+    """
+    count = 0
+    for dll in Path(folder).rglob('*.dll'):
+        try:
+            os.remove(f'{dll}:Zone.Identifier')
+        except OSError:  # not marked, or the folder is read-only
+            continue
+        count += 1
+    return count
+
+
 def check_resources(paths):
     required = [
         paths.web / 'index.html',
@@ -128,6 +145,9 @@ def main():
             while thread.is_alive():
                 thread.join(0.25)
         else:
+            if sys.platform == 'win32' and getattr(sys, 'frozen', False):
+                if unblocked := unblock_bundle(sys._MEIPASS):
+                    logger.info('Removed the download mark from %d bundled DLLs', unblocked)
             import webview
 
             webview.settings['ALLOW_DOWNLOADS'] = True
