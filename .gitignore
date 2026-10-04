@@ -1,0 +1,40 @@
+# 개인 메모·로드맵 (공개하지 않음)
+/notes/
+
+# 개발 중 쓰는 로컬 설정·상태·데이터·출력 (앱 폴더 구조와 같음)
+/config/
+/state/
+/data/
+/output/
+
+# 따로 설치하는 학습 도구 (tools/install_trainer.py)
+/vendor/
+/bin/
+
+# 로컬 인증·도구 캐시
+.env
+.env.*
+!.env.example
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# 화면 빌드
+node_modules/
+dist/
+
+# 편집기·도구
+.vscode/
+.idea/
+.claude/
+/CLAUDE.md
+*.log
+*.tsbuildinfo
+
+# 문서 빌드 캐시
+.vitepress/cache/
