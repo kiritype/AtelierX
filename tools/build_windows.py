@@ -83,7 +83,10 @@ def main():
             if file.is_file():
                 zipped.write(file, 'AtelierX/' + file.relative_to(bundle).as_posix())
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_suffix('.zip.sha256').write_text(f'{checksum}  {archive.name}\n', encoding='ascii')
+    # LF on every platform, so `sha256sum -c` reads the file name correctly on Linux (release.yml).
+    archive.with_suffix('.zip.sha256').write_text(
+        f'{checksum}  {archive.name}\n', encoding='ascii', newline='\n'
+    )
     print(json.dumps({'bundle': str(bundle), 'zip': str(archive), 'sha256': checksum}, indent=2))
 
 
