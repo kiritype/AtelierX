@@ -1,6 +1,6 @@
 # AtelierX
 
-[Windows 스테이징 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://kiritype.github.io/AtelierX/)
+[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://kiritype.github.io/AtelierX/)
 
 [English](README.md) | 한국어
 
