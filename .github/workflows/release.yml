@@ -48,14 +48,15 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "$CANDIDATE" --repo "$REPO" --dir assets
-          cd assets && sha256sum -c ./*.sha256
+          # Candidates up to v0.0.1-rc.2 wrote the checksum file with CRLF on Windows; the file itself stays as published.
+          cd assets && tr -d '\r' < ./*.sha256 | sha256sum -c -
       - name: Publish the release
         env:
           VERSION: ${{ steps.check.outputs.version }}
           COMMIT: ${{ steps.check.outputs.commit }}
         run: |
           set -euo pipefail
-          sum=$(cut -d' ' -f1 assets/*.sha256)
+          sum=$(tr -d '\r' < assets/*.sha256 | cut -d' ' -f1)
           printf '%s\n\n%s\n' \
             "The files of the checked candidate $CANDIDATE, unchanged (commit $COMMIT)." \
             "SHA256 of the ZIP: $sum" > notes.md
