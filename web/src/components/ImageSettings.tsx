@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
+import { useReportDirty } from './settingsDirty';
 
 type Connection = {
   status: {
@@ -51,6 +52,7 @@ function ConnectionSection() {
   const fail = useFail();
   const connection = useQuery<Connection>({ queryKey: ['image-connection'], queryFn: () => get('/api/image/connection'), refetchInterval: 4000 });
   const [form, setForm] = useState<Connection['config'] | null>(null);
+  const [base, setBase] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [finding, setFinding] = useState(false);
   const discoveryStarted = useRef(false);
@@ -64,8 +66,12 @@ function ConnectionSection() {
   }, [connection.data]);
 
   useEffect(() => {
-    if (connection.data && !form) setForm(connection.data.config);
+    if (connection.data && !form) {
+      setForm(connection.data.config);
+      setBase(JSON.stringify(connection.data.config));
+    }
   }, [connection.data, form]);
+  useReportDirty('image-connection', !!form && base !== null && JSON.stringify(form) !== base);
 
   if (!connection.data || !form) return null;
   const { status, gpu } = connection.data;
@@ -73,6 +79,7 @@ function ConnectionSection() {
   async function save(config = form) {
     try {
       await put('/api/image/connection', config);
+      setBase(JSON.stringify(config));
       qc.invalidateQueries({ queryKey: ['image-connection'] });
       qc.invalidateQueries({ queryKey: ['image-catalog'] });
       toast({ text: t('common.saved') });
@@ -191,6 +198,7 @@ function ModelsSection() {
   const [showLoras, setShowLoras] = useState(false);
   const data = catalog.data;
   const folder = dir ?? settings.data?.models_dir ?? '';
+  useReportDirty('image-models', dir !== null && dir !== (settings.data?.models_dir ?? ''));
 
   async function setFamily(kind: string, name: string, family: string) {
     try {
@@ -233,8 +241,9 @@ function ModelsSection() {
           onClick={async () => {
             try {
               await put('/api/image/settings/models', { models_dir: folder });
+              await qc.invalidateQueries({ queryKey: ['image-settings', 'models'] });
+              setDir(null);
               qc.invalidateQueries({ queryKey: ['image-catalog'] });
-              qc.invalidateQueries({ queryKey: ['image-settings', 'models'] });
             } catch (err) {
               fail(err);
             }
@@ -273,9 +282,14 @@ function GpuSection() {
   const fail = useFail();
   const query = useQuery<GpuSettings>({ queryKey: ['image-settings', 'gpu'], queryFn: () => get('/api/image/settings/gpu') });
   const [form, setForm] = useState<GpuSettings | null>(null);
+  const [base, setBase] = useState<string | null>(null);
   useEffect(() => {
-    if (query.data && !form) setForm(query.data);
+    if (query.data && !form) {
+      setForm(query.data);
+      setBase(JSON.stringify(query.data));
+    }
   }, [query.data, form]);
+  useReportDirty('image-gpu', !!form && base !== null && JSON.stringify(form) !== base);
   if (!form) return null;
   return (
     <section className="col">
@@ -317,6 +331,7 @@ function GpuSection() {
             try {
               const saved = await put<GpuSettings>('/api/image/settings/gpu', { ...form, watch_processes: form.watch_processes.filter((x) => x.trim()) });
               setForm(saved);
+              setBase(JSON.stringify(saved));
               qc.invalidateQueries({ queryKey: ['image-connection'] });
               toast({ text: t('common.saved') });
             } catch (err) {
@@ -346,9 +361,14 @@ function ReviewSection() {
   const fail = useFail();
   const query = useQuery<ReviewSettings>({ queryKey: ['review-settings'], queryFn: () => get('/api/image/review/settings') });
   const [form, setForm] = useState<ReviewSettings | null>(null);
+  const [base, setBase] = useState<string | null>(null);
   useEffect(() => {
-    if (query.data && !form) setForm(query.data);
+    if (query.data && !form) {
+      setForm(query.data);
+      setBase(JSON.stringify(query.data));
+    }
   }, [query.data, form]);
+  useReportDirty('image-review', !!form && base !== null && JSON.stringify(form) !== base);
   if (!form) return null;
   const connection = form.connection;
   return (
@@ -389,6 +409,7 @@ function ReviewSection() {
             try {
               const saved = await put<ReviewSettings>('/api/image/review/settings', form);
               setForm(saved);
+              setBase(JSON.stringify(saved));
               toast({ text: t('common.saved') });
             } catch (err) {
               fail(err);
@@ -431,6 +452,7 @@ function TrainingSection() {
   const run = installs.data?.run;
   const running = run?.status === 'running';
   const dirty = !!form && !!status.data && JSON.stringify(form) !== JSON.stringify(status.data.settings);
+  useReportDirty('image-training', dirty);
   const modelGroup = installs.data?.models?.groups?.find((group) => group.id === 'training_base');
   const modelBytes = modelGroup?.items.filter((item) => !item.installed).reduce((sum, item) => sum + (item.size ?? 0), 0);
   const modelSize = modelBytes === undefined ? '5.6GB' : `${(modelBytes / 1e9).toFixed(1)}GB`;

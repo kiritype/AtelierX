@@ -6,6 +6,7 @@ import { diffLines } from '../lib/diff';
 import CodeEditor from './CodeEditor';
 import { Icon } from './icons';
 import { useToast } from './Toasts';
+import { useReportDirty } from './settingsDirty';
 
 // Settings → 지침 (11-agent): the global guidelines in collapsible groups. One guideline is open at a time; an agent mode
 // gets a form for its card (name, description, default scope, order) above its Markdown body.
@@ -73,7 +74,7 @@ export function joinMode(head: Head, body: string): string {
 const titleOf = (item: Item) => (item.group === 'agent' ? item.title || item.name.slice(6, -3) : t(`guideline.title.${item.name}`) !== `guideline.title.${item.name}` ? t(`guideline.title.${item.name}`) : item.name);
 const descOf = (item: Item) => (item.group === 'agent' ? item.description ?? '' : t(`guideline.desc.${item.name}`) !== `guideline.desc.${item.name}` ? t(`guideline.desc.${item.name}`) : '');
 
-export default function GuidelineSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+export default function GuidelineSettings() {
   const qc = useQueryClient();
   const toast = useToast();
   const listing = useQuery<Listing>({ queryKey: ['guidelines'], queryFn: () => get('/api/guidelines') });
@@ -84,7 +85,7 @@ export default function GuidelineSettings({ onDirtyChange }: { onDirtyChange?: (
   const [dirty, setDirty] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useReportDirty('guidelines', dirty);
   useEffect(() => {
     try {
       localStorage.setItem(OPEN_KEY, JSON.stringify(open));

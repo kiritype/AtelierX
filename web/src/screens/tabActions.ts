@@ -15,6 +15,7 @@ export function nextActiveKey(keys: string[], closing: Set<string>, active: stri
 // save, so typing or ticking there never asks "save before leaving?". Item tabs report their own state.
 const RUN_VIEWS = new Set(['generate', 'queue', 'lab', 'gallery', 'tools']);
 export function tracksFormChanges(tab: { type: string; view?: string }) {
-  if (tab.type === 'item') return false;
+  // The settings tab's forms report their own unsaved state (settingsDirty.ts); several of them save at once.
+  if (tab.type === 'item' || tab.type === 'settings') return false;
   return !(tab.type === 'image' && RUN_VIEWS.has(tab.view ?? ''));
 }

@@ -15,11 +15,12 @@ describe('tab actions', () => {
 });
 
 describe('form changes', () => {
-  it('ignores run screens and item tabs, tracks settings and the library', () => {
+  it('ignores run screens, item tabs and app settings (whose forms report themselves), tracks the library', () => {
     expect(tracksFormChanges({ type: 'item' })).toBe(false);
     expect(tracksFormChanges({ type: 'image', view: 'generate' })).toBe(false);
     expect(tracksFormChanges({ type: 'image', view: 'tools' })).toBe(false);
     expect(tracksFormChanges({ type: 'image', view: 'library' })).toBe(true);
-    expect(tracksFormChanges({ type: 'settings' })).toBe(true);
+    expect(tracksFormChanges({ type: 'settings' })).toBe(false);
+    expect(tracksFormChanges({ type: 'work-settings' })).toBe(true);
   });
 });
