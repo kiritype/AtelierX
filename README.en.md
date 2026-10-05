@@ -33,6 +33,21 @@ ComfyUI, image models, LoRA training tools and local LLM servers are optional ex
 bundled with AtelierX and must be installed and configured separately. The Ollama Cloud check exercised one model
 catalog and synthetic response/streaming session; Vertex AI and live image generation remain unverified.
 
+## External components
+
+The image features use the following, downloaded separately. The app fetches pinned versions from their own sources
+in Settings → Install and does not redistribute them. Versions, licenses and sources are listed in the manual's
+[external components](https://kiritype.github.io/AtelierX/guide/external.html) page (Korean).
+
+- Image server: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- Custom nodes: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),
+  [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials), [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack),
+  [Impact Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack)
+- Models: [Anima](https://huggingface.co/circlestone-labs/Anima) (non-commercial license), [adetailer](https://huggingface.co/Bingsu/adetailer),
+  [Segment Anything](https://github.com/facebookresearch/segment-anything), [2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4) and [UltraSharp](https://huggingface.co/Kim2091/UltraSharp) (non-commercial)
+- LoRA training: [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools)
+- Helper tools: [uv](https://github.com/astral-sh/uv), [Git for Windows](https://github.com/git-for-windows/git)
+
 ## Repository layout
 
 | Folder | Contents |

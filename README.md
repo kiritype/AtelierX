@@ -25,6 +25,20 @@ Windows 포터블 ZIP에는 Windows x64, Microsoft Edge WebView2 Runtime, .NET F
 로컬 LLM 서버는 선택 사항인 외부 구성 요소이며 AtelierX에 포함되지 않는다. 별도로 설치하고 연결해야 한다.
 Ollama Cloud 연결 점검은 모델 목록과 합성 응답·스트리밍을 확인했다. Vertex AI와 실제 이미지 생성은 아직 검증하지 않았다.
 
+## 외부 구성 요소
+
+이미지 기능은 아래를 따로 받아 씁니다. 앱은 설정 → 설치에서 원래 배포처로부터 정해진 판을 받을 뿐 함께 배포하지 않습니다.
+판·라이선스·받는 곳 전체 목록은 설명서의 [외부 구성 요소](https://kiritype.github.io/AtelierX/guide/external.html)에 있습니다.
+
+- 이미지 생성 서버: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
+- 확장 노드: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),
+  [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials), [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack),
+  [Impact Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack)
+- 모델: [Anima](https://huggingface.co/circlestone-labs/Anima)(비상업 라이선스), [adetailer](https://huggingface.co/Bingsu/adetailer),
+  [Segment Anything](https://github.com/facebookresearch/segment-anything), [2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4)·[UltraSharp](https://huggingface.co/Kim2091/UltraSharp)(비상업)
+- LoRA 학습: [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools)
+- 보조 도구: [uv](https://github.com/astral-sh/uv), [Git for Windows](https://github.com/git-for-windows/git)
+
 ## 저장소 구성
 
 | 폴더 | 내용 |
