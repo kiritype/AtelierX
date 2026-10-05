@@ -427,6 +427,8 @@ class Installs:
             log=self._say,
             git=self.git(),
             env=self.env(),
+            # Through _call: the process is cancellable and stopped with the app, and no step starts after a cancel.
+            run=lambda cmd, _log, cwd=None, env=None: self._call(cmd, cwd=cwd),
         )
         self._say('Restart the image server to load the new nodes.')
 

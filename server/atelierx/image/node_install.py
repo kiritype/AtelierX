@@ -245,8 +245,13 @@ def _run(cmd, log, cwd=None, env=None):
         raise RuntimeError(f'{cmd[0]} failed (exit {done.returncode})')
 
 
-def carry_out(app_dir, comfy, python, features=None, log=print, git='git', env=None):
-    """Install what ``plan`` marks install/repair/update. Returns the plan after the work."""
+def carry_out(app_dir, comfy, python, features=None, log=print, git='git', env=None, run=None):
+    """Install what ``plan`` marks install/repair/update. Returns the plan after the work.
+
+    ``run(cmd, log, cwd=None, env=None)`` runs each command. The app passes its own, which registers the process so
+    cancelling and closing the app stop it, and refuses to start the next step once cancelled.
+    """
+    run = run or _run
     result = plan(app_dir, comfy, features, git=git)
     custom = Path(comfy) / 'custom_nodes'
     custom.mkdir(exist_ok=True)
@@ -258,7 +263,7 @@ def carry_out(app_dir, comfy, python, features=None, log=print, git='git', env=N
         log(f'[{node["folder"]}] {node["license"]}' + (' (repair)' if step['action'] == 'repair' else ''))
         if step['action'] == 'install':
             try:
-                _run([git, 'clone', '--quiet', node['repo'], target], log, env=env)
+                run([git, 'clone', '--quiet', node['repo'], target], log, env=env)
             except Exception:
                 # A half-made clone would block every retry; this folder did not exist before.
                 shutil.rmtree(target, ignore_errors=True)
@@ -266,13 +271,13 @@ def carry_out(app_dir, comfy, python, features=None, log=print, git='git', env=N
         # Unfinished until every step below succeeds, also when an earlier install of another commit was complete.
         _write_record(target, node, complete=False)
         if step['action'] == 'repair':
-            _run([git, '-C', target, 'fetch', '--quiet', 'origin'], log, env=env)
-        _run([git, '-C', target, 'checkout', '--quiet', node['commit']], log, env=env)
+            run([git, '-C', target, 'fetch', '--quiet', 'origin'], log, env=env)
+        run([git, '-C', target, 'checkout', '--quiet', node['commit']], log, env=env)
         if (target / 'requirements.txt').is_file():
-            _run([python, '-m', 'pip', 'install', '-r', target / 'requirements.txt'], log, env=env)
+            run([python, '-m', 'pip', 'install', '-r', target / 'requirements.txt'], log, env=env)
         if (target / 'install.py').is_file():
             # Some packs (Impact) fetch extra parts here, as ComfyUI-Manager does.
-            _run([python, 'install.py'], log, cwd=target, env=env)
+            run([python, 'install.py'], log, cwd=target, env=env)
         _write_record(target, node, complete=True)
     if result['pack']['action'] in ('install', 'update'):
         data = manifest(app_dir)
