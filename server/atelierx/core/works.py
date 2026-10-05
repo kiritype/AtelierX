@@ -97,10 +97,22 @@ class Work:
         """A path inside the user tree. ``rel`` uses '/' and never reaches ``.atelierx``."""
         rel = str(rel or '').strip('/')
         parts = PurePosixPath(rel).parts if rel else ()
-        if any(p in ('..', '') for p in parts) or (parts and parts[0] == APP_DIR):
+        # Windows also splits on '\', ignores case and drops trailing dots and spaces, so `.ATELIERX\x` or `.atelierx.`
+        # would name the app folder; ':' would name a drive or a data stream.
+        if (
+            '\\' in rel
+            or ':' in rel
+            or any(p in ('..', '') or p != p.rstrip('. ') for p in parts)
+            or (parts and parts[0].casefold() == APP_DIR)
+        ):
             raise AppError(Msg('server.works.bad_path', 'This path is not allowed.'))
         path = self.folder.joinpath(*parts)
-        if self.folder.resolve() not in path.resolve().parents and path.resolve() != self.folder.resolve():
+        folder, resolved, app = self.folder.resolve(), path.resolve(), self.app.resolve()
+        if (
+            (folder not in resolved.parents and resolved != folder)
+            or resolved == app
+            or app in resolved.parents
+        ):
             raise AppError(Msg('server.works.bad_path', 'This path is not allowed.'))
         return path
 
