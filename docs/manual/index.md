@@ -1,28 +1,56 @@
-# AtelierX 사용 설명서
+---
+layout: home
+hero:
+  name: AtelierX
+  text: RP 챗봇 원고와 캐릭터 이미지를 한 작업실에서
+  tagline: 메인 프롬프트·로어북·시작 상황을 파일로 쓰고, LLM 에이전트와 다듬고, 대화 테스트로 확인하세요. 캐릭터 이미지 생성·검수·후처리와 LoRA 학습까지 이어집니다. 모든 데이터는 내 PC의 앱 폴더 안에 둡니다.
+  image:
+    src: /icon.svg
+    alt: AtelierX 아이콘
+  actions:
+    - theme: brand
+      text: 다운로드 (Windows)
+      link: https://github.com/kiritype/AtelierX/releases/latest
+    - theme: alt
+      text: 처음 사용하기
+      link: /tutorial/first-run
+    - theme: alt
+      text: 0.0.3에서 바뀐 점
+      link: /changelog
+features:
+  - title: 파일로 쓰는 작품
+    details: 메인 프롬프트, 시작 상황, 로어북, 캐릭터, JSX를 Markdown 파일로 나눠 씁니다. 용량 제한과 키워드를 검사하고 스냅숏으로 되돌립니다.
+  - title: 에이전트 패널
+    details: 모드 지침에 따라 LLM과 대화하며 원고를 다듬습니다. 에이전트는 파일 전체를 제안하고, 바뀐 부분만 골라 채택합니다.
+  - title: 대화 테스트
+    details: 시작 상황과 페르소나를 골라 실제 모델로 대화해 봅니다. 이번 턴에 어떤 로어북이 불려 왔는지 함께 보여 줍니다.
+  - title: 캐릭터 이미지
+    details: 외모·의상 설명을 이미지 프롬프트로 바꾸고, 표정·의상 조합을 ComfyUI로 생성해 갤러리에서 검수합니다.
+  - title: 후처리와 LoRA
+    details: 업스케일·디테일러·배경 제거 같은 후처리를 하고, 채택한 이미지로 데이터셋을 만들어 LoRA를 학습합니다.
+  - title: 로컬 우선, 포터블
+    details: 로컬 LLM을 기본으로 쓰고 외부 서비스는 작품마다 동의를 받습니다. API 키는 마스터 비밀번호로 암호화하고, 앱 폴더 하나로 옮길 수 있습니다.
+---
 
-AtelierX는 작품별 Markdown·JSX 파일을 정리하고, AI 작성 보조와 대화 테스트, 이미지 제작·관리 작업을 이어서 하는 Windows 포터블 앱입니다. 이 안내서는 현재 앱에 구현된 화면을 기준으로 작성했습니다. 별도 서버나 모델이 필요한 기능은 설치·연결을 먼저 해야 합니다.
+## 이 설명서는
 
-## 시작하기
+**AtelierX 0.0.3**을 기준으로 씁니다. 화면 캡처도 0.0.3에서 찍었습니다. 버전마다 바뀐 점은 [바뀐 점](changelog.md)에 모읍니다. 앱의 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다.
 
-- [설치와 첫 실행](guide/getting-started.md): 포터블 파일, 필수 런타임, 비밀번호, 샘플 작품
-- [샘플 작품 따라 하기](guide/walkthrough.md): 내용 편집, 테스트, 내보내기
-- [파일과 편집기](guide/editing.md): 파일 종류, 탭, 저장, 자동 저장
-- [AI 도구와 결과 검토](guide/ai-tools.md): 압축, 검토, 비교, 적용
-- [대화 테스트](guide/chat-test.md): 플랫폼·시작 상황·메시지 재전송
+![작품 창: 파일 트리, 편집기, 에이전트 패널](screenshots/agent-conversation.webp)
 
-## 연결과 이미지
+## 어디서부터 읽을까요
 
-- [LLM 연결](guide/connections.md): 로컬·외부 연결, 인증 정보와 작업별 모델
-- [이미지 환경 준비](guide/image-setup.md): ComfyUI, 설치 화면, 연결
-- [캐릭터 이미지 설계](guide/character-images.md): 외모·의상, 항목 관리, 프롬프트 변환
-- [이미지 생성](guide/generation.md): 설정, 대기열, 생성 결과
-- [갤러리와 내보내기](guide/gallery-export.md): 검수, 이미지 채택, 파일 내보내기
-- [LoRA 데이터셋과 학습](guide/lora.md): 캡션, 학습, 등록, 자동 적용
+- **처음 설치했다면**: [처음 사용하기](tutorial/first-run.md)를 순서대로 따라가세요. 비밀번호 설정부터 작품 만들기, LLM·ComfyUI 연결, 에이전트로 원고 쓰기, 캐릭터 이미지 생성과 후처리, LLM으로 다듬기, 테스트와 내보내기까지 샘플 작품 하나로 이어 갑니다.
+- **기능별로 찾는다면**: [사용 설명서](guide/getting-started.md)에서 화면별 설명을 보세요.
+- **업데이트했다면**: [바뀐 점](changelog.md)과 [유지 관리](guide/maintenance.md)의 업데이트 절차를 보세요.
 
-## 설정과 운영
+## 필요한 것
 
-- [플랫폼 프리셋](guide/platforms.md): 프리셋 편집과 바이트 제한
-- [유지 관리와 문제 해결](guide/maintenance.md): 업데이트, 백업, 자주 생기는 문제
-- [검증 범위와 출시 상태](guide/release-status.md): 현재 확인된 환경과 미검증 항목
+| 무엇 | 필요한 때 |
+|---|---|
+| Windows 10/11 x64, Microsoft Edge WebView2 Runtime | 항상 |
+| LLM: 로컬 서버(LM Studio 등 OpenAI 호환) 또는 외부 API(Ollama Cloud 등) | 에이전트, LLM 도구, 대화 테스트, 이미지 프롬프트 변환 |
+| ComfyUI와 GPU, 모델 파일 | 이미지 생성과 후처리 |
+| LoRA 학습 도구(앱의 설치 화면에서 받음) | LoRA 학습 |
 
-화면의 명칭은 앱 한국어 UI를 따릅니다. 단계별 화면이 다르거나 연결 프로그램이 없는 경우에는 해당 페이지의 준비 사항을 먼저 확인하세요.
+글을 쓰고 정리하는 데에는 LLM이나 ComfyUI가 없어도 됩니다. 외부 프로그램과 모델의 판·라이선스는 [외부 구성 요소](guide/external.md)에 있습니다.
