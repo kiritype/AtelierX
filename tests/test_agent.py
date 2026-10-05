@@ -128,10 +128,8 @@ def test_a_conversation_streams_a_proposal_that_is_reviewed_and_adopted(unlocked
     assert any(s['reason'] == 'before_llm' for s in c.get(f'/api/works/{wid}/snapshots').json())
     again = c.post(f'/api/works/{wid}/agent-drafts/{draft_id}/apply', json={'text': text})
     assert again.status_code == 409
-    assert (
-        c.get(f'/api/works/{wid}/agent/sessions/{sid}').json()['turns'][1]['proposals'][0]['draft_id']
-        == draft_id
-    )
+    stored = c.get(f'/api/works/{wid}/agent/sessions/{sid}').json()['turns'][1]['proposals'][0]
+    assert stored['draft_id'] == draft_id and stored['draft_status'] == 'applied'
 
 
 def test_a_proposal_for_a_file_changed_since_the_answer_is_refused(unlocked):

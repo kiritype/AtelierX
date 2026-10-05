@@ -48,7 +48,18 @@ async def sessions_create(request):
 
 
 async def session_get(request):
-    return _ok(agent.Sessions(_work(request)).read(request.path_params['sid']))
+    work = _work(request)
+    doc = agent.Sessions(work).read(request.path_params['sid'])
+    # What became of each proposal sent to review: pending, applied or discarded (its draft may be gone).
+    drafts = Drafts(work)
+    for turn in doc['turns']:
+        for proposal in turn.get('proposals') or []:
+            if proposal.get('draft_id'):
+                try:
+                    proposal['draft_status'] = drafts.get(proposal['draft_id'])['status']
+                except AppError:
+                    proposal['draft_status'] = None
+    return _ok(doc)
 
 
 async def session_patch(request):

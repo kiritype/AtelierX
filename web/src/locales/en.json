@@ -1637,5 +1637,7 @@
   "queue.post_op.detect": "Censor detection",
   "queue.post_op.upscale": "Upscale",
   "queue.post_op.detail": "Detailer",
-  "queue.post_op.inpaint": "Inpaint"
+  "queue.post_op.inpaint": "Inpaint",
+  "agent.card.applied": "adopted",
+  "agent.card.discarded": "discarded"
 }
