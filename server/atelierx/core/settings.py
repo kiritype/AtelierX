@@ -14,6 +14,8 @@ DEFAULTS = {
     'jobs': {'api_concurrency': 2},
     'chat_runs_keep': 100,
     'default_platform_preset': None,
+    # Ask GitHub for a newer release when the app starts (Help → Check for updates works either way).
+    'update_check_on_start': False,
     'image': {},
 }
 
