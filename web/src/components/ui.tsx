@@ -6,11 +6,14 @@ export function Dialog({
   children,
   onClose,
   actions,
+  closeLabel,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   actions?: React.ReactNode;
+  // Dialogs that only show something say "close" instead of "cancel".
+  closeLabel?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -23,7 +26,7 @@ export function Dialog({
         <h3>{title}</h3>
         {children}
         <div className="actions">
-          <button onClick={onClose}>{t('common.cancel')}</button>
+          <button onClick={onClose}>{closeLabel ?? t('common.cancel')}</button>
           {actions}
         </div>
       </div>
