@@ -9,6 +9,7 @@ import { AppMark } from '../components/AppMark';
 import { Icon } from '../components/icons';
 import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import { MenuButton } from '../components/MenuBar';
+import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
 
 export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) => void; onLock: () => void }) {
   const qc = useQueryClient();
@@ -19,9 +20,9 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
   useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
   const ui = useQuery({ queryKey: ['ui-state'], queryFn: () => get('/api/ui-state') });
   const [search, setSearch] = useState('');
-  const [dialog, setDialog] = useState<null | 'new' | 'samples' | 'trash' | { dup: WorkCard } | { rename: WorkCard }>(
-    null,
-  );
+  const [dialog, setDialog] = useState<
+    null | 'new' | 'samples' | 'trash' | 'import' | { dup: WorkCard } | { rename: WorkCard } | { pack: string[] }
+  >(null);
   const [menu, setMenu] = useState<{ x: number; y: number; work: WorkCard } | null>(null);
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['works'] });
@@ -39,6 +40,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
     { label: t('works.open'), run: () => onOpen(work.id) },
     { label: t('works.rename'), run: () => setDialog({ rename: work }) },
     { label: t('works.duplicate'), run: () => setDialog({ dup: work }) },
+    { label: t('package.export_title'), run: () => setDialog({ pack: [work.id] }) },
     null,
     {
       label: t('works.delete'),
@@ -74,10 +76,22 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
       <div className="row">
         <input className="grow" placeholder={t('works.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
         <button onClick={() => setDialog('samples')}>{t('works.samples')}</button>
+        <button onClick={() => setDialog('import')} title={t('package.import_about')}>
+          {t('package.import_short')}
+        </button>
+        <button
+          disabled={!(works.data?.works ?? []).length}
+          onClick={() => setDialog({ pack: (works.data?.works ?? []).map((w: WorkCard) => w.id) })}
+          title={t('package.backup_about')}
+        >
+          {t('package.backup_short')}
+        </button>
         <button className="primary" onClick={() => setDialog('new')}>
           {t('works.new')}
         </button>
       </div>
+      {dialog === 'import' && <PackageImportDialog onClose={() => setDialog(null)} onImported={refresh} />}
+      {dialog && typeof dialog === 'object' && 'pack' in dialog && <PackageExportDialog ids={dialog.pack} onClose={() => setDialog(null)} />}
       {works.data && list.length === 0 && !search && (
         <div className="empty">
           <p>{t('works.empty')}</p>

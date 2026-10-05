@@ -5,6 +5,7 @@ import AppSettings from '../components/AppSettings';
 import AuxPanel, { type AuxTab } from '../components/AuxPanel';
 import type { Attachment } from '../components/AgentPanel';
 import CompareTab from '../components/CompareTab';
+import { PackageExportDialog } from '../components/Packages';
 import ExportDialog from '../components/ExportDialog';
 import AuthoringDialog from '../components/AuthoringDialog';
 import GlossaryTab from '../components/GlossaryTab';
@@ -74,6 +75,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [status, setStatus] = useState<Record<string, EditorStatus>>({});
   const [showJobs, setShowJobs] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [packing, setPacking] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [authoring, setAuthoring] = useState(false);
@@ -301,6 +303,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       items: [
         { label: t('window.work_settings'), run: () => open({ type: 'work-settings' }) },
         { label: t('window.export'), run: () => setExporting(true) },
+        { label: t('package.export_title'), run: () => setPacking(true) },
         {
           label: t('history.manual'),
           run: async () => {
@@ -559,6 +562,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         )}
       </div>
       {quickOpen && <QuickOpen workId={workId} onClose={() => setQuickOpen(false)} onOpen={(path) => open({ type: 'item', path })} />}
+      {packing && <PackageExportDialog ids={[workId]} onClose={() => setPacking(false)} />}
       {exporting && <ExportDialog workId={workId} onClose={() => setExporting(false)} openItem={(path) => open({ type: 'item', path })} />}
       {renaming && <RenameDialog workId={workId} renamePath={renamePath} onClose={() => setRenaming(false)} />}
       {llmJob && <Dialog title={t('llm_tools.title')} onClose={() => !llmBusy && setLlmJob(null)} actions={<button className="primary" disabled={llmBusy} onClick={runLlmJob}>{t('llm_tools.run')}</button>}>

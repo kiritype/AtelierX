@@ -9,9 +9,10 @@ import GuidelineSettings from './GuidelineSettings';
 import { AboutContent, useHelp } from './Help';
 import { useToast } from './Toasts';
 import { SettingsDirty, useReportDirty } from './settingsDirty';
+import { SettingsPackages } from './Packages';
 
-type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'about';
-const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'about'];
+type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'packages' | 'about';
+const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'packages', 'about'];
 
 export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const [section, setSection] = useState<Section>('general');
@@ -38,6 +39,7 @@ export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty:
     guidelines: <GuidelineSettings />,
     image: <ImageSettings />,
     install: <InstallSettings />,
+    packages: <SettingsPackages />,
     about: <About />,
   };
   return (

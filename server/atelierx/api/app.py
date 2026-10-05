@@ -27,6 +27,7 @@ from ..core.i18n import AppError, Msg, wire
 from ..core.jobs import Jobs
 from ..core.jsx import Props, call_text
 from ..core.llm import LlmGate, Providers
+from ..core.packages import Packages
 from ..core.presets import Presets
 from ..core.relations import Glossary, Relations
 from ..core.settings import Settings
@@ -35,7 +36,7 @@ from ..core.vault import Vault
 from ..core.works import KIND_PREFIX, WorkStore
 from ..image import designs as image_designs
 from ..image.runtime import ImageRuntime
-from . import agent_routes, editor_routes, image_routes, lora_routes, tool_routes
+from . import agent_routes, editor_routes, image_routes, lora_routes, package_routes, tool_routes
 
 
 class State:
@@ -58,6 +59,7 @@ class State:
         self.llm.gate = LlmGate(
             self.image.gpu, lambda: (self.settings.load().get('jobs') or {}).get('api_concurrency', 2)
         )
+        self.packages = Packages(paths, self.works, self.image, self.vault)
         self.maintain()
 
     def maintain(self):
@@ -1482,6 +1484,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         *image_routes.routes(),
         *tool_routes.routes(),
         *lora_routes.routes(),
+        *package_routes.routes(),
     ]
     if paths.web.is_dir() and (paths.web / 'assets').is_dir():
         routes.append(Mount('/assets', StaticFiles(directory=paths.web / 'assets')))
