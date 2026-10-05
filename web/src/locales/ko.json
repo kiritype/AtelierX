@@ -1795,5 +1795,11 @@
   "llm.context_cap_help": "모델이 더 길게 읽을 수 있어도 에이전트는 이 길이까지만 채웁니다. 길수록 느리고 비용이 듭니다. 비워 두면 131,072.",
   "server.llm.invalid_tokens": "토큰 수는 0보다 큰 정수여야 합니다.",
   "server.llm.no_model_named": "먼저 모델 이름을 정하세요.",
-  "server.works.gone": "연 뒤에 이 파일이 지워지거나 옮겨졌습니다. 내용을 남기려면 새 파일에 붙여 넣으세요."
+  "server.works.gone": "연 뒤에 이 파일이 지워지거나 옮겨졌습니다. 내용을 남기려면 새 파일에 붙여 넣으세요.",
+  "guidelines.mode_uses": "함께 읽을 지침",
+  "guidelines.mode_uses_help": "에이전트에 이 모드 지침과 함께 보낼 지침입니다. 작품이나 플랫폼 프리셋에 같은 이름의 파일이 있으면 그 파일을 보냅니다.",
+  "guidelines.mode_uses_elsewhere": "전역에 없음(작품·프리셋에서 찾음)",
+  "agent.guidelines": "지침:",
+  "agent.guidelines_help": "이번 요청에 들어가는 지침과 토큰 수(대략)입니다.",
+  "agent.guideline_missing": "{name} 없음"
 }

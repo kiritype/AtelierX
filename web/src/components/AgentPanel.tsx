@@ -40,7 +40,8 @@ type Turn = {
 };
 type Session = { id: string; mode: string; title: string; scope: Scope; turns: Turn[] };
 type SessionBrief = { id: string; mode: string; title: string; turns: number; updated_at: string | null };
-type Summary = { files: number; tokens: number; budget: number; omitted: string[]; history_dropped: number };
+type GuidelineRead = { name: string; tokens: number; missing?: boolean };
+type Summary = { files: number; tokens: number; budget: number; omitted: string[]; history_dropped: number; guidelines?: GuidelineRead[] };
 type Live = { text: string; thinking: number; waiting?: string; context?: Summary; error?: string; done: boolean };
 
 const lastKey = (workId: string) => `atelierx-agent-session-${workId}`;
@@ -335,6 +336,17 @@ export default function AgentPanel({
               <div className={`small ${preview.tokens > preview.budget ? 'warn-text' : 'faint'}`}>
                 {t('agent.budget', { files: preview.files, tokens: preview.tokens.toLocaleString(), budget: preview.budget.toLocaleString() })}
                 {preview.omitted.length > 0 && <span className="warn-text"> · {t('agent.omitted', { n: preview.omitted.length })}</span>}
+                {!!preview.guidelines?.length && (
+                  <div title={t('agent.guidelines_help')}>
+                    {t('agent.guidelines')}{' '}
+                    {preview.guidelines.map((g, n) => (
+                      <span key={g.name} className={g.missing ? 'warn-text' : undefined}>
+                        {n > 0 && ' · '}
+                        {g.missing ? t('agent.guideline_missing', { name: g.name }) : `${g.name} (${g.tokens.toLocaleString()})`}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <textarea
