@@ -1673,5 +1673,15 @@
   "guidelines.mode_uses_elsewhere": "not global (looked up in the work or presets)",
   "agent.guidelines": "Guidelines:",
   "agent.guidelines_help": "The guidelines in this request and their tokens (approximate).",
-  "agent.guideline_missing": "{name} missing"
+  "agent.guideline_missing": "{name} missing",
+  "gallery.save_preset": "Save these settings as a preset",
+  "gallery.preset_common": "Common tags",
+  "gallery.preset_styles": "Styles",
+  "gallery.preset_left_out": "Appearance, outfit, expression and seed are left out; another character fills in its own.",
+  "gallery.preset_left_loras": "The character LoRAs ({names}) are left out too.",
+  "gallery.preset_id": "Preset ID",
+  "gallery.preset_name": "Name (optional)",
+  "gallery.preset_id_rule": "Use letters, digits, _ and -, up to 64.",
+  "gallery.preset_overwrite": "A preset \"{id}\" exists. Overwrite it?",
+  "gallery.preset_saved": "Saved the preset \"{name}\". Pick it on the generate screen."
 }
