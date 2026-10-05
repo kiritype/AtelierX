@@ -72,7 +72,7 @@ export type Tab =
   | { type: 'glossary' }
   | { type: 'image'; view: ImageView; characterId?: string; outfitId?: string };
 
-export type ImageView = 'library' | 'generate' | 'queue' | 'lab' | 'gallery' | 'tools' | 'lora';
+export type ImageView = 'library' | 'board' | 'generate' | 'queue' | 'lab' | 'gallery' | 'tools' | 'lora';
 
 export function tabKey(tab: Tab): string {
   switch (tab.type) {

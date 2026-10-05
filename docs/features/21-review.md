@@ -58,7 +58,15 @@ ZIP으로 내보내거나 데이터셋([22](22-datasets.md))의 재료로 쓴다
 
 - "채택 이미지 내보내기": 지금 보고 있는 범위(작품·캐릭터·의상)의 채택 이미지를 `<캐릭터>/<의상>/<표정>.png`(작품을 정하지 않으면
   앞에 작품 ID)로 묶은 ZIP.
-- 이미지는 있지만 채택이 없는 조합은 미리 목록으로 알리고 뺀다.
+- 채택 이미지가 없는 필요한 조합은 미리 목록으로 알리고 뺀다. 필요한 조합은 완성도 보드 기준(의상 × 표정 라이브러리, 제외한 조합 빼고)이라
+  한 번도 생성하지 않은 조합도 들어간다. 디자인이 없는 캐릭터는 이미지는 있지만 채택이 없는 조합만 센다.
+
+### 완성도 보드
+
+- 이미지 메뉴 "완성도 보드": 캐릭터마다 의상(행) × 표정(열) 격자. 칸은 미생성·생성됨(장수)·채택·제외로 표시하고, 대기열에 있는 칸은 테두리로 따로 보인다.
+- 캐릭터·작품 진행률(채택/필요). 이미지가 있는 칸을 누르면 그 캐릭터·의상의 갤러리를 연다.
+- "제외 편집"에서 칸, 또는 의상·표정 이름을 눌러 줄 전체를 제외하거나 다시 필요로 바꾼다.
+- "미생성 생성"·"미채택 포함 생성"은 대기열에 없는 해당 조합을 생성 화면으로 넘긴다. 생성 화면에서 모델·프리셋을 고르고 장수를 확인한 뒤 올린다.
 - "생성 정보 빼기"를 고르면 PNG의 생성 정보(프롬프트·설정·워크플로)를 지운 사본을 넣는다(공유용).
 
 ### 지우기와 출력 휴지통
@@ -127,6 +135,8 @@ ZIP으로 내보내거나 데이터셋([22](22-datasets.md))의 재료로 쓴다
 | `POST /api/image/gallery/review` | 판정 `{verdict, items: [{path, sha256?}], note?}` |
 | `POST /api/image/gallery/regenerate` | 새 시드로 다시 생성 `{items, review?}` |
 | `POST /api/image/gallery/export/plan` | 내보낼 채택 이미지와 빠지는 조합 |
+| `GET /api/works/{id}/image/board` | 완성도 보드: 표정 목록, 캐릭터별 의상·칸 상태(`state`, `images`, `queued`)·필요·채택 수 |
+| `PUT /api/works/{id}/image/board/exclude` | 조합 제외·되돌리기 `{character_id, combos: ["의상/표정"], excluded}` |
 | `POST /api/image/gallery/export` | ZIP `{filters, allow_partial, strip_metadata}` |
 | `GET·PUT /api/image/review/settings` | 자동 검수 설정 |
 | `GET /api/image/review/rounds`, `POST /api/image/review/rounds/{dismiss|retry}` | 자동 검수 묶음 |

@@ -357,6 +357,29 @@ def _designs(work):
     return out
 
 
+async def image_board(request):
+    from ..image import board
+
+    runtime = _runtime(request)
+    return await call(board.board, runtime, runtime.works.get(request.path_params['wid']))
+
+
+async def image_board_exclude(request):
+    from ..image import board
+
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    data = await _body(request)
+
+    def run():
+        board.set_excluded(
+            work, data.get('character_id'), data.get('combos'), bool(data.get('excluded', True))
+        )
+        return board.board(runtime, work)
+
+    return await call(run)
+
+
 async def designs(request):
     runtime = _runtime(request)
     return await call(_designs, runtime.works.get(request.path_params['wid']))
@@ -408,6 +431,8 @@ def routes():
         Route(f'{p}/review/rounds', review_rounds),
         Route(f'{p}/review/rounds/{{action}}', review_rounds_action, methods=['POST']),
         Route('/api/works/{wid}/image/designs', designs),
+        Route('/api/works/{wid}/image/board', image_board),
+        Route('/api/works/{wid}/image/board/exclude', image_board_exclude, methods=['PUT']),
         Route('/api/works/{wid}/image/compose', compose_preview, methods=['POST']),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),
     ]

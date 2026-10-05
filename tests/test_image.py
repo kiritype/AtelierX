@@ -184,14 +184,17 @@ def test_gallery_review_export_and_vlm_round(unlocked):
     assert c.get('/api/image/gallery', params={'auto_status': 'pass'}).json()['total'] == 2
 
     plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
-    assert plan['count'] == 0 and plan['missing'] == [f'{wid}/C001/o01/smile']
+    # Needed combinations without an adopted image: the generated one and, from the completeness board, never made ones.
+    assert plan['count'] == 0 and {f'{wid}/C001/o01/smile', f'{wid}/C001/o01/neutral'} <= set(plan['missing'])
     reviewed = c.post(
         '/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': second['path']}]}
     ).json()
     assert reviewed['results'][0]['adopted']
     assert {r['status'] for r in c.get('/api/image/review/rounds').json()['rounds']} == {'human_accepted'}
     assert c.get('/api/image/gallery', params={'adopted': '1'}).json()['total'] == 1
-    exported = c.post('/api/image/gallery/export', json={'filters': {'work': wid}})
+    refused = c.post('/api/image/gallery/export', json={'filters': {'work': wid}})
+    assert refused.status_code == 400 and refused.json()['error']['key'] == 'server.gallery.export_incomplete'
+    exported = c.post('/api/image/gallery/export', json={'filters': {'work': wid}, 'allow_partial': True})
     assert exported.status_code == 200
     import zipfile
 
@@ -199,7 +202,10 @@ def test_gallery_review_export_and_vlm_round(unlocked):
     assert names == ['C001/o01/smile.png', 'manifest.json']
     manifest = json.loads(zipfile.ZipFile(io.BytesIO(exported.content)).read('manifest.json'))
     assert list(manifest['source_to_export'].values()) == ['C001/o01/smile.png']
-    stripped = c.post('/api/image/gallery/export', json={'filters': {'work': wid}, 'strip_metadata': True})
+    stripped = c.post(
+        '/api/image/gallery/export',
+        json={'filters': {'work': wid}, 'strip_metadata': True, 'allow_partial': True},
+    )
     with zipfile.ZipFile(io.BytesIO(stripped.content)) as archive:
         clean = Image.open(io.BytesIO(archive.read('C001/o01/smile.png')))
     assert clean.size == (32, 32) and not getattr(clean, 'text', {})
@@ -407,3 +413,54 @@ def test_output_trash_moves_restores_and_purges(unlocked):
     assert list((runtime.paths.output / '.trash').iterdir()) == [
         runtime.paths.output / '.trash' / 'index.json'
     ]
+
+
+def test_the_completeness_board_counts_needed_combinations(unlocked):
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    runtime.gpu.admit = lambda kind: None
+
+    board = c.get(f'/api/works/{wid}/image/board').json()
+    expressions = [e['id'] for e in board['expressions']]
+    character = board['characters'][0]
+    outfits = [o['id'] for o in character['outfits']]
+    assert character['id'] == 'C001' and character['required'] == len(outfits) * len(expressions)
+    assert {cell['state'] for cell in character['cells'].values()} == {'missing'}
+
+    c.post(
+        f'/api/works/{wid}/image/jobs',
+        json={'targets': [{'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}]},
+    )
+    assert c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells']['o01/smile']['queued'] == 1
+    for job in list(runtime.jobs):
+        job['status'] = 'running'
+        runtime.run_job(job)
+    cell = c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells']['o01/smile']
+    assert cell == {'state': 'generated', 'images': 1, 'queued': 0}
+
+    path = c.get('/api/image/gallery', params={'work': wid}).json()['results'][0]['path']
+    c.post('/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': path}]})
+    board = c.get(f'/api/works/{wid}/image/board').json()
+    assert board['characters'][0]['cells']['o01/smile']['state'] == 'adopted' and board['adopted'] == 1
+
+    others = [f'o01/{e}' for e in expressions if e != 'smile']
+    board = c.put(
+        f'/api/works/{wid}/image/board/exclude',
+        json={'character_id': 'C001', 'combos': others[:1], 'excluded': True},
+    ).json()
+    assert board['characters'][0]['cells'][others[0]]['state'] == 'excluded'
+    assert board['characters'][0]['required'] == len(outfits) * len(expressions) - 1
+    plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
+    assert f'{wid}/C001/{others[0]}' not in plan['missing'] and f'{wid}/C001/{others[1]}' in plan['missing']
+    assert f'{wid}/C001/o01/smile' not in plan['missing'] and plan['count'] == 1
+
+    board = c.put(
+        f'/api/works/{wid}/image/board/exclude',
+        json={'character_id': 'C001', 'combos': others[:1], 'excluded': False},
+    ).json()
+    assert board['characters'][0]['cells'][others[0]]['state'] == 'missing'
+    bad = c.put(f'/api/works/{wid}/image/board/exclude', json={'character_id': 'C001', 'combos': ['../x']})
+    assert bad.status_code == 400

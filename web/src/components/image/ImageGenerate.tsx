@@ -21,6 +21,31 @@ type Composed = {
 const PARTS = ['common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative'];
 
 // Image menu → Generate: characters × outfits × expressions with the library, a preset and generation settings.
+export type Target = { character_id: string; outfit_id: string; expression_id: string };
+const HANDOFF_KEY = 'atelierx-generate-targets';
+
+// The completeness board (#45) hands over exact combinations; an open generate tab takes them from the event, one opened
+// later reads them from session storage.
+export function sendToGenerate(targets: Target[]) {
+  try {
+    sessionStorage.setItem(HANDOFF_KEY, JSON.stringify(targets));
+  } catch {
+    // Storage may be unavailable; the event still reaches an open tab.
+  }
+  window.dispatchEvent(new CustomEvent(HANDOFF_KEY, { detail: targets }));
+}
+
+function takeHanded(): Target[] | null {
+  try {
+    const raw = sessionStorage.getItem(HANDOFF_KEY);
+    sessionStorage.removeItem(HANDOFF_KEY);
+    const list = raw ? JSON.parse(raw) : null;
+    return Array.isArray(list) && list.length ? list : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ImageGenerate({ workId, openQueue, openItem, characterId, outfitId }: { workId: string; openQueue: () => void; openItem: (path: string) => void; characterId?: string; outfitId?: string }) {
   const toast = useToast();
   const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
@@ -46,6 +71,15 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [scopeLoaded, setScopeLoaded] = useState(false);
+  const [handed, setHanded] = useState<Target[] | null>(() => takeHanded());
+  useEffect(() => {
+    const take = (event: Event) => {
+      takeHanded();
+      setHanded((event as CustomEvent<Target[]>).detail);
+    };
+    window.addEventListener(HANDOFF_KEY, take);
+    return () => window.removeEventListener(HANDOFF_KEY, take);
+  }, []);
   useEffect(() => {
     if (!characterId || scopeLoaded || !designs.data) return;
     const design = designs.data.find((d) => d.id === characterId);
@@ -57,10 +91,11 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   const chosenCommons = commonIds ?? commonDefault;
   const targets = useMemo(
     () =>
+      handed ??
       Object.entries(chars).flatMap(([character_id, outfits]) =>
         outfits.flatMap((outfit_id) => exprs.map((expression_id) => ({ character_id, outfit_id, expression_id }))),
       ),
-    [chars, exprs],
+    [chars, exprs, handed],
   );
   const single = targets.length === 1;
   const options = () => ({
@@ -73,7 +108,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
     overrides: single ? overrides : {},
   });
 
-  useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings]);
+  useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings, handed]);
 
   function applyPreset(id: string) {
     setPresetId(id);
@@ -91,6 +126,16 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   return (
     <div className="image-gen">
       <div className="image-gen-pick pad col">
+        {handed && (
+          <div className="col handed-targets">
+            <div className="section-title">{t('gen.handed', { n: handed.length })}</div>
+            <div className="mono small faint" style={{ maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-line' }}>
+              {handed.map((x) => `${x.character_id} · ${x.outfit_id} · ${x.expression_id}`).join('\n')}
+            </div>
+            <button onClick={() => setHanded(null)}>{t('gen.handed_clear')}</button>
+          </div>
+        )}
+        <div className="col" hidden={!!handed}>
         <div className="section-title">{t('gen.characters')}</div>
         {(designs.data ?? []).length === 0 && <div className="faint">{t('gen.no_characters')}</div>}
         {(designs.data ?? []).map((d) => (
@@ -147,6 +192,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
             </div>
           </div>
         ))}
+        </div>
         <div className="section-title">{t('gen.extras')}</div>
         <label className="col" style={{ gap: 2 }}>
           <span className="muted">{t('lib.composition')}</span>
@@ -230,6 +276,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
                   ...(reviewSettings.data?.enabled ? { llm: reviewLlm } : {}),
                 });
                 toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
+                setHanded(null); // the board's combinations are queued now; queuing them again would double them
               } catch (err) {
                 fail(err);
               } finally {

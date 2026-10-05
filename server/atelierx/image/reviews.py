@@ -72,6 +72,8 @@ class ReviewStore:
             self.state.setdefault(key, {})
         self.state.setdefault('history', [])
         self.listeners = []  # called after a person's verdict changes (the review rounds)
+        # The completeness board (#45) refines what counts as missing: needed but never made, minus excluded.
+        self.adjust_plan = None
 
     def _save(self, state):
         state['history'] = state['history'][-HISTORY_KEPT:]
@@ -331,13 +333,14 @@ class ReviewStore:
         one_work = bool(filters.get('work'))
         sources, collisions = plan_paths(sorted(plan, key=combo_of), one_work=one_work)
         names = {destination: source for source, destination in sources.items()}
-        return {
+        plan = {
             'count': len(names),
             'files': names,
             'missing': ['/'.join(m) for m in missing],
             'manifest': sources,
             'collisions': collisions,
         }
+        return self.adjust_plan(plan, filters) if self.adjust_plan else plan
 
     def export_zip(self, body):
         filters = body.get('filters') or {}
@@ -348,7 +351,7 @@ class ReviewStore:
             raise ValueError(
                 Msg(
                     'server.gallery.export_incomplete',
-                    '{n} combinations have images but none adopted.',
+                    '{n} needed combinations have no adopted image.',
                     n=len(plan['missing']),
                 )
             )

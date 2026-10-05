@@ -337,6 +337,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       label: t('menu.image'),
       items: [
         { label: t('image_menu.library'), run: image('library') },
+        { label: t('image_menu.board'), run: image('board') },
         null,
         { label: t('image_menu.generate'), run: image('generate') },
         { label: t('image_menu.queue'), run: image('queue') },
@@ -511,6 +512,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                         characterId={tab.characterId}
                         outfitId={tab.outfitId}
                         openView={(view) => open({ type: 'image', view, characterId: tab.characterId, outfitId: tab.outfitId })}
+                        openImage={(view, characterId, outfitId) => open({ type: 'image', view, characterId, outfitId })}
                         openItem={(path) => open({ type: 'item', path })}
                       />
                     )}

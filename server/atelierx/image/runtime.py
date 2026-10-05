@@ -2,7 +2,8 @@
 
 import threading
 
-from . import comfy_locate
+from ..core.i18n import AppError
+from . import board, comfy_locate
 from .comfy import Comfy
 from .control import ComfyControl
 from .gallery import Gallery
@@ -41,6 +42,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.tags = TagLookup(paths)
         self.gallery = Gallery(paths)
         self.reviews = ReviewStore(paths, self.gallery)
+        self.reviews.adjust_plan = self._adjust_export_plan
         self.tools = ToolWorkspace(paths, self.gallery)
         self.convert = ConvertTasks(paths, self.tools, self.gallery)
         self.trash = OutputTrash(paths, self.gallery, self.tools)
@@ -49,6 +51,20 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.load_queue()
         self.rounds = ReviewRounds(self)
         self.reviews.listeners.append(self.rounds.human_changed)
+
+    def _adjust_export_plan(self, plan, filters):
+        """Apply each work's completeness board to the deployment export's missing list (#45)."""
+        if filters.get('work'):
+            ids = {filters['work']}
+        else:
+            ids = {m.split('/')[0] for m in plan['missing']} | {s.split('/')[0] for s in plan['manifest']}
+        for work_id in sorted(ids):
+            try:
+                work = self.works.get(work_id)
+            except AppError:
+                continue  # images of a work that is gone: its combinations stay as the gallery sees them
+            plan = board.adjust_export_plan(self, work, plan, {**filters, 'work': work_id})
+        return plan
 
     # --- worker thread (started with the app, stopped on shutdown) ----------------------------------------------------
     def start(self):
