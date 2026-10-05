@@ -1794,5 +1794,6 @@
   "llm.context_cap": "에이전트 맥락 상한(토큰)",
   "llm.context_cap_help": "모델이 더 길게 읽을 수 있어도 에이전트는 이 길이까지만 채웁니다. 길수록 느리고 비용이 듭니다. 비워 두면 131,072.",
   "server.llm.invalid_tokens": "토큰 수는 0보다 큰 정수여야 합니다.",
-  "server.llm.no_model_named": "먼저 모델 이름을 정하세요."
+  "server.llm.no_model_named": "먼저 모델 이름을 정하세요.",
+  "server.works.gone": "연 뒤에 이 파일이 지워지거나 옮겨졌습니다. 내용을 남기려면 새 파일에 붙여 넣으세요."
 }

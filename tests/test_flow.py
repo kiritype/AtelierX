@@ -412,3 +412,21 @@ def test_export_never_writes_into_a_work_or_the_app_folder(unlocked, paths):
         assert refused.status_code == 400 and refused.json()['error']['key'] == key, target
     assert main.read_bytes() == before
     assert c.get(f'/api/works/{wid}/export/preview').json()['blocked'] is None
+
+
+def test_saving_never_brings_back_a_deleted_file_or_writes_other_kinds(unlocked):
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    work = unlocked.app.state.app.works.get(wid)
+    path = '장소/카페 노을.md'
+    item = c.get(f'/api/works/{wid}/file', params={'path': path}).json()
+    work.delete(path)  # deleted elsewhere while the editor still has it open
+    saved = c.put(
+        f'/api/works/{wid}/file',
+        params={'path': path},
+        json={'meta': {}, 'body': 'x', 'base_hash': item['hash']},
+    )
+    assert saved.status_code == 409 and saved.json()['error']['key'] == 'server.works.gone'
+    assert not (work.folder / path).exists()
+    other = c.put(f'/api/works/{wid}/file', params={'path': 'run.bat'}, json={'meta': {}, 'body': 'x'})
+    assert other.status_code == 400 and not (work.folder / 'run.bat').exists()
