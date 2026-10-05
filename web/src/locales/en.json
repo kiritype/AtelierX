@@ -1639,5 +1639,7 @@
   "queue.post_op.detail": "Detailer",
   "queue.post_op.inpaint": "Inpaint",
   "agent.card.applied": "adopted",
-  "agent.card.discarded": "discarded"
+  "agent.card.discarded": "discarded",
+  "agent.warning.changed_since": "This file changed after the request was sent. The proposal was made from the earlier text and cannot be adopted; ask again.",
+  "agent.warning.not_in_context": "This file was not sent to the agent. The proposal may ignore its current text; check the changes closely."
 }

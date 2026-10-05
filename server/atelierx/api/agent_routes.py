@@ -7,6 +7,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from ..core import agent, guidelines
 from ..core.drafts import Drafts
+from ..core.fsutil import sha256_text
 from ..core.i18n import AppError, Msg
 from ..core.snapshots import Snapshots
 
@@ -126,7 +127,7 @@ async def send(request):
 
         def save():
             text = ''.join(parts)
-            found = agent.proposals(work, text)
+            found = agent.proposals(work, text, summary.get('seen'))
             event = {
                 'type': 'assistant',
                 'text': text,
@@ -186,7 +187,14 @@ async def proposal_review(request):
                 return _ok({'draft_id': stored['draft_id']})
         except AppError:
             pass
-    proposal = next((p for p in agent.proposals(work, turn.get('text') or '') if p['n'] == n), None)
+    proposal = next(
+        (
+            p
+            for p in agent.proposals(work, turn.get('text') or '', (turn.get('context') or {}).get('seen'))
+            if p['n'] == n
+        ),
+        None,
+    )
     if proposal is None:
         raise AppError(Msg('server.agent.no_proposal', 'This proposal does not exist.'), 404)
     if proposal['rejected']:
@@ -197,9 +205,15 @@ async def proposal_review(request):
         raise AppError(
             Msg('server.agent.truncated', 'This proposal was cut off. Ask the agent to continue.'), 400
         )
-    # The draft compares with the file as it was when the answer came, so a later edit is caught when adopting.
+    # The draft keeps the file as the model saw it (or, for older answers, as it was when the answer came); any edit
+    # since then is caught here and again when adopting.
     base_hash = stored.get('base_hash') if stored else proposal['base_hash']
-    if not proposal['new'] and base_hash != proposal['base_hash']:
+    current = (
+        sha256_text(work.resolve(proposal['path']).read_text(encoding='utf-8'))
+        if not proposal['new']
+        else None
+    )
+    if not proposal['new'] and base_hash != current:
         raise AppError(
             Msg('server.agent.stale', 'The file changed after this answer. Ask again for a fresh proposal.'),
             409,
