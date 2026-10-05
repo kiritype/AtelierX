@@ -77,8 +77,8 @@ export default function LlmSettings() {
       let next = doc!;
       for (const [id, value] of Object.entries(keys)) {
         if (!value.trim() || !next.providers[id]) continue;
-        // One vault entry per connection, so changing this key never changes another connection's.
-        const name = `llm-${id}`;
+        // Never overwrite an entry another connection also uses: then this connection gets a new entry of its own.
+        const name = keyEntryName(id, next.providers, (vault.data ?? []).map((v) => v.name));
         await post('/api/vault', {
           name,
           kind: next.providers[id].type === 'vertex_openai' ? 'service_token' : 'llm_api_key',
@@ -304,4 +304,16 @@ function KeyField({
       {changing && <button className="ghost" onClick={() => onChange(false)}>{t('common.cancel')}</button>}
     </>
   );
+}
+
+// The vault entry a connection's new key goes into: `llm-<id>` (or `llm-<id>-2` …), reused only when no other connection
+// refers to it and it is not someone else's entry already.
+export function keyEntryName(id: string, providers: Record<string, { key?: string | null }>, stored: string[]): string {
+  const mine = providers[id]?.key ?? null;
+  const taken = (name: string) =>
+    Object.entries(providers).some(([other, p]) => other !== id && p.key === `secret:${name}`) ||
+    (stored.includes(name) && mine !== `secret:${name}`);
+  let name = `llm-${id}`;
+  for (let n = 2; taken(name); n += 1) name = `llm-${id}-${n}`;
+  return name;
 }
