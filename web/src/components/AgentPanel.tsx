@@ -452,7 +452,7 @@ function ProposalCard({
 }) {
   const [shown, setShown] = useState(false);
   const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
-  const blocked = superseded || !closed || !!info?.rejected || !!info?.truncated || !!info?.warnings.includes('changed_since');
+  const blocked = superseded || !closed || !!info?.rejected || !!info?.truncated || !!info?.warnings.some((w) => w === 'changed_since' || w === 'deleted_since');
   return (
     <div className={`proposal-card${superseded ? ' superseded' : ''}`}>
       <div className="row">
