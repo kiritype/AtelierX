@@ -32,7 +32,7 @@ export default function ExportDialog({ workId, onClose }: { workId: string; onCl
       actions={
         <button
           className="primary"
-          disabled={!target.trim() || !!preview.data?.clash}
+          disabled={!target.trim() || !!preview.data?.clash || !!preview.data?.blocked}
           onClick={async () => {
             try {
               await post(`/api/works/${workId}/export`, { target: target.trim(), overwrite, snapshot, release: release || null });
@@ -63,8 +63,9 @@ export default function ExportDialog({ workId, onClose }: { workId: string; onCl
           </div>
         ))}
       </div>
+      {preview.data?.blocked && <div className="error-text">{tm(preview.data.blocked)}</div>}
       {preview.data?.clash && <div className="error-text">{t('export.name_clash', { path: preview.data.clash })}</div>}
-      {state?.exists && state.files > 0 && (
+      {!preview.data?.blocked && state?.exists && state.files > 0 && (
         <div className="warn-text">
           {t('export.not_empty', { n: state.files })}
           {state.leftovers.length > 0 && (

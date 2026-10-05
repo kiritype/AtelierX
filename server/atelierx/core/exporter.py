@@ -65,6 +65,23 @@ def keywords_table(items, language='ko'):
     return '\n'.join(rows) + '\n'
 
 
+def blocked_target(target_dir, app_root, work_folder):
+    """Why ``target_dir`` cannot receive an export, or None. Export writes bodies without their metadata heads, so it
+    must never land on a work (its own files would lose their IDs and kinds) or anywhere in the app folder."""
+    target = Path(str(target_dir or '').strip())
+    if not target.is_absolute():
+        return Msg('server.export.relative', 'Enter an absolute folder path.')
+    resolved = target.resolve(strict=False)
+    work = Path(work_folder).resolve()
+    if resolved == work or resolved.is_relative_to(work) or work.is_relative_to(resolved):
+        return Msg(
+            'server.export.into_work', 'This folder holds the work itself. Choose a folder outside the work.'
+        )
+    if resolved.is_relative_to(Path(app_root).resolve()):
+        return Msg('server.export.into_app', 'Choose a folder outside the app folder.')
+    return None
+
+
 def target_state(target_dir, items):
     """What is already in the target folder: whether it has files, and files the export will not write (leftovers)."""
     if not target_dir:
@@ -78,8 +95,11 @@ def target_state(target_dir, items):
     return {'exists': True, 'files': len(files), 'leftovers': leftovers[:200]}
 
 
-def export(work, target_dir, overwrite=False):
+def export(work, target_dir, overwrite=False, app_root=None):
     target = Path(target_dir)
+    blocked = blocked_target(target_dir, app_root or work.folder, work.folder)
+    if blocked:
+        raise AppError(blocked, 400)
     include, skip = plan(work)
     clash = name_clash(include)
     if clash:

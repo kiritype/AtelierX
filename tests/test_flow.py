@@ -71,16 +71,18 @@ def test_sample_snapshot_export(unlocked, tmp_path):
     assert snaps[0]['reason'] == 'import'
     preview = c.get(f'/api/works/{wid}/export/preview').json()
     assert 'UI/StatusPanel.jsx' in preview['include']
-    job = c.post(f'/api/works/{wid}/export', json={'target': str(tmp_path / 'out')}).json()
+    # The app folder is tmp_path in tests; an export goes outside it.
+    target = tmp_path.parent / f'{tmp_path.name}-out'
+    job = c.post(f'/api/works/{wid}/export', json={'target': str(target)}).json()
     for _ in range(50):
         status = next(j for j in c.get('/api/jobs').json() if j['id'] == job['id'])['status']
         if status in ('done', 'failed'):
             break
         time.sleep(0.05)
     assert status == 'done'
-    out = (tmp_path / 'out' / 'UI' / 'StatusPanel.jsx').read_text(encoding='utf-8')
+    out = (target / 'UI' / 'StatusPanel.jsx').read_text(encoding='utf-8')
     assert not out.startswith('/*---')
-    table = (tmp_path / 'out' / '_keywords.md').read_text(encoding='utf-8')
+    table = (target / '_keywords.md').read_text(encoding='utf-8')
     assert table.startswith('| 경로 | ID | 이름 |')
     assert '| 인물/리나.md |' in table
 
@@ -385,3 +387,28 @@ def test_samples_install_without_unreadable_component_calls(unlocked):
         issues = c.get(f'/api/works/{wid}/check').json()
         keys = [i['message']['key'] for i in issues]
         assert 'check.jsx_example_unreadable' not in keys, (sample, issues)
+
+
+def test_export_never_writes_into_a_work_or_the_app_folder(unlocked, paths):
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    other = c.post('/api/samples/ensemble/install').json()['id']
+    work = unlocked.app.state.app.works.get(wid)
+    main = work.folder / '메인.md'
+    before = main.read_bytes()
+    cases = {
+        str(work.folder): 'server.export.into_work',
+        str(work.folder / '인물'): 'server.export.into_work',
+        str(work.folder / '..' / work.folder.name): 'server.export.into_work',
+        str(work.folder.parent): 'server.export.into_work',
+        str(unlocked.app.state.app.works.get(other).folder): 'server.export.into_app',
+        str(paths.root / 'output' / 'export'): 'server.export.into_app',
+        'relative/folder': 'server.export.relative',
+    }
+    for target, key in cases.items():
+        preview = c.get(f'/api/works/{wid}/export/preview', params={'target': target}).json()
+        assert preview['blocked']['key'] == key, target
+        refused = c.post(f'/api/works/{wid}/export', json={'target': target, 'overwrite': True})
+        assert refused.status_code == 400 and refused.json()['error']['key'] == key, target
+    assert main.read_bytes() == before
+    assert c.get(f'/api/works/{wid}/export/preview').json()['blocked'] is None
