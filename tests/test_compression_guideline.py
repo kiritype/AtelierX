@@ -58,3 +58,18 @@ def test_compression_guideline_resolves_saved_global_and_work_override(paths):
 
     _, messages = llm_tasks.compression_messages('본문', saved, '', None, [])
     assert saved in messages[0]['content']
+
+
+def test_a_later_tags_preset_guideline_wins_like_its_values(paths):
+    for preset, text in (('first', '앞 태그 프리셋'), ('second', '뒤 태그 프리셋')):
+        folder = paths.platforms / preset / 'guidelines'
+        folder.mkdir(parents=True)
+        (folder / 'jsx.md').write_text(text, encoding='utf-8')
+    work_dir = paths.data / 'works' / 'sample'
+    (work_dir / '.atelierx').mkdir(parents=True)
+    work = SimpleNamespace(app=work_dir / '.atelierx')
+    assert guidelines.locate(work, paths, ['first', 'second'], 'jsx.md') == (
+        '뒤 태그 프리셋',
+        'preset:second',
+    )
+    assert guidelines.locate(work, paths, ['second', 'first'], 'jsx.md') == ('앞 태그 프리셋', 'preset:first')

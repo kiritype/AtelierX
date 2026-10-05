@@ -1,4 +1,4 @@
-"""Guidelines with fixed names (data-model: 정해진 이름), looked up work → linked presets in tag order → global → the
+"""Guidelines with fixed names (data-model: 정해진 이름), looked up work → linked presets from the last tag → global → the
 app's defaults (a data root made by an older version lacks guidelines added later, e.g. the agent modes).
 
 Settings → 지침 (11-agent) lists and edits the global ones: the data root's copy, or the app default while none is saved.
@@ -45,7 +45,8 @@ def save_compression_settings(paths, data):
 
 def _candidates(work, paths, linked, name):
     yield 'work', work.app / 'guidelines' / name
-    for preset in linked:
+    # A later tag's preset overrides an earlier one, as for the preset values (data-model: 가이드라인).
+    for preset in reversed(linked):
         yield f'preset:{preset}', paths.platforms / preset / 'guidelines' / name
     yield 'global', paths.data / 'guidelines' / name
     yield 'default', paths.defaults / 'guidelines' / name
