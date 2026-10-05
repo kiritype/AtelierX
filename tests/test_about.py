@@ -5,10 +5,14 @@ import json
 
 import httpx
 import pytest
+from starlette.testclient import TestClient
 
 from atelierx import __version__
+from atelierx.api import app as app_module
+from atelierx.api.app import build_app
 from atelierx.core import about
 from atelierx.core.i18n import AppError
+from conftest import FAST_KDF
 
 
 def test_about_reports_a_development_run_without_a_manifest(unlocked):
@@ -72,3 +76,19 @@ def test_check_update_reports_failures(monkeypatch):
     with pytest.raises(AppError) as unreachable:
         asyncio.run(about.check_update(current='0.0.3'))
     assert unreachable.value.msg.key == 'server.about.update_unreachable'
+
+
+def test_only_the_desktop_window_opens_the_app_in_a_browser(unlocked, paths, monkeypatch):
+    assert unlocked.get('/api/about').json()['desktop'] is False
+    assert unlocked.post('/api/open-in-browser', json={}).status_code == 400
+
+    opened = []
+    monkeypatch.setattr(app_module.webbrowser, 'open', opened.append)
+    with TestClient(
+        build_app(paths, kdf=FAST_KDF, desktop=True), base_url='http://127.0.0.1:8765'
+    ) as desktop:
+        assert desktop.post('/api/open-in-browser', json={}).status_code == 401
+        assert desktop.post('/api/auth/unlock', json={'password': 'pass1234'}).status_code == 200
+        assert desktop.get('/api/about').json()['desktop'] is True
+        assert desktop.post('/api/open-in-browser', json={}).json()['url'] == 'http://127.0.0.1:8765/'
+    assert opened == ['http://127.0.0.1:8765/']

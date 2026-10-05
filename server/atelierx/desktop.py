@@ -117,7 +117,7 @@ def main():
             except OSError as exc:
                 raise RuntimeError('이 폴더의 AtelierX가 이미 실행 중입니다.') from exc
         check_resources(paths)
-        app = build_app(paths, dev=False)
+        app = build_app(paths, dev=False, desktop=not args.headless)
         sock = bind_loopback(args.port)
         port = sock.getsockname()[1]
         url = f'http://127.0.0.1:{port}'

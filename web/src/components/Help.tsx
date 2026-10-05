@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { ApiError, get } from '../api';
+import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
 import type { MenuEntry } from './MenuBar';
 import { useToast } from './Toasts';
@@ -18,6 +18,7 @@ type About = {
   links: { repository: string; manual: string; releases: string };
   notices: boolean;
   offline_manual: boolean;
+  desktop: boolean;
 };
 type Update = { current: string; latest: string; newer: boolean; url: string; published_at: string | null; notes: string };
 type HelpDialog = 'about' | 'shortcuts' | 'update' | 'notices' | null;
@@ -26,11 +27,22 @@ const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
 
 export function useHelp() {
   const [dialog, setDialog] = useState<HelpDialog>(null);
+  const toast = useToast();
   const about = useQuery<About>({ queryKey: ['about'], queryFn: () => get('/api/about'), staleTime: Infinity });
   const entries: MenuEntry[] = [
     { label: t('help.manual'), run: () => open(about.data?.links.manual ?? 'https://kiritype.github.io/AtelierX/') },
     ...(about.data?.offline_manual ? [{ label: t('help.manual_offline'), run: () => open('/manual/index.html') }] : []),
     { label: t('help.shortcuts'), run: () => setDialog('shortcuts') },
+    ...(about.data?.desktop
+      ? [{
+          label: t('help.open_in_browser'),
+          run: () => {
+            post('/api/open-in-browser', {})
+              .then(() => toast({ text: t('help.open_in_browser_done') }))
+              .catch((e) => toast({ text: e instanceof ApiError ? tm(e.msg) : String(e), tone: 'error' }));
+          },
+        }]
+      : []),
     null,
     { label: t('help.check_update'), run: () => setDialog('update') },
     { label: t('help.releases'), run: () => open(about.data?.links.releases ?? 'https://github.com/kiritype/AtelierX/releases') },
