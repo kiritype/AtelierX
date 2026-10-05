@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { askConsent, get, post, put } from '../api';
 import { TestSetsDialog, type TestSet } from '../components/TestSets';
+import { startText as loadStart } from '../lib/testRuns';
 import { t, tm } from '../i18n';
 import JsxPreview from '../components/JsxPreview';
 import MessageMarkdown from '../components/MessageMarkdown';
@@ -180,6 +181,13 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   async function runSet(set: TestSet) {
     if (busy) return;
     if (!confirm(t('tests.run_confirm', { n: set.inputs.length, name: set.name }))) return;
+    let opening: string | null;
+    try {
+      opening = await loadStart((path) => get<{ body: string }>(`/api/works/${workId}/file?path=${encodeURIComponent(path)}`), set.start, set.persona?.name || '사용자');
+    } catch {
+      alert(t('tests.start_missing', { path: set.start ?? '' }));
+      return;
+    }
     setSetsOpen(false);
     reset();
     setBusy(true);
@@ -189,12 +197,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     try {
       const run = await post<{ id: string }>(`/api/works/${workId}/tests/runs`, { set_id: set.id, llm });
       runId = run.id;
-      let history: Turn[] = [];
-      if (set.start) {
-        const start = await get<{ body: string }>(`/api/works/${workId}/file?path=${encodeURIComponent(set.start)}`).catch(() => null);
-        const text = start?.body.trim().replaceAll('{{user}}', set.persona?.name || '사용자');
-        if (text) history = [{ role: 'assistant', text, start: true }];
-      }
+      let history: Turn[] = opening ? [{ role: 'assistant', text: opening, start: true }] : [];
       setTurns(history);
       for (const input of set.inputs) {
         if (!alive.current) {
