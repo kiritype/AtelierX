@@ -23,3 +23,9 @@ def test_packaged_files_take_the_version_from_the_package():
     build = (ROOT / 'tools' / 'build_windows.py').read_text(encoding='utf-8')
     assert '{version}' in readme and __version__ not in readme
     assert __version__ not in build
+
+
+def test_the_web_app_shows_the_version_from_package_json():
+    sources = [p for p in (ROOT / 'web' / 'src').rglob('*') if p.suffix in ('.ts', '.tsx')]
+    assert not [p.name for p in sources if __version__ in p.read_text(encoding='utf-8')]
+    assert '__APP_VERSION__' in (ROOT / 'web' / 'vite.config.ts').read_text(encoding='utf-8')

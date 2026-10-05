@@ -268,7 +268,7 @@ function VaultSection() {
 function About() {
   return (
     <div className="col">
-      <strong>AtelierX 0.0.1</strong>
+      <strong>AtelierX {__APP_VERSION__}</strong>
       <span className="faint">{t('settings.about_stage')}</span>
     </div>
   );
