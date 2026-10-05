@@ -5,23 +5,23 @@ import { setLanguage, t, tm } from '../i18n';
 import ImageSettings from './ImageSettings';
 import InstallSettings from './InstallSettings';
 import LlmSettings from './LlmSettings';
-import CompressionGuidelineSettings from './CompressionGuidelineSettings';
+import GuidelineSettings from './GuidelineSettings';
 import { AboutContent, useHelp } from './Help';
 import { useToast } from './Toasts';
 
-type Section = 'general' | 'presets' | 'llm' | 'vault' | 'compression' | 'image' | 'install' | 'about';
+type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'about';
 
 export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const [section, setSection] = useState<Section>('general');
-  const [compressionVisited, setCompressionVisited] = useState(false);
+  const [guidelinesVisited, setGuidelinesVisited] = useState(false);
   const selectSection = (key: Section) => {
     setSection(key);
-    if (key === 'compression') setCompressionVisited(true);
+    if (key === 'guidelines') setGuidelinesVisited(true);
   };
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', height: '100%' }}>
       <div style={{ borderRight: '1px solid var(--border)', paddingTop: 8 }}>
-        {(['general', 'presets', 'llm', 'vault', 'compression', 'image', 'install', 'about'] as Section[]).map((key) => (
+        {(['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'about'] as Section[]).map((key) => (
           <div key={key} className={`tree-row${section === key ? ' sel' : ''}`} onClick={() => selectSection(key)}>
             {t(`settings.${key}`)}
           </div>
@@ -32,7 +32,7 @@ export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty:
         {section === 'presets' && <Presets />}
         {section === 'llm' && <LlmSettings />}
         {section === 'vault' && <VaultSection />}
-        {compressionVisited && <div hidden={section !== 'compression'}><CompressionGuidelineSettings onDirtyChange={onDirtyChange} /></div>}
+        {guidelinesVisited && <div hidden={section !== 'guidelines'}><GuidelineSettings onDirtyChange={onDirtyChange} /></div>}
         {section === 'image' && <ImageSettings />}
         {section === 'install' && <InstallSettings />}
         {section === 'about' && <About />}
