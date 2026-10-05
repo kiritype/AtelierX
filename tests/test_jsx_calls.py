@@ -68,7 +68,9 @@ def test_examples_are_calls_and_old_json_examples_become_calls(unlocked, simulat
     assert review.elements(old['text'], 'StatusPanel')[0]['attrs'] == {'data': {'day': 3}, 'label': "it's"}
 
     saved = unlocked.put(f'{url}/old', content=old['text'].encode('utf-8'))
-    assert saved.status_code == 200 and (props / 'old.txt').is_file() and not (props / 'old.json').exists()
+    assert (
+        saved.status_code == 200 and (props / 'old.txt').is_file() and (props / 'old.json').is_file()
+    )  # kept
     assert unlocked.put(f'{url}/empty', content=b'  ').status_code == 400
 
 
@@ -87,3 +89,33 @@ def test_a_platform_preset_sets_how_attribute_values_are_read(unlocked):
     good = {**preset, 'jsx': {'response': {'syntax': 'element', 'attribute_format': 'text'}}}
     saved = unlocked.put('/api/platforms/rp', json=good).json()
     assert saved['jsx']['response']['attribute_format'] == 'text'
+
+
+@pytest.mark.parametrize(
+    ('props', 'rule'),
+    [
+        ({'data': {'label': "it's", 'quote': 'say "hi"'}}, None),
+        ({'label': '123', 'flag': 'true', 'none': None, 'n': 2}, None),
+        ({'label': 'C001'}, {'attribute_format': 'json'}),
+        ({'label': 'C001', 'mixed': 'a"b\'c'}, None),
+        ({'c': 'C001', 'o': '001'}, {'attribute_format': 'text'}),
+    ],
+)
+def test_old_json_examples_convert_to_calls_with_the_same_values(props, rule):
+    call = call_text('Panel', props, rule)
+    assert call and review.elements(call, 'Panel', rule)[0]['attrs'] == props
+
+
+def test_values_a_text_rule_cannot_carry_stay_as_json_and_the_file_is_kept(unlocked, simulation):
+    _, folder, jid = simulation
+    assert call_text('Panel', {'n': 2}, {'attribute_format': 'text'}) is None
+    props = folder / '.atelierx' / 'jsx' / jid / 'props'
+    (props / 'counts.json').write_text(json.dumps({'data': {'day': 3}}), encoding='utf-8')
+    examples = Props(Work(folder), jid, 'StatusPanel', {'attribute_format': 'text'})
+    entry = examples.entry('counts')
+    assert entry['convert_error'] and json.loads(entry['text']) == {'data': {'day': 3}}
+    assert examples.props('counts') == {'data': {'day': 3}}  # the chat still gets the JSON props
+
+    examples.save('counts', '<StatusPanel data=\'{"day": 4}\' />')
+    assert (props / 'counts.json').is_file()  # the old JSON is never deleted by a save
+    assert examples.entry('counts')['text'].startswith('<StatusPanel')
