@@ -306,6 +306,9 @@ export default function ItemEditor({
               setBody(value);
               setDirty(true);
             }}
+            onAttach={(selection) =>
+              window.dispatchEvent(new CustomEvent('atelierx:agent-attach', { detail: { path, ...selection } }))
+            }
             onSave={save}
           />
         )}

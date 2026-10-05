@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import AppSettings from '../components/AppSettings';
-import AuxPanel from '../components/AuxPanel';
+import AuxPanel, { type AuxTab } from '../components/AuxPanel';
+import type { Attachment } from '../components/AgentPanel';
 import CompareTab from '../components/CompareTab';
 import ExportDialog from '../components/ExportDialog';
 import AuthoringDialog from '../components/AuthoringDialog';
@@ -59,7 +60,16 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey | null>('files');
-  const [aux, setAux] = useState<'check' | 'review' | null>('check');
+  const [aux, setAux] = useState<AuxTab | null>('check');
+  const [agentAttach, setAgentAttach] = useState<Attachment | null>(null);
+  useEffect(() => {
+    const onAttach = (event: Event) => {
+      setAgentAttach((event as CustomEvent<Attachment>).detail);
+      setAux('agent');
+    };
+    window.addEventListener('atelierx:agent-attach', onAttach);
+    return () => window.removeEventListener('atelierx:agent-attach', onAttach);
+  }, []);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<Record<string, EditorStatus>>({});
   const [showJobs, setShowJobs] = useState(false);
@@ -520,6 +530,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
               openItem={(path) => open({ type: 'item', path })}
               openDraft={(draft) => open({ type: 'review', draft })}
               pendingDrafts={pendingDrafts}
+              attach={agentAttach}
+              onAttached={() => setAgentAttach(null)}
             />
           )}
         </div>

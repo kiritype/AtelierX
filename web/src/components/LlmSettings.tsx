@@ -10,8 +10,8 @@ type Provider = { name: string; type: string; preset?: string; vertex_project?: 
 type TaskSetting = { provider?: string; model?: string; params?: { temperature?: number } };
 type Doc = { schema_version: number; providers: Record<string, Provider>; tasks: Record<string, TaskSetting> };
 
-const TASKS = ['chat_test', 'compression', 'authoring', 'image_prompt', 'jsx_prompt', 'consistency', 'image_review'] as const;
-const DEFAULT_TEMPERATURE: Record<string, number> = { compression: 0.3, image_prompt: 0.2, jsx_prompt: 0.4, authoring: 0.7, consistency: 0, chat_test: 0.8, image_review: 0 };
+const TASKS = ['agent', 'chat_test', 'compression', 'authoring', 'image_prompt', 'jsx_prompt', 'consistency', 'image_review'] as const;
+const DEFAULT_TEMPERATURE: Record<string, number> = { compression: 0.3, image_prompt: 0.2, jsx_prompt: 0.4, authoring: 0.7, consistency: 0, chat_test: 0.8, image_review: 0, agent: 0.5 };
 
 // 03-llm: 연결 목록, 연결 시험(모델 목록), 작업별 기본 모델.
 export default function LlmSettings() {

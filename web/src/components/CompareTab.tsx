@@ -3,25 +3,7 @@ import { useState } from 'react';
 import { get, post } from '../api';
 import { t } from '../i18n';
 import { useToast } from './Toasts';
-
-// Line diff (LCS) good enough for prose blocks of a few thousand lines.
-function diffLines(a: string[], b: string[]) {
-  const n = a.length;
-  const m = b.length;
-  const dp = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  const out: { op: ' ' | '-' | '+'; text: string }[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) (out.push({ op: ' ', text: a[i] }), i++, j++);
-    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ op: '-', text: a[i++] });
-    else out.push({ op: '+', text: b[j++] });
-  }
-  while (i < n) out.push({ op: '-', text: a[i++] });
-  while (j < m) out.push({ op: '+', text: b[j++] });
-  return out;
-}
+import { diffLines } from '../lib/diff';
 
 export default function CompareTab({ workId, snapshot }: { workId: string; snapshot: string }) {
   const qc = useQueryClient();

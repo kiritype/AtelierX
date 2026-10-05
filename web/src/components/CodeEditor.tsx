@@ -52,16 +52,19 @@ export default function CodeEditor({
   language,
   onChange,
   onSave,
+  onAttach,
 }: {
   value: string;
   language: 'markdown' | 'jsx';
   onChange: (value: string) => void;
   onSave?: () => void;
+  // Ctrl+L: the selected lines (1-based, inclusive) and text, for the agent panel.
+  onAttach?: (selection: { from: number; to: number; text: string }) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const handlers = useRef({ onChange, onSave });
-  handlers.current = { onChange, onSave };
+  const handlers = useRef({ onChange, onSave, onAttach });
+  handlers.current = { onChange, onSave, onAttach };
 
   useEffect(() => {
     const state = EditorState.create({
@@ -71,6 +74,18 @@ export default function CodeEditor({
         history(),
         keymap.of([
           { key: 'Mod-s', run: () => (handlers.current.onSave?.(), true) },
+          {
+            key: 'Mod-l',
+            run: (editor) => {
+              if (!handlers.current.onAttach) return false;
+              const range = editor.state.selection.main;
+              const first = editor.state.doc.lineAt(range.from);
+              const last = editor.state.doc.lineAt(range.empty ? range.to : Math.max(range.from, range.to - 1));
+              const text = range.empty ? first.text : editor.state.sliceDoc(range.from, range.to);
+              handlers.current.onAttach({ from: first.number, to: last.number, text });
+              return true;
+            },
+          },
           ...defaultKeymap,
           ...historyKeymap,
         ]),

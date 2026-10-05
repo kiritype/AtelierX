@@ -5,6 +5,7 @@ import { t, tm } from '../i18n';
 import { ConsistencyReview, JsxPromptReview, RelationsReview } from './SupportReviews';
 import { useToast } from './Toasts';
 import EditorTaskReview from './EditorTaskReview';
+import AgentFileReview from './AgentFileReview';
 
 const utf8 = (text: string) => new TextEncoder().encode(text).length;
 
@@ -22,6 +23,7 @@ export default function ReviewTab({
   const draft = useQuery({ queryKey: ['draft', workId, draftId], queryFn: () => get(`/api/works/${workId}/drafts/${draftId}`) });
   if (!draft.data) return null;
   if (['content_review', 'text_edit'].includes(draft.data.kind)) return <EditorTaskReview workId={workId} draft={draft.data} onDone={onDone} />;
+  if (draft.data.kind === 'agent_file') return <AgentFileReview workId={workId} draft={draft.data} onDone={onDone} openItem={openItem} />;
   if (draft.data.kind === 'compression') return <CompressionReview workId={workId} draft={draft.data} onDone={onDone} />;
   if (draft.data.kind === 'image_prompt') return <ImagePromptReview workId={workId} draft={draft.data} onDone={onDone} />;
   if (draft.data.kind === 'authoring') return <AuthoringReview workId={workId} draft={draft.data} onDone={onDone} />;

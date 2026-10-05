@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { get } from '../api';
 import { t, tm } from '../i18n';
 import type { Issue } from '../types';
+import AgentPanel, { type Attachment } from './AgentPanel';
 import { Icon } from './icons';
 
-type AuxTab = 'check' | 'review';
+export type AuxTab = 'check' | 'review' | 'agent';
 
 export default function AuxPanel({
   tab,
@@ -14,6 +16,8 @@ export default function AuxPanel({
   openItem,
   openDraft,
   pendingDrafts,
+  attach,
+  onAttached,
 }: {
   tab: AuxTab;
   setTab: (tab: AuxTab | null) => void;
@@ -22,11 +26,17 @@ export default function AuxPanel({
   openItem: (path: string) => void;
   openDraft: (draft: string) => void;
   pendingDrafts: number;
+  attach: Attachment | null;
+  onAttached: () => void;
 }) {
+  const [agentSeen, setAgentSeen] = useState(tab === 'agent');
+  useEffect(() => {
+    if (tab === 'agent') setAgentSeen(true);
+  }, [tab]);
   return (
     <>
       <div className="aux-tabs">
-        {(['check', 'review'] as AuxTab[]).map((key) => (
+        {(['check', 'review', 'agent'] as AuxTab[]).map((key) => (
           <button key={key} className={tab === key ? 'on' : ''} onClick={() => setTab(key)}>
             {t(`aux.${key}`)}
             {key === 'review' && pendingDrafts > 0 && <span className="badge" style={{ marginLeft: 4 }}>{pendingDrafts}</span>}
@@ -38,6 +48,11 @@ export default function AuxPanel({
       <div className="aux-body">
         {tab === 'check' && <Checks workId={workId} activePath={activePath} openItem={openItem} />}
         {tab === 'review' && <ReviewQueue workId={workId} openDraft={openDraft} />}
+        {agentSeen && (
+          <div className="agent-host" style={{ display: tab === 'agent' ? 'flex' : 'none' }}>
+            <AgentPanel workId={workId} activePath={activePath} openDraft={openDraft} attach={attach} onAttached={onAttached} />
+          </div>
+        )}
       </div>
     </>
   );

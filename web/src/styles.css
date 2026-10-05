@@ -567,3 +567,60 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 /* Usage tables keep each cell on one line and scroll sideways in a narrow window. */
 .usage-table { overflow-x: auto; }
 .usage-table td { white-space: nowrap; }
+
+/* agent panel (11-agent) */
+.agent-host { flex-direction: column; height: 100%; min-height: 0; }
+.agent { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.agent-head select { min-width: 0; }
+.agent-modes { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.agent-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; }
+.agent-mode:hover { border-color: var(--accent); }
+.agent-scope { gap: 6px; }
+.agent-scope .chip { max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-log { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.agent-turn { border-radius: var(--radius); padding: 6px 8px; font-size: 13px; }
+.agent-turn.user { background: var(--accent-bg); align-self: flex-end; max-width: 92%; }
+.agent-turn.assistant { background: var(--panel-2); }
+.agent-input { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
+.agent-input textarea { resize: vertical; min-height: 56px; }
+.agent-input .chip button { padding: 0 4px; margin-left: 2px; }
+.agent-llm summary { cursor: pointer; }
+.proposal-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; margin: 6px 0; background: var(--panel);
+  display: flex; flex-direction: column; gap: 4px; }
+.proposal-card strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proposal-card.superseded { opacity: 0.6; }
+.proposal-text { max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--panel-2); padding: 6px 8px;
+  border-radius: var(--radius); margin: 0; }
+.scope-list { max-height: 40vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.diff-view { font-family: var(--mono, monospace); font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: auto; max-height: 65vh; }
+.diff-line { white-space: pre-wrap; padding: 0 8px; }
+.diff-line.add { background: var(--success-bg); }
+.diff-line.del { background: var(--danger-bg); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.diff-mark { display: inline-block; width: 14px; color: var(--text-3); user-select: none; }
+.diff-skip { padding: 2px 8px; background: var(--panel-2); }
+.review-hunk { border-left: 3px solid var(--border); margin: 2px 0; opacity: 0.55; }
+.review-hunk.on { border-left-color: var(--accent); opacity: 1; }
+.review-hunk-head { padding: 2px 6px; gap: 6px; background: var(--panel-2); }
+
+/* settings → guidelines */
+.guideline-group { border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.guideline-group-head { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; padding: 10px 12px;
+  text-align: left; }
+.guideline-list { border-top: 1px solid var(--border); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.guideline-row { border-radius: var(--radius); }
+.guideline-row.open { background: var(--panel-2); }
+.guideline-row-head { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; padding: 6px 8px;
+  text-align: left; }
+.guideline-row-head:hover { background: var(--hover); }
+.guideline-editor { padding: 4px 8px 10px 30px; }
+.guideline-form { display: grid; grid-template-columns: 1fr 140px 90px; gap: 8px; }
+.guideline-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.guideline-form .wide { grid-column: 1 / -1; }
+.guideline-body { height: 340px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.guideline-body .cm-host { height: 100%; }
+.guideline-new { padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
+.guideline-new label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.badge.source-modified { background: var(--accent-bg); color: var(--accent); }
+.badge.source-custom { background: var(--success-bg); }
+.badge.plain, .badge.source-default { background: var(--panel-2); color: var(--text-2); }
