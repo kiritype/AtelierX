@@ -81,6 +81,11 @@ export function createSaver<K>(
         notify();
       }
     },
+    // The editor (re)mounted: React's development StrictMode runs cleanup and setup once more on mount, so setup
+    // must undo a dispose for the saver to keep working.
+    activate() {
+      disposed = false;
+    },
     // The editor closed without saving (the user chose to discard): nothing more is written.
     dispose() {
       disposed = true;

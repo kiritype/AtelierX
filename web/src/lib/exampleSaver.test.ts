@@ -112,4 +112,13 @@ describe('example autosave', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.disk).toEqual({});
   });
+
+  it('works again after a dispose undone by activate (StrictMode remount)', async () => {
+    const h = harness();
+    h.saver.dispose();
+    h.saver.activate();
+    h.type('<A />');
+    await h.flush();
+    expect(h.disk['J001/basic']).toBe('<A />');
+  });
 });
