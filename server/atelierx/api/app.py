@@ -850,7 +850,7 @@ async def jsx_prompt_text(request):
             await asyncio.sleep(0.4)
             text = (
                 f'## {item["name"]}\n응답 맨 끝에 아래 형식으로 {item["name"]}을(를) 한 번 출력한다.\n'
-                f'{call_text(item["name"], props)}\n(모의 문구)'
+                f'{call_text(item["name"], props, rule) or "<" + item["name"] + " />"}\n(모의 문구)'
             )
         else:
             await progress(10)
@@ -1172,7 +1172,7 @@ def _props(request):
         name = item_by_id(work, jsx_id, 'jsx')['name']
     except AppError:
         name = 'Component'
-    return Props(work, jsx_id, name)
+    return Props(work, jsx_id, name, review.response_rule(st(request).presets.effective(work.doc())))
 
 
 async def props_list(request):

@@ -109,7 +109,7 @@ def _component(work, item, rule=None):
     item_id, default = item['meta'].get('id'), item['meta'].get('default_props')
     if item_id and default:
         try:
-            props = Props(work, item_id, item['name']).props(default, rule)
+            props = Props(work, item_id, item['name'], rule).props(default)
         except AppError:
             props = {}
     return {'path': item['path'], 'id': item_id, 'name': item['name'], 'props': props}
