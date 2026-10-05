@@ -464,3 +464,39 @@ def test_the_completeness_board_counts_needed_combinations(unlocked):
     assert board['characters'][0]['cells'][others[0]]['state'] == 'missing'
     bad = c.put(f'/api/works/{wid}/image/board/exclude', json={'character_id': 'C001', 'combos': ['../x']})
     assert bad.status_code == 400
+
+
+def test_a_lab_result_comes_into_the_gallery_as_a_combination(unlocked):
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    c.post('/api/image/lab', json={'positive': '1girl, smile', 'count': 1})
+    job = runtime.jobs[0]
+    job['status'] = 'running'
+    runtime.run_job(job)
+    (run,) = c.get('/api/image/lab/runs').json()['runs']
+    lab_path = run['cells'][0]['path']
+
+    combo = {'work_id': wid, 'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
+    imported = c.post('/api/image/lab/import', json={'path': lab_path, **combo}).json()
+    assert imported['path'] == f'{wid}/C001/images/o01/smile/001.png'
+    detail = c.get('/api/image/gallery/detail', params={'path': imported['path']}).json()
+    record = detail['record']
+    assert record['expression_id'] == 'smile' and record['imported_from'] == lab_path and 'kind' not in record
+    assert (runtime.paths.output / lab_path).is_file()  # the lab copy stays
+
+    c.post('/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': imported['path']}]})
+    plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
+    assert plan['count'] == 1 and list(plan['files']) == ['C001/o01/smile.png']
+
+    second = c.post('/api/image/lab/import', json={'path': lab_path, **combo}).json()
+    assert second['path'].endswith('/002.png')
+    for bad in (
+        {'path': imported['path'], **combo},  # not a lab result
+        {'path': lab_path, **combo, 'outfit_id': 'nope'},
+        {'path': lab_path, **combo, 'expression_id': 'nope'},
+        {'path': '../x.png', **combo},
+    ):
+        assert c.post('/api/image/lab/import', json=bad).status_code == 400

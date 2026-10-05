@@ -49,6 +49,9 @@
    기준이다. "결과의 설정 불러오기"로 마음에 드는 결과의 프롬프트·설정을 그대로 가져온다.
 5. 결과는 `<출력 루트>/_lab/<날짜>/`에 생성 기록과 함께 저장되고(검수 대상 아님), 대기열을 정리해도 실행 목록은 저장된 기록에서
    다시 읽는다.
+6. **조합으로 가져오기**: 고른 결과를 캐릭터·의상·표정 조합으로 복사한다(`<출력 루트>/<작품>/<캐릭터>/images/<의상>/<표정>/<번호>.png`,
+   생성 기록에 조합과 `imported_from`을 적음). 갤러리 검수·채택·배포 내보내기를 그대로 타고, "바로 채택"을 고르면 가져오며 채택한다.
+   생성·비교의 원본은 그대로 둔다.
 
 ### LoRA 적용
 
@@ -113,6 +116,7 @@
 | `POST /api/works/{id}/image/regenerate` | 이미지 하나 다시 `{image, seed: "new" | "same", overrides?}` |
 | `POST /api/image/lab` | 생성·비교 실행 `{positive, negative, settings, count, sweep?: {key, values, lora_index?}, source?}` |
 | `GET /api/image/lab/runs` | 최근 실행(격자 칸: 행·열·시드·값·상태·이미지) |
+| `POST /api/image/lab/import` | 결과를 조합으로 가져오기 `{path, work_id, character_id, outfit_id, expression_id}` → 새 갤러리 경로 |
 
 ## 단계
 

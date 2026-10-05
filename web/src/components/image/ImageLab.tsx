@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import LabImport from './LabImport';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put } from '../../api';
 import { t, tm } from '../../i18n';
@@ -60,11 +61,12 @@ export function compareLorasInLab(files: string[], positive: string, model: stri
 }
 
 // Image menu → Generate & compare: one prompt with several seeds, or one changing value compared side by side.
-export default function ImageLab() {
+export default function ImageLab({ workId }: { workId?: string }) {
   const qc = useQueryClient();
   const toast = useToast();
   const catalog = useCatalog();
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+  const [importing, setImporting] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
     const handoff = readStore(sessionStorage, HANDOFF_KEY);
     writeStore(sessionStorage, HANDOFF_KEY, null);
@@ -365,12 +367,19 @@ export default function ImageLab() {
                 {t('lab.use_result_settings')}
               </button>
             )}
+            {result?.path && workId && (
+              <button className="ghost" onClick={() => setImporting(importing === result.path ? null : result.path!)}>
+                {t('lab.import_title')}
+              </button>
+            )}
             {reference && result && (
               <button className="ghost" onClick={() => (setReference(result), setResult(reference))}>
                 {t('lab.swap')}
               </button>
             )}
           </div>
+
+          {importing && workId && <LabImport key={importing} workId={workId} path={importing} onDone={() => setImporting(null)} />}
 
           {run && (
             <div className="lab-grid" style={{ gridTemplateColumns: `72px repeat(${run.columns}, minmax(110px, 1fr))` }}>
