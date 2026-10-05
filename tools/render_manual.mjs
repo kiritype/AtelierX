@@ -29,7 +29,7 @@ function homeHtml(head, prefix) {
   const href = link => (/^https?:/.test(link) ? link : prefix + link.replace(/^\//, '') + '.html');
   const actions = pairs('  actions', 'text', 'link').map(([text, link]) => `<a class="button" href="${esc(href(link))}">${esc(text)}</a>`).join(' ');
   const features = pairs('features', 'title', 'details').map(([title, details]) => `<div class="feature"><strong>${esc(title)}</strong><p>${esc(details)}</p></div>`).join('');
-  return `<section class="hero"><h1>${esc(value('name'))}</h1><p class="hero-text">${esc(value('text'))}</p><p>${esc(value('tagline'))}</p><p>${actions}</p></section><section class="features">${features}</section>`;
+  return `<section class="home-hero"><div><h1>${esc(value('name'))}</h1><p class="home-text">${esc(value('text'))}</p><p class="home-tagline">${esc(value('tagline'))}</p><p class="home-actions">${actions}</p></div><img src="${prefix}icon.svg" alt="" width="160" height="160"></section><section class="home-features">${features}</section>`;
 }
 
 for (let n = 0; n < pages.length; n++) {
@@ -46,10 +46,11 @@ for (let n = 0; n < pages.length; n++) {
   const nav = [`<a href="${prefix}index.html"${n === 0 ? ' aria-current="page"' : ''}>처음 화면</a>`]
     .concat(groups.map(g => `<strong>${esc(g.text)}</strong>` + pages.filter(p => p.file !== 'index.md' && (g.folder ? p.file.startsWith(`${g.folder}/`) : !p.file.includes('/'))).map(p => `<a href="${link(p)}"${p === page ? ' aria-current="page"' : ''}>${esc(p.title)}</a>`).join('')))
     .join('');
-  const toc = headings.filter(h => h.level === '2').map(h => `<a href="#${h.id}">${h.text}</a>`).join(' · ');
+  // The home page opens with its hero; a page index above it would come first.
+  const toc = page.head ? '' : headings.filter(h => h.level === '2').map(h => `<a href="#${h.id}">${h.text}</a>`).join(' · ');
   const prev = pages[n - 1], next = pages[n + 1];
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(page.title)} · AtelierX</title><link rel="stylesheet" href="${prefix}manual.css"></head><body>
-<a class="skip-link" href="#main">본문으로 건너뛰기</a><header class="topbar"><a class="brand" href="${prefix}index.html">AtelierX <span>사용 설명서</span></a><button class="nav-toggle" aria-controls="sidebar" aria-expanded="false">목차</button><label class="search-wrap">검색 <input type="search" aria-label="설명서 검색"></label></header>
+<a class="skip-link" href="#main">본문으로 건너뛰기</a><header class="topbar"><a class="brand" href="${prefix}index.html"><img src="${prefix}icon.svg" alt="" width="22" height="22">AtelierX <span>사용 설명서</span></a><button class="nav-toggle" aria-controls="sidebar" aria-expanded="false">목차</button><label class="search-wrap">검색 <input type="search" aria-label="설명서 검색"></label></header>
 <div class="layout"><aside class="sidebar" id="sidebar"><nav aria-label="전체 목차">${nav}</nav></aside><main id="main"><div id="search-results" aria-live="polite"></div><article class="manual-section"><nav aria-label="이 페이지">${toc}</nav>${body}</article><footer class="page-footer">${prev ? `<a href="${link(prev)}">← ${esc(prev.title)}</a>` : ''} ${next ? `<a href="${link(next)}">${esc(next.title)} →</a>` : ''}<p>AtelierX ${esc(version)} 기준 · 오프라인 설명서</p></footer></main></div>
 <script src="${prefix}search-data.js"></script><script src="${prefix}offline.js"></script></body></html>`;
   await mkdir(dirname(resolve(output, page.url)), { recursive: true });

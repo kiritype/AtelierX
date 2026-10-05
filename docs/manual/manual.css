@@ -117,10 +117,19 @@ code { padding: .08em .34em; border: 1px solid var(--line); border-radius: .3rem
 .page-footer { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between; }
 /* Home hero and feature cards (offline copy of the web home page), group headings in the sidebar. */
 .sidebar nav strong { margin: .9rem .65rem .2rem; color: var(--ink); font-size: .8rem; }
-.hero { padding: 1rem 0 1.5rem; }
-.hero h1 { margin: 0; font-size: 2.6rem; }
-.hero .hero-text { margin: .2rem 0 .6rem; font-size: 1.35rem; font-weight: 650; }
-.hero .button { display: inline-block; margin: .2rem .4rem .2rem 0; padding: .45rem 1rem; color: #fff; border-radius: .5rem; background: #3b6fd6; text-decoration: none; }
-.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; margin-bottom: 2rem; }
-.feature { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--surface); }
+/* Home page (offline copy of the web home): no card of its own inside the page card. */
+.home-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2rem; padding: .5rem 0 2rem; border-bottom: 1px solid var(--line); }
+.home-hero h1 { margin: 0; color: #3b6fd6; font-size: 2.8rem; line-height: 1.1; }
+.home-hero .home-text { margin: .4rem 0 .8rem; font-size: 1.45rem; font-weight: 700; line-height: 1.35; }
+.home-hero .home-tagline { margin: 0; color: var(--muted); }
+.home-hero .home-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1.2rem 0 0; }
+.home-hero .button { padding: .5rem 1.1rem; color: #3b6fd6; border: 1px solid #3b6fd6; border-radius: 999px; text-decoration: none; font-weight: 600; }
+.home-hero .button:first-child { color: #fff; background: #3b6fd6; }
+.home-hero img { width: 160px; height: 160px; border: 0; }
+.home-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; margin: 1.6rem 0 1rem; }
+.feature { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--paper); }
 .feature p { margin: .3rem 0 0; color: var(--muted); font-size: .9rem; }
+@media (max-width: 760px) { .home-hero { grid-template-columns: 1fr; } .home-hero img { display: none; } }
+.brand { display: inline-flex; align-items: center; gap: .5rem; }
+.brand img { display: block; }
+.search-wrap { white-space: nowrap; }
