@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, del, get, put } from '../api';
 import { t, tm } from '../i18n';
+import { compareRows } from '../lib/testRuns';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
 
@@ -193,8 +194,7 @@ function CompareRuns({ workId, ids, onClose }: { workId: string; ids: string[]; 
   const [a, b] = [first.data, second.data];
   // Oldest on the left.
   const [left, right] = a && b && a.started_at > b.started_at ? [b, a] : [a, b];
-  const inputs = left && right ? [...new Set([...left.set.inputs, ...right.set.inputs])] : [];
-  const reply = (run: Run, input: string) => run.turns.find((turn) => turn.input === input);
+  const rows = left && right ? compareRows(left, right) : [];
   return (
     <Dialog title={t('tests.compare_title')} onClose={onClose} closeLabel={t('common.close')} className="wide">
       {left && right && (
@@ -207,13 +207,12 @@ function CompareRuns({ workId, ids, onClose }: { workId: string; ids: string[]; 
               <span className="faint small">{t('tests.snapshot', { at: when(run.snapshot?.created_at) })}{run.snapshot?.label ? ` · ${run.snapshot.label}` : ''}</span>
             </div>
           ))}
-          {inputs.map((input) => (
-            <div key={input} className="test-compare-row">
-              <div className="test-compare-input">{input}</div>
-              {[left, right].map((run) => {
-                const turn = reply(run, input);
+          {rows.map((row) => (
+            <div key={row.index} className="test-compare-row">
+              <div className="test-compare-input">{row.inputs.join(' / ')}</div>
+              {[row.left, row.right].map((turn, side) => {
                 return (
-                  <div key={run.id} className="test-compare-reply">
+                  <div key={side} className="test-compare-reply">
                     {turn ? turn.reply || (turn.error ? <span className="error-text">{turn.error}</span> : '—') : <span className="faint">{t('tests.not_sent')}</span>}
                   </div>
                 );
