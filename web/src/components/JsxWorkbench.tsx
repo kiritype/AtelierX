@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, del, get, post, q } from '../api';
 import { t, tm } from '../i18n';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import type { WorkInfo } from '../types';
 import { findCalls, type ResponseRule } from '../lib/componentCalls';
-import { createSaver } from '../lib/exampleSaver';
+import type { Saver } from '../lib/exampleSaver';
 import CodeEditor from './CodeEditor';
 import JsxPreview, { type PreviewCall } from './JsxPreview';
 import { useToast } from './Toasts';
@@ -28,7 +28,7 @@ export default function JsxWorkbench({
   info,
   setDefault,
   openItem,
-  onDirtyChange,
+  saver,
 }: {
   workId: string;
   jsxId: string | undefined;
@@ -38,7 +38,8 @@ export default function JsxWorkbench({
   info: WorkInfo;
   setDefault: (name: string) => void;
   openItem?: (path: string) => void;
-  onDirtyChange?: (dirty: boolean) => void;
+  // Owned by the item editor so that leaving this tab never cancels a write (lib/exampleSaver).
+  saver: Saver<{ jsx: string; name: string }>;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -47,22 +48,13 @@ export default function JsxWorkbench({
     queryFn: () => get(`/api/works/${workId}/jsx/${q(jsxId!)}/props`),
     enabled: !!jsxId,
   });
-  const [selected, setSelected] = useState<string | null>(null);
+  // An edit still waiting to be written belongs to this item's example; coming back to the tab shows it again.
+  const waiting = saver.job && saver.job.key.jsx === jsxId ? saver.job : null;
+  const [selected, setSelected] = useState<string | null>(waiting?.key.name ?? null);
   const [text, setText] = useState('');
   const [width, setWidth] = useState<keyof typeof WIDTHS>('normal');
   const [dark, setDark] = useState(false);
   const [calls, setCalls] = useState<PreviewCall[]>([]);
-  const editing = useRef(false);
-  // A save answer only ends editing when no newer edit came in meanwhile (lib/exampleSaver).
-  const saver = useRef(
-    createSaver(async (example, body) => {
-      const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(example)}`, { method: 'PUT', body });
-      if (!response.ok) throw new ApiError(response.status, (await response.json()).error);
-      return response.json();
-    }),
-  ).current;
-  const dirtyRef = useRef(onDirtyChange);
-  dirtyRef.current = onDirtyChange;
   const [dialog, setDialog] = useState<'prompt' | null>(null);
   const usages = useQuery<{ path: string; elements: { raw: string; errors: string[] }[] }[]>({
     queryKey: ['jsx-usages', workId, jsxId],
@@ -73,51 +65,29 @@ export default function JsxWorkbench({
   const list = examples.data ?? [];
   const current = list.find((e) => e.name === selected) ?? list.find((e) => e.name === defaultProps) ?? list[0] ?? null;
 
+  // True while the shown example has an edit that is not written yet; the saved copy must not replace it then.
+  const editingCurrent = !!current && waiting?.key.name === current.name;
+
   useEffect(() => {
-    if (current && !editing.current) setText(current.text);
+    if (current) setText(editingCurrent ? waiting!.text : current.text);
   }, [current?.name, current?.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Store the pending edit; true when nothing is left unsaved.
+  // Write the pending edit now; true when nothing is left unsaved.
   async function flush(): Promise<boolean> {
     if (!saver.dirty) return true;
-    if (!saver.job!.text.trim()) return false;
     try {
-      const { saved, clean } = await saver.flush();
-      if (clean) {
-        editing.current = false;
-        dirtyRef.current?.(false);
-      }
-      qc.setQueryData(['jsx-props', workId, jsxId], saved);
-      return clean;
+      return (await saver.flush()).clean;
     } catch (err) {
       toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
       return false;
     }
   }
 
-  // Save the example shortly after the last keystroke.
-  useEffect(() => {
-    if (!saver.dirty) return;
-    const timer = setTimeout(flush, 700);
-    return () => clearTimeout(timer);
-  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Leaving the tab (or the item) sends what is still unsaved.
-  useEffect(
-    () => () => {
-      const job = saver.job;
-      if (job?.text.trim()) {
-        fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(job.name)}`, { method: 'PUT', body: job.text, keepalive: true });
-      }
-    },
-    [workId, jsxId],
-  );
-
   if (!jsxId) return <div className="pad muted">{t('jsx.need_id')}</div>;
 
   const rules: { hooks?: string[]; globals?: { name: string; stub?: string }[]; response?: ResponseRule } = info.effective.values.jsx ?? {};
   // An old JSON example that cannot become a call previews its JSON props until it is edited.
-  const legacyProps = current?.convert_error && !editing.current ? parseJson(current.text) : undefined;
+  const legacyProps = current?.convert_error && !editingCurrent ? parseJson(current.text) : undefined;
   const found = legacyProps !== undefined
     ? [{ name, raw: '', attrs: legacyProps as Record<string, unknown>, errors: [], index: 0 }]
     : findCalls(text, [name], rules.response);
@@ -133,7 +103,6 @@ export default function JsxWorkbench({
       return;
     }
     qc.setQueryData(['jsx-props', workId, jsxId], await response.json());
-    editing.current = false;
     setSelected(next);
   }
 
@@ -199,7 +168,6 @@ export default function JsxWorkbench({
               onChange={async (e) => {
                 const next = e.target.value;
                 if (!(await flush())) return;
-                editing.current = false;
                 setSelected(next);
               }}
             >
@@ -221,12 +189,9 @@ export default function JsxWorkbench({
                   className="danger"
                   onClick={async () => {
                     if (!confirm(t('jsx.delete_confirm', { name: current.name }))) return;
-                    // An edit still waiting for the deleted example must not bring it back.
-                    if (saver.job?.name === current.name) {
-                      saver.drop();
-                      editing.current = false;
-                      dirtyRef.current?.(false);
-                    }
+                    // An edit still waiting for the deleted example, or a write on its way, must not bring it back.
+                    saver.drop((key) => key.jsx === jsxId && key.name === current.name);
+                    await saver.idle();
                     qc.setQueryData(['jsx-props', workId, jsxId], await del(`/api/works/${workId}/jsx/${q(jsxId)}/props/${q(current.name)}`));
                     setSelected(null);
                   }}
@@ -250,10 +215,10 @@ export default function JsxWorkbench({
                   value={text}
                   language="jsx"
                   onChange={(value) => {
-                    editing.current = true;
-                    saver.edit(current!.name, value);
-                    dirtyRef.current?.(true);
                     setText(value);
+                    // An empty example is never written; the last saved one stays.
+                    if (value.trim()) saver.edit({ jsx: jsxId, name: current!.name }, value);
+                    else saver.drop((key) => key.jsx === jsxId && key.name === current!.name);
                   }}
                 />
               </div>
