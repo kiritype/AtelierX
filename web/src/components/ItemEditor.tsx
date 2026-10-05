@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put, q } from '../api';
 import { t, tm } from '../i18n';
 import { KINDS, type Item, type Kind, type WorkInfo } from '../types';
@@ -11,11 +11,12 @@ import ImageGallery from './image/ImageGallery';
 import EditorLlmTools from './EditorLlmTools';
 import type { ImageView } from '../types';
 import JsxWorkbench from './JsxWorkbench';
+import { createSaver } from '../lib/exampleSaver';
 import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
 import { KindIcon } from './icons';
 
-// `save` stores the text and form; `textOnly` is false while the image design has unsaved changes of its own.
+// `save` stores the text, form and JSX examples; `textOnly` is false while the image design has unsaved changes of its own.
 export type EditorStatus = {
   dirty: boolean;
   size: number;
@@ -56,6 +57,25 @@ export default function ItemEditor({
   const [dirty, setDirty] = useState(false);
   const [imageDirty, setImageDirty] = useState(false);
   const [jsxDirty, setJsxDirty] = useState(false);
+  // JSX examples autosave through one saver per open item, so leaving the preview tab never cancels or loses a write.
+  const jsxSaver = useMemo(
+    () =>
+      createSaver<{ jsx: string; name: string }>(
+        async (key, text) => {
+          const response = await fetch(`/api/works/${workId}/jsx/${q(key.jsx)}/props/${q(key.name)}`, { method: 'PUT', body: text });
+          if (!response.ok) throw new ApiError(response.status, (await response.json()).error);
+          return response.json();
+        },
+        {
+          onChange: setJsxDirty,
+          onSaved: (key, saved, clean) => clean && qc.setQueryData(['jsx-props', workId, key.jsx], saved),
+          onError: (err) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' }),
+        },
+      ),
+    [workId, path], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  // Closing the item without saving (the user chose to discard) writes nothing more.
+  useEffect(() => () => jsxSaver.dispose(), [jsxSaver]);
   const [inner, setInner] = useState('body');
   const [error, setError] = useState('');
   const baseHash = useRef<string | null>(null);
@@ -94,12 +114,20 @@ export default function ItemEditor({
       estimated: m.estimated,
       kind,
       save: () => saveRef.current(),
-      textOnly: !imageDirty && !jsxDirty,
+      textOnly: !imageDirty,
     });
   }, [dirty, imageDirty, jsxDirty, body, kind, countMode]);
 
   const save = useCallback(async () => {
     if (saving.current) return false;
+    if (jsxSaver.dirty) {
+      try {
+        if (!(await jsxSaver.flush()).clean) return false;
+      } catch (err) {
+        setError(err instanceof ApiError ? tm(err.msg) : String(err));
+        return false;
+      }
+    }
     if (!dirty) return true;
     saving.current = true;
     try {
@@ -127,7 +155,7 @@ export default function ItemEditor({
     } finally {
       saving.current = false;
     }
-  }, [dirty, meta, body, kind, suggest.data, workId, path, qc]);
+  }, [dirty, meta, body, kind, suggest.data, workId, path, qc, jsxSaver]);
 
   saveRef.current = save;
 
@@ -300,7 +328,7 @@ export default function ItemEditor({
             info={info}
             setDefault={(name) => change('default_props', name)}
             openItem={onOpen}
-            onDirtyChange={setJsxDirty}
+            saver={jsxSaver}
           />
         )}
       </div>

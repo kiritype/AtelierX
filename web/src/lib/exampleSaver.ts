@@ -1,16 +1,52 @@
-// Autosave of one editor buffer that may be saved under different names (JSX examples).
-// Every edit raises the version; a save only marks the buffer clean when no newer edit came in while it was on its
-// way, so a late answer never ends editing or replaces newer text.
+// Autosave of edits that are each stored under a key (a JSX example: the JSX ID and the example name).
+// - Writes run one at a time, so the server always receives them in edit order and an older answer can never arrive
+//   after a newer one.
+// - Every edit raises the version. A finished write is `clean` only when no newer edit came in meanwhile; only a clean
+//   answer may update what the screen shows, otherwise the newer text stays on screen and is written next.
+// - The key is taken at edit time, so a job always goes where it was typed even if the screen moved on.
+// - The saver lives with the item editor, not the preview tab, so switching tabs never cancels a save.
 
-export type SaveJob = { name: string; text: string; version: number };
+export type SaveJob<K> = { key: K; text: string; version: number };
+export type FlushResult = { saved?: unknown; clean: boolean; written: boolean };
 
-export function createSaver(put: (name: string, text: string) => Promise<unknown>) {
+export function createSaver<K>(
+  put: (key: K, text: string) => Promise<unknown>,
+  {
+    delay = 700,
+    onChange,
+    onSaved,
+    onError,
+  }: {
+    delay?: number;
+    onChange?: (dirty: boolean) => void;
+    // After every write; `clean` says whether the answer may replace what the screen shows.
+    onSaved?: (key: K, saved: unknown, clean: boolean) => void;
+    // A write started by the timer failed.
+    onError?: (error: unknown) => void;
+  } = {},
+) {
   let version = 0;
-  let pending: SaveJob | null = null;
-  return {
-    edit(name: string, text: string) {
+  let pending: SaveJob<K> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let queue: Promise<unknown> = Promise.resolve();
+  let disposed = false;
+  const notify = () => onChange?.(pending !== null);
+  const cancelTimer = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+
+  const saver = {
+    edit(key: K, text: string) {
+      if (disposed) return;
       version += 1;
-      pending = { name, text, version };
+      pending = { key, text, version };
+      notify();
+      cancelTimer();
+      timer = setTimeout(() => {
+        timer = null;
+        saver.flush().catch((error) => onError?.(error));
+      }, delay);
     },
     get dirty() {
       return pending !== null;
@@ -18,16 +54,41 @@ export function createSaver(put: (name: string, text: string) => Promise<unknown
     get job() {
       return pending;
     },
-    // Saves the latest edit. `clean` is true only when nothing newer is waiting afterwards.
-    async flush(): Promise<{ saved?: unknown; clean: boolean }> {
-      const job = pending;
-      if (!job) return { clean: true };
-      const saved = await put(job.name, job.text);
-      if (pending && pending.version === job.version) pending = null;
-      return { saved, clean: pending === null };
+    // Writes the latest edit after any write already on its way. Rejects when the write fails (the edit stays pending).
+    flush(): Promise<FlushResult> {
+      cancelTimer();
+      const run = queue.then(async (): Promise<FlushResult> => {
+        const job = pending;
+        if (!job || disposed) return { clean: pending === null, written: false };
+        const saved = await put(job.key, job.text);
+        if (pending?.version === job.version) pending = null;
+        notify();
+        onSaved?.(job.key, saved, pending === null);
+        return { saved, clean: pending === null, written: true };
+      });
+      queue = run.catch(() => undefined);
+      return run;
     },
-    drop() {
+    // Resolves once every write already started has finished (a delete must not race a write).
+    idle(): Promise<void> {
+      return queue.then(() => undefined);
+    },
+    // Forget unsaved edits of one key (its example was deleted) or of all keys.
+    drop(match?: (key: K) => boolean) {
+      if (pending && (!match || match(pending.key))) {
+        pending = null;
+        cancelTimer();
+        notify();
+      }
+    },
+    // The editor closed without saving (the user chose to discard): nothing more is written.
+    dispose() {
+      disposed = true;
+      cancelTimer();
       pending = null;
     },
   };
+  return saver;
 }
+
+export type Saver<K> = ReturnType<typeof createSaver<K>>;
