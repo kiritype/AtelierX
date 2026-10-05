@@ -1628,5 +1628,6 @@
   "test.called_in_code": "inside code · not drawn",
   "test.called_unreadable": "unreadable",
   "test.note_fenced": "The {names} call is inside a code block (```), so it is not drawn. A platform may show it as text too. Ask in the main prompt to write it without a code block.",
-  "test.note_unreadable": "The {names} call could not be read, so it is not drawn. Attribute values need quotes (e.g. data='{\"day\": 1}'); a JSX expression data={...} is not read. Check the raw text."
+  "test.note_unreadable": "The {names} call could not be read, so it is not drawn. Attribute values need quotes (e.g. data='{\"day\": 1}'); a JSX expression data={...} is not read. Check the raw text.",
+  "agent.warning.wrapped_ref": "{{user}} or {{char}} is wrapped in quotes or backticks; the platform receives those marks as written."
 }

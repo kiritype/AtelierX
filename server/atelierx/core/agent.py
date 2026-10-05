@@ -31,7 +31,7 @@ FIXED_RULES = """너는 AtelierX의 작성 보조 에이전트다. 사용자는 
 - 바꿀 필요가 없는 파일은 쓰지 마라. 한 응답에 여러 파일을 쓸 수 있다. 새 파일은 작품에 없는 경로로 쓰고, 머리 메타데이터의
   `kind`(main, start, lorebook, character, jsx, note)를 정한다.
 - 작품 맥락에 없는 설정을 사실처럼 지어내지 마라. 모르는 것은 사용자에게 묻는다.
-- `{{user}}`와 `{{char}}`는 예약 참조다. 다른 이름으로 바꾸지 말고 그대로 써라.
+- {{user}}와 {{char}}는 예약 참조다. 다른 이름으로 바꾸지 말고, 따옴표나 백틱으로 감싸지 말고 글자 그대로 써라(예: {{user}}에게 손을 흔들었다).
 - 사용자가 쓴 언어로 답한다."""
 
 FREE_MODE = {
@@ -51,6 +51,8 @@ OMISSION = re.compile(
     r'|rest (of the file )?(is )?unchanged|unchanged\)|\(omitted\)',
     re.IGNORECASE,
 )
+# A reserved reference wrapped in quotes or backticks (`{{user}}`) reaches the platform with the marks around it.
+WRAPPED_REF = re.compile(r'[`\'"]\{\{(?:user|char)\}\}[`\'"]')
 SESSION_ID = re.compile(r'\d{8}T\d{6}-[0-9a-f]{4}')
 DEFAULT_CONTEXT = 8192
 CONTEXT_SHARE = 0.6  # the rest is left for the answer: whole files are long
@@ -364,6 +366,8 @@ def _check(work, entry):
     new_head, error = _head(content, suffix)
     if error:
         result['warnings'].append('bad_head')
+    if WRAPPED_REF.search(content) and not WRAPPED_REF.search(old):
+        result['warnings'].append('wrapped_ref')
     if OMISSION.search(content) and not OMISSION.search(old):
         result['warnings'].append('omission')
     if old:
