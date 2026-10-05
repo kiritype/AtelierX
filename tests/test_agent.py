@@ -223,6 +223,10 @@ def test_reading_proposals(unlocked):
         work, '<<<file path="a.md">>>\n1\n<<<end>>>\n<<<file path="a.md">>>\n2\n<<<end>>>'
     )
     assert len(twice) == 1 and twice[0]['text'] == '2\n'
+    wrapped = agent.proposals(
+        work, '<<<file path="메모/a.md">>>\n---\nkind: note\n---\n`{{user}}`에게 인사했다.\n<<<end>>>'
+    )
+    assert wrapped[0]['warnings'] == ['wrapped_ref']
     changed = original.replace('id: C001', 'id: C099')
     assert (
         'id_changed'
