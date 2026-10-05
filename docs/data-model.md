@@ -46,7 +46,7 @@
 | 프로그램 | `app/` | 업데이트는 `app/`만 교체하고 나머지는 건드리지 않는다 |
 | 앱 설정 | `config/settings.json` | 경로는 앱 폴더 기준 상대 경로로 적는다(앱 폴더를 옮겨도 유지) |
 | 금고 | `config/vault.json` | API 키 등 인증 정보. 마스터 비밀번호로 암호화하며 OS에 의존하지 않는다([금고](#금고)). `data/`와 분리해 두어 데이터만 공유할 때 키가 섞이지 않게 한다 |
-| 앱 상태 | `state/` | 작업 대기열(`queue.json`), GPU 상태, 화면 상태(`ui.json`: 마지막 작품, 열린 탭, 패널 너비). 지워도 작품 데이터에는 영향이 없다 |
+| 앱 상태 | `state/` | 작업 대기열(`queue.json`), GPU 상태, 화면 상태(`ui.json`: 마지막 작품, 열린 탭, 패널 너비, 작품별로 고른 페르소나 `persona_by_work`). 지워도 작품 데이터에는 영향이 없다 |
 | 데이터 루트 | `data/` | 개발 중에는 저장소의 `data/`(git 제외) |
 | 출력 루트 | `output/` | 큰 파일 |
 | LoRA 폴더 | `output/loras/` | 설정에서 이미지 생성 도구의 모델 폴더로 바꿀 수 있다(앱 밖을 가리키는 유일한 경로) |
@@ -128,6 +128,7 @@
 │   ├── jsx.md
 │   └── authoring/<규모>.md       뼈대 작성 템플릿 (single, ensemble, simulation …)
 ├── providers.json                LLM 연결 목록과 작업별 모델 ([LLM 연결](#llm-연결))
+├── personas.json                 테스트의 사용자 페르소나 목록 ([페르소나](#페르소나))
 ├── tokenizers/<이름>/            토크나이저 파일 (앱 포함분 + 사용자 추가)
 ├── usage/<연-월>.jsonl           LLM 사용량 기록 (내용 없이 토큰·비용만)
 ├── image/                        전역 이미지 라이브러리 (compose.json, expressions.json …, presets/)
@@ -136,6 +137,23 @@
 ├── .trash/                       지운 작품·플랫폼 프리셋 ([휴지통](#휴지통))
 └── works/<작품 폴더>/            작품 하나 = 챗봇 하나. 폴더 이름은 사용자가 정한다
 ```
+
+### 페르소나
+
+위치: `<데이터 루트>/personas.json`. 테스트 화면([08-chat-test](features/08-chat-test.md))에서 `{{user}}`가 될 인물의 목록이다.
+모든 작품이 함께 쓰고, 작품마다 어느 것을 쓸지는 `state/ui.json`의 `persona_by_work`(작품 ID → 페르소나 ID)에 둔다. 작품 파일이
+아니므로 내보내기·스냅샷에 들어가지 않는다.
+
+```json
+{
+  "schema_version": 1,
+  "personas": [
+    {"id": "p-3fa2c1d0", "name": "소연", "description": "{{char}}의 대학 후배.\n말이 빠르고 존댓말을 쓴다.", "updated_at": "…"}
+  ]
+}
+```
+
+- `name`은 100자, `description`은 20,000자까지. 목록은 통째로 저장하고, 화면이 읽은 뒤 다른 곳에서 바뀌었으면 저장을 막는다.
 
 ## 작품 폴더
 
