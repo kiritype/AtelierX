@@ -16,7 +16,7 @@ from starlette.responses import FileResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from ..core import authoring, chat, checks, exporter, guidelines, llm_tasks, rename, review
+from ..core import about, authoring, chat, checks, exporter, guidelines, llm_tasks, rename, review
 from ..core.auth import COOKIE, Sessions
 from ..core.bootstrap import ensure_layout
 from ..core.drafts import Drafts, mock_compress
@@ -195,6 +195,19 @@ async def auth_reset(request):
     s.vault.reset(data.get('password', ''))
     s.sessions.clear()
     return _session_response(request, {'ok': True})
+
+
+# --- about, update check (Help menu) ------------------------------------------------------------------------
+async def about_get(request):
+    return ok(about.info(st(request).paths))
+
+
+async def about_notices(request):
+    return Response(about.notices(st(request).paths), media_type='text/plain; charset=utf-8')
+
+
+async def update_check(request):
+    return ok(await about.check_update())
 
 
 # --- settings, ui state, vault, providers, presets ---------------------------------------------------------------
@@ -1300,6 +1313,9 @@ def build_app(paths, dev=False, kdf=None):
         Route('/api/auth/unlock', auth_unlock, methods=['POST']),
         Route('/api/auth/lock', auth_lock, methods=['POST']),
         Route('/api/auth/reset', auth_reset, methods=['POST']),
+        Route('/api/about', about_get),
+        Route('/api/about/notices', about_notices),
+        Route('/api/update-check', update_check),
         Route('/api/settings', settings_get),
         Route('/api/settings', settings_patch, methods=['PATCH']),
         Route('/api/settings/compression-guideline', compression_guideline_get),
@@ -1397,6 +1413,9 @@ def build_app(paths, dev=False, kdf=None):
     ]
     if paths.web.is_dir() and (paths.web / 'assets').is_dir():
         routes.append(Mount('/assets', StaticFiles(directory=paths.web / 'assets')))
+    # The packaged app carries the offline manual beside the executable; Help opens it from here.
+    if (paths.root / 'manual' / 'index.html').is_file():
+        routes.append(Mount('/manual', StaticFiles(directory=paths.root / 'manual', html=True)))
     routes.append(Route('/{rest:path}', spa(paths.web)))
     state = State(paths, dev=dev, kdf=kdf)
 
