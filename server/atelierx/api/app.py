@@ -392,8 +392,14 @@ async def work_tree(request):
     return ok(work_of(request).tree())
 
 
+def _with_links(work, item):
+    # The editor locks the ID field while other data refers to the ID.
+    return {**item, 'id_links': work.id_links(item['meta'].get('id'))}
+
+
 async def item_get(request):
-    return ok(work_of(request).get_item(request.query_params['path']))
+    work = work_of(request)
+    return ok(_with_links(work, work.get_item(request.query_params['path'])))
 
 
 async def item_put(request):
@@ -403,7 +409,7 @@ async def item_put(request):
         request.query_params['path'], data.get('meta'), data.get('body'), data.get('base_hash')
     )
     Snapshots(work).save_point(st(request).settings.load().get('snapshot_interval_minutes'))
-    return ok(saved)
+    return ok(_with_links(work, saved))
 
 
 async def item_create(request):

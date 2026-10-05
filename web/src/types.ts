@@ -33,6 +33,8 @@ export type Item = {
   hash: string;
   meta_error: string | null;
   size: number;
+  // Places that use this item's ID (image, jsx, char, relations); the ID cannot change while any remain.
+  id_links?: string[];
 };
 
 export type Issue = {

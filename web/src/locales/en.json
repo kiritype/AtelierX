@@ -1431,5 +1431,10 @@
   "leave.save_all": "Save all and continue",
   "leave.discard": "Continue without saving",
   "leave.save_there": "save it in that screen",
-  "leave.save_failed": "Could not save {name}. Check the tab."
+  "leave.save_failed": "Could not save {name}. Check the tab.",
+  "editor.id_linked": "This ID is used by {places}, so it cannot be changed here.",
+  "editor.id_link.image": "image data",
+  "editor.id_link.jsx": "JSX examples",
+  "editor.id_link.char": "the chat partner",
+  "editor.id_link.relations": "the relation map"
 }
