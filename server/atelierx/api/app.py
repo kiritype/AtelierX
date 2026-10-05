@@ -263,6 +263,7 @@ async def usage(request):
         {
             'month': month,
             'months': llm.usage_months(),
+            'tasks': llm.usage_tasks(month),
             'rows': llm.usage(month, request.query_params.get('by', 'model')),
         }
     )

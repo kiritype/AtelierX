@@ -67,3 +67,10 @@ def test_usage_groups_months_log_and_csv(unlocked, paths):
     assert lines[0] == 'at,provider,model,task,work,input_tokens,output_tokens' and len(lines) == 62
 
     assert c.get('/api/usage', params={'month': '../x'}).json()['rows'] == []
+
+
+def test_the_task_filter_does_not_depend_on_the_grouping(unlocked, paths):
+    write_month(paths, '2026-07', [entry(1, task='chat_test'), entry(2, task='compression', work='W002')])
+    for by in ('model', 'task', 'work'):
+        data = unlocked.get('/api/usage', params={'month': '2026-07', 'by': by}).json()
+        assert data['tasks'] == ['chat_test', 'compression']

@@ -17,7 +17,7 @@ export default function UsageReport({ providerName }: { providerName: (id: strin
   const [offset, setOffset] = useState(0);
   const [work, setWork] = useState('');
   const [task, setTask] = useState('');
-  const summary = useQuery<{ month: string; months: string[]; rows: Row[] }>({
+  const summary = useQuery<{ month: string; months: string[]; tasks: string[]; rows: Row[] }>({
     queryKey: ['usage', month, by],
     queryFn: () => get(`/api/usage?by=${by}${month ? `&month=${q(month)}` : ''}`),
   });
@@ -33,7 +33,8 @@ export default function UsageReport({ providerName }: { providerName: (id: strin
   const months = Array.from(new Set([shown, ...(summary.data?.months ?? [])].filter(Boolean)));
   const tokens = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString());
   const rows = summary.data?.rows ?? [];
-  const tasks = Array.from(new Set(rows.map((r) => r.task).filter(Boolean))) as string[];
+  // The task filter lists the month's tasks from the server, so it does not depend on the grouping.
+  const tasks = summary.data?.tasks ?? [];
 
   return (
     <div className="col">
