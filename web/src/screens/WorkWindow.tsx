@@ -25,7 +25,7 @@ import WorkSettings from '../components/WorkSettings';
 import ImageScreen from './ImageScreen';
 import TestScreen from './TestScreen';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
-import { bulkCloseKeys, nextActiveKey } from './tabActions';
+import { bulkCloseKeys, nextActiveKey, tracksFormChanges } from './tabActions';
 import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
@@ -476,7 +476,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                   key={key}
                   style={{ display: key === active ? 'contents' : 'none' }}
                   onChangeCapture={(event) => {
-                    if (tab.type === 'item') return;
+                    if (!tracksFormChanges(tab)) return;
                     const target = event.target;
                     if (target instanceof HTMLElement && target.matches('input, textarea, select, [contenteditable="true"]')) {
                       setFormDirty((dirty) => dirty.includes(key) ? dirty : [...dirty, key]);
