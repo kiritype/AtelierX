@@ -273,6 +273,13 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .test-screen { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
 .test-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .test-bar input { max-width: 260px; }
+.dialog.wide { width: min(820px, 92vw); max-width: 820px; }
+.persona-dialog { display: grid; grid-template-columns: 200px 1fr; gap: 12px; min-height: 320px; }
+.persona-list { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border); padding-right: 8px;
+  max-height: 60vh; overflow: auto; }
+.persona-list .list-row { text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: var(--radius); }
+.persona-list .list-row.on { background: var(--hover); font-weight: 600; }
+.persona-form textarea { min-height: 220px; resize: vertical; }
 .test-body { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
 .test-chat { display: flex; flex-direction: column; gap: 8px; padding: 12px; min-height: 0; max-width: 860px; width: 100%; justify-self: center; }
 .test-side { border-left: 1px solid var(--border); background: var(--panel); padding: 8px 12px; overflow: auto; }

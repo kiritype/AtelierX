@@ -4,6 +4,7 @@ import { askConsent, get } from '../api';
 import { t, tm } from '../i18n';
 import JsxPreview from '../components/JsxPreview';
 import MessageMarkdown from '../components/MessageMarkdown';
+import PersonaDialog, { usePersona } from '../components/PersonaDialog';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import type { TreeEntry, WorkInfo } from '../types';
 import { splitReply, type ResponseRule } from '../lib/componentCalls';
@@ -42,7 +43,9 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     queryFn: () => get(`/api/works/${workId}/file?path=${encodeURIComponent(startEntry!.path)}`),
     enabled: !!startEntry,
   });
-  const [persona, setPersona] = useState({ name: '', description: '' });
+  const personas = usePersona(workId);
+  const persona = personas.persona;
+  const [personaOpen, setPersonaOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [previousInputs, setPreviousInputs] = useState<string[]>([]);
   const [input, setInput] = useState('');
@@ -54,7 +57,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const log = useRef<HTMLDivElement>(null);
 
   const started = turns.some((turn) => turn.role === 'user');
-  const userName = persona.name || '사용자';
+  const userName = persona?.name || '사용자';
   const startText = startEntry && startItem.data ? startItem.data.body.trim().replaceAll('{{user}}', userName) : null;
   // Before the first message the start situation is the bot's first turn; it follows the slide.
   const shown: Turn[] = started ? turns : startText ? [{ role: 'assistant', text: startText, start: true }] : [];
@@ -80,7 +83,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
         fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ llm, history: plain, message, persona: persona.name ? persona : null }),
+          body: JSON.stringify({ llm, history: plain, message, persona: persona ? { name: persona.name, description: persona.description } : null }),
           signal: controller.signal,
         });
       let response = await request();
@@ -89,7 +92,10 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
         if (!(await askConsent(error, url))) throw new Error(tm(error));
         response = await request();
       }
-      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.text ?? response.statusText);
+      if (!response.ok) {
+        const error = (await response.json().catch(() => null))?.error;
+        throw new Error(error ? tm(error) : response.statusText);
+      }
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -165,8 +171,9 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
       <div className="test-bar">
         <strong>{t('test.title')}</strong>
         <RunLlmSelector task="chat_test" value={llm} onChange={setLlm} disabled={busy} />
-        <input placeholder={t('chat.persona_name')} value={persona.name} onChange={(e) => setPersona({ ...persona, name: e.target.value })} />
-        <input className="grow" placeholder={t('chat.persona_desc')} value={persona.description} onChange={(e) => setPersona({ ...persona, description: e.target.value })} />
+        <button onClick={() => setPersonaOpen(true)} disabled={!personas.list} title={persona?.description || t('persona.none_hint')}>
+          {t('persona.button', { name: persona ? persona.name || t('persona.unnamed') : t('persona.none') })} ▾
+        </button>
         <button onClick={reset} disabled={busy}>
           {t('chat.new')}
         </button>
@@ -174,6 +181,9 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
           {t('test.replay', { n: previousInputs.length })}
         </button>
       </div>
+      {personaOpen && personas.list && (
+        <PersonaDialog list={personas.list} selectedId={personas.selectedId} onChoose={personas.choose} onClose={() => setPersonaOpen(false)} />
+      )}
       <div className="test-body">
         <div className="test-chat">
           <div className={`start-slider${started ? ' locked' : ''}`}>
