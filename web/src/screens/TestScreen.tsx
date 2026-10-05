@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { askConsent, get } from '../api';
 import { t, tm } from '../i18n';
 import JsxPreview from '../components/JsxPreview';
@@ -8,6 +8,7 @@ import PersonaDialog, { usePersona } from '../components/PersonaDialog';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import type { TreeEntry, WorkInfo } from '../types';
 import { replyNotes, splitReply, type ResponseRule } from '../lib/componentCalls';
+import { replayInputs } from '../lib/replay';
 
 type Context = {
   main: string | null;
@@ -51,6 +52,15 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const abort = useRef<AbortController | null>(null);
+  // Leaving the test screen stops the answer on its way and any resend still to come.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      abort.current?.abort();
+    };
+  }, []);
   const [llm, setLlm] = useState<LlmOverride | undefined>();
   const [selected, setSelected] = useState<number | null>(null);
   const [rawShown, setRawShown] = useState<Set<number>>(new Set());
@@ -154,8 +164,8 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     if (busy || !previousInputs.length) return;
     setBusy(true);
     try {
-      let history: Turn[] = startText ? [{ role: 'assistant', text: startText, start: true }] : [];
-      for (const message of previousInputs) history = await sendOne(message, history);
+      const history: Turn[] = startText ? [{ role: 'assistant', text: startText, start: true }] : [];
+      await replayInputs(previousInputs, history, sendOne, () => !alive.current);
     } finally {
       setBusy(false);
     }
