@@ -12,6 +12,8 @@ class Jobs:
     def __init__(self, events):
         self.events = events
         self.jobs = {}
+        # Batch LLM jobs to a model on this PC's GPU (compression, image prompts, formatting) run one at a time; the
+        # GPU itself is shared with image work through the LLM gate (core/llm.py).
         self._gpu = asyncio.Lock()
 
     def list(self):

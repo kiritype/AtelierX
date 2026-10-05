@@ -1062,7 +1062,8 @@ async def compress(request):
         s.events.publish('draft', {'work': work.id, 'id': draft['id']})
         return {'draft': draft['id']}
 
-    return ok(s.jobs.submit('compression', f'압축 · {item["name"]}', runner, gpu=True, work_id=work.id))
+    gpu = s.llm.on_gpu('compression', data.get('llm'))
+    return ok(s.jobs.submit('compression', f'압축 · {item["name"]}', runner, gpu=gpu, work_id=work.id))
 
 
 async def image_design(request):
@@ -1211,7 +1212,13 @@ async def image_convert(request):
         return {'draft': draft['id']}
 
     return ok(
-        s.jobs.submit('image_prompt', f'이미지 프롬프트 · {item["name"]}', runner, gpu=True, work_id=work.id)
+        s.jobs.submit(
+            'image_prompt',
+            f'이미지 프롬프트 · {item["name"]}',
+            runner,
+            gpu=s.llm.on_gpu('image_prompt', data.get('llm')),
+            work_id=work.id,
+        )
     )
 
 

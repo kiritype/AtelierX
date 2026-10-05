@@ -219,3 +219,12 @@ def test_a_lower_limit_counts_the_requests_already_running(paths):
 
     asyncio.run(run())
     assert started == [1, 2, 3]
+
+
+def test_only_jobs_for_this_pcs_gpu_wait_for_each_other(paths):
+    llm, _, _ = _setup(paths, MOCK_ELSEWHERE)
+    assert llm.on_gpu('compression') is False
+    llm, _, _ = _setup(paths, MOCK_ON_GPU)
+    assert llm.on_gpu('compression') is True
+    assert llm.on_gpu('image_review') is False  # the review already holds the GPU
+    assert llm.on_gpu('compression', {'provider': 'missing'}) is False
