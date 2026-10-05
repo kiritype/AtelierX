@@ -2,10 +2,12 @@ import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { markdown } from '@codemirror/lang-markdown';
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { EditorState } from '@codemirror/state';
+import { Annotation, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { useEffect, useRef } from 'react';
+
+const external = Annotation.define<boolean>();
 
 const base = {
   '&': { backgroundColor: 'var(--panel)', color: 'var(--text)' },
@@ -77,7 +79,10 @@ export default function CodeEditor({
           ? [syntaxHighlighting(defaultHighlightStyle), javascript({ jsx: true }), codeTheme]
           : [syntaxHighlighting(markdownStyle), markdown(), proseTheme]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) handlers.current.onChange(update.state.doc.toString());
+          // Text put in from outside (the loaded file, a reload) is not an edit of the user's.
+          if (update.docChanged && !update.transactions.some((tr) => tr.annotation(external))) {
+            handlers.current.onChange(update.state.doc.toString());
+          }
         }),
       ],
     });
@@ -89,7 +94,11 @@ export default function CodeEditor({
   useEffect(() => {
     const current = view.current;
     if (current && current.state.doc.toString() !== value) {
-      current.dispatch({ changes: { from: 0, to: current.state.doc.length, insert: value } });
+      // Not an edit and not undoable: Ctrl+Z right after opening must not empty the document.
+      current.dispatch({
+        changes: { from: 0, to: current.state.doc.length, insert: value },
+        annotations: [external.of(true), Transaction.addToHistory.of(false)],
+      });
     }
   }, [value]);
 
