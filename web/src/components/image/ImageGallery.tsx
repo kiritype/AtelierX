@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ApiError, get, post, q } from '../../api';
+import { ApiError, get, post, put, q } from '../../api';
+import { PRESET_ID, presetFromRecord } from '../../lib/presetFromRecord';
 import { t, tm } from '../../i18n';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
@@ -642,6 +643,7 @@ function Detail({
                   {t('gallery.open_record')}
                 </a>
               </div>
+              <SavePreset key={item.path} record={record} />
             </>
           )}
           {(detail.data?.history ?? []).length > 0 && (
@@ -660,6 +662,86 @@ function Detail({
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Save this image's reusable settings as a generation preset (#52). The panel lists what goes in before saving.
+function SavePreset({ record }: { record: any }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState('');
+  const [name, setName] = useState('');
+  const presets = useQuery<{ id: string }[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets'), enabled: open });
+  if (!open) {
+    return (
+      <div>
+        <button onClick={() => setOpen(true)}>{t('gallery.save_preset')}</button>
+      </div>
+    );
+  }
+  const draft = presetFromRecord(record);
+  const s = draft.settings as Record<string, any>;
+  const rows: [string, unknown][] = [
+    ['gen.family', draft.family],
+    ['gen.model', s.model],
+    ['gen.sampler', [s.sampler, s.scheduler].filter(Boolean).join(' · ')],
+    ['gen.steps', s.steps],
+    ['CFG', s.cfg],
+    ['gallery.size', s.width && s.height ? `${s.width} × ${s.height}` : undefined],
+    ['gen.loras', (s.loras ?? []).map((l: any) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
+    ['gallery.preset_common', draft.common.join(', ')],
+    ['gallery.preset_styles', draft.styles.join(', ')],
+  ];
+  const valid = PRESET_ID.test(id);
+  async function save() {
+    if ((presets.data ?? []).some((p) => p.id === id) && !confirm(t('gallery.preset_overwrite', { id }))) return;
+    try {
+      await put(`/api/image/presets/${encodeURIComponent(id)}`, {
+        name: name.trim() || id,
+        family: draft.family,
+        settings: draft.settings,
+        common: draft.common,
+        styles: draft.styles,
+      });
+      qc.invalidateQueries({ queryKey: ['image-presets'] });
+      toast({ text: t('gallery.preset_saved', { name: name.trim() || id }) });
+      setOpen(false);
+    } catch (err) {
+      toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+    }
+  }
+  return (
+    <div className="col save-preset">
+      <div className="section-title">{t('gallery.save_preset')}</div>
+      <dl className="kv small">
+        {rows
+          .filter(([, v]) => v !== undefined && v !== null && v !== '')
+          .map(([k, v]) => (
+            <div key={k} className="row">
+              <dt>{k.includes('.') ? t(k) : k}</dt>
+              <dd className="mono">{String(v)}</dd>
+            </div>
+          ))}
+      </dl>
+      <p className="faint small">
+        {t('gallery.preset_left_out')}
+        {draft.droppedLoras.length > 0 && ` ${t('gallery.preset_left_loras', { names: draft.droppedLoras.join(', ') })}`}
+      </p>
+      <div className="row wrap">
+        <input aria-label={t('gallery.preset_id')} placeholder={t('gallery.preset_id')} value={id} onChange={(e) => setId(e.target.value.trim())} style={{ width: 140 }} />
+        <input aria-label={t('gallery.preset_name')} placeholder={t('gallery.preset_name')} value={name} onChange={(e) => setName(e.target.value)} className="grow" />
+      </div>
+      {id && !valid && <span className="error-text small">{t('gallery.preset_id_rule')}</span>}
+      <div className="row">
+        <button className="primary" disabled={!valid} onClick={save}>
+          {t('common.save')}
+        </button>
+        <button className="ghost" onClick={() => setOpen(false)}>
+          {t('common.cancel')}
+        </button>
       </div>
     </div>
   );

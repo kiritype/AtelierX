@@ -1801,5 +1801,15 @@
   "guidelines.mode_uses_elsewhere": "전역에 없음(작품·프리셋에서 찾음)",
   "agent.guidelines": "지침:",
   "agent.guidelines_help": "이번 요청에 들어가는 지침과 토큰 수(대략)입니다.",
-  "agent.guideline_missing": "{name} 없음"
+  "agent.guideline_missing": "{name} 없음",
+  "gallery.save_preset": "이 설정으로 프리셋 저장",
+  "gallery.preset_common": "공통 태그",
+  "gallery.preset_styles": "화풍",
+  "gallery.preset_left_out": "외모·의상·표정과 시드는 담지 않습니다. 다른 캐릭터에 쓰면 그 캐릭터의 것으로 채워집니다.",
+  "gallery.preset_left_loras": "캐릭터 전용 LoRA({names})도 빠집니다.",
+  "gallery.preset_id": "프리셋 ID",
+  "gallery.preset_name": "이름(선택)",
+  "gallery.preset_id_rule": "영문·숫자·_·- 로 64자까지 쓸 수 있습니다.",
+  "gallery.preset_overwrite": "\"{id}\" 프리셋이 이미 있습니다. 덮어쓸까요?",
+  "gallery.preset_saved": "\"{name}\" 프리셋을 저장했습니다. 생성 화면에서 고를 수 있습니다."
 }
