@@ -6,6 +6,7 @@ import JsxPreview from '../components/JsxPreview';
 import MessageMarkdown from '../components/MessageMarkdown';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import type { TreeEntry, WorkInfo } from '../types';
+import { splitReply, type ResponseRule } from '../lib/componentCalls';
 
 type Context = {
   main: string | null;
@@ -25,40 +26,10 @@ type Turn = {
   error?: string;
   stopped?: boolean;
 };
-type Segment = { text: string } | { component: string; attrs: Record<string, unknown>; raw: string };
-
 function flatten(entries: TreeEntry[]): TreeEntry[] {
   return entries.flatMap((e) => (e.type === 'folder' ? flatten(e.children ?? []) : [e]));
 }
 
-// Attribute values follow the preset's json_lenient reading: JSON with single quotes or trailing commas allowed.
-function readValue(raw: string): unknown {
-  for (const candidate of [raw, raw.replace(/,\s*([}\]])/g, '$1'), raw.replace(/'/g, '"')]) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      /* try the next form */
-    }
-  }
-  return raw;
-}
-
-// Split a reply into text and component calls (`<Name attr='…' />`) for the work's JSX items.
-export function splitReply(text: string, names: string[]): Segment[] {
-  if (!names.length) return [{ text }];
-  const pattern = new RegExp(`<(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})((?:\\s+[\\w-]+=(?:'[^']*'|"[^"]*"))*)\\s*/>`, 'g');
-  const out: Segment[] = [];
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    if (match.index! > last) out.push({ text: text.slice(last, match.index) });
-    const attrs: Record<string, unknown> = {};
-    for (const a of match[2].matchAll(/([\w-]+)=(?:'([^']*)'|"([^"]*)")/g)) attrs[a[1]] = readValue(a[2] ?? a[3]);
-    out.push({ component: match[1], attrs, raw: match[0] });
-    last = match.index! + match[0].length;
-  }
-  if (last < text.length) out.push({ text: text.slice(last) });
-  return out;
-}
 
 export default function TestScreen({ workId, openItem }: { workId: string; openItem: (path: string) => void }) {
   const info = useQuery<WorkInfo>({ queryKey: ['work', workId], queryFn: () => get(`/api/works/${workId}`) });
@@ -185,7 +156,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   }
 
   const called = new Set(
-    focus !== undefined ? splitReply(shown[focus].text, componentNames).flatMap((s) => ('component' in s ? [s.component] : [])) : [],
+    focus !== undefined ? splitReply(shown[focus].text, componentNames, rules.response).flatMap((s) => ('component' in s ? [s.component] : [])) : [],
   );
   const picked = new Map(context?.picked.map((p) => [p.path, p]) ?? []);
 
@@ -349,11 +320,11 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   );
 }
 
-type Rules = { hooks?: string[]; globals?: { name: string; stub?: string }[] };
+type Rules = { hooks?: string[]; globals?: { name: string; stub?: string }[]; response?: ResponseRule };
 
 function Reply({ text, workId, components, rules }: { text: string; workId: string; components: Context['components']; rules: Rules }) {
   return <MessageMarkdown text={text} component={(raw) => {
-    const segments = splitReply(raw.trim(), components.map((c) => c.name));
+    const segments = splitReply(raw.trim(), components.map((c) => c.name), rules.response);
     if (!segments.some((segment) => 'component' in segment)) return null;
     return segments.map((segment, index) => 'component' in segment
       ? <ComponentCall key={index} workId={workId} path={components.find((c) => c.name === segment.component)!.path} name={segment.component} props={segment.attrs} rules={rules} />
