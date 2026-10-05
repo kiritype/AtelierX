@@ -14,7 +14,10 @@ type Job = {
   outfit_id: string;
   expression_name?: string;
   expression_id: string;
-  seed: number;
+  seed: number | null;
+  title?: string;
+  post_op?: string;
+  tool_name?: string;
   progress?: any;
   error?: any;
   image_url?: string;
@@ -89,12 +92,22 @@ export default function ImageQueue() {
             )}
             <div className="col grow" style={{ gap: 2 }}>
               <div>
-                <strong>{job.character_id}</strong> · {job.outfit_name ?? job.outfit_id} · {job.expression_name ?? job.expression_id}
-                {job.kind && job.kind !== 'image' && <span className="chip">{job.kind}</span>}
+                {job.kind === 'post' ? (
+                  // Post-processing works on a tool-workspace image, not on a character combination.
+                  <>
+                    <strong>{t(`queue.post_op.${job.post_op}`)}</strong> · {job.tool_name ?? job.title?.split(' · ').pop()}
+                  </>
+                ) : (
+                  <>
+                    <strong>{job.character_id}</strong> · {job.outfit_name ?? job.outfit_id} · {job.expression_name ?? job.expression_id}
+                  </>
+                )}
+                {job.kind && job.kind !== 'image' && <span className="chip">{t(`queue.kind.${job.kind}`) === `queue.kind.${job.kind}` ? job.kind : t(`queue.kind.${job.kind}`)}</span>}
               </div>
               <div className="faint">
                 {t(`queue.status.${job.status}`)}
-                {job.progress && ['running', 'cancelling'].includes(job.status) ? ` · ${msg(job.progress)}` : ''} · seed {job.seed}
+                {job.progress && ['running', 'cancelling'].includes(job.status) ? ` · ${msg(job.progress)}` : ''}
+                {job.seed != null ? ` · seed ${job.seed}` : ''}
               </div>
               {job.error && <div className="error-text">{msg(job.error)}</div>}
             </div>

@@ -1629,5 +1629,13 @@
   "test.called_unreadable": "unreadable",
   "test.note_fenced": "The {names} call is inside a code block (```), so it is not drawn. A platform may show it as text too. Ask in the main prompt to write it without a code block.",
   "test.note_unreadable": "The {names} call could not be read, so it is not drawn. Attribute values need quotes (e.g. data='{\"day\": 1}'); a JSX expression data={...} is not read. Check the raw text.",
-  "agent.warning.wrapped_ref": "{{user}} or {{char}} is wrapped in quotes or backticks; the platform receives those marks as written."
+  "agent.warning.wrapped_ref": "{{user}} or {{char}} is wrapped in quotes or backticks; the platform receives those marks as written.",
+  "queue.kind.post": "post-process",
+  "queue.kind.lab": "compare",
+  "queue.kind.inpaint": "inpaint",
+  "queue.post_op.alpha": "Background split",
+  "queue.post_op.detect": "Censor detection",
+  "queue.post_op.upscale": "Upscale",
+  "queue.post_op.detail": "Detailer",
+  "queue.post_op.inpaint": "Inpaint"
 }

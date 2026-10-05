@@ -1754,5 +1754,13 @@
   "test.called_unreadable": "형식을 읽지 못함",
   "test.note_fenced": "{names} 호출이 코드 블록(```) 안에 있어 그리지 않았습니다. 플랫폼에서도 글자 그대로 보일 수 있습니다. 메인 프롬프트에 \"코드 블록 없이 그대로 쓴다\"고 적어 보세요.",
   "test.note_unreadable": "{names} 호출을 읽지 못해 그리지 않았습니다. 속성 값은 따옴표로 감싸야 합니다(예: data='{\"day\": 1}'). JSX 식 data={...}은 읽지 않습니다. 원문 보기로 확인하세요.",
-  "agent.warning.wrapped_ref": "{{user}}·{{char}}가 따옴표나 백틱으로 감싸여 있습니다. 플랫폼에 그 기호까지 그대로 들어갑니다."
+  "agent.warning.wrapped_ref": "{{user}}·{{char}}가 따옴표나 백틱으로 감싸여 있습니다. 플랫폼에 그 기호까지 그대로 들어갑니다.",
+  "queue.kind.post": "후처리",
+  "queue.kind.lab": "생성·비교",
+  "queue.kind.inpaint": "인페인트",
+  "queue.post_op.alpha": "배경 나누기",
+  "queue.post_op.detect": "검열 영역 찾기",
+  "queue.post_op.upscale": "업스케일",
+  "queue.post_op.detail": "디테일러",
+  "queue.post_op.inpaint": "인페인트"
 }
