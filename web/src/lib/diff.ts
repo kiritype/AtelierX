@@ -17,7 +17,8 @@ export function diffLines(a: string[], b: string[], limit = DIFF_EDIT_LIMIT): Di
   const x = a.slice(head, a.length - tail);
   const y = b.slice(head, b.length - tail);
   const out: DiffOp[] = a.slice(0, head).map((text) => ({ op: ' ', text }));
-  out.push(...middle(x, y, limit));
+  // One by one: spreading a long result into push() overflows the argument limit.
+  for (const op of middle(x, y, limit)) out.push(op);
   for (const text of a.slice(a.length - tail)) out.push({ op: ' ', text });
   return out;
 }
