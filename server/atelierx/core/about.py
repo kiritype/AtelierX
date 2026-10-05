@@ -16,7 +16,7 @@ from .i18n import AppError, Msg
 REPO = 'kiritype/AtelierX'
 LINKS = {
     'repository': f'https://github.com/{REPO}',
-    'manual': 'https://kiritype.github.io/AtelierX/',
+    'manual': 'https://atelierx.cftm.net/',
     'releases': f'https://github.com/{REPO}/releases',
 }
 COPYRIGHT = '© 2026 kiritype'
