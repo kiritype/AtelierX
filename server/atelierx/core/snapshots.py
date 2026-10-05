@@ -156,20 +156,23 @@ class Snapshots:
         self.create('before_restore', force=True)
         current = self.current()
         chosen = paths or sorted(set(target) | set(current))
-        restored = []
+        # Only what actually changes is reported, so "restored" is never shown for nothing.
+        changed = []
         for path in chosen:
             dest = self.path_in_work(path)
             if path in target:
-                data = self._object(target[path]).read_bytes()
-                atomic_write_bytes(dest, data)
-                restored.append(path)
-            elif path in current and not paths:
-                # Items created after the snapshot go to the trash; app files are simply removed.
+                if current.get(path) != target[path]:
+                    atomic_write_bytes(dest, self._object(target[path]).read_bytes())
+                    changed.append(path)
+            elif path in current:
+                # A file the snapshot did not have (made later) goes back to not existing, chosen alone or with the
+                # rest: items go to the trash, app files are simply removed.
                 if path.startswith(APP_DIR):
                     dest.unlink()
                 else:
                     self.work.delete(path)
-        return restored
+                changed.append(path)
+        return changed
 
     def mark_release(self, snapshot_id, note):
         path = self.root / 'snapshots' / f'{snapshot_id}.json'

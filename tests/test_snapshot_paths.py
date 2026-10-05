@@ -71,3 +71,21 @@ def test_restore_still_brings_a_file_back(unlocked, tmp_path):
     )
     restored = unlocked.post(f'/api/works/{wid}/snapshots/{sid}/restore', json={'paths': ['메인.md']}).json()
     assert restored == ['메인.md'] and (folder / '메인.md').read_text(encoding='utf-8') == original
+
+
+def test_restoring_one_file_the_snapshot_lacked_moves_it_to_the_trash(unlocked, tmp_path):
+    wid, folder, sid = install(unlocked, tmp_path)
+    unlocked.post(f'/api/works/{wid}/file', json={'path': '나중.md', 'kind': 'note'})
+    assert (folder / '나중.md').is_file()
+    changed = unlocked.post(f'/api/works/{wid}/snapshots/{sid}/restore', json={'paths': ['나중.md']}).json()
+    assert changed == ['나중.md'] and not (folder / '나중.md').exists()
+    assert any('나중.md' in str(b) for b in unlocked.get(f'/api/works/{wid}/trash').json())
+
+
+def test_restoring_an_unchanged_file_reports_nothing(unlocked, tmp_path):
+    wid, folder, sid = install(unlocked, tmp_path)
+    before = (folder / '메인.md').read_bytes()
+    assert (
+        unlocked.post(f'/api/works/{wid}/snapshots/{sid}/restore', json={'paths': ['메인.md']}).json() == []
+    )
+    assert (folder / '메인.md').read_bytes() == before

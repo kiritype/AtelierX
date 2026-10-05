@@ -23,9 +23,9 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
 
   async function restore(paths?: string[]) {
     if (!confirm(paths ? t('history.restore_file_confirm') : t('history.restore_all_confirm'))) return;
-    await post(`/api/works/${workId}/snapshots/${snapshot}/restore`, { paths });
+    const changed = await post<string[]>(`/api/works/${workId}/snapshots/${snapshot}/restore`, { paths });
     for (const key of ['tree', 'snapshots', 'check', 'item', 'diff']) qc.invalidateQueries({ queryKey: [key, workId] });
-    toast({ text: t('history.restored') });
+    toast({ text: changed.length ? t('history.restored_n', { n: changed.length }) : t('history.nothing_to_restore') });
   }
 
   const lines =
