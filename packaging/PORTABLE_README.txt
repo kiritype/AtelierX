@@ -1,4 +1,4 @@
-AtelierX 0.0.1 — Windows x64 테스트 패키지
+AtelierX {version} — Windows x64 테스트 패키지
 
 1. ZIP 전체를 쓰기 가능한 폴더에 압축 해제합니다.
 2. AtelierX.exe를 실행합니다. Python, Node.js, Git은 앱 실행에 필요하지 않습니다.

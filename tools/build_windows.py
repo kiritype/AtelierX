@@ -6,6 +6,7 @@ Run with the packaging virtual environment; Node is needed only on the build mac
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,13 @@ from importlib.metadata import distributions
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# The one version number (tests/test_version.py keeps pyproject.toml and web/package.json equal to it). Read from the
+# file, not imported: the packaging environment may have another checkout installed.
+VERSION = re.search(
+    r"^__version__ = '([^']+)'",
+    (ROOT / 'server' / 'atelierx' / '__init__.py').read_text(encoding='utf-8'),
+    re.MULTILINE,
+).group(1)
 
 
 def run(*command):
@@ -55,12 +63,13 @@ def main():
     )
     bundle = output / 'AtelierX'
     shutil.copy2(ROOT / 'LICENSE', bundle / 'LICENSE')
-    shutil.copy2(ROOT / 'packaging' / 'PORTABLE_README.txt', bundle / '읽어주세요.txt')
+    readme = (ROOT / 'packaging' / 'PORTABLE_README.txt').read_text(encoding='utf-8')
+    (bundle / '읽어주세요.txt').write_text(readme.replace('{version}', VERSION), encoding='utf-8')
     run(sys.executable, 'tools/collect_licenses.py', str(bundle))
     run(sys.executable, 'tools/build_manual.py')
     shutil.copytree(ROOT / 'dist' / 'manual', bundle / 'manual')
     manifest = {
-        'version': '0.0.1',
+        'version': VERSION,
         'built_at': datetime.now().astimezone().isoformat(),
         'python': sys.version.split()[0],
         'dependencies': dict(sorted((d.metadata['Name'], d.version) for d in distributions())),
@@ -77,7 +86,7 @@ def main():
     (bundle / 'BUILD-MANIFEST.json').write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8'
     )
-    archive = output / 'AtelierX-0.0.1-windows-x64.zip'
+    archive = output / f'AtelierX-{VERSION}-windows-x64.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zipped:
         for file in sorted(bundle.rglob('*')):
             if file.is_file():
