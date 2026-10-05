@@ -178,6 +178,9 @@ def test_jsx_props_and_checks(unlocked):
     assert bad.status_code == 400 and bad.json()['error']['key'] == 'server.jsx.bad_example'
     saved = c.put(f'/api/works/{wid}/jsx/J001/props/empty', content='<StatusPanel />').json()
     assert 'empty' in [p['name'] for p in saved]
+    stray = c.put(f'/api/works/{wid}/jsx/undefined/props/basic', content='<StatusPanel />')
+    assert stray.status_code == 404 and stray.json()['error']['key'] == 'server.jsx.no_item'
+    assert c.get(f'/api/works/{wid}/jsx/undefined/props').json() == []
     assert 'empty' not in [p['name'] for p in c.delete(f'/api/works/{wid}/jsx/J001/props/empty').json()]
     assert c.put(f'/api/works/{wid}/jsx/J001/props/a.b', content='{}').status_code == 400
 

@@ -1207,6 +1207,10 @@ async def props_list(request):
 
 async def props_put(request):
     text = (await request.body()).decode('utf-8')
+    # Examples are written only for a JSX item that exists, never under a stray ID (e.g. before the item has one).
+    work, jsx_id = work_of(request), request.path_params['jid']
+    if not any(i['meta'].get('id') == jsx_id and i['kind'] == 'jsx' for i in work.index()):
+        raise AppError(Msg('server.jsx.no_item', 'There is no JSX item with the ID {id}.', id=jsx_id), 404)
     return ok(_props(request).save(request.path_params['name'], text))
 
 
