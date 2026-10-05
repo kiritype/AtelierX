@@ -5,6 +5,7 @@ import { useToast } from '../components/Toasts';
 import { ChipsInput, ContextMenu, Dialog, formatBytes, type MenuItem } from '../components/ui';
 import { t, tm } from '../i18n';
 import type { WorkCard } from '../types';
+import { AppMark } from '../components/AppMark';
 import { Icon } from '../components/icons';
 import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import { MenuButton } from '../components/MenuBar';
@@ -53,7 +54,9 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
   return (
     <div className="select-page">
       <div className="row">
-        <h2 className="grow">AtelierX</h2>
+        <h2 className="grow">
+          <AppMark size={28} />
+        </h2>
         <MenuButton className="ghost" label={t('menu.help')} items={help.entries} />
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}

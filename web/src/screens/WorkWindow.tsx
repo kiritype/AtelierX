@@ -17,6 +17,7 @@ import RelationsTab from '../components/RelationsTab';
 import ReviewTab from '../components/ReviewTab';
 import { useToast } from '../components/Toasts';
 import { ContextMenu, Dialog, ErrorBoundary, formatBytes, type MenuItem } from '../components/ui';
+import { AppMark } from '../components/AppMark';
 import { Icon, type IconName } from '../components/icons';
 import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import WorkSettings from '../components/WorkSettings';
@@ -342,6 +343,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   return (
     <div className="window">
       <div className="topbar" style={{ position: 'relative' }}>
+        <span className="topbar-mark" title="AtelierX">
+          <AppMark size={20} />
+        </span>
         <span className="title" onClick={leave} title={t('window.back_to_works')}>
           {info.data.name} <Icon name="menu" size={14} />
         </span>

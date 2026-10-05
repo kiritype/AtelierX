@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError, post } from '../api';
+import { AppMark } from '../components/AppMark';
 import { setLanguage, t, tm } from '../i18n';
 
 export default function FirstRun({ onDone }: { onDone: () => void }) {
@@ -27,7 +28,9 @@ export default function FirstRun({ onDone }: { onDone: () => void }) {
   return (
     <div className="center">
       <form className="card" onSubmit={submit}>
-        <h2>AtelierX</h2>
+        <h2>
+          <AppMark size={28} />
+        </h2>
         <p className="muted">{t('first_run.intro')}</p>
         <label>
           {t('first_run.language')}
