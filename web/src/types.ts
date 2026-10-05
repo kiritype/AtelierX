@@ -67,12 +67,18 @@ export type Tab =
   | { type: 'work-settings' }
   | { type: 'settings' }
   | { type: 'review'; draft: string }
-  | { type: 'compare'; snapshot: string }
+  | { type: 'compare'; snapshot: string; label?: string }
   | { type: 'relations' }
   | { type: 'glossary' }
   | { type: 'image'; view: ImageView; characterId?: string; outfitId?: string };
 
 export type ImageView = 'library' | 'board' | 'generate' | 'queue' | 'lab' | 'gallery' | 'tools' | 'lora';
+
+// "10-06 03:56" from a snapshot ID such as 20261006T035650966-37f8, for titles that should not show the raw ID.
+export function snapshotTime(id: string): string {
+  const m = /^\d{4}(\d{2})(\d{2})T(\d{2})(\d{2})/.exec(id);
+  return m ? `${m[1]}-${m[2]} ${m[3]}:${m[4]}` : id;
+}
 
 export function tabKey(tab: Tab): string {
   switch (tab.type) {

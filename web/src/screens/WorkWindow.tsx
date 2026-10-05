@@ -29,7 +29,7 @@ import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import { bulkCloseKeys, nextActiveKey, tracksFormChanges } from './tabActions';
 import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
-import { tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
+import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
 
 // Side panels: one is selected at a time. Below a divider, relations and glossary are launchers that open their editor
 // tab; they never show a selected state, so the activity bar always marks exactly the panel that is open.
@@ -625,7 +625,7 @@ function tabTitle(tab: Tab) {
     case 'review':
       return t('review.tab');
     case 'compare':
-      return t('history.compare_tab');
+      return `${t('history.compare_tab')} · ${tab.label || snapshotTime(tab.snapshot)}`;
     case 'relations':
       return t('panel.relations');
     case 'glossary':

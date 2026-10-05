@@ -185,7 +185,7 @@ function HistoryPanel({ workId, open }: Props) {
       </div>
       {list.length === 0 && <div className="empty">{t('history.empty')}</div>}
       {list.map((s: any) => (
-        <div key={s.id} className="list-row" style={{ cursor: 'pointer', alignItems: 'flex-start' }} onClick={() => open({ type: 'compare', snapshot: s.id })}>
+        <div key={s.id} className="list-row" style={{ cursor: 'pointer', alignItems: 'flex-start' }} onClick={() => open({ type: 'compare', snapshot: s.id, label: s.label || undefined })}>
           <span className="grow">
             {s.created_at?.slice(5, 16).replace('T', ' ')} · {t(`reason.${s.reason}`)}
             {s.label && <div className="muted">{s.label}</div>}
