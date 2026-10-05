@@ -997,6 +997,7 @@ activation:
 | `type` | 연결 방식. 처음 범위는 `openai_compatible` 하나다(LM Studio·llama.cpp·vLLM 같은 로컬 서버, 그리고 같은 형식을 쓰는 외부 서비스). 다른 방식은 필요해질 때 추가한다. `mock`은 서버 없이 정해진 답을 내는 모의 연결이다(테스트·오프라인 확인용). |
 | `default_model` | 이 연결의 기본 모델. 작업에 모델을 정하지 않으면 이것을 쓴다. |
 | `key` | 금고 항목 참조(`secret:<이름>`). 필요 없으면 `null`. |
+| `local_gpu` | 선택. 이 연결의 모델이 이 PC의 GPU에서 도는지. `true`면 요청이 이미지 작업과 GPU를 번갈아 쓴다. 없으면 주소가 이 PC일 때 `true`로 본다. |
 | `trusted` | 같은 네트워크의 "내 서버"로 표시. `true`거나 주소가 이 PC(`127.0.0.1`, `localhost`, `::1`)면 로컬로 보고 외부 전송 확인을 하지 않는다. |
 | `models` | 쓸 모델. `context`(맥락 길이), `tokenizer`(토크나이저 이름, 없으면 추정), `price`(선택, 100만 토큰당 가격. 사용자가 입력하며, 없으면 비용 대신 토큰 수만 보여 준다). |
 | `tasks` | 작업별 기본 연결·모델·생성 설정. 작업: `compression`, `image_prompt`, `jsx_prompt`, `authoring`, `consistency`, `chat_test`, `agent`. 정하지 않은 작업은 `local`의 `default_model`을 쓴다. |

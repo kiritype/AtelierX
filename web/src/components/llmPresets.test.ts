@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LLM_PRESETS, newProvider, vertexUrl } from './llmPresets';
+import { LLM_PRESETS, newProvider, usesLocalGpu, vertexUrl } from './llmPresets';
 
 describe('external connection presets', () => {
   it('requires user credentials and model choices without implicitly trusting an external service', () => {
@@ -23,5 +23,16 @@ describe('external connection presets', () => {
     expect(vertexUrl('my-project/other', 'global')).toBe('');
     expect(vertexUrl('my-project-123', 'evil.test/')).toBe('');
     expect(vertexUrl('', 'global')).toBe('');
+  });
+});
+
+describe('usesLocalGpu', () => {
+  it('follows the saved choice, else whether the server is on this PC', () => {
+    expect(usesLocalGpu({ type: 'openai_compatible', base_url: 'http://127.0.0.1:1234/v1' })).toBe(true);
+    expect(usesLocalGpu({ type: 'openai_compatible', base_url: 'http://[::1]:8080/v1' })).toBe(true);
+    expect(usesLocalGpu({ type: 'openai_compatible', base_url: 'https://api.example.com/v1' })).toBe(false);
+    expect(usesLocalGpu({ type: 'mock' })).toBe(false);
+    expect(usesLocalGpu({ type: 'openai_compatible', base_url: 'http://192.168.0.9/v1', local_gpu: true })).toBe(true);
+    expect(usesLocalGpu({ type: 'openai_compatible', base_url: 'http://127.0.0.1:4000/v1', local_gpu: false })).toBe(false);
   });
 });

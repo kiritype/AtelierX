@@ -3,6 +3,7 @@
 A provider of type ``mock`` answers without a server; tests and offline UI checks use it.
 """
 
+import asyncio
 import json
 import re
 from datetime import datetime
@@ -36,6 +37,9 @@ DEFAULT_PARAMS = {
     'agent': {'temperature': 0.5},
     'image_review': {'temperature': 0.0, 'max_tokens': 400},
 }
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+# Tasks that run while their caller already holds the GPU (VLM review holds it as ``validation``).
+GPU_HELD_TASKS = {'image_review'}
 THINK = re.compile(r'<think>.*?</think>\s*', re.DOTALL)
 TIMEOUT = httpx.Timeout(connect=5, read=600, write=30, pool=5)
 
@@ -47,6 +51,55 @@ def strip_thinking(text):
     return '' if '<think>' in text else text.strip()
 
 
+def uses_local_gpu(provider):
+    """Whether a connection's model runs on this PC's GPU, so it must take turns with image work. Saved as
+    ``local_gpu``; without it, a server at this PC's address does."""
+    if provider.get('local_gpu') is not None:
+        return bool(provider['local_gpu'])
+    host = urlparse(provider.get('base_url') or '').hostname or ''
+    return provider.get('type') != 'mock' and host in LOOPBACK
+
+
+class LlmGate:
+    """Who may send an LLM request now (architecture: 작업 대기열과 GPU).
+
+    Requests to a model on this PC's GPU share the GPU broker's ``llm`` hold with each other and take turns with image
+    generation, VLM review, training and ComfyUI control. Other requests only wait for one of ``limit()`` slots.
+    """
+
+    POLL = 0.5
+
+    def __init__(self, gpu=None, limit=lambda: 2):
+        self.gpu, self.limit = gpu, limit
+        self._external, self._size = None, None
+
+    async def wait_gpu(self):
+        """Yield what holds the GPU while waiting; returns holding it. The caller calls ``end_gpu`` afterwards."""
+        if self.gpu is None:
+            return
+        told = None
+        while not self.gpu.try_llm():
+            blocker = self.gpu.blocker()
+            if blocker != told:
+                told = blocker
+                yield blocker
+            await asyncio.sleep(self.POLL)
+
+    def end_gpu(self):
+        if self.gpu is not None:
+            self.gpu.end_llm()
+
+    def external(self):
+        try:
+            size = max(1, int(self.limit() or 1))
+        except (TypeError, ValueError):
+            size = 2
+        if size != self._size:
+            # Requests already running keep their old slots; new ones count against the new limit.
+            self._external, self._size = asyncio.Semaphore(size), size
+        return self._external
+
+
 # Usage report groupings: connection·model·task, task, work.
 USAGE_GROUPS = {'model': ('provider', 'model', 'task'), 'task': ('task',), 'work': ('work',)}
 
@@ -55,6 +108,7 @@ class Providers:
     def __init__(self, paths, vault):
         self.paths, self.vault = paths, vault
         self.file = paths.data / 'providers.json'
+        self.gate = LlmGate()
 
     def doc(self):
         return read_json(self.file) or {'schema_version': 1, 'providers': {}, 'tasks': {}}
@@ -119,13 +173,12 @@ class Providers:
         write_json(self.file, doc)
         return doc
 
+    def _on_gpu(self, provider, task):
+        return task not in GPU_HELD_TASKS and uses_local_gpu(provider)
+
     def is_local(self, provider):
         host = urlparse(provider.get('base_url') or '').hostname or ''
-        return (
-            provider.get('type') == 'mock'
-            or provider.get('trusted')
-            or host in ('127.0.0.1', 'localhost', '::1')
-        )
+        return provider.get('type') == 'mock' or provider.get('trusted') or host in LOOPBACK
 
     def resolve(self, task, override=None):
         """Provider, model and params for a task: the override, the task setting, then the `local` provider's default."""
@@ -351,7 +404,19 @@ class Providers:
 
     async def complete(self, task, messages, work_id=None, override=None, json_mode=False):
         """One full answer, with reasoning removed. Returns ``{text, model, provider, usage}``."""
-        provider, model, params = self.resolve(task, override)
+        resolved = self.resolve(task, override)
+        if self._on_gpu(resolved[0], task):
+            async for _ in self.gate.wait_gpu():
+                pass
+            try:
+                return await self._complete(resolved, task, messages, work_id, json_mode)
+            finally:
+                self.gate.end_gpu()
+        async with self.gate.external():
+            return await self._complete(resolved, task, messages, work_id, json_mode)
+
+    async def _complete(self, resolved, task, messages, work_id, json_mode):
+        provider, model, params = resolved
         if provider.get('type') == 'mock':
             return {
                 'text': mock_answer(task, messages),
@@ -388,8 +453,24 @@ class Providers:
         last ``{'type': 'done', 'finish_reason': …}`` (``length`` when the answer hit the output limit).
 
         Reasoning arrives either in separate delta fields or inside <think> … </think>; it is counted, never shown.
+        While the request waits for the GPU, ``{'type': 'waiting', 'holder': Msg}`` says what it waits for.
         """
-        provider, model, params = self.resolve(task, override)
+        resolved = self.resolve(task, override)
+        if self._on_gpu(resolved[0], task):
+            async for holder in self.gate.wait_gpu():
+                yield {'type': 'waiting', 'holder': holder}
+            try:
+                async for event in self._stream(resolved, task, messages, work_id):
+                    yield event
+            finally:
+                self.gate.end_gpu()
+            return
+        async with self.gate.external():
+            async for event in self._stream(resolved, task, messages, work_id):
+                yield event
+
+    async def _stream(self, resolved, task, messages, work_id):
+        provider, model, params = resolved
         if provider.get('type') == 'mock':
             pieces = mock_answer(task, messages).split(' ')
             for n, piece in enumerate(pieces):

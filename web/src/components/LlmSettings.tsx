@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
-import { LLM_PRESETS, newProvider, vertexUrl } from './llmPresets';
+import { LLM_PRESETS, newProvider, usesLocalGpu, vertexUrl } from './llmPresets';
 import UsageReport from './UsageReport';
 
-type Provider = { name: string; type: string; preset?: string; vertex_project?: string; vertex_location?: string; base_url?: string; key?: string | null; trusted?: boolean; default_model?: string | null; models?: Record<string, unknown> };
+type Provider = { name: string; type: string; preset?: string; vertex_project?: string; vertex_location?: string; base_url?: string; key?: string | null; trusted?: boolean; local_gpu?: boolean; default_model?: string | null; models?: Record<string, unknown> };
 type TaskSetting = { provider?: string; model?: string; params?: { temperature?: number } };
 type Doc = { schema_version: number; providers: Record<string, Provider>; tasks: Record<string, TaskSetting> };
 
@@ -161,6 +161,10 @@ export default function LlmSettings() {
               <label className="row" style={{ gap: 4 }}>
                 <input type="checkbox" checked={!!provider.trusted} onChange={(e) => setProvider(id, { trusted: e.target.checked })} />
                 {t('llm.trusted')}
+              </label>
+              <label className="row" style={{ gap: 4 }} title={t('llm.local_gpu_help')}>
+                <input type="checkbox" checked={usesLocalGpu(provider)} onChange={(e) => setProvider(id, { local_gpu: e.target.checked })} />
+                {t('llm.local_gpu')}
               </label>
             </div>
           )}

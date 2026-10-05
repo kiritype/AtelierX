@@ -1645,5 +1645,8 @@
   "history.restored_n": "Restored {n} files to the snapshot.",
   "history.nothing_to_restore": "Nothing differs, so nothing was restored.",
   "editor.reload_confirm": "Discard the unsaved changes and load the file from disk?",
-  "editor.reload_failed": "The file could not be reloaded. Your changes are still here."
+  "editor.reload_failed": "The file could not be reloaded. Your changes are still here.",
+  "test.waiting_gpu": "Waiting for the GPU: {name}",
+  "llm.local_gpu": "Uses this PC's GPU",
+  "llm.local_gpu_help": "When on, this connection's requests take turns on the GPU with image generation, VLM review and LoRA training. On by default for this PC's address (127.0.0.1, localhost)."
 }

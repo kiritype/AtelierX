@@ -150,7 +150,7 @@ LLM 연결, 금고(인증 정보·마스터 비밀번호), 이미지 생성 연�
 | `autolock_minutes` | `null` | 자동 잠금(없으면 끔) |
 | `snapshot_interval_minutes` | `10` | 저장 묶음 스냅샷 간격 |
 | `history_prune` | `{"keep_recent": 200, "daily_days": 30}` | 이력 자동 정리 기준 |
-| `jobs` | `{"api_concurrency": 2}` | 외부 API 작업 동시 실행 수 |
+| `jobs` | `{"api_concurrency": 2}` | 이 PC의 GPU를 쓰지 않는 LLM 요청의 동시 실행 수 |
 | `chat_runs_keep` | `100` | 작품마다 남길 테스트 기록 수 |
 | `default_platform_preset` | `null` | 새 작품에 연결할 플랫폼 프리셋 |
 | `image` | 비어 있음 | 태그 사전 목록, 이미지 생성 서버 주소, 모델·LoRA 폴더, 학습 도구(`training`). 상세 키는 20·23을 구현할 때 정한다 |

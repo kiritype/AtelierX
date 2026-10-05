@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 from ..core import agent, guidelines
 from ..core.drafts import Drafts
 from ..core.fsutil import sha256_text
-from ..core.i18n import AppError, Msg
+from ..core.i18n import AppError, Msg, wire
 from ..core.snapshots import Snapshots
 
 
@@ -146,6 +146,8 @@ async def send(request):
             async for event in s.llm.stream('agent', messages, work_id=work.id, override=data.get('llm')):
                 if event['type'] == 'thinking':
                     yield f'event: thinking\ndata: {event["chars"]}\n\n'
+                elif event['type'] == 'waiting':
+                    yield f'event: waiting\ndata: {json.dumps(wire(event["holder"]), ensure_ascii=False)}\n\n'
                 elif event['type'] == 'text':
                     parts.append(event['text'])
                     yield f'event: delta\ndata: {json.dumps(event["text"], ensure_ascii=False)}\n\n'

@@ -25,6 +25,7 @@ type Turn = {
   context?: Context;
   start?: boolean;
   thinking?: number;
+  waiting?: string;
   error?: string;
   stopped?: boolean;
 };
@@ -121,6 +122,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
           if (!type || data === undefined) continue;
           if (type === 'context') reply = { ...reply, context: JSON.parse(data) };
           if (type === 'thinking') reply = { ...reply, thinking: Number(data) };
+          if (type === 'waiting') reply = { ...reply, waiting: tm(JSON.parse(data)) };
           if (type === 'delta') reply = { ...reply, text: reply.text + JSON.parse(data) };
           if (type === 'error') reply = { ...reply, error: tm(JSON.parse(data)) };
           setTurns([...history, { role: 'user', text: message }, reply]);
@@ -133,7 +135,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     } finally {
       abort.current = null;
     }
-    reply = { ...reply, text: reply.text.trimEnd(), thinking: undefined };
+    reply = { ...reply, text: reply.text.trimEnd(), thinking: undefined, waiting: undefined };
     const next = [...history, { role: 'user' as const, text: message }, reply];
     setTurns(next);
     setSelected(null);
@@ -225,7 +227,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
                   <span className="faint">{t('test.thinking', { n: turn.thinking.toLocaleString() })}</span>
                 )}
                 {turn.role === 'assistant' && !turn.text && turn.thinking === undefined && !turn.error && !turn.stopped && busy && n === shown.length - 1 && (
-                  <span className="faint">{t('test.waiting')}</span>
+                  <span className="faint">{turn.waiting ? t('test.waiting_gpu', { name: turn.waiting }) : t('test.waiting')}</span>
                 )}
                 {turn.role === 'assistant' && !rawShown.has(n) ? <Reply text={turn.text} workId={workId} components={components} rules={rules} /> : turn.text}
                 {turn.error && <div className="error-text">{turn.error}</div>}
