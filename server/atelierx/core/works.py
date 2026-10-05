@@ -246,6 +246,49 @@ class Work:
             raise AppError(Msg('server.works.item_missing', 'The file does not exist: {path}', path=rel), 404)
         return self.read_item(path)
 
+    # --- ID links (data-model: ID 바꾸기) ---------------------------------------------------------------------------
+    def id_links(self, item_id):
+        """Where an item ID is used besides the item: image data, JSX examples, the chat partner, the relation map."""
+        key = str(item_id or '').casefold()
+        if not key:
+            return []
+        places = []
+        for folder, place in ((self.app / 'image' / 'characters', 'image'), (self.app / 'jsx', 'jsx')):
+            if folder.is_dir() and any(p.name.casefold() == key for p in folder.iterdir()):
+                places.append(place)
+        if str((read_json(self.doc_path) or {}).get('char') or '').casefold() == key:
+            places.append('char')
+        relations = read_json(self.app / 'relations.json') or {}
+        named = [p.get('id') for p in relations.get('people', [])]
+        named += [v for r in relations.get('relations', []) for v in (r.get('from'), r.get('to'))]
+        named += [f.get('subject') for f in relations.get('facts', [])]
+        if any(str(v or '').casefold() == key for v in named):
+            places.append('relations')
+        return places
+
+    def _check_id_change(self, rel, old, new):
+        """An ID may be set freely while nothing refers to it; it must stay unique in the work (case ignored)."""
+        old_key, new_key = str(old or '').casefold(), str(new or '').casefold()
+        if old_key == new_key:
+            return
+        this = self.rel(self.resolve(rel))
+        if new_key and any(
+            str(i['meta'].get('id') or '').casefold() == new_key and i['path'] != this for i in self.index()
+        ):
+            raise AppError(
+                Msg('server.works.id_taken', 'Another item already uses the ID {id}.', id=new), 409
+            )
+        if old_key and self.id_links(old):
+            raise AppError(
+                Msg(
+                    'server.works.id_linked',
+                    'The ID {id} is used by linked data (image data, JSX examples, the chat partner or the relation map),'
+                    ' so it cannot be changed here.',
+                    id=old,
+                ),
+                409,
+            )
+
     def save_item(self, rel, meta_changes, body, base_hash):
         path = self.resolve(rel)
         text = path.read_text(encoding='utf-8') if path.is_file() else ''
@@ -260,6 +303,8 @@ class Work:
         if meta_changes is not None:
             if meta_changes.get('id'):
                 check_id(meta_changes['id'])
+            if 'id' in meta_changes:
+                self._check_id_change(rel, (meta or {}).get('id'), meta_changes['id'])
             meta = frontmatter.apply_changes(meta, meta_changes)
             if 'schema_version' not in meta:
                 meta.insert(0, 'schema_version', 1)

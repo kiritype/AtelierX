@@ -306,7 +306,7 @@
   "server.works.bad_path": "허용되지 않는 경로입니다.",
   "server.works.changed_on_disk": "연 뒤에 디스크의 파일이 바뀌었습니다.",
   "server.works.exists": "같은 이름이 이미 있습니다.",
-  "server.works.id_taken": "이미 쓰는 ID입니다. {id}는 어떤가요?",
+  "server.works.id_taken": "다른 항목이 이미 ID {id}를 쓰고 있습니다.",
   "server.works.item_missing": "파일이 없습니다: {path}",
   "server.works.move_into_self": "폴더를 자기 안으로 옮길 수 없습니다.",
   "server.works.name_taken": "같은 이름의 작품이 이미 있습니다.",
@@ -1533,5 +1533,11 @@
   "leave.save_all": "모두 저장하고 계속",
   "leave.discard": "저장하지 않고 계속",
   "leave.save_there": "이 화면에서 직접 저장하세요",
-  "leave.save_failed": "{name}을(를) 저장하지 못했습니다. 탭에서 확인하세요."
+  "leave.save_failed": "{name}을(를) 저장하지 못했습니다. 탭에서 확인하세요.",
+  "editor.id_linked": "이 ID는 {places}에서 쓰고 있어 여기서 바꿀 수 없습니다.",
+  "editor.id_link.image": "이미지 데이터",
+  "editor.id_link.jsx": "JSX 예시",
+  "editor.id_link.char": "대화 상대 설정",
+  "editor.id_link.relations": "관계도",
+  "server.works.id_linked": "ID {id}는 연결된 데이터(이미지 데이터, JSX 예시, 대화 상대 설정, 관계도)에서 쓰고 있어 여기서 바꿀 수 없습니다."
 }

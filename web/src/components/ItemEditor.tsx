@@ -221,7 +221,13 @@ export default function ItemEditor({
           {kind !== 'note' && (
             <label style={{ width: 90 }}>
               ID
-              <input value={meta.id ?? ''} placeholder={suggest.data?.id} onChange={(e) => change('id', e.target.value || null)} />
+              <input
+                value={meta.id ?? ''}
+                placeholder={suggest.data?.id}
+                readOnly={!!item.data.id_links?.length}
+                title={item.data.id_links?.length ? t('editor.id_linked', { places: item.data.id_links.map((p) => t(`editor.id_link.${p}`)).join(', ') }) : undefined}
+                onChange={(e) => change('id', e.target.value || null)}
+              />
             </label>
           )}
           {hasKeywords && (
