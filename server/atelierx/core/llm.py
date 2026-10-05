@@ -37,6 +37,10 @@ def strip_thinking(text):
     return '' if '<think>' in text else text.strip()
 
 
+# Usage report groupings: connection·model·task, task, work.
+USAGE_GROUPS = {'model': ('provider', 'model', 'task'), 'task': ('task',), 'work': ('work',)}
+
+
 class Providers:
     def __init__(self, paths, vault):
         self.paths, self.vault = paths, vault
@@ -161,32 +165,62 @@ class Providers:
             428,
         )
 
-    def usage(self, month):
-        """Requests and tokens per connection, model and task for one month (YYYY-MM)."""
+    # --- usage (data/usage/YYYY-MM.jsonl, one line per answered request) ------------------------------------------
+
+    def usage_months(self):
+        """Months that have a usage file, newest first."""
+        folder = self.paths.data / 'usage'
+        months = [p.stem for p in folder.glob('*.jsonl')] if folder.is_dir() else []
+        return sorted((m for m in months if re.fullmatch(r'\d{4}-\d{2}', m)), reverse=True)
+
+    def usage_entries(self, month):
+        if not re.fullmatch(r'\d{4}-\d{2}', str(month or '')):
+            return []
         path = self.paths.data / 'usage' / f'{month}.jsonl'
-        rows = {}
+        entries = []
         if path.is_file():
             for line in path.read_text(encoding='utf-8').splitlines():
                 try:
-                    entry = json.loads(line)
+                    entries.append(json.loads(line))
                 except json.JSONDecodeError:
                     continue
-                key = (entry.get('provider'), entry.get('model'), entry.get('task'))
-                row = rows.setdefault(
-                    key,
-                    {
-                        'provider': key[0],
-                        'model': key[1],
-                        'task': key[2],
-                        'requests': 0,
-                        'input_tokens': 0,
-                        'output_tokens': 0,
-                    },
-                )
-                row['requests'] += 1
-                row['input_tokens'] += entry.get('input_tokens') or 0
-                row['output_tokens'] += entry.get('output_tokens') or 0
+        return entries
+
+    def usage(self, month, by='model'):
+        """Requests and tokens of one month (YYYY-MM), grouped by connection·model·task, by task or by work.
+
+        ``unknown`` counts requests whose server did not report tokens; their tokens are not in the sums.
+        """
+        fields = USAGE_GROUPS.get(by, USAGE_GROUPS['model'])
+        rows = {}
+        for entry in self.usage_entries(month):
+            key = tuple(entry.get(f) for f in fields)
+            row = rows.setdefault(
+                key,
+                {
+                    **dict(zip(fields, key)),
+                    'requests': 0,
+                    'unknown': 0,
+                    'input_tokens': 0,
+                    'output_tokens': 0,
+                },
+            )
+            row['requests'] += 1
+            if entry.get('input_tokens') is None and entry.get('output_tokens') is None:
+                row['unknown'] += 1
+            row['input_tokens'] += entry.get('input_tokens') or 0
+            row['output_tokens'] += entry.get('output_tokens') or 0
         return sorted(rows.values(), key=lambda r: -r['requests'])
+
+    def usage_log(self, month, offset=0, limit=50, work=None, task=None):
+        """The month's requests one by one, newest first, optionally only one work or task."""
+        entries = [
+            e
+            for e in reversed(self.usage_entries(month))
+            if (not work or e.get('work') == work) and (not task or e.get('task') == task)
+        ]
+        offset, limit = max(0, int(offset)), min(max(1, int(limit)), 500)
+        return {'total': len(entries), 'offset': offset, 'rows': entries[offset : offset + limit]}
 
     def _headers(self, provider):
         key = provider.get('key')
@@ -284,8 +318,8 @@ class Providers:
         return {'ok': True, 'model': result['model'], 'completion': True, 'stream': True}
 
     def _log_usage(self, provider, model, task, work_id, usage):
-        if not usage:
-            return
+        # Every answered request is counted; servers that report no tokens leave them empty (shown as unknown).
+        usage = usage or {}
         now = datetime.now().astimezone()
         line = {
             'at': now.isoformat(timespec='seconds'),

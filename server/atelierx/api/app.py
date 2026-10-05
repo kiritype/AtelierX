@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import csv
+import io
 import json
 from datetime import datetime
 from pathlib import Path
@@ -250,9 +252,49 @@ async def providers_put(request):
     return ok(st(request).llm.save(await body(request)))
 
 
+def _usage_month(request):
+    return request.query_params.get('month') or datetime.now().astimezone().strftime('%Y-%m')
+
+
 async def usage(request):
-    month = request.query_params.get('month') or datetime.now().astimezone().strftime('%Y-%m')
-    return ok({'month': month, 'rows': st(request).llm.usage(month)})
+    month = _usage_month(request)
+    llm = st(request).llm
+    return ok(
+        {
+            'month': month,
+            'months': llm.usage_months(),
+            'rows': llm.usage(month, request.query_params.get('by', 'model')),
+        }
+    )
+
+
+async def usage_log(request):
+    q = request.query_params
+    return ok(
+        st(request).llm.usage_log(
+            _usage_month(request),
+            q.get('offset', 0),
+            q.get('limit', 50),
+            q.get('work') or None,
+            q.get('task') or None,
+        )
+    )
+
+
+async def usage_csv(request):
+    """The month's requests as CSV (UTF-8 with BOM so spreadsheet programs read Korean names)."""
+    month = _usage_month(request)
+    out = io.StringIO()
+    fields = ['at', 'provider', 'model', 'task', 'work', 'input_tokens', 'output_tokens']
+    writer = csv.DictWriter(out, fieldnames=fields, extrasaction='ignore', lineterminator='\n')
+    writer.writeheader()
+    for entry in st(request).llm.usage_entries(month):
+        writer.writerow(entry)
+    return Response(
+        '\ufeff' + out.getvalue(),
+        media_type='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="atelierx-usage-{month}.csv"'},
+    )
 
 
 async def providers_models(request):
@@ -1257,6 +1299,8 @@ def build_app(paths, dev=False, kdf=None):
         Route('/api/providers/{pid}/models', providers_models),
         Route('/api/providers/{pid}/probe', providers_probe, methods=['POST']),
         Route('/api/usage', usage),
+        Route('/api/usage/log', usage_log),
+        Route('/api/usage.csv', usage_csv),
         Route('/api/platforms', presets_list),
         Route('/api/platforms', presets_create, methods=['POST']),
         Route('/api/platforms/{pid}', presets_get),
