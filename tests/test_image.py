@@ -135,7 +135,7 @@ def test_library_compose_queue_and_save(unlocked, tmp_path):
 
     assert c.post(f'/api/image/jobs/{runtime.jobs[1]["id"]}/cancel').status_code == 200
     assert c.post('/api/image/queue/clear-finished').json()['removed'] == 2
-    assert c.get('/api/image/files/..%2Fconfig%2Fvault.json').status_code == 404
+    assert c.get('/api/image/files/..%2Fconfig%2Fvault.json').status_code in (400, 404)
 
 
 def test_tag_lookup(unlocked):

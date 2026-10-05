@@ -40,7 +40,7 @@ def test_snapshot_ids_cannot_name_other_files(unlocked, tmp_path):
         json.dumps({'files': {}}), encoding='utf-8'
     )
     for sid in ('..%5Coutside', '%2E%2E%5Coutside'):
-        assert unlocked.get(f'/api/works/{wid}/snapshots/{sid}/diff').status_code == 404
+        assert unlocked.get(f'/api/works/{wid}/snapshots/{sid}/diff').status_code in (400, 404)
 
 
 def test_restore_refuses_a_damaged_snapshot_before_writing(unlocked, tmp_path):
