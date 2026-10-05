@@ -17,6 +17,7 @@ import uvicorn
 from .api.app import build_app
 from .core.fsutil import read_json, write_json
 from .core.paths import AppPaths
+from .core.updater import finish_update
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,8 @@ def main():
             except OSError as exc:
                 raise RuntimeError('이 폴더의 AtelierX가 이미 실행 중입니다.') from exc
         check_resources(paths)
+        if getattr(sys, 'frozen', False) and (finished := finish_update(paths)):
+            logger.info('Last update: %s', finished.get('state'))
         app = build_app(paths, dev=False, desktop=not args.headless)
         sock = bind_loopback(args.port)
         port = sock.getsockname()[1]
@@ -133,7 +136,9 @@ def main():
             time.sleep(0.05)
         write_json(ready, {'url': url, 'pid': os.getpid(), 'root': str(paths.root)})
         logger.info('Desktop ready at %s', url)
+        updater = app.state.app.updater
         if args.headless:
+            updater.exit_app = lambda: setattr(server, 'should_exit', True)
 
             def stop(_signum, _frame):
                 server.should_exit = True
@@ -150,6 +155,13 @@ def main():
                     logger.info('Removed the download mark from %d bundled DLLs', unblocked)
             import webview
 
+            def close_for_update():
+                # The update script waits for this process to end; a window that will not close is ended anyway.
+                threading.Timer(20, os._exit, (0,)).start()
+                for window in list(webview.windows):
+                    window.destroy()
+
+            updater.exit_app = close_for_update
             webview.settings['ALLOW_DOWNLOADS'] = True
             webview.settings['ALLOW_FILE_URLS'] = False
             webview.create_window(

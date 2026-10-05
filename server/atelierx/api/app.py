@@ -32,6 +32,7 @@ from ..core.presets import Presets
 from ..core.relations import Glossary, Relations
 from ..core.settings import Settings
 from ..core.snapshots import Snapshots
+from ..core.updater import Updater
 from ..core.vault import Vault
 from ..core.works import KIND_PREFIX, WorkStore
 from ..image import designs as image_designs
@@ -60,7 +61,22 @@ class State:
             self.image.gpu, lambda: (self.settings.load().get('jobs') or {}).get('api_concurrency', 2)
         )
         self.packages = Packages(paths, self.works, self.image, self.vault)
+        self.updater = Updater(paths, busy=self.busy_work)
         self.maintain()
+
+    def busy_work(self):
+        """What an update would cut off: image work in the queue, LoRA training, installs, LLM jobs."""
+        busy = []
+        with self.image.lock:
+            if any(j['status'] in ('queued', 'running', 'cancelling') for j in self.image.jobs):
+                busy.append(Msg('server.update.busy_images', 'image work in the queue'))
+        if self.image.trainer.active:
+            busy.append(Msg('server.update.busy_training', 'LoRA training'))
+        if (self.image.installs.run or {}).get('status') == 'running':
+            busy.append(Msg('server.update.busy_install', 'an install'))
+        if any(j['status'] in ('queued', 'running') for j in self.jobs.jobs.values()):
+            busy.append(Msg('server.update.busy_jobs', 'LLM jobs'))
+        return busy
 
     def maintain(self):
         """Once a day at start: prune old save snapshots in every work (09-snapshots: 정리)."""
@@ -225,6 +241,23 @@ async def about_notices(request):
 
 async def update_check(request):
     return ok(await about.check_update())
+
+
+async def update_status(request):
+    return ok(st(request).updater.status())
+
+
+async def update_start(request):
+    return ok(st(request).updater.start())
+
+
+async def update_apply(request):
+    return ok(st(request).updater.apply())
+
+
+async def update_forget(request):
+    st(request).updater.forget_result()
+    return ok()
 
 
 # --- settings, ui state, vault, providers, presets ---------------------------------------------------------------
@@ -1368,6 +1401,10 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route('/api/about', about_get),
         Route('/api/about/notices', about_notices),
         Route('/api/update-check', update_check),
+        Route('/api/update/status', update_status),
+        Route('/api/update/start', update_start, methods=['POST']),
+        Route('/api/update/apply', update_apply, methods=['POST']),
+        Route('/api/update/forget', update_forget, methods=['POST']),
         Route('/api/open-in-browser', open_in_browser, methods=['POST']),
         Route('/api/settings', settings_get),
         Route('/api/settings', settings_patch, methods=['PATCH']),
