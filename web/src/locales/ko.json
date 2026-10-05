@@ -1968,5 +1968,6 @@
   "server.tests.empty": "테스트 세트에는 이름과 입력이 하나 이상 있어야 합니다.",
   "server.tests.no_set": "그런 테스트 세트가 없습니다.",
   "server.tests.no_run": "그런 실행 기록이 없습니다.",
-  "tests.start_missing": "세트의 시작 상황 파일 \"{path}\"을(를) 읽을 수 없습니다. 지워지거나 이름이 바뀌었으면 세트를 고친 뒤 실행하세요."
+  "tests.start_missing": "세트의 시작 상황 파일 \"{path}\"을(를) 읽을 수 없습니다. 지워지거나 이름이 바뀌었으면 세트를 고친 뒤 실행하세요.",
+  "server.request.invalid_json": "요청 내용을 읽을 수 없습니다(JSON 형식이 아님)."
 }

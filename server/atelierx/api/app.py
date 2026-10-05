@@ -97,7 +97,12 @@ def ok(value=None, status=200):
 
 async def body(request):
     raw = await request.body()
-    return json.loads(raw) if raw else {}
+    try:
+        return json.loads(raw) if raw else {}
+    except ValueError as exc:  # not JSON, or not UTF-8: the request's fault, not a server error
+        raise AppError(
+            Msg('server.request.invalid_json', 'The request body is not valid JSON.'), 400
+        ) from exc
 
 
 def st(request) -> State:
