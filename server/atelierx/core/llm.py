@@ -212,6 +212,10 @@ class Providers:
             row['output_tokens'] += entry.get('output_tokens') or 0
         return sorted(rows.values(), key=lambda r: -r['requests'])
 
+    def usage_tasks(self, month):
+        """The tasks that appear in the month, for the request log's filter (whatever the grouping)."""
+        return sorted({e.get('task') for e in self.usage_entries(month) if e.get('task')})
+
     def usage_log(self, month, offset=0, limit=50, work=None, task=None):
         """The month's requests one by one, newest first, optionally only one work or task."""
         entries = [
