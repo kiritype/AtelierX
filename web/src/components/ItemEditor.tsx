@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { marked } from 'marked';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, get, post, put, q } from '../api';
 import { t, tm } from '../i18n';
 import { KINDS, type Item, type Kind, type WorkInfo } from '../types';
 import { measure } from '../count';
 import CodeEditor from './CodeEditor';
+import MessageMarkdown from './MessageMarkdown';
 import ImageDesign from './ImageDesign';
 import ImageGallery from './image/ImageGallery';
 import EditorLlmTools from './EditorLlmTools';
@@ -254,7 +254,8 @@ export default function ItemEditor({
             onSave={save}
           />
         )}
-        {current === 'preview' && <div className="preview" dangerouslySetInnerHTML={{ __html: marked.parse(body) as string }} />}
+        {/* Raw HTML in a document stays text: the preview runs in the app and must never execute a document. */}
+        {current === 'preview' && <div className="preview"><MessageMarkdown text={body} /></div>}
         {(current === 'image' || imageDirty) && <div style={{ display: current === 'image' ? 'block' : 'none' }}>
           <ImageDesign key={meta.id ?? ''} workId={workId} characterId={meta.id} info={info} onReview={onReview} beforeConvert={save} openImage={onImage} onDirtyChange={setImageDirty} />
         </div>}
