@@ -22,6 +22,18 @@ type About = {
 };
 type Update = { current: string; latest: string; newer: boolean; url: string; published_at: string | null; notes: string };
 type HelpDialog = 'about' | 'shortcuts' | 'update' | 'notices' | null;
+type UpdateState = {
+  state: 'idle' | 'checking' | 'downloading' | 'verifying' | 'extracting' | 'backing_up' | 'ready' | 'failed' | 'restarting';
+  packaged: boolean;
+  current: string;
+  version?: string;
+  received?: number;
+  total?: number;
+  backup?: string;
+  error?: { key: string; text: string; values?: Record<string, unknown> };
+  last_result?: { state: 'ok' | 'failed'; detail?: string; version?: string; from?: string };
+};
+const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
 const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
 
@@ -122,14 +134,46 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 }
 
 function UpdateDialog({ onClose }: { onClose: () => void }) {
+  const toast = useToast();
   const check = useQuery<Update>({ queryKey: ['update-check'], queryFn: () => get('/api/update-check'), retry: false, staleTime: 0, gcTime: 0 });
+  const update = useQuery<UpdateState>({
+    queryKey: ['update-status'],
+    queryFn: () => get('/api/update/status'),
+    refetchInterval: (q) => (PREPARING.includes((q.state.data as UpdateState | undefined)?.state ?? '') ? 700 : false),
+  });
+  const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+  const u = update.data;
+  async function start() {
+    try {
+      await post('/api/update/start');
+      update.refetch();
+    } catch (err) {
+      fail(err);
+    }
+  }
+  async function restart() {
+    if (!confirm(t('update.restart_confirm'))) return;
+    try {
+      await post('/api/update/apply');
+      update.refetch();
+    } catch (err) {
+      fail(err);
+    }
+  }
+  const canUpdate = !!check.data?.newer && !!u?.packaged;
+  const actions = !check.data?.newer ? undefined : canUpdate ? (
+    u?.state === 'ready' ? (
+      <button className="primary" onClick={restart}>{t('update.restart')}</button>
+    ) : (
+      <button className="primary" disabled={PREPARING.includes(u?.state ?? '') || u?.state === 'restarting'} onClick={start}>
+        {t('update.start')}
+      </button>
+    )
+  ) : (
+    <button className="primary" onClick={() => open(check.data!.url)}>{t('help.open_release')}</button>
+  );
   return (
-    <Dialog
-      title={t('help.check_update')}
-      onClose={onClose}
-      closeLabel={t('common.close')}
-      actions={check.data?.newer ? <button className="primary" onClick={() => open(check.data!.url)}>{t('help.open_release')}</button> : undefined}
-    >
+    <Dialog title={t('help.check_update')} onClose={onClose} closeLabel={t('common.close')} actions={actions}>
       {check.isLoading && <p className="faint">{t('help.checking')}</p>}
       {check.error && <p className="error-text">{check.error instanceof ApiError ? tm(check.error.msg) : String(check.error)}</p>}
       {check.data && (
@@ -140,11 +184,40 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
               : t('help.up_to_date', { current: check.data.current })}
           </p>
           {check.data.newer && check.data.notes && <pre className="update-notes">{check.data.notes}</pre>}
-          {check.data.newer && <p className="faint small">{t('help.update_how')}</p>}
+          {check.data.newer && !u?.packaged && <p className="faint small">{t('help.update_how')}</p>}
+          {check.data.newer && u?.packaged && u.state === 'idle' && <p className="faint small">{t('update.about')}</p>}
+          {u && PREPARING.includes(u.state) && (
+            <p className="faint">
+              {t(`update.state.${u.state}`)}
+              {u.state === 'downloading' && u.total ? ` ${Math.floor(((u.received ?? 0) / u.total) * 100)}%` : ''}
+            </p>
+          )}
+          {u?.state === 'ready' && <p>{t('update.ready', { version: u.version ?? '', backup: u.backup ?? '' })}</p>}
+          {u?.state === 'restarting' && <p>{t('update.restarting')}</p>}
+          {u?.state === 'failed' && u.error && <p className="error-text">{tm(u.error)}</p>}
         </div>
       )}
     </Dialog>
   );
+}
+
+// After an update the new version says how it went, once.
+export function useUpdateResult() {
+  const toast = useToast();
+  useEffect(() => {
+    get<UpdateState>('/api/update/status')
+      .then((status) => {
+        const result = status.last_result;
+        if (!result) return;
+        toast(
+          result.state === 'ok'
+            ? { text: t('update.done', { version: result.version ?? status.current }) }
+            : { text: t('update.rolled_back', { detail: result.detail ?? '' }), tone: 'error' },
+        );
+        post('/api/update/forget').catch(() => undefined);
+      })
+      .catch(() => undefined);
+  }, [toast]);
 }
 
 function NoticesDialog({ onClose }: { onClose: () => void }) {

@@ -7,7 +7,7 @@ import { t, tm } from '../i18n';
 import type { WorkCard } from '../types';
 import { AppMark } from '../components/AppMark';
 import { Icon } from '../components/icons';
-import { useHelp, useStartupUpdateCheck } from '../components/Help';
+import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/Help';
 import { MenuButton } from '../components/MenuBar';
 import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
 
@@ -18,6 +18,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
   const help = useHelp();
   const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
   useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
+  useUpdateResult();
   const ui = useQuery({ queryKey: ['ui-state'], queryFn: () => get('/api/ui-state') });
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<

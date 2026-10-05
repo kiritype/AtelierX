@@ -147,6 +147,11 @@ AtelierX/                       앱 폴더 (사용자가 고른 곳에 풀거나
 
 - 저장소의 `defaults/`, `samples/`가 빌드할 때 `app/defaults/`, `app/samples/`로 들어간다.
 - 업데이트: 새 `app/`으로 바꾸고 시작 프로그램을 교체한다. 데이터 형식 변환이 필요하면 시작할 때 제안한다([data-model.md 버전](data-model.md#버전)).
+  - 앱 안 업데이트(도움말 → 업데이트 확인, 패키지 실행만): 최신 릴리스의 Windows ZIP과 `.sha256`을 받아 대조 → `state/update/new/`에 풀기 →
+    `config`·`data`·`state`(캐시·로그 빼고)를 `state/update/backup-before-<버전>-<시각>.zip`로 백업 → "다시 시작해 설치"를 누르면
+    PowerShell 스크립트(`state/update/apply.ps1`)가 앱이 끝나기를 기다려 프로그램 항목(실행 파일, `_internal`, 설명서 …)을 `<이름>.old`로
+    옮기고 새 것을 넣은 뒤 새 버전을 연다. 사용자 데이터 폴더는 건드리지 않는다. 교체가 실패하면 `.old`로 되돌리고 이전 버전을 연다.
+    새 버전은 시작할 때 `.old`를 지우고 결과를 화면에 알린다. 진행 중인 이미지·학습·설치·LLM 작업이 있으면 시작하지 않는다.
 - 첫 배포 대상은 Windows. 서버·화면은 OS에 묶이지 않게 쓰고(경로는 `pathlib`, 암호화는 OS 기능을 쓰지 않음), 다른 OS용 묶음은
   필요할 때 만든다.
 
