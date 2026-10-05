@@ -7,6 +7,7 @@ export function Dialog({
   onClose,
   actions,
   closeLabel,
+  className,
 }: {
   title: string;
   children: React.ReactNode;
@@ -14,6 +15,7 @@ export function Dialog({
   actions?: React.ReactNode;
   // Dialogs that only show something say "close" instead of "cancel".
   closeLabel?: string;
+  className?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -22,7 +24,7 @@ export function Dialog({
   }, [onClose]);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog">
+      <div className={className ? `dialog ${className}` : 'dialog'}>
         <h3>{title}</h3>
         {children}
         <div className="actions">
