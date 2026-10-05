@@ -69,3 +69,14 @@ def test_sets_are_checked(unlocked):
     assert outside.status_code == 400
     assert c.post(f'/api/works/{wid}/tests/runs', json={'set_id': 'nope'}).status_code == 404
     assert c.get(f'/api/works/{wid}/tests/runs/../x').status_code in (404, 400)
+
+
+def test_a_body_that_is_not_json_or_not_utf8_is_a_bad_request(unlocked):
+    wid = _work(unlocked)
+    # Cut-off JSON, and Korean sent in the legacy Windows code page instead of UTF-8.
+    for raw in (b'{"sets": [', '{"name": "안녕"}'.encode('cp949')):
+        response = unlocked.put(
+            f'/api/works/{wid}/tests/sets', content=raw, headers={'Content-Type': 'application/json'}
+        )
+        assert response.status_code == 400
+        assert response.json()['error']['key'] == 'server.request.invalid_json'
