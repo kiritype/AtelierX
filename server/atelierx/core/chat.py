@@ -74,11 +74,20 @@ def assemble(work, effective, history, message, persona=None):
     if doc.get('char'):
         char_item = next((i for i in items if i['meta'].get('id') == doc['char']), None)
         char_name = char_item['name'] if char_item else None
-    user_name = (persona or {}).get('name') or '사용자'
+    persona = persona or {}
+    named = str(persona.get('name') or '').strip()
+    user_name = named or '사용자'
 
     parts = [m['body'].strip() for m in mains[:1]] + [e['item']['body'].strip() for e in kept]
-    if persona and persona.get('description'):
-        parts.append(f'사용자: {persona["description"]}')
+    # The persona is the {{user}} side of the chat: a section at the end of the system context (08-chat-test).
+    description = str(persona.get('description') or '').strip()
+    if named or description:
+        section = ['## {{user}} 설정']
+        if named:
+            section.append(f'이름: {named}')
+        if description:
+            section.append(description)
+        parts.append('\n'.join(section))
     system = substitute('\n\n'.join(parts), user_name, char_name)
     return {
         'main': mains[0]['path'] if mains else None,

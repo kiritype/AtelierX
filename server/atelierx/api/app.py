@@ -17,7 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from ..core import about, authoring, chat, checks, exporter, guidelines, llm_tasks, rename, review
+from ..core import about, authoring, chat, checks, exporter, guidelines, llm_tasks, personas, rename, review
 from ..core.auth import COOKIE, Sessions
 from ..core.bootstrap import ensure_layout
 from ..core.drafts import Drafts, mock_compress
@@ -237,6 +237,14 @@ async def compression_guideline_get(request):
 
 async def compression_guideline_put(request):
     return ok(guidelines.save_compression_settings(st(request).paths, await body(request)))
+
+
+async def personas_get(request):
+    return ok(personas.load(st(request).paths))
+
+
+async def personas_put(request):
+    return ok(personas.save(st(request).paths, await body(request)))
 
 
 async def ui_state_get(request):
@@ -1337,6 +1345,8 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route('/api/settings', settings_patch, methods=['PATCH']),
         Route('/api/settings/compression-guideline', compression_guideline_get),
         Route('/api/settings/compression-guideline', compression_guideline_put, methods=['PUT']),
+        Route('/api/personas', personas_get),
+        Route('/api/personas', personas_put, methods=['PUT']),
         Route('/api/ui-state', ui_state_get),
         Route('/api/ui-state', ui_state_put, methods=['PUT']),
         Route('/api/vault', vault_list),
