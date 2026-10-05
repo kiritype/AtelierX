@@ -21,4 +21,4 @@
 [한국어 사용 설명서](manual/index.md)는 기능별 Markdown으로 관리합니다.
 `docs/manual`에서 `npm ci` 후 `npm run build`로 GitHub Pages용 `dist/manual-site/`를 만들고,
 저장소 루트의 `python tools/build_manual.py`로 같은 문서의 오프라인판 `dist/manual/`를 만듭니다.
-캡처는 `docs/manual/screenshots/`에 둡니다. 배포 설정은 [기여 안내](../CONTRIBUTING.ko.md)를 참고하세요.
+캡처는 `docs/manual/screenshots/`에 둡니다. 배포 설정은 [기여 안내](../CONTRIBUTING.md)를 참고하세요.
