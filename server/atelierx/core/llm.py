@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from . import model_limits
 from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 
@@ -131,12 +132,23 @@ class Providers:
         self.paths, self.vault = paths, vault
         self.file = paths.data / 'providers.json'
         self.gate = LlmGate()
+        self.transport = None  # tests answer HTTP calls with httpx.MockTransport
 
     def doc(self):
         return read_json(self.file) or {'schema_version': 1, 'providers': {}, 'tasks': {}}
 
     def save(self, doc):
+        bad_tokens = AppError(
+            Msg('server.llm.invalid_tokens', 'Token counts must be whole numbers above zero.'), 400
+        )
+        if not model_limits.valid_tokens(doc.get('context_cap')):
+            raise bad_tokens
         for provider in doc.get('providers', {}).values():
+            for limits in (provider.get('models') or {}).values():
+                if isinstance(limits, dict) and not all(
+                    model_limits.valid_tokens(limits.get(k)) for k in ('context', 'max_output')
+                ):
+                    raise bad_tokens
             preset = provider.get('preset')
             if preset is not None and (not isinstance(preset, str) or preset not in PROVIDER_PRESETS):
                 raise AppError(Msg('server.llm.invalid_preset', 'Choose a supported provider preset.'))
@@ -382,6 +394,37 @@ class Providers:
         if response.status_code >= 400:
             raise self._http_error(provider, response)
         return [m.get('id') for m in response.json().get('data', []) if m.get('id')]
+
+    async def model_info(self, provider_id, model):
+        """A model's context length (and output limit when known) as the service reports it, else from the table of
+        known models. ``source`` says which: ``service``, ``table`` or None when neither knows."""
+        provider = self.doc().get('providers', {}).get(provider_id)
+        if provider is None:
+            raise AppError(
+                Msg('server.llm.no_provider', 'LLM connection {id} does not exist.', id=provider_id), 404
+            )
+        model = str(model or '').strip()
+        if not model:
+            raise AppError(Msg('server.llm.no_model_named', 'Name the model first.'), 400)
+        found = None
+        if provider.get('type') not in ('mock', 'vertex_openai'):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(20, connect=5), transport=self.transport
+                ) as client:
+                    found = await model_limits.read(provider, model, client, lambda: self._secret(provider))
+            except (httpx.HTTPError, ValueError):
+                found = None  # unreachable or not the expected answer: the table may still know
+        if found:
+            return {**found, 'source': 'service'}
+        table = model_limits.known(model)
+        if table:
+            return {**table, 'source': 'table'}
+        return {'context': None, 'max_output': None, 'capabilities': [], 'source': None}
+
+    def _secret(self, provider):
+        key = str(provider.get('key') or '')
+        return self.vault.reveal(key[len('secret:') :]) if key.startswith('secret:') else None
 
     async def probe(self, provider_id):
         """Explicit, billable test using only fixed synthetic content, never the open work."""

@@ -6,9 +6,17 @@ import { useToast } from './Toasts';
 import { LLM_PRESETS, newProvider, usesLocalGpu, vertexUrl } from './llmPresets';
 import UsageReport from './UsageReport';
 
-type Provider = { name: string; type: string; preset?: string; vertex_project?: string; vertex_location?: string; base_url?: string; key?: string | null; trusted?: boolean; local_gpu?: boolean; default_model?: string | null; models?: Record<string, unknown> };
+// A model's limits in tokens; ``context_source`` says where the length came from (03-llm: 모델 맥락 길이).
+type Limits = { context?: number | null; max_output?: number | null; context_source?: 'manual' | 'service' | 'table' | null };
+type Provider = { name: string; type: string; preset?: string; vertex_project?: string; vertex_location?: string; base_url?: string; key?: string | null; trusted?: boolean; local_gpu?: boolean; default_model?: string | null; models?: Record<string, Limits> };
 type TaskSetting = { provider?: string; model?: string; params?: { temperature?: number } };
-type Doc = { schema_version: number; providers: Record<string, Provider>; tasks: Record<string, TaskSetting> };
+type Doc = { schema_version: number; providers: Record<string, Provider>; tasks: Record<string, TaskSetting>; context_cap?: number };
+type ModelInfo = { context: number | null; max_output: number | null; source: 'service' | 'table' | null };
+
+const tokens = (value: string) => {
+  const n = Math.round(Number(value));
+  return value.trim() && Number.isFinite(n) && n > 0 ? n : null;
+};
 
 const TASKS = ['agent', 'chat_test', 'compression', 'authoring', 'image_prompt', 'jsx_prompt', 'consistency', 'image_review'] as const;
 const DEFAULT_TEMPERATURE: Record<string, number> = { compression: 0.3, image_prompt: 0.2, jsx_prompt: 0.4, authoring: 0.7, consistency: 0, chat_test: 0.8, image_review: 0, agent: 0.5 };
@@ -67,6 +75,36 @@ export default function LlmSettings() {
     change({ ...doc, providers: { ...doc.providers, [id]: next } });
   };
   const setTask = (task: string, patch: Partial<TaskSetting>) => change({ ...doc, tasks: { ...doc.tasks, [task]: { ...doc.tasks[task], ...patch } } });
+  // The models a connection is used with: its default and every task that names one of its models.
+  const usedModels = (id: string) =>
+    [...new Set([doc.providers[id]?.default_model, ...Object.values(doc.tasks).filter((s) => (s.provider ?? 'local') === id).map((s) => s.model)])].filter(
+      (m): m is string => !!m,
+    );
+  const setLimits = (id: string, model: string, patch: Limits) =>
+    setProvider(id, { models: { ...doc.providers[id].models, [model]: { ...doc.providers[id].models?.[model], ...patch } } });
+
+  // Ask the service (else the known-model table) for each model's context length. The values go into the form; Save keeps them.
+  async function readLimits(id: string) {
+    setBusy((b) => ({ ...b, [id]: true }));
+    let next = { ...(doc!.providers[id].models ?? {}) };
+    let found = 0;
+    const list = usedModels(id);
+    try {
+      for (const model of list) {
+        const info = await get<ModelInfo>(`/api/providers/${id}/model-info?model=${encodeURIComponent(model)}`);
+        if (!info.context) continue;
+        next = { ...next, [model]: { ...next[model], context: info.context, max_output: info.max_output ?? next[model]?.max_output ?? null, context_source: info.source } };
+        found += 1;
+      }
+      setProvider(id, { models: next });
+      setStatus((s) => ({ ...s, [id]: t('llm.context_read_done', { found, n: list.length }) }));
+    } catch (err) {
+      setStatus((s) => ({ ...s, [id]: err instanceof ApiError ? tm(err.msg) : String(err) }));
+    } finally {
+      setBusy((b) => ({ ...b, [id]: false }));
+    }
+  }
+
   const modelOptions = (id: string, current?: string | null) => {
     const list = models[id] ?? [];
     return current && !list.includes(current) ? [current, ...list] : list;
@@ -176,6 +214,35 @@ export default function LlmSettings() {
             <button onClick={() => change({ ...doc, tasks: Object.fromEntries(TASKS.map(task => [task, { ...doc.tasks[task], provider: id, model: undefined }])) })}>{t('llm.all_tasks')}</button>
             <span className="faint grow">{status[id]}</span>
           </div>
+          {usedModels(id).length > 0 && (
+            <div className="col" style={{ gap: 4 }}>
+              <div className="row wrap">
+                <span className="muted" title={t('llm.context_help')}>{t('llm.context_title')}</span>
+                <button disabled={dirty || busy[id]} onClick={() => readLimits(id)}>{t('llm.context_read')}</button>
+              </div>
+              {usedModels(id).map((model) => {
+                const limits = provider.models?.[model] ?? {};
+                return (
+                  <div key={model} className="row wrap">
+                    <code>{model}</code>
+                    <input
+                      type="number"
+                      min={1}
+                      style={{ width: 120 }}
+                      aria-label={t('llm.context_length', { model })}
+                      value={limits.context ?? ''}
+                      placeholder={t('llm.context_unknown')}
+                      onChange={(e) => setLimits(id, model, { context: tokens(e.target.value), context_source: 'manual' })}
+                    />
+                    <span className="faint small">
+                      {limits.context ? t(`llm.context_source.${limits.context_source ?? 'manual'}`) : t('llm.context_source.none')}
+                      {limits.max_output ? ` · ${t('llm.max_output', { n: limits.max_output.toLocaleString() })}` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ))}
       <p className="faint">{dirty ? t('llm.save_before_test') : t('llm.manual_help')}</p>
@@ -241,6 +308,19 @@ export default function LlmSettings() {
         </tbody>
       </table>
       <p className="faint">{t('llm.temperature_note')}</p>
+      <label className="row wrap" title={t('llm.context_cap_help')}>
+        <span className="muted">{t('llm.context_cap')}</span>
+        <input
+          type="number"
+          min={1024}
+          step={1024}
+          style={{ width: 120 }}
+          value={doc.context_cap ?? ''}
+          placeholder="131072"
+          onChange={(e) => change({ ...doc, context_cap: tokens(e.target.value) ?? undefined })}
+        />
+        <span className="faint small">{t('llm.context_cap_help')}</span>
+      </label>
       <p className="faint">{t('llm.reasoning_note')}</p>
       <UsageReport providerName={(id) => doc.providers[id]?.name ?? id} />
       <div>
