@@ -6,6 +6,8 @@ A provider of type ``mock`` answers without a server; tests and offline UI check
 import asyncio
 import json
 import re
+import threading
+from contextlib import asynccontextmanager
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -65,13 +67,18 @@ class LlmGate:
 
     Requests to a model on this PC's GPU share the GPU broker's ``llm`` hold with each other and take turns with image
     generation, VLM review, training and ComfyUI control. Other requests only wait for one of ``limit()`` slots.
+
+    Both are counted under a thread lock, not with asyncio primitives: VLM review calls the LLM from the image worker
+    thread in its own event loop, and a semaphore bound to the server's loop cannot be awaited there.
     """
 
     POLL = 0.5
+    SLOT_POLL = 0.1
 
     def __init__(self, gpu=None, limit=lambda: 2):
         self.gpu, self.limit = gpu, limit
-        self._external, self._size = None, None
+        self._lock = threading.Lock()
+        self._running = 0
 
     async def wait_gpu(self):
         """Yield what holds the GPU while waiting; returns holding it. The caller calls ``end_gpu`` afterwards."""
@@ -89,15 +96,30 @@ class LlmGate:
         if self.gpu is not None:
             self.gpu.end_llm()
 
-    def external(self):
+    def _size(self):
         try:
-            size = max(1, int(self.limit() or 1))
+            return max(1, int(self.limit() or 1))
         except (TypeError, ValueError):
-            size = 2
-        if size != self._size:
-            # Requests already running keep their old slots; new ones count against the new limit.
-            self._external, self._size = asyncio.Semaphore(size), size
-        return self._external
+            return 2
+
+    def _take_slot(self):
+        # The limit is read each time, so a changed setting applies at once and running requests count against it.
+        with self._lock:
+            if self._running >= self._size():
+                return False
+            self._running += 1
+            return True
+
+    @asynccontextmanager
+    async def external(self):
+        """One of ``limit()`` request slots, from any thread or event loop."""
+        while not self._take_slot():
+            await asyncio.sleep(self.SLOT_POLL)
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._running -= 1
 
 
 # Usage report groupings: connection·model·task, task, work.
