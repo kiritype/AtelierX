@@ -7,7 +7,7 @@ import MessageMarkdown from '../components/MessageMarkdown';
 import PersonaDialog, { usePersona } from '../components/PersonaDialog';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import type { TreeEntry, WorkInfo } from '../types';
-import { splitReply, type ResponseRule } from '../lib/componentCalls';
+import { replyNotes, splitReply, type ResponseRule } from '../lib/componentCalls';
 
 type Context = {
   main: string | null;
@@ -161,9 +161,10 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     }
   }
 
-  const called = new Set(
-    focus !== undefined ? splitReply(shown[focus].text, componentNames, rules.response).flatMap((s) => ('component' in s ? [s.component] : [])) : [],
-  );
+  // Calls inside code or in a form the rule cannot read are written in the reply but not drawn; say which.
+  const focusText = focus !== undefined ? shown[focus].text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]+`/g, ' ') : '';
+  const called = new Set(splitReply(focusText, componentNames, rules.response).flatMap((s) => ('component' in s ? [s.component] : [])));
+  const notes = focus !== undefined ? replyNotes(shown[focus].text, componentNames, rules.response) : { fenced: [], unreadable: [] };
   const picked = new Map(context?.picked.map((p) => [p.path, p]) ?? []);
 
   return (
@@ -308,7 +309,15 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
                   <a href="#" className="grow" onClick={(e) => (e.preventDefault(), openItem(c.path))}>
                     {c.name}
                   </a>
-                  <span className="faint">{called.has(c.name) ? t('test.called') : t('test.not_called')}</span>
+                  <span className={called.has(c.name) ? 'faint' : notes.fenced.includes(c.name) || notes.unreadable.includes(c.name) ? 'warn-text' : 'faint'}>
+                    {called.has(c.name)
+                      ? t('test.called')
+                      : notes.fenced.includes(c.name)
+                        ? t('test.called_in_code')
+                        : notes.unreadable.includes(c.name)
+                          ? t('test.called_unreadable')
+                          : t('test.not_called')}
+                  </span>
                 </div>
               ))}
               {context.components.length === 0 && <div className="faint">{t('test.no_jsx')}</div>}
@@ -333,13 +342,21 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
 type Rules = { hooks?: string[]; globals?: { name: string; stub?: string }[]; response?: ResponseRule };
 
 function Reply({ text, workId, components, rules }: { text: string; workId: string; components: Context['components']; rules: Rules }) {
-  return <MessageMarkdown text={text} component={(raw) => {
-    const segments = splitReply(raw.trim(), components.map((c) => c.name), rules.response);
-    if (!segments.some((segment) => 'component' in segment)) return null;
-    return segments.map((segment, index) => 'component' in segment
-      ? <ComponentCall key={index} workId={workId} path={components.find((c) => c.name === segment.component)!.path} name={segment.component} props={segment.attrs} rules={rules} />
-      : <span key={index}>{segment.text}</span>);
-  }} />;
+  const names = components.map((c) => c.name);
+  const notes = replyNotes(text, names, rules.response);
+  return (
+    <>
+      <MessageMarkdown text={text} component={(raw) => {
+        const segments = splitReply(raw.trim(), names, rules.response);
+        if (!segments.some((segment) => 'component' in segment)) return null;
+        return segments.map((segment, index) => 'component' in segment
+          ? <ComponentCall key={index} workId={workId} path={components.find((c) => c.name === segment.component)!.path} name={segment.component} props={segment.attrs} rules={rules} />
+          : <span key={index}>{segment.text}</span>);
+      }} />
+      {notes.fenced.length > 0 && <div className="warn-text small">{t('test.note_fenced', { names: notes.fenced.join(', ') })}</div>}
+      {notes.unreadable.length > 0 && <div className="warn-text small">{t('test.note_unreadable', { names: notes.unreadable.join(', ') })}</div>}
+    </>
+  );
 }
 
 // A component call inside a reply, drawn with the work's current source in the sandboxed preview.

@@ -69,3 +69,21 @@ export function splitReply(text: string, names: string[], rule?: ResponseRule): 
   if (last < decoded.length) out.push({ text: decoded.slice(last) });
   return out.length ? out : [{ text }];
 }
+
+// Why a reply shows a component as text instead of drawing it (the test screen says so under the reply):
+// - `fenced`: a call inside a code block or code span, which is shown as code (a platform shows it as text too);
+// - `unreadable`: `<Name` written in a form the rule cannot read, e.g. JSX braces `data={...}` or unquoted values.
+export function replyNotes(text: string, names: string[], rule?: ResponseRule): { fenced: string[]; unreadable: string[] } {
+  if (!names.length) return { fenced: [], unreadable: [] };
+  const decoded = decodeText(text, rule);
+  const code = /```[\s\S]*?(?:```|$)|`[^`\n]+`/g;
+  const fencedText = (decoded.match(code) ?? []).join('\n');
+  const outside = decoded.replace(code, ' ');
+  const fenced = [...new Set(findCalls(fencedText, names, { ...rule, decode: [] }).map((c) => c.name))];
+  const readable = findCalls(outside, names, { ...rule, decode: [] });
+  const unreadable = names.filter((name) => {
+    const written = outside.match(new RegExp(`<${escape(name)}(?![\w-])`, 'g'))?.length ?? 0;
+    return written > readable.filter((c) => c.name === name).length;
+  });
+  return { fenced, unreadable };
+}

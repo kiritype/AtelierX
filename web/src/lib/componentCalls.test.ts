@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findCalls, readValue, splitReply } from './componentCalls';
+import { findCalls, readValue, replyNotes, splitReply } from './componentCalls';
 
 const CALL = `<Asset c='C001' o='001' e='010' bg='002' n='2' data='{"hp": 3,}' />`;
 
@@ -32,5 +32,16 @@ describe('component calls', () => {
   it('applies the decode table first', () => {
     const [call] = findCalls('[[Asset c=&apos;C001&apos; />', ['Asset'], { attribute_format: 'text', decode: [['&apos;', "'"], { from: '[[', to: '<' }] });
     expect(call.attrs).toEqual({ c: 'C001' });
+  });
+});
+
+describe('reply notes', () => {
+  it('names calls left inside code and calls the rule cannot read', () => {
+    const reply = '본문\n```jsx\n<StatusPanel data=\'{"day": 1}\' />\n```\n<Badge value={{ a: 1 }} />\n<Badge value="ok" />';
+    expect(replyNotes(reply, ['StatusPanel', 'Badge'])).toEqual({ fenced: ['StatusPanel'], unreadable: ['Badge'] });
+  });
+
+  it('says nothing for calls that are drawn', () => {
+    expect(replyNotes('<StatusPanel data=\'{"day": 1}\' /> 끝', ['StatusPanel'])).toEqual({ fenced: [], unreadable: [] });
   });
 });
