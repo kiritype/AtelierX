@@ -15,7 +15,7 @@ hero:
       text: 처음 사용하기
       link: /tutorial/first-run
     - theme: alt
-      text: 0.0.4에서 바뀐 점
+      text: 0.0.5에서 바뀐 점
       link: /changelog
 features:
   - title: 파일로 쓰는 작품
@@ -34,7 +34,7 @@ features:
 
 ## 이 설명서는
 
-**AtelierX 0.0.4**를 기준으로 씁니다. 화면 캡처는 0.0.3에서 찍었습니다. 버전마다 바뀐 점은 [바뀐 점](changelog.md)에 모읍니다. 앱의 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다.
+**AtelierX 0.0.5**를 기준으로 씁니다. 화면 캡처는 0.0.3에서 찍었습니다. 버전마다 바뀐 점은 [바뀐 점](changelog.md)에 모읍니다. 앱의 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다.
 
 ![작품 창: 파일 트리, 편집기, 에이전트 패널](screenshots/agent-conversation.webp)
 
