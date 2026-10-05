@@ -2,8 +2,10 @@
 
 import re
 
+from . import review
 from .count import measure
-from .fsutil import read_json
+from .i18n import AppError
+from .jsx import Props
 
 
 def _matches(keyword, text, lore):
@@ -92,18 +94,24 @@ def assemble(work, effective, history, message, persona=None):
             for i in enabled
             if i['kind'] in ('lorebook', 'character')
         ],
-        'components': [_component(work, i) for i in enabled if i['kind'] == 'jsx'],
+        'components': [
+            _component(work, i, review.response_rule(effective)) for i in enabled if i['kind'] == 'jsx'
+        ],
     }
 
 
-def _component(work, item):
-    """A JSX item as the chat sees it: the element name is the file name (07-jsx: 응답 속 컴포넌트 표기)."""
+def _component(work, item, rule=None):
+    """A JSX item as the chat sees it: the element name is the file name (07-jsx: 응답 속 컴포넌트 표기).
+
+    ``props`` are those of the default example's call, read with the work's response rule.
+    """
     props = {}
     item_id, default = item['meta'].get('id'), item['meta'].get('default_props')
     if item_id and default:
-        props_file = work.app / 'jsx' / item_id / 'props' / f'{default}.json'
-        if props_file.is_file():
-            props = read_json(props_file)
+        try:
+            props = Props(work, item_id, item['name']).props(default, rule)
+        except AppError:
+            props = {}
     return {'path': item['path'], 'id': item_id, 'name': item['name'], 'props': props}
 
 

@@ -170,7 +170,9 @@ def run(work, effective):
             issues.extend(jsx.issues(item, values.get('jsx', {}), bodies))
             for other in enabled:
                 if other['kind'] in ('main', 'start', 'lorebook', 'character'):
-                    for element in review.elements(other['body'], item['name']):
+                    for element in review.elements(
+                        other['body'], item['name'], review.response_rule(effective)
+                    ):
                         if element['errors']:
                             issues.append(
                                 _issue(
