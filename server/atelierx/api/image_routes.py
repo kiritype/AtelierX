@@ -191,6 +191,11 @@ async def job_action(request):
     return await call(actions[p['action']], p['jid'])
 
 
+async def lab_import(request):
+    runtime = _runtime(request)
+    return await call(runtime.import_lab, await _body(request))
+
+
 async def lab_enqueue(request):
     runtime = _runtime(request)
     return await call(runtime.enqueue_lab, await _body(request))
@@ -412,6 +417,7 @@ def routes():
         Route(f'{p}/jobs/{{jid}}/{{action}}', job_action, methods=['POST']),
         Route(f'{p}/lab', lab_enqueue, methods=['POST']),
         Route(f'{p}/lab/runs', lab_runs),
+        Route(f'{p}/lab/import', lab_import, methods=['POST']),
         Route(f'{p}/files/{{path:path}}', output_file),
         Route(f'{p}/gallery', gallery_list),
         Route(f'{p}/gallery/tree', gallery_tree),

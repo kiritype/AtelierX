@@ -8,11 +8,14 @@ lose them.
 
 import copy
 import secrets
+import shutil
 import uuid
 from datetime import datetime
+from pathlib import PurePosixPath
 
 from ..core.i18n import Msg
-from .util import now
+from . import library
+from .util import atomic_json, code, now, read_json, replace_file
 from .workflow import validate_settings
 
 MAX_PROMPT_LENGTH = 30000
@@ -297,6 +300,69 @@ class LabMixin:
             )
         out.sort(key=lambda r: _when(r['created_at']), reverse=True)
         return {'runs': out[:RUNS_SHOWN]}
+
+    # --- a lab result into the gallery (#53) -------------------------------------------------------------------------
+    def import_lab(self, body):
+        """Copy a lab result into a character's outfit × expression folder, with its generation record, so it goes
+        through review, adoption and export like a generated image. The lab copy stays where it was."""
+        body = body if isinstance(body, dict) else {}
+        rel = str(body.get('path') or '')
+        source = self.gallery.safe_path(rel)
+        if PurePosixPath(rel).parts[0] != '_lab' or not source.is_file():
+            raise ValueError(
+                Msg('server.lab.import_not_lab', 'Choose a result of the comparison generation.')
+            )
+        work = self.works.get(str(body.get('work_id') or ''))
+        character_id, outfit_id, expression_id = (
+            code(body.get('character_id')),
+            code(body.get('outfit_id')),
+            code(body.get('expression_id')),
+        )
+        design = read_json(work.app / 'image' / 'characters' / character_id / 'design.json') or {}
+        outfit = (design.get('outfits') or {}).get(outfit_id)
+        expression = library.items(self.paths, work, 'expressions').get(expression_id)
+        if outfit is None or expression is None:
+            raise ValueError(
+                Msg(
+                    'server.lab.import_no_combo',
+                    'This character has no such outfit, or there is no such expression.',
+                )
+            )
+        folder = self.paths.output / work.id / character_id / 'images' / outfit_id / expression_id
+        folder.mkdir(parents=True, exist_ok=True)
+        index = 1
+        while (folder / f'{index:03d}.png').exists() or (folder / f'{index:03d}.json').exists():
+            index += 1
+        target = folder / f'{index:03d}.png'
+        record = read_json(source.with_suffix('.json')) or {}
+        for key in (
+            'kind',
+            'lab_group',
+            'lab_index',
+            'lab_variant',
+            'lab_row',
+            'lab_column',
+            'review_round_id',
+        ):
+            record.pop(key, None)
+        record.update(
+            schema_version=1,
+            work_id=work.id,
+            character_id=character_id,
+            outfit_id=outfit_id,
+            outfit_name=outfit.get('name', outfit_id),
+            expression_id=expression_id,
+            expression_name=expression.get('name', expression_id),
+            rating=expression.get('rating') or 'general',
+            imported_from=rel,
+            imported_at=now(),
+        )
+        temp = target.with_suffix('.png.tmp')
+        shutil.copyfile(source, temp)
+        atomic_json(target.with_suffix('.json'), record)
+        replace_file(temp, target)
+        self.gallery.scan(force=True)
+        return {'path': target.relative_to(self.paths.output).as_posix()}
 
 
 def _when(text):

@@ -1714,5 +1714,16 @@
   "board.edit_done": "Done",
   "board.edit_help": "Click a cell to exclude it or need it again. Click an outfit or expression name to switch the whole row or column.",
   "gen.handed": "{n} combinations from the completeness board",
-  "gen.handed_clear": "Back to picking"
+  "gen.handed_clear": "Back to picking",
+  "server.lab.import_not_lab": "Choose a result of the comparison generation.",
+  "server.lab.import_no_combo": "This character has no such outfit, or there is no such expression.",
+  "lab.import_title": "Bring into a combination",
+  "lab.import_character": "Character",
+  "lab.import_outfit": "Outfit",
+  "lab.import_expression": "Expression",
+  "lab.import_adopt": "Adopt now",
+  "lab.import_run": "Bring in",
+  "lab.import_no_characters": "No character has an image design (outfits).",
+  "lab.imported": "Brought in as {path}. Review it in the gallery.",
+  "lab.imported_adopted": "Brought in as {path} and adopted."
 }

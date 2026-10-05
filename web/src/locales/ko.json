@@ -1841,5 +1841,16 @@
   "board.edit_done": "편집 끝",
   "board.edit_help": "칸을 누르면 제외하거나 다시 필요로 바꿉니다. 의상 이름이나 표정 이름을 누르면 그 줄 전체를 바꿉니다.",
   "gen.handed": "완성도 보드에서 넘어온 조합 {n}개",
-  "gen.handed_clear": "직접 고르기로 돌아가기"
+  "gen.handed_clear": "직접 고르기로 돌아가기",
+  "server.lab.import_not_lab": "비교 생성 결과를 고르세요.",
+  "server.lab.import_no_combo": "이 캐릭터에 그런 의상이 없거나, 그런 표정이 없습니다.",
+  "lab.import_title": "조합으로 가져오기",
+  "lab.import_character": "캐릭터",
+  "lab.import_outfit": "의상",
+  "lab.import_expression": "표정",
+  "lab.import_adopt": "바로 채택",
+  "lab.import_run": "가져오기",
+  "lab.import_no_characters": "이미지 디자인(의상)이 있는 캐릭터가 없습니다.",
+  "lab.imported": "{path}로 가져왔습니다. 갤러리에서 검수하세요.",
+  "lab.imported_adopted": "{path}로 가져와 채택했습니다."
 }
