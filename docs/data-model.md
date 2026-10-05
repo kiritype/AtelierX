@@ -1114,6 +1114,24 @@ uses: [consistency.md]
 - 이미 파일이 있는 폴더로 내보낼 때는 덮어쓰기 전에 확인을 받고, 작품에 없는 항목의 파일이 남아 있으면 목록으로 보여 준다. 내보내기는 그 파일들을 지우지 않는다.
 - 내보낼 때 `export` 스냅샷을 만들 수 있다. 배포 표시는 사용자가 붙인다.
 
+## 꾸러미
+
+작품·설정을 옮기거나 백업하는 ZIP 파일(01-works "작품 꾸러미", 10-settings "꾸러미·백업"). 플랫폼용 내보내기와 다르다.
+
+```text
+atelierx-package.json            {format: "atelierx-package", schema_version, kind: works|settings, app_version, created_at, …}
+works/<n>/work/…                 작품 폴더(.atelierx 포함, history는 고를 때만, trash는 빼고)
+works/<n>/output/<작품 ID>/…     출력 루트의 이미지와 기록(채택한 것만·전부·없음)
+works/<n>/reviews.json           그 이미지들의 검수 기록·채택 {records, adopted}
+works/<n>/lora/<파일>            캐릭터가 참조하는 LoRA 파일(고를 때만)
+settings/<영역>/…                설정 영역별 파일(settings, platforms, guidelines, providers, personas, image_library,
+                                 image_presets, image_review, image_tags, vault)
+```
+
+- `works` 꾸러미의 `atelierx-package.json`에는 `options {images, history, lora}`와 작품마다 `{id, name, files, bytes, images, loras}`.
+- ZIP 안 경로는 상대 경로만 받는다(`..`, 절대 경로, 드라이브는 거부).
+- 올린 꾸러미와 받을 꾸러미는 `state/packages/`에 잠깐 두고 하루가 지나면 지운다.
+
 ## 휴지통
 
 앱에서 지우는 것은 모두 휴지통으로 옮긴다. 휴지통에서 되살리거나 완전 삭제할 수 있다. 자동으로 비우지 않는다.
