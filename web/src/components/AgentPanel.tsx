@@ -98,7 +98,13 @@ export default function AgentPanel({
   const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
 
+  // One answer at a time: while it streams the conversation cannot change (stop it first). Leaving the work or closing
+  // the panel stops it; the server keeps what came so far as a stopped answer.
+  const streaming = live !== null;
+  useEffect(() => () => abort.current?.abort(), [workId]);
+
   const choose = (next: string | null) => {
+    if (abort.current) return;
     setSid(next);
     remember(workId, next);
     setLive(null);
@@ -197,10 +203,13 @@ export default function AgentPanel({
         toast({ text: String((err as Error).message ?? err), tone: 'error' });
       }
     } finally {
-      abort.current = null;
       await qc.invalidateQueries({ queryKey: ['agent-session', workId, session.data.id] });
       qc.invalidateQueries({ queryKey: ['agent-sessions', workId] });
-      setLive(null);
+      // Only the request still in charge clears the shared state.
+      if (abort.current === controller) {
+        abort.current = null;
+        setLive(null);
+      }
     }
   }
 
@@ -244,6 +253,8 @@ export default function AgentPanel({
       <div className="row agent-head">
         <select
           className="grow"
+          disabled={streaming}
+          title={streaming ? t('agent.stop_to_switch') : undefined}
           value={showPicker ? '' : (sid ?? '')}
           onChange={(e) => (e.target.value ? choose(e.target.value) : setPicking(true))}
         >
@@ -259,7 +270,7 @@ export default function AgentPanel({
             <button className="ghost icon-button" title={t('agent.rename')} aria-label={t('agent.rename')} onClick={rename}>
               <Icon name="edit" size={16} />
             </button>
-            <button className="ghost icon-button" title={t('common.delete')} aria-label={t('common.delete')} onClick={remove}>
+            <button className="ghost icon-button" title={t('common.delete')} aria-label={t('common.delete')} disabled={streaming} onClick={remove}>
               <Icon name="trash" size={16} />
             </button>
           </>

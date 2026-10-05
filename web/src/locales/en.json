@@ -1650,5 +1650,6 @@
   "llm.local_gpu": "Uses this PC's GPU",
   "llm.local_gpu_help": "When on, this connection's requests take turns on the GPU with image generation, VLM review and LoRA training. On by default for this PC's address (127.0.0.1, localhost).",
   "agent.warning.deleted_since": "This file was deleted or moved after the request. Adopting would bring back the old text, so it is blocked; ask again if needed.",
-  "server.agent.deleted": "The file was deleted or moved after the request. Ask again if it should come back."
+  "server.agent.deleted": "The file was deleted or moved after the request. Ask again if it should come back.",
+  "agent.stop_to_switch": "The conversation cannot change while an answer comes. Stop it first."
 }
