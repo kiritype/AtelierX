@@ -166,6 +166,22 @@ export default function ItemEditor({
     return () => clearTimeout(timer);
   }, [dirty, body, meta, save, settings.data, saveCycle]);
 
+  // Reload puts the file as it is on disk into the editor (text, form and base hash) before the unsaved mark goes:
+  // the query may already hold that answer, in which case the effect above would not run again.
+  async function reload() {
+    if (dirty && !confirm(t('editor.reload_confirm'))) return;
+    const result = await item.refetch();
+    if (!result.data || result.isError) {
+      setError(t('editor.reload_failed'));
+      return;
+    }
+    setMeta(result.data.meta);
+    setBody(result.data.body);
+    baseHash.current = result.data.hash;
+    setError('');
+    setDirty(false);
+  }
+
   const change = (key: string, value: any) => {
     if (key === 'id' && imageDirty) {
       if (!confirm(t('editor.close_unsaved'))) return;
@@ -231,7 +247,7 @@ export default function ItemEditor({
         <div className="banner" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
           {error}
           <span className="grow" />
-          <button onClick={() => item.refetch().then(() => setDirty(false))}>{t('editor.reload')}</button>
+          <button onClick={reload}>{t('editor.reload')}</button>
         </div>
       )}
       {(current === 'body' || current === 'code') && (
