@@ -1840,5 +1840,6 @@
   "server.tests.stale": "The test sets changed in another window. Reopen them.",
   "server.tests.empty": "A test set needs a name and at least one input.",
   "server.tests.no_set": "This test set does not exist.",
-  "server.tests.no_run": "This run does not exist."
+  "server.tests.no_run": "This run does not exist.",
+  "tests.start_missing": "The start situation \"{path}\" of this set cannot be read. If it was deleted or renamed, edit the set first."
 }
