@@ -32,6 +32,7 @@ from ..core.presets import Presets
 from ..core.relations import Glossary, Relations
 from ..core.settings import Settings
 from ..core.snapshots import Snapshots
+from ..core.test_sets import TestSets
 from ..core.updater import Updater
 from ..core.vault import Vault
 from ..core.works import KIND_PREFIX, WorkStore
@@ -1338,6 +1339,40 @@ async def chat_send(request):
     return StreamingResponse(stream(), media_type='text/event-stream')
 
 
+# --- chat test sets (#50) -------------------------------------------------------------------------------------------
+async def test_sets_get(request):
+    return ok(TestSets(work_of(request)).load())
+
+
+async def test_sets_put(request):
+    return ok(TestSets(work_of(request)).save(await body(request)))
+
+
+async def test_runs_list(request):
+    return ok(TestSets(work_of(request)).list_runs(request.query_params.get('set')))
+
+
+async def test_run_start(request):
+    data = await body(request)
+    s = st(request)
+    work = work_of(request)
+    provider, model, _ = s.llm.resolve('chat_test', data.get('llm'))
+    found = {'provider': provider['id'], 'name': provider.get('name'), 'model': model or provider.get('type')}
+    return ok(TestSets(work).start_run(str(data.get('set_id') or ''), found))
+
+
+async def test_run_get(request):
+    return ok(TestSets(work_of(request)).run(request.path_params['rid']))
+
+
+async def test_run_put(request):
+    return ok(TestSets(work_of(request)).record(request.path_params['rid'], await body(request)))
+
+
+async def test_run_delete(request):
+    return ok(TestSets(work_of(request)).delete_run(request.path_params['rid']))
+
+
 # --- jobs, events --------------------------------------------------------------------------------------------------
 async def jobs_list(request):
     s = st(request)
@@ -1515,6 +1550,13 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route(f'{w}/glossary', glossary_put, methods=['PUT']),
         Route(f'{w}/chat/preview', chat_preview, methods=['POST']),
         Route(f'{w}/chat/send', chat_send, methods=['POST']),
+        Route(f'{w}/tests/sets', test_sets_get),
+        Route(f'{w}/tests/sets', test_sets_put, methods=['PUT']),
+        Route(f'{w}/tests/runs', test_runs_list),
+        Route(f'{w}/tests/runs', test_run_start, methods=['POST']),
+        Route(f'{w}/tests/runs/{{rid}}', test_run_get),
+        Route(f'{w}/tests/runs/{{rid}}', test_run_put, methods=['PUT']),
+        Route(f'{w}/tests/runs/{{rid}}', test_run_delete, methods=['DELETE']),
         Route('/api/jobs', jobs_list),
         Route('/api/jobs/{jid}/cancel', jobs_cancel, methods=['POST']),
         Route('/api/events', events),

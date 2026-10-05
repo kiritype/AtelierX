@@ -464,6 +464,19 @@ function StatusPanel(props) {
 테스트 화면([08-chat-test](features/08-chat-test.md))의 대화를 한 줄에 한 턴으로 남긴다: 보낸 맥락 요약(불러온 메인 프롬프트·로어북,
 예산 때문에 빠진 항목, 크기), 응답 속 컴포넌트 호출, 모델, 응답, 걸린 시간. 스냅샷에 넣지 않는다. 최근 100개를 남긴다.
 
+### 테스트 세트
+
+위치: `.atelierx/tests/sets.json`, 실행 기록 `.atelierx/tests/runs/<시각>-<세트 ID>.json`
+
+```json
+{"schema_version": 1, "sets": [{"id": "a1b2c3d4", "name": "첫 만남", "start": "시작 상황.md",
+  "persona": {"name": "도윤", "description": "…"}, "inputs": ["안녕하세요", "…"], "updated_at": "…"}]}
+```
+
+- 실행 기록: `set`(실행 때의 세트), `model {provider, name, model}`, `snapshot {id, created_at, label}`(원고 시점), `started_at`,
+  `finished_at`, `status`(`running`·`done`·`stopped`·`error`), `turns [{input, reply, error}]`. 세트마다 최근 50개.
+- 세트·실행 기록은 스냅샷에 넣지 않는다(`tests/runs/`는 빼고, `sets.json`은 작품 앱 데이터로 들어감).
+
 ### 에이전트 대화
 
 위치: `.atelierx/agent/<대화 ID>.jsonl` (대화 ID는 `<시각>-<무작위 4자>`)
