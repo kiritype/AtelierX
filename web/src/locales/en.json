@@ -1683,5 +1683,12 @@
   "gallery.preset_name": "Name (optional)",
   "gallery.preset_id_rule": "Use letters, digits, _ and -, up to 64.",
   "gallery.preset_overwrite": "A preset \"{id}\" exists. Overwrite it?",
-  "gallery.preset_saved": "Saved the preset \"{name}\". Pick it on the generate screen."
+  "gallery.preset_saved": "Saved the preset \"{name}\". Pick it on the generate screen.",
+  "check.char_missing": "The chat partner {id} ({{char}}) is not a character in use.",
+  "check.jsx_call_disabled": "{name} is called here, but that component is not in use, so it is not exported.",
+  "check.jsx_call_missing": "{name} is called here, but there is no such JSX component.",
+  "export.check_counts": "Checks: {errors} errors · {warnings} warnings",
+  "export.check_clean": "Checks: no problems",
+  "export.check_work": "Work settings",
+  "export.errors_confirm": "{n} errors remain. Export anyway?"
 }

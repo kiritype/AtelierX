@@ -5,7 +5,7 @@ import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
 
-export default function ExportDialog({ workId, onClose }: { workId: string; onClose: () => void }) {
+export default function ExportDialog({ workId, onClose, openItem }: { workId: string; onClose: () => void; openItem?: (path: string) => void }) {
   const toast = useToast();
   const [target, setTarget] = useState('');
   const [checkedTarget, setCheckedTarget] = useState('');
@@ -24,6 +24,7 @@ export default function ExportDialog({ workId, onClose }: { workId: string; onCl
   const [overwrite, setOverwrite] = useState(false);
   const [error, setError] = useState('');
   const errors = (checks.data ?? []).filter((i: any) => i.level === 'error');
+  const warnings = (checks.data ?? []).filter((i: any) => i.level === 'warning');
 
   return (
     <Dialog
@@ -34,6 +35,8 @@ export default function ExportDialog({ workId, onClose }: { workId: string; onCl
           className="primary"
           disabled={!target.trim() || !!preview.data?.clash || !!preview.data?.blocked}
           onClick={async () => {
+            // Errors left in the work (checks panel) are shown above; exporting anyway is the user's call.
+            if (errors.length && !confirm(t('export.errors_confirm', { n: errors.length }))) return;
             try {
               await post(`/api/works/${workId}/export`, { target: target.trim(), overwrite, snapshot, release: release || null });
               toast({ text: t('export.started') });
@@ -81,7 +84,34 @@ export default function ExportDialog({ workId, onClose }: { workId: string; onCl
           )}
         </div>
       )}
-      {errors.length > 0 && <div className="error-text">{t('export.has_errors', { n: errors.length })}</div>}
+      {checks.data && (
+        <div className={errors.length ? 'error-text' : warnings.length ? 'warn-text' : 'faint'}>
+          {errors.length || warnings.length ? t('export.check_counts', { errors: errors.length, warnings: warnings.length }) : t('export.check_clean')}
+        </div>
+      )}
+      {errors.length > 0 && (
+        <div className="col" style={{ gap: 2, maxHeight: 120, overflow: 'auto' }}>
+          {errors.slice(0, 20).map((issue: any, n: number) => (
+            <div key={n} className="small">
+              {issue.path && openItem ? (
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onClose();
+                    openItem(issue.path);
+                  }}
+                >
+                  {issue.path}
+                </a>
+              ) : (
+                <span className="faint">{issue.path ?? t('export.check_work')}</span>
+              )}{' '}
+              — {tm(issue.message)}
+            </div>
+          ))}
+        </div>
+      )}
       <label className="row" style={{ flexDirection: 'row' }}>
         <input type="checkbox" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} /> {t('export.overwrite')}
       </label>

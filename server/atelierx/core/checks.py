@@ -9,11 +9,55 @@ from .exporter import KEYWORDS_FILE
 from .i18n import Msg
 from .relations import Glossary, Relations
 
+# A component call in a prompt: <Name …/> with a capital first letter, as the platform renders it (07-jsx).
+COMPONENT_CALL = re.compile(r'<([A-Z][A-Za-z0-9_]*)(?=[\s/>])')
+TEXT_KINDS = ('main', 'start', 'lorebook', 'character')
 JOSA_AFTER_REF = re.compile(r'\{\{(user|char)\}\}(은|는|이|가|을|를|과|와|아|야|이랑|랑|에게|의)')
 
 
 def _issue(level, path, msg):
     return {'level': level, 'path': path, 'message': msg.as_dict()}
+
+
+def _broken_references(doc, items, enabled):
+    """References to things the export will not have (#51): a chat partner that is not a character in use, and component
+    calls in the prompts with no JSX component in use by that name."""
+    issues = []
+    partner = str(doc.get('char') or '')
+    if partner and not any(
+        i['kind'] == 'character' and str(i['meta'].get('id') or '') == partner for i in enabled
+    ):
+        issues.append(
+            _issue(
+                'error',
+                None,
+                Msg(
+                    'check.char_missing',
+                    'The chat partner {id} is not a character in use.',
+                    id=partner,
+                ),
+            )
+        )
+    in_use = {i['name'] for i in enabled if i['kind'] == 'jsx'}
+    anywhere = {i['name'] for i in items if i['kind'] == 'jsx'}
+    for item in enabled:
+        if item['kind'] not in TEXT_KINDS:
+            continue
+        for name in sorted(set(COMPONENT_CALL.findall(item['body'])) - in_use):
+            if name in anywhere:
+                msg = Msg(
+                    'check.jsx_call_disabled',
+                    '{name} is called here, but that component is not in use, so it is not exported.',
+                    name=name,
+                )
+            else:
+                msg = Msg(
+                    'check.jsx_call_missing',
+                    '{name} is called here, but there is no such JSX component.',
+                    name=name,
+                )
+            issues.append(_issue('error', item['path'], msg))
+    return issues
 
 
 def run(work, effective):
@@ -186,6 +230,7 @@ def run(work, effective):
                                     ),
                                 )
                             )
+    issues.extend(_broken_references(doc, items, enabled))
     issues.extend(Relations(work).issues())
     issues.extend(Glossary(work).issues([i for i in items if i['kind'] != 'note']))
     return issues

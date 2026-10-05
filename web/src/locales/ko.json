@@ -1811,5 +1811,12 @@
   "gallery.preset_name": "이름(선택)",
   "gallery.preset_id_rule": "영문·숫자·_·- 로 64자까지 쓸 수 있습니다.",
   "gallery.preset_overwrite": "\"{id}\" 프리셋이 이미 있습니다. 덮어쓸까요?",
-  "gallery.preset_saved": "\"{name}\" 프리셋을 저장했습니다. 생성 화면에서 고를 수 있습니다."
+  "gallery.preset_saved": "\"{name}\" 프리셋을 저장했습니다. 생성 화면에서 고를 수 있습니다.",
+  "check.char_missing": "대화 상대 {id}({{char}})가 사용 중인 캐릭터에 없습니다.",
+  "check.jsx_call_disabled": "여기서 {name}을(를) 부르지만 그 컴포넌트가 사용 안 함이라 내보내지지 않습니다.",
+  "check.jsx_call_missing": "여기서 {name}을(를) 부르지만 그런 JSX 컴포넌트가 없습니다.",
+  "export.check_counts": "검사: 오류 {errors}개 · 경고 {warnings}개",
+  "export.check_clean": "검사: 문제 없음",
+  "export.check_work": "작품 설정",
+  "export.errors_confirm": "오류 {n}개가 남아 있습니다. 그래도 내보낼까요?"
 }
