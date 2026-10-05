@@ -5,6 +5,7 @@ import contextlib
 import csv
 import io
 import json
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -38,8 +39,10 @@ from . import editor_routes, image_routes, lora_routes, tool_routes
 
 
 class State:
-    def __init__(self, paths, dev=False, kdf=None):
+    def __init__(self, paths, dev=False, kdf=None, desktop=False):
         self.paths = paths
+        # The desktop window (pywebview) can hand the same address to the system browser.
+        self.desktop = desktop
         self.cookie_name = COOKIE + '_' + sha256_text(str(paths.root.resolve()).casefold())[:12]
         self.dev = dev
         ensure_layout(paths)
@@ -199,7 +202,16 @@ async def auth_reset(request):
 
 # --- about, update check (Help menu) ------------------------------------------------------------------------
 async def about_get(request):
-    return ok(about.info(st(request).paths))
+    return ok({**about.info(st(request).paths), 'desktop': st(request).desktop})
+
+
+async def open_in_browser(request):
+    if not st(request).desktop:
+        raise AppError(
+            Msg('server.about.not_desktop', 'Only the desktop window can open the app in a browser.'), 400
+        )
+    webbrowser.open(str(request.base_url))
+    return ok({'url': str(request.base_url)})
 
 
 async def about_notices(request):
@@ -1305,7 +1317,7 @@ def spa(web_dir: Path):
     return index
 
 
-def build_app(paths, dev=False, kdf=None):
+def build_app(paths, dev=False, kdf=None, desktop=False):
     w = '/api/works/{wid}'
     routes = [
         Route('/api/auth/status', auth_status),
@@ -1316,6 +1328,7 @@ def build_app(paths, dev=False, kdf=None):
         Route('/api/about', about_get),
         Route('/api/about/notices', about_notices),
         Route('/api/update-check', update_check),
+        Route('/api/open-in-browser', open_in_browser, methods=['POST']),
         Route('/api/settings', settings_get),
         Route('/api/settings', settings_patch, methods=['PATCH']),
         Route('/api/settings/compression-guideline', compression_guideline_get),
@@ -1417,7 +1430,7 @@ def build_app(paths, dev=False, kdf=None):
     if (paths.root / 'manual' / 'index.html').is_file():
         routes.append(Mount('/manual', StaticFiles(directory=paths.root / 'manual', html=True)))
     routes.append(Route('/{rest:path}', spa(paths.web)))
-    state = State(paths, dev=dev, kdf=kdf)
+    state = State(paths, dev=dev, kdf=kdf, desktop=desktop)
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):

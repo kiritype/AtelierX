@@ -1500,5 +1500,7 @@
   "help.update_how": "Unpack the new ZIP into a new folder and move config, state, data and output from the old one. See \"Maintenance\" in the manual.",
   "settings.update_check_on_start": "Check for updates at start",
   "settings.update_check_note": "When on, the app asks GitHub for the latest release once when it opens. Nothing is downloaded or installed.",
-  "common.close": "Close"
+  "common.close": "Close",
+  "help.open_in_browser": "Open in web browser",
+  "help.open_in_browser_done": "Opened in your default browser. Unlock it there with your password too; closing this app window disconnects the browser page."
 }
