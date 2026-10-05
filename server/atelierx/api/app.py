@@ -82,6 +82,11 @@ class Guard(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         path = request.url.path
         if path.startswith('/api/'):
+            if _unsafe_api_path(request.scope['path']):
+                return JSONResponse(
+                    {'error': Msg('server.works.bad_path', 'This path is not allowed.').as_dict()},
+                    status_code=400,
+                )
             origin = request.headers.get('origin')
             if origin and not _origin_ok(origin, request, st(request).dev):
                 return JSONResponse(
@@ -105,6 +110,13 @@ class Guard(BaseHTTPMiddleware):
             return response
         except AppError as error:
             return JSONResponse({'error': error.msg.as_dict()}, status_code=error.status)
+
+
+def _unsafe_api_path(path):
+    """IDs and names in API URLs become file names (trash bundles, drafts, examples …). None of them needs a backslash,
+    a colon or a dot segment, and on Windows each of those can step out of the folder the ID belongs to."""
+    # A part made only of dots and spaces ('..', '...', '. ') is the current or parent folder to Windows.
+    return any(c in path for c in '\\:\x00') or any(part and not part.strip('. ') for part in path.split('/'))
 
 
 def _origin_ok(origin, request, dev):
