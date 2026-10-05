@@ -26,6 +26,7 @@ type Proposal = {
   lines_before: number;
   lines_after: number;
   draft_id?: string;
+  draft_status?: 'pending' | 'applied' | 'discarded' | null;
 };
 type Turn = {
   turn: number;
@@ -458,6 +459,8 @@ function ProposalCard({
           {path}
         </strong>
         {info?.new && <span className="badge">{t('agent.new_file')}</span>}
+        {info?.draft_status === 'applied' && <span className="badge plain">{t('agent.card.applied')}</span>}
+        {info?.draft_status === 'discarded' && <span className="badge plain">{t('agent.card.discarded')}</span>}
       </div>
       <div className="faint small">
         {streaming
