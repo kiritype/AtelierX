@@ -115,3 +115,12 @@ code { padding: .08em .34em; border: 1px solid var(--line); border-radius: .3rem
 .manual-section blockquote { margin-inline: 0; padding: .5rem 1rem; border-left: 4px solid var(--accent); background: var(--accent-soft); }
 .sidebar nav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 .page-footer { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: space-between; }
+/* Home hero and feature cards (offline copy of the web home page), group headings in the sidebar. */
+.sidebar nav strong { margin: .9rem .65rem .2rem; color: var(--ink); font-size: .8rem; }
+.hero { padding: 1rem 0 1.5rem; }
+.hero h1 { margin: 0; font-size: 2.6rem; }
+.hero .hero-text { margin: .2rem 0 .6rem; font-size: 1.35rem; font-weight: 650; }
+.hero .button { display: inline-block; margin: .2rem .4rem .2rem 0; padding: .45rem 1rem; color: #fff; border-radius: .5rem; background: #3b6fd6; text-decoration: none; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; margin-bottom: 2rem; }
+.feature { padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--surface); }
+.feature p { margin: .3rem 0 0; color: var(--muted); font-size: .9rem; }

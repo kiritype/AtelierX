@@ -1,27 +1,40 @@
 import { defineConfig } from 'vitepress';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const guide = fileURLToPath(new URL('../guide/', import.meta.url));
-const order = ['getting-started', 'walkthrough', 'editing', 'ai-tools', 'agent', 'chat-test', 'connections', 'image-setup', 'character-images', 'generation', 'gallery-export', 'lora', 'platforms', 'maintenance', 'external', 'release-status'];
-const files = readdirSync(guide).filter(f => f.endsWith('.md')).sort((a, b) => order.indexOf(a.slice(0, -3)) - order.indexOf(b.slice(0, -3)));
-const items = files.map(file => ({
-  text: readFileSync(`${guide}/${file}`, 'utf8').match(/^# (.+)$/m)?.[1] ?? file,
-  link: `/guide/${file.slice(0, -3)}`,
+// Page order lives in pages.json, shared with the offline manual (tools/render_manual.mjs).
+const manual = fileURLToPath(new URL('../', import.meta.url));
+const { groups } = JSON.parse(readFileSync(`${manual}/pages.json`, 'utf8'));
+const titleOf = (path: string) => readFileSync(`${manual}/${path}.md`, 'utf8').match(/^# (.+)$/m)?.[1] ?? path;
+const sidebar = groups.map((group: { text: string; folder: string; pages: string[] }) => ({
+  text: group.text,
+  items: group.pages.map((page) => {
+    const path = group.folder ? `${group.folder}/${page}` : page;
+    return { text: titleOf(path), link: `/${path}` };
+  }),
 }));
+// The manual describes the app version in the same commit; there is one place for it.
+const version = readFileSync(fileURLToPath(new URL('../../../server/atelierx/__init__.py', import.meta.url)), 'utf8').match(/__version__ = '([^']+)'/)![1];
 const base = process.env.DOCS_BASE || '/';
 if (!base.startsWith('/') || !base.endsWith('/') || base.includes('..')) throw new Error('DOCS_BASE must be an absolute URL path ending in /');
 
 export default defineConfig({
-  lang: 'ko-KR', title: 'AtelierX', description: '설치부터 작품 작성, 이미지 생성과 배포까지',
+  lang: 'ko-KR', title: 'AtelierX', description: 'RP 챗봇 원고와 캐릭터 이미지를 한 작업실에서',
   base, outDir: '../../dist/manual-site',
   srcExclude: ['node_modules/**', 'README.md'],
   cleanUrls: false,
   head: [['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }]],
   themeConfig: {
     logo: '/icon.svg',
-    nav: [{ text: '사용 설명서', link: '/' }, { text: '시작하기', link: '/guide/getting-started' }],
-    sidebar: [{ text: '사용 설명서', items }],
+    nav: [
+      { text: '처음 사용하기', link: '/tutorial/first-run' },
+      { text: '사용 설명서', link: '/guide/getting-started' },
+      { text: `${version} 기준`, link: '/changelog' },
+      { text: '다운로드', link: 'https://github.com/kiritype/AtelierX/releases/latest' },
+    ],
+    sidebar,
+    socialLinks: [{ icon: 'github', link: 'https://github.com/kiritype/AtelierX' }],
+    footer: { message: `AtelierX ${version} 기준 설명서 · MIT License`, copyright: '© 2026 kiritype' },
     search: { provider: 'local', options: { locales: { root: { translations: {
       button: { buttonText: '검색', buttonAriaLabel: '설명서 검색' },
       modal: { noResultsText: '검색 결과가 없습니다', resetButtonTitle: '검색 초기화', footer: { selectText: '선택', navigateText: '이동', closeText: '닫기' } },

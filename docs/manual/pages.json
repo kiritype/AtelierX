@@ -1,0 +1,19 @@
+{
+  "groups": [
+    {
+      "text": "처음 사용하기",
+      "folder": "tutorial",
+      "pages": ["first-run", "create-work", "connect-llm", "image-setup", "write-with-agent", "character-images", "post-processing", "refine-with-llm", "test-and-export"]
+    },
+    {
+      "text": "사용 설명서",
+      "folder": "guide",
+      "pages": ["getting-started", "editing", "ai-tools", "agent", "chat-test", "connections", "image-setup", "character-images", "generation", "gallery-export", "lora", "platforms", "maintenance", "external", "release-status"]
+    },
+    {
+      "text": "버전",
+      "folder": "",
+      "pages": ["changelog"]
+    }
+  ]
+}
