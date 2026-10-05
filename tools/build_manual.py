@@ -66,6 +66,7 @@ def build(output: Path) -> int:
     for filename in ('manual.css', 'offline.js'):
         shutil.copy2(SOURCE / filename, output / filename)
     shutil.copytree(SOURCE / 'screenshots', output / 'screenshots', dirs_exist_ok=True)
+    shutil.copy2(SOURCE / 'public' / 'icon.svg', output / 'icon.svg')
     errors = check_built_manual(output)
     if errors:
         raise RuntimeError('\n'.join(errors))
