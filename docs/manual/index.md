@@ -2,7 +2,7 @@
 layout: home
 hero:
   name: AtelierX
-  text: RP 챗봇 원고와 캐릭터 이미지를 한 작업실에서
+  text: 쓰고, 그리고, 대화로 다듬는 RP 챗봇 작업실
   tagline: 메인 프롬프트·로어북·시작 상황을 파일로 쓰고, LLM 에이전트와 다듬고, 대화 테스트로 확인하세요. 캐릭터 이미지 생성·검수·후처리와 LoRA 학습까지 이어집니다. 모든 데이터는 내 PC의 앱 폴더 안에 둡니다.
   image:
     src: /icon.svg
