@@ -6,6 +6,7 @@ Run with the packaging virtual environment; Node is needed only on the build mac
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -23,6 +24,16 @@ VERSION = re.search(
     (ROOT / 'server' / 'atelierx' / '__init__.py').read_text(encoding='utf-8'),
     re.MULTILINE,
 ).group(1)
+
+
+def _git_head():
+    try:
+        done = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return None
+    return done.stdout.strip() or None
 
 
 def run(*command):
@@ -71,6 +82,8 @@ def main():
     manifest = {
         'version': VERSION,
         'built_at': datetime.now().astimezone().isoformat(),
+        # The commit the package was built from (CI sets GITHUB_SHA); shown in Help → About.
+        'commit': os.environ.get('GITHUB_SHA') or _git_head(),
         'python': sys.version.split()[0],
         'dependencies': dict(sorted((d.metadata['Name'], d.version) for d in distributions())),
         'files': {},
