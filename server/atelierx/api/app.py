@@ -602,14 +602,18 @@ async def snap_patch(request):
 
 # --- export ----------------------------------------------------------------------------------------------------
 async def export_preview(request):
-    include, skip = exporter.plan(work_of(request))
+    work = work_of(request)
+    include, skip = exporter.plan(work)
+    target = request.query_params.get('target')
+    blocked = exporter.blocked_target(target, st(request).paths.root, work.folder) if target else None
     return ok(
         {
             'include': [i['path'] for i in include],
             'skip': skip,
             'keywords_file': exporter.KEYWORDS_FILE,
             'clash': exporter.name_clash(include),
-            'target': exporter.target_state(request.query_params.get('target'), include),
+            'target': exporter.target_state(target, include),
+            'blocked': blocked.as_dict() if blocked else None,
         }
     )
 
@@ -618,6 +622,9 @@ async def export_run(request):
     data = await body(request)
     work = work_of(request)
     s = st(request)
+    blocked = exporter.blocked_target(data.get('target'), s.paths.root, work.folder)
+    if blocked:
+        raise AppError(blocked, 400)
     clash = exporter.name_clash(exporter.plan(work)[0])
     if clash:
         raise AppError(
@@ -633,7 +640,9 @@ async def export_run(request):
 
     async def runner(progress):
         await progress(30)
-        return await asyncio.to_thread(exporter.export, work, data['target'], data.get('overwrite', False))
+        return await asyncio.to_thread(
+            exporter.export, work, data['target'], data.get('overwrite', False), s.paths.root
+        )
 
     return ok(s.jobs.submit('export', f'{work.name} 내보내기', runner, work_id=work.id))
 

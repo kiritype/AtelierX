@@ -1764,5 +1764,8 @@
   "queue.post_op.detail": "디테일러",
   "queue.post_op.inpaint": "인페인트",
   "agent.card.applied": "채택됨",
-  "agent.card.discarded": "버림"
+  "agent.card.discarded": "버림",
+  "server.export.relative": "절대 경로로 된 폴더를 입력하세요.",
+  "server.export.into_work": "작품이 들어 있는 폴더입니다. 작품 밖의 폴더를 고르세요.",
+  "server.export.into_app": "앱 폴더 밖의 폴더를 고르세요."
 }
