@@ -6,6 +6,7 @@ import io
 import json
 import subprocess
 import sys
+import time
 import zipfile
 
 import httpx
@@ -52,6 +53,17 @@ def _updater(paths, package, tag='v9.9.9', sha=None):
     up.transport = httpx.MockTransport(handler)
     up.release_url = 'https://api.example/releases/latest'
     return up
+
+
+def _params(folder, root, new, result):
+    path = folder / 'params.json'
+    path.write_text(
+        json.dumps(
+            {'app_pid': 999999, 'root': str(root), 'new': str(new), 'result': str(result)}, ensure_ascii=False
+        ),
+        encoding='utf-8',
+    )
+    return path
 
 
 def _seed_user_data(paths):
@@ -133,7 +145,7 @@ def test_the_swap_script_replaces_program_files_and_keeps_user_data(paths, tmp_p
     done = subprocess.run(
         [
             'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
-            '-AppPid', '999999', '-Root', str(root), '-New', str(new), '-Result', str(result), '-NoStart',
+            '-Params', str(_params(tmp_path, root, new, result)), '-NoStart',
         ],
         capture_output=True, timeout=120, check=False,
     )  # fmt: skip
@@ -174,7 +186,7 @@ def test_the_swap_script_rolls_back_when_a_file_is_in_use(paths, tmp_path):
         done = subprocess.run(
             [
                 'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
-                '-AppPid', '999999', '-Root', str(root), '-New', str(new), '-Result', str(result), '-NoStart',
+                '-Params', str(_params(tmp_path, root, new, result)), '-NoStart',
             ],
             capture_output=True, timeout=120, check=False,
         )  # fmt: skip
@@ -182,3 +194,19 @@ def test_the_swap_script_rolls_back_when_a_file_is_in_use(paths, tmp_path):
     assert json.loads(result.read_text(encoding='utf-8'))['state'] == 'failed'
     assert (root / 'AtelierX.exe').read_bytes() == b'old exe' and (root / '_internal' / 'old.dll').is_file()
     assert not (root / 'AtelierX.exe.old').exists()
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='the swap script is PowerShell on Windows')
+def test_the_script_is_launched_so_that_it_outlives_the_app(tmp_path):
+    folder = tmp_path / "한글 [x] it's"
+    folder.mkdir()
+    marker = folder / 'ran.txt'
+    script = folder / 'apply.ps1'
+    quoted = str(marker).replace("'", "''")
+    script.write_text(f"Set-Content -LiteralPath '{quoted}' -Value ok", encoding='utf-8-sig')
+    updater_module.launch(script).wait(30)  # the launcher ends at once; the script runs on its own
+    for _ in range(60):
+        if marker.is_file():
+            break
+        time.sleep(0.25)
+    assert marker.is_file()

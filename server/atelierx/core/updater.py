@@ -8,6 +8,7 @@ so a failed swap can be rolled back.
 """
 
 import asyncio
+import base64
 import hashlib
 import os
 import re
@@ -31,9 +32,13 @@ ASSET = re.compile(r'^AtelierX-(\d+\.\d+\.\d+)-windows-x64\.zip$')
 STATE_SKIPPED_IN_BACKUP = ('update', 'packages', 'webview', 'logs')
 TIMEOUT = httpx.Timeout(connect=10, read=120, write=30, pool=10)
 
-SCRIPT = r"""param([int]$AppPid, [string]$Root, [string]$New, [string]$Result, [switch]$NoStart)
+SCRIPT = r"""param([string]$Params, [switch]$NoStart)
 # AtelierX in-app update: swap the program files once the app has closed, then start the new version.
+# What to swap comes from params.json beside this script, so no path has to survive command-line quoting.
 $ErrorActionPreference = 'Stop'
+if (-not $Params) { $Params = Join-Path $PSScriptRoot 'params.json' }
+$p = [System.IO.File]::ReadAllText($Params) | ConvertFrom-Json
+$AppPid = [int]$p.app_pid; $Root = [string]$p.root; $New = [string]$p.new; $Result = [string]$p.result
 $keep = @('config', 'state', 'data', 'output')
 function Write-Result([string]$State, [string]$Detail) {
   $json = @{ state = $State; detail = $Detail; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress
@@ -315,39 +320,37 @@ class Updater:
         script = self.write_script()
         (self.folder / 'result.json').unlink(missing_ok=True)
         write_json(self.folder / 'pending.json', {'version': version, 'from': __version__})
-        flags = 0
-        if sys.platform == 'win32':
-            flags = (
-                subprocess.DETACHED_PROCESS
-                | subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.CREATE_NO_WINDOW
-            )
-        subprocess.Popen(
-            [
-                'powershell',
-                '-NoProfile',
-                '-ExecutionPolicy',
-                'Bypass',
-                '-WindowStyle',
-                'Hidden',
-                '-File',
-                str(script),
-                '-AppPid',
-                str(os.getpid()),
-                '-Root',
-                str(Path(self.paths.root)),
-                '-New',
-                str(self.folder / 'new' / 'AtelierX'),
-                '-Result',
-                str(self.folder / 'result.json'),
-            ],
-            creationflags=flags,
-            close_fds=True,
+        write_json(
+            self.folder / 'params.json',
+            {
+                'app_pid': os.getpid(),
+                'root': str(Path(self.paths.root)),
+                'new': str(self.folder / 'new' / 'AtelierX'),
+                'result': str(self.folder / 'result.json'),
+            },
         )
+        launch(script)
         self._set(state='restarting', version=version)
         if self.exit_app:
             threading.Timer(0.8, self.exit_app).start()
         return self.status()
+
+
+def launch(script):
+    """Start the swap script through ``Start-Process`` so it outlives this app even where a launcher ends the app's own
+    children with it. The command is passed encoded, so the path needs no quoting rules."""
+    path = str(script).replace("'", "''")
+    command = (
+        "Start-Process -FilePath 'powershell' -WindowStyle Hidden -ArgumentList "
+        f"('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"' + '{path}' + '\"')"
+    )
+    encoded = base64.b64encode(command.encode('utf-16-le')).decode('ascii')
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+    return subprocess.Popen(
+        ['powershell', '-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+        creationflags=flags,
+        close_fds=True,
+    )
 
 
 def finish_update(paths):
