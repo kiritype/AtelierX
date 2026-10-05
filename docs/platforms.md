@@ -56,7 +56,7 @@
 | `lorebook.budget.max` | 없음 | 활성화된 항목은 모두 들어감 |
 | `jsx.forbid` | `import`, `export` | 컴포넌트는 파일 하나 안에서 끝나야 함 |
 | `jsx.hooks` | React 기본 훅 다섯 개 | 그 밖의 훅은 오류 |
-| `jsx.response` | `element`, 느슨한 JSON | 응답에 `<컴포넌트 속성='…' />`로 들어가고 속성 값은 JSON |
+| `jsx.response` | `element`, `json_lenient` | 응답에 `<컴포넌트 속성='…' />`로 들어간다. 속성 값은 JSON으로 읽고, JSON 모양이 아닌 값(`C001`)은 쓴 그대로. 따옴표 안 값을 그대로 넘기는 플랫폼은 `text` |
 
 `generic`의 가이드라인 폴더는 비어 있다. 전역 가이드라인을 그대로 쓴다.
 

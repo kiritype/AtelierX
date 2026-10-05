@@ -174,9 +174,9 @@ def test_jsx_props_and_checks(unlocked):
     wid = c.post('/api/samples/simulation/install').json()['id']
     props = c.get(f'/api/works/{wid}/jsx/J001/props').json()
     assert {p['name'] for p in props} == {'basic', 'late'}
-    bad = c.put(f'/api/works/{wid}/jsx/J001/props/x', content='{"a": ')
-    assert bad.status_code == 400 and bad.json()['error']['key'] == 'server.jsx.bad_json'
-    saved = c.put(f'/api/works/{wid}/jsx/J001/props/empty', content='{}').json()
+    bad = c.put(f'/api/works/{wid}/jsx/J001/props/x', content='  ')
+    assert bad.status_code == 400 and bad.json()['error']['key'] == 'server.jsx.bad_example'
+    saved = c.put(f'/api/works/{wid}/jsx/J001/props/empty', content='<StatusPanel />').json()
     assert 'empty' in [p['name'] for p in saved]
     assert 'empty' not in [p['name'] for p in c.delete(f'/api/works/{wid}/jsx/J001/props/empty').json()]
     assert c.put(f'/api/works/{wid}/jsx/J001/props/a.b', content='{}').status_code == 400

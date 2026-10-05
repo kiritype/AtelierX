@@ -259,23 +259,49 @@ def issue_action(work, issue, action, note=''):
 
 
 # --- component elements in text (07-jsx: 문구 속 예시) -------------------------------------------------------------
-def read_attribute(raw):
-    for candidate in (raw, re.sub(r',\s*([}\]])', r'\1', raw), raw.replace("'", '"')):
+def read_attribute(raw, fmt='json_lenient'):
+    """One attribute value the way the platform reads it (preset ``jsx.response.attribute_format``).
+
+    ``text`` keeps the written text. ``json`` must be JSON. ``json_lenient`` also allows single quotes and trailing
+    commas, and takes a value that does not look like JSON (``C001``, ``001``) as the written text.
+    web/src/lib/componentCalls.ts reads values the same way.
+    """
+    if fmt == 'text':
+        return raw, None
+    candidates = (raw,) if fmt == 'json' else (raw, re.sub(r',\s*([}\]])', r'\1', raw), raw.replace("'", '"'))
+    error = ''
+    for candidate in candidates:
         try:
             return json.loads(candidate), None
         except json.JSONDecodeError as exc:
             error = str(exc)
+    if fmt != 'json' and not raw.strip().startswith(('{', '[')):
+        return raw, None
     return None, error
 
 
-def elements(text, name):
-    """Every <Name … /> in a text with its attributes read the json_lenient way."""
+def decode(text, rule):
+    """Apply the preset's replacement table (pairs or {from, to}) before reading elements."""
+    for pair in (rule or {}).get('decode') or []:
+        old, new = (pair.get('from'), pair.get('to')) if isinstance(pair, dict) else ([*pair, None, None])[:2]
+        if old:
+            text = text.replace(old, new or '')
+    return text
+
+
+def response_rule(effective):
+    return (effective['values'].get('jsx') or {}).get('response') or {}
+
+
+def elements(text, name, rule=None):
+    """Every <Name … /> in a text, its attributes read by the preset's response rule (default: json_lenient)."""
+    fmt = (rule or {}).get('attribute_format') or 'json_lenient'
     pattern = re.compile(rf'<{re.escape(name)}((?:\s+[\w-]+=(?:\'[^\']*\'|"[^"]*"))*)\s*/>')
     out = []
-    for match in pattern.finditer(text):
+    for match in pattern.finditer(decode(text, rule)):
         attrs, errors = {}, []
         for attr in re.finditer(r'([\w-]+)=(?:\'([^\']*)\'|"([^"]*)")', match.group(1)):
-            value, error = read_attribute(attr.group(2) if attr.group(2) is not None else attr.group(3))
+            value, error = read_attribute(attr.group(2) if attr.group(2) is not None else attr.group(3), fmt)
             if error:
                 errors.append(f'{attr.group(1)}: {error}')
             attrs[attr.group(1)] = value
@@ -283,11 +309,11 @@ def elements(text, name):
     return out
 
 
-def usages(work, name):
+def usages(work, name, rule=None):
     out = []
     for item in work.index_with_bodies():
         if item['kind'] in ('main', 'start', 'lorebook', 'character') and item['meta'].get('enabled', True):
-            found = elements(item['body'], name)
+            found = elements(item['body'], name, rule)
             if found:
                 out.append({'path': item['path'], 'id': item['meta'].get('id'), 'elements': found})
     return out

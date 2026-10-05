@@ -160,7 +160,7 @@ works/청원고/
     ├── image/                    이미지 데이터 ([이미지 데이터](#이미지-데이터))
     │   ├── *.json                작품 공용 이미지 라이브러리 (전역을 덮어씀)
     │   └── characters/<캐릭터 ID>/
-    ├── jsx/<JSX ID>/props/       JSX 예시 props
+    ├── jsx/<JSX ID>/props/       JSX 예시(컴포넌트 호출)
     ├── tests/runs/<시각>.jsonl   테스트 화면의 대화 기록
     ├── drafts/                   검토 대기 중인 임시 항목
     ├── trash/                    작품 안에서 지운 것
@@ -298,7 +298,7 @@ function StatusPanel(props) {
 
 | 필드 | 뜻 |
 |---|---|
-| `default_props` | 미리보기에서 처음 열 예시 props 이름. |
+| `default_props` | 미리보기에서 처음 열 예시 이름. 대화 테스트는 이 예시의 첫 호출에서 기본 props를 읽는다. |
 
 - 예시 props는 `.atelierx/jsx/<JSX ID>/props/`에 둔다([JSX 예시 props](#jsx-예시-props)). 파일을 옮기거나
   이름을 바꿔도 ID로 따라온다.
@@ -360,14 +360,18 @@ function StatusPanel(props) {
 
 ### JSX 예시 props
 
-위치: `.atelierx/jsx/<JSX ID>/props/<예시>.json`
+위치: `.atelierx/jsx/<JSX ID>/props/<예시>.txt`
 
-예시 이름은 파일 이름이다. 내용은 컴포넌트에 넘길 props 그대로의 JSON이다. 미리보기에서 전환하며 쓰고, 테스트 응답에서
-꺼낸 props와 비교할 때 기본 예시(`default_props`)를 기준으로 쓴다.
+예시 이름은 파일 이름이다. 내용은 **응답에 쓰는 그대로의 컴포넌트 호출**이다. props는 작품에 연결된 플랫폼 프리셋의
+`jsx.response`로 읽는다(실제 응답과 같은 방식). 호출을 여러 개 쓰거나 응답 문장째 적어도 되며, props가 필요한 곳(대화 테스트의
+기본 props, 프롬프트용 문구 만들기)은 첫 번째 호출을 쓴다. 미리보기에서 전환하며 쓰고, 테스트 응답에서 꺼낸 props와 비교할 때
+기본 예시(`default_props`)를 기준으로 쓴다.
 
-```json
-{"data": {"location": "교실", "time": "08:40", "affinity": {"C001": 12}}}
+```text
+<StatusPanel data='{"location": "교실", "time": "08:40", "affinity": {"C001": 12}}' />
 ```
+
+- 이전 형식(`<예시>.json`, props 그대로의 JSON)도 읽는다. 화면에는 호출로 바꿔 보여 주고, 저장하면 `.txt`로 바뀐다.
 
 - 챗봇 응답에 컴포넌트를 넣는 형식은 메인 프롬프트·로어북 본문에 사용자가 쓴 문구가 원본이다. 앱은 컴포넌트별 형식 정보를 따로
   저장하지 않는다. 응답 속 표기를 읽는 규칙은 플랫폼 프리셋의 `jsx.response`([구성](#구성)).
@@ -849,7 +853,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 | `count` | 용량을 세는 방식 — `utf8_bytes`, `chars`, `tokens:<토크나이저>`. |
 | `limits` | **작성할 때의** 용량 제한(메인 프롬프트, 로어북 항목, 전체). 사용 중(`enabled`)인 항목만 센다. |
 | `lorebook` | 키워드 사용 여부·개수 제한과 [로어북 활성화](#로어북-활성화) 규칙. |
-| `jsx` | 플랫폼이 제공하는 함수(`globals`: 이름, 형식 설명, 미리보기 대역 동작 `log`·`return:<값>`·`random`), 금지 문법(`forbid`), 쓸 수 있는 훅(`hooks`), 응답 속 컴포넌트 표기(`response`: 표기 방식 `element`, 속성 값 읽기 `json`·`json_lenient`·`text`, 특수 문자 치환 표 `decode`). 동작은 [07-jsx](features/07-jsx.md). |
+| `jsx` | 플랫폼이 제공하는 함수(`globals`: 이름, 형식 설명, 미리보기 대역 동작 `log`·`return:<값>`·`random`), 금지 문법(`forbid`), 쓸 수 있는 훅(`hooks`), 응답 속 컴포넌트 표기(`response`: 표기 방식 `element`, 속성 값 읽기 `text`(쓴 그대로 문자열)·`json_lenient`(JSON으로 읽되 작은따옴표·끝 쉼표를 허용하고, JSON 모양이 아닌 값은 쓴 그대로)·`json`(엄격한 JSON), 특수 문자 치환 표 `decode`(`[원래, 바꿀 것]` 또는 `{"from", "to"}` 목록)). 기본값은 `json_lenient`. 동작은 [07-jsx](features/07-jsx.md). |
 | (가이드라인) | 목록 필드를 두지 않는다. `platforms/<프리셋 ID>/guidelines/` 안의 `.md` 파일이 이 프리셋의 가이드라인이다([가이드라인](#가이드라인)). |
 
 - 기본 제공은 `generic` 하나이며 읽기 전용이다(앱 기본값과 같음). 특정 플랫폼 프리셋은 사용자가 만들거나(기존 프리셋 복제) 가져온다.

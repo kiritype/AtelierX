@@ -1,0 +1,1 @@
+<StatusPanel data='{"day": 27, "time": "밤", "gold": 845, "reputation": 8, "location": "던전 입구"}' />

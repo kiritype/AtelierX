@@ -147,6 +147,15 @@ class Presets:
                 raise AppError(
                     Msg('server.presets.invalid_limit', 'Limits must be non-negative integers or unset.'), 400
                 )
+        response = (current.get('jsx') or {}).get('response') or {}
+        if response.get('attribute_format', 'json_lenient') not in ('text', 'json', 'json_lenient'):
+            raise AppError(
+                Msg(
+                    'server.presets.invalid_attribute_format',
+                    'Attribute values are read as text, json or json_lenient.',
+                ),
+                400,
+            )
         write_json(folder / 'preset.json', current)
         return current
 

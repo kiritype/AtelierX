@@ -24,7 +24,7 @@ from ..core.events import Events
 from ..core.fsutil import read_json, sha256_text, write_json
 from ..core.i18n import AppError, Msg, wire
 from ..core.jobs import Jobs
-from ..core.jsx import Props
+from ..core.jsx import Props, call_text
 from ..core.llm import Providers
 from ..core.presets import Presets
 from ..core.relations import Glossary, Relations
@@ -842,15 +842,15 @@ async def jsx_prompt_text(request):
     s = st(request)
     item = item_by_id(work, request.path_params['jid'], 'jsx')
     props = data.get('props') or {}
+    rule = review.response_rule(s.presets.effective(work.doc()))
 
     async def runner(progress):
         model = None
         if mocked(s, 'jsx_prompt', data.get('llm')):
             await asyncio.sleep(0.4)
-            attrs = ''.join(f" {k}='{json.dumps(v, ensure_ascii=False)}'" for k, v in props.items())
             text = (
                 f'## {item["name"]}\n응답 맨 끝에 아래 형식으로 {item["name"]}을(를) 한 번 출력한다.\n'
-                f'<{item["name"]}{attrs} />\n(모의 문구)'
+                f'{call_text(item["name"], props)}\n(모의 문구)'
             )
         else:
             await progress(10)
@@ -871,7 +871,7 @@ async def jsx_prompt_text(request):
             'jsx_prompt',
             {'id': item['meta'].get('id'), 'path': item['path'], 'name': item['name']},
             {'props': props, 'feedback': data.get('feedback', '')},
-            [{'round': 1, 'text': text, 'elements': review.elements(text, item['name'])}],
+            [{'round': 1, 'text': text, 'elements': review.elements(text, item['name'], rule)}],
             model=model,
             guidelines=['platform.md', 'jsx.md'],
         )
@@ -884,12 +884,17 @@ async def jsx_prompt_text(request):
 async def jsx_usages(request):
     work = work_of(request)
     item = item_by_id(work, request.path_params['jid'], 'jsx')
-    return ok(review.usages(work, item['name']))
+    return ok(
+        review.usages(work, item['name'], review.response_rule(st(request).presets.effective(work.doc())))
+    )
 
 
 async def jsx_elements(request):
+    """Calls of one component in a text (draft review), read with the work's response rule."""
     data = await body(request)
-    return ok(review.elements(data.get('text', ''), data.get('name', '')))
+    work = work_of(request)
+    rule = review.response_rule(st(request).presets.effective(work.doc()))
+    return ok(review.elements(data.get('text', ''), data.get('name', ''), rule))
 
 
 # --- authoring (mock skeleton until 3단계) -------------------------------------------------------------------
@@ -1160,17 +1165,27 @@ async def image_convert(request):
 
 
 # --- JSX example props -----------------------------------------------------------------------------------------
+def _props(request):
+    # The component name turns old JSON examples into calls; an item without that ID still lists its examples.
+    work, jsx_id = work_of(request), request.path_params['jid']
+    try:
+        name = item_by_id(work, jsx_id, 'jsx')['name']
+    except AppError:
+        name = 'Component'
+    return Props(work, jsx_id, name)
+
+
 async def props_list(request):
-    return ok(Props(work_of(request), request.path_params['jid']).list())
+    return ok(_props(request).list())
 
 
 async def props_put(request):
     text = (await request.body()).decode('utf-8')
-    return ok(Props(work_of(request), request.path_params['jid']).save(request.path_params['name'], text))
+    return ok(_props(request).save(request.path_params['name'], text))
 
 
 async def props_delete(request):
-    return ok(Props(work_of(request), request.path_params['jid']).delete(request.path_params['name']))
+    return ok(_props(request).delete(request.path_params['name']))
 
 
 # --- relation map, glossary -----------------------------------------------------------------------------------
