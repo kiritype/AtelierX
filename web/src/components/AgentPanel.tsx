@@ -41,7 +41,7 @@ type Turn = {
 type Session = { id: string; mode: string; title: string; scope: Scope; turns: Turn[] };
 type SessionBrief = { id: string; mode: string; title: string; turns: number; updated_at: string | null };
 type Summary = { files: number; tokens: number; budget: number; omitted: string[]; history_dropped: number };
-type Live = { text: string; thinking: number; context?: Summary; error?: string; done: boolean };
+type Live = { text: string; thinking: number; waiting?: string; context?: Summary; error?: string; done: boolean };
 
 const lastKey = (workId: string) => `atelierx-agent-session-${workId}`;
 const remember = (workId: string, sid: string | null) => {
@@ -183,6 +183,7 @@ export default function AgentPanel({
           if (!type || data === undefined) continue;
           if (type === 'context') state = { ...state, context: JSON.parse(data) };
           if (type === 'thinking') state = { ...state, thinking: Number(data) };
+          if (type === 'waiting') state = { ...state, waiting: tm(JSON.parse(data)) };
           if (type === 'delta') state = { ...state, text: state.text + JSON.parse(data) };
           if (type === 'error') state = { ...state, error: tm(JSON.parse(data)) };
           if (type === 'end') state = { ...state, done: true };
@@ -300,7 +301,7 @@ export default function AgentPanel({
             {live && (
               <div className="agent-turn assistant">
                 {live.text ? <AnswerView text={live.text} proposals={null} onReview={() => undefined} openDraft={openDraft} streaming /> : null}
-                {!live.text && <span className="faint small">{live.thinking ? t('test.thinking', { n: live.thinking }) : t('agent.waiting')}</span>}
+                {!live.text && <span className="faint small">{live.thinking ? t('test.thinking', { n: live.thinking }) : live.waiting ? t('test.waiting_gpu', { name: live.waiting }) : t('agent.waiting')}</span>}
                 {live.error && <div className="error-text">{live.error}</div>}
               </div>
             )}

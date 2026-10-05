@@ -55,6 +55,7 @@ class GpuBroker:
         self.error = None
         self.since = None
         self.token = None
+        self._llm_users = 0
         self._load()
 
     def _load(self):
@@ -108,6 +109,33 @@ class GpuBroker:
             self.holder, self.state, self.owner, self.error = None, 'idle', '', None
             self.since = self.token = None
             self._persist()
+
+    # ---- local LLM requests (several may share one hold) ---------------------------------
+
+    def try_llm(self):
+        """Hold the GPU for one local LLM request. False while someone else holds it or an image is being made; the
+        image in progress finishes first, and no new one starts until the last request ends."""
+        with self.lock:
+            if self.holder not in (None, 'llm'):
+                return False
+            if self.holder is None and any(job['status'] in ACTIVE_JOB_STATES for job in self._jobs()):
+                return False
+            self.acquire('llm', 'reserved')
+            self._llm_users += 1
+            return True
+
+    def end_llm(self):
+        with self.lock:
+            self._llm_users = max(0, self._llm_users - 1)
+            if not self._llm_users:
+                self.release('llm')
+
+    def blocker(self):
+        """What a waiting LLM request waits for."""
+        with self.lock:
+            if self.holder is None:
+                return Msg('server.gpu.image_generation', 'Image generation')
+            return HOLDER_LABELS.get(self.holder, self.holder)
 
     def held_by(self, holder):
         return self.holder == holder

@@ -26,7 +26,7 @@ from ..core.fsutil import read_json, sha256_text, write_json
 from ..core.i18n import AppError, Msg, wire
 from ..core.jobs import Jobs
 from ..core.jsx import Props, call_text
-from ..core.llm import Providers
+from ..core.llm import LlmGate, Providers
 from ..core.presets import Presets
 from ..core.relations import Glossary, Relations
 from ..core.settings import Settings
@@ -55,6 +55,9 @@ class State:
         self.jobs = Jobs(self.events)
         self.llm = Providers(paths, self.vault)
         self.image = ImageRuntime(paths, self.works, self.llm)
+        self.llm.gate = LlmGate(
+            self.image.gpu, lambda: (self.settings.load().get('jobs') or {}).get('api_concurrency', 2)
+        )
         self.maintain()
 
     def maintain(self):
@@ -1277,6 +1280,8 @@ async def chat_send(request):
             async for event in s.llm.stream('chat_test', messages, work_id=work.id, override=data.get('llm')):
                 if event['type'] == 'thinking':
                     yield f'event: thinking\ndata: {event["chars"]}\n\n'
+                elif event['type'] == 'waiting':
+                    yield f'event: waiting\ndata: {json.dumps(wire(event["holder"]), ensure_ascii=False)}\n\n'
                 elif event['type'] == 'text':
                     yield f'event: delta\ndata: {json.dumps(event["text"], ensure_ascii=False)}\n\n'
         except AppError as error:

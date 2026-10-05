@@ -21,3 +21,15 @@ export function newProvider(presetId: string) {
     key: null, trusted: false, default_model: null, models: {},
   };
 }
+
+/** Whether the connection's model runs on this PC's GPU (takes turns with image work): the saved choice, else a
+ * server at this PC's address. Same rule as the server's ``uses_local_gpu``. */
+export function usesLocalGpu(provider: { type?: string; base_url?: string; local_gpu?: boolean }): boolean {
+  if (provider.local_gpu !== undefined && provider.local_gpu !== null) return !!provider.local_gpu;
+  if (provider.type === 'mock') return false;
+  try {
+    return ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(provider.base_url ?? '').hostname);
+  } catch {
+    return false;
+  }
+}
