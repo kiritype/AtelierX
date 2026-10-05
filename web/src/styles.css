@@ -620,6 +620,11 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .guideline-form { display: grid; grid-template-columns: 1fr 140px 90px; gap: 8px; }
 .guideline-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
 .guideline-form .wide { grid-column: 1 / -1; }
+.test-compare { display: grid; grid-template-columns: minmax(140px, 1fr) 2fr 2fr; gap: 6px 10px; max-height: 65vh; overflow: auto; }
+.test-compare-head { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; background: var(--panel); padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.test-compare-row { display: contents; }
+.test-compare-input { font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.test-compare-reply { white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--border); padding-left: 8px; font-size: 13px; }
 .lab-import { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; gap: 6px; }
 .board-character { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; gap: 8px; }
 .board-grid { display: grid; gap: 3px; overflow-x: auto; }

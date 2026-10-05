@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { askConsent, get } from '../api';
+import { askConsent, get, post, put } from '../api';
+import { TestSetsDialog, type TestSet } from '../components/TestSets';
 import { t, tm } from '../i18n';
 import JsxPreview from '../components/JsxPreview';
 import MessageMarkdown from '../components/MessageMarkdown';
@@ -48,6 +49,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const personas = usePersona(workId);
   const persona = personas.persona;
   const [personaOpen, setPersonaOpen] = useState(false);
+  const [setsOpen, setSetsOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [previousInputs, setPreviousInputs] = useState<string[]>([]);
   const [input, setInput] = useState('');
@@ -82,7 +84,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const componentNames = components.map((c) => c.name);
   const rules = info.data?.effective.values.jsx ?? {};
 
-  async function sendOne(message: string, history: Turn[]) {
+  async function sendOne(message: string, history: Turn[], who: TestSet['persona'] = persona ? { name: persona.name, description: persona.description } : null) {
     const plain = history.map(({ role, text }) => ({ role, text }));
     let reply: Turn = { role: 'assistant', text: '' };
     setTurns([...history, { role: 'user', text: message }, reply]);
@@ -94,7 +96,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
         fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ llm, history: plain, message, persona: persona ? { name: persona.name, description: persona.description } : null }),
+          body: JSON.stringify({ llm, history: plain, message, persona: who }),
           signal: controller.signal,
         });
       let response = await request();
@@ -173,6 +175,49 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     }
   }
 
+  // Run a saved test set (#50): a fresh conversation from its start situation and persona, every input in turn, each
+  // answer written to the run record as it comes. Stopping, an error or leaving the screen ends it there.
+  async function runSet(set: TestSet) {
+    if (busy) return;
+    if (!confirm(t('tests.run_confirm', { n: set.inputs.length, name: set.name }))) return;
+    setSetsOpen(false);
+    reset();
+    setBusy(true);
+    const recorded: { input: string; reply: string; error?: string }[] = [];
+    let status: 'done' | 'stopped' | 'error' = 'done';
+    let runId: string | null = null;
+    try {
+      const run = await post<{ id: string }>(`/api/works/${workId}/tests/runs`, { set_id: set.id, llm });
+      runId = run.id;
+      let history: Turn[] = [];
+      if (set.start) {
+        const start = await get<{ body: string }>(`/api/works/${workId}/file?path=${encodeURIComponent(set.start)}`).catch(() => null);
+        const text = start?.body.trim().replaceAll('{{user}}', set.persona?.name || '사용자');
+        if (text) history = [{ role: 'assistant', text, start: true }];
+      }
+      setTurns(history);
+      for (const input of set.inputs) {
+        if (!alive.current) {
+          status = 'stopped';
+          break;
+        }
+        history = await sendOne(input, history, set.persona);
+        const last = history[history.length - 1];
+        recorded.push({ input, reply: last.text, ...(last.error ? { error: last.error } : {}) });
+        await put(`/api/works/${workId}/tests/runs/${run.id}`, { turns: recorded, status: 'running' });
+        if (last.stopped || last.error) {
+          status = last.stopped ? 'stopped' : 'error';
+          break;
+        }
+      }
+    } catch {
+      status = 'error';
+    } finally {
+      if (runId) await put(`/api/works/${workId}/tests/runs/${runId}`, { turns: recorded, status }).catch(() => undefined);
+      setBusy(false);
+    }
+  }
+
   // Calls inside code or in a form the rule cannot read are written in the reply but not drawn; say which.
   const focusText = focus !== undefined ? shown[focus].text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]+`/g, ' ') : '';
   const called = new Set(splitReply(focusText, componentNames, rules.response).flatMap((s) => ('component' in s ? [s.component] : [])));
@@ -193,7 +238,22 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
         <button onClick={replay} disabled={busy || started || !previousInputs.length} title={t('test.replay_hint')}>
           {t('test.replay', { n: previousInputs.length })}
         </button>
+        <button onClick={() => setSetsOpen(true)} disabled={busy} title={t('tests.about')}>
+          {t('tests.button')}
+        </button>
       </div>
+      {setsOpen && (
+        <TestSetsDialog
+          workId={workId}
+          current={{
+            start: startEntry?.path ?? null,
+            persona: persona ? { name: persona.name, description: persona.description } : null,
+            inputs: (started ? turns : []).filter((x) => x.role === 'user').map((x) => x.text).concat(started ? [] : previousInputs),
+          }}
+          onRun={runSet}
+          onClose={() => setSetsOpen(false)}
+        />
+      )}
       {personaOpen && personas.list && (
         <PersonaDialog list={personas.list} selectedId={personas.selectedId} onChoose={personas.choose} onClose={() => setPersonaOpen(false)} />
       )}
