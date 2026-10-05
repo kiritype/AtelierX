@@ -23,7 +23,7 @@ type Item = {
 };
 type Listing = { items: Item[]; fixed: { agent: string } };
 type FileDoc = { name: string; text: string; default_text: string | null; revision: string };
-type Head = { name: string; description: string; scope: 'file' | 'work'; order: string; rest: string[] };
+type Head = { name: string; description: string; scope: 'file' | 'work'; order: string; uses: string[]; rest: string[] };
 
 const GROUPS: Group[] = ['agent', 'task', 'image', 'other'];
 const OPEN_KEY = 'atelierx-guidelines-open';
@@ -36,12 +36,18 @@ function loadOpen(): Record<string, boolean> {
   }
 }
 
-// The front matter of an agent mode: the four card keys become form fields; other lines are kept as they are.
+// The front matter of an agent mode: the card keys and the guidelines it reads along (uses) become form fields; other
+// lines are kept as they are.
 export function splitMode(text: string): { head: Head; body: string } {
-  const head: Head = { name: '', description: '', scope: 'file', order: '', rest: [] };
+  const head: Head = { name: '', description: '', scope: 'file', order: '', uses: [], rest: [] };
   const match = /^---\n([\s\S]*?)\n---\n?/.exec(text.replace(/\r\n/g, '\n'));
   if (!match) return { head, body: text };
   for (const line of match[1].split('\n')) {
+    const uses = /^uses:\s*\[?([^\]]*)\]?\s*$/.exec(line);
+    if (uses) {
+      head.uses = uses[1].split(',').map((name) => name.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+      continue;
+    }
     const field = /^(name|description|scope|order):\s*(.*)$/.exec(line);
     if (!field) {
       if (line.trim()) head.rest.push(line);
@@ -68,6 +74,7 @@ export function joinMode(head: Head, body: string): string {
   if (head.description) lines.push(`description: ${yamlValue(head.description)}`);
   lines.push(`scope: ${head.scope}`);
   if (head.order.trim()) lines.push(`order: ${Number(head.order) || 100}`);
+  if (head.uses.length) lines.push(`uses: [${head.uses.join(', ')}]`);
   return `---\n${[...lines, ...head.rest].join('\n')}\n---\n${body}`;
 }
 
@@ -154,6 +161,7 @@ export default function GuidelineSettings() {
                       <GuidelineEditor
                         key={item.name}
                         item={item}
+                        references={items.filter((other) => other.group !== 'agent' && other.name !== 'platform.md').map((other) => other.name)}
                         onDirty={setDirty}
                         onSaved={() => {
                           setDirty(false);
@@ -210,12 +218,14 @@ export default function GuidelineSettings() {
 
 function GuidelineEditor({
   item,
+  references,
   onDirty,
   onSaved,
   onDeleted,
   toast,
 }: {
   item: Item;
+  references: string[];
   onDirty: (dirty: boolean) => void;
   onSaved: () => void;
   onDeleted: () => void;
@@ -287,6 +297,24 @@ function GuidelineEditor({
             {t('guidelines.mode_description')}
             <input value={mode.head.description} onChange={(e) => setText(joinMode({ ...mode.head, description: e.target.value }, mode.body))} />
           </label>
+          <fieldset className="wide guideline-uses">
+            <legend title={t('guidelines.mode_uses_help')}>{t('guidelines.mode_uses')}</legend>
+            {[...new Set([...references, ...mode.head.uses])].map((name) => (
+              <label key={name} className="row" style={{ gap: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={mode.head.uses.includes(name)}
+                  onChange={(e) => {
+                    const uses = e.target.checked ? [...mode.head.uses, name] : mode.head.uses.filter((n) => n !== name);
+                    setText(joinMode({ ...mode.head, uses }, mode.body));
+                  }}
+                />
+                <code>{name}</code>
+                {!references.includes(name) && <span className="faint small">{t('guidelines.mode_uses_elsewhere')}</span>}
+              </label>
+            ))}
+            <span className="faint small">{t('guidelines.mode_uses_help')}</span>
+          </fieldset>
         </div>
       )}
       <div className="guideline-body">

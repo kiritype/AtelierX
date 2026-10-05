@@ -1667,5 +1667,11 @@
   "llm.context_cap_help": "The agent fills at most this much even when the model reads more. Longer is slower and costs more. Empty means 131,072.",
   "server.llm.invalid_tokens": "Token counts must be whole numbers above zero.",
   "server.llm.no_model_named": "Name the model first.",
-  "server.works.gone": "This file was deleted or moved after it was opened. Copy the text into a new file to keep it."
+  "server.works.gone": "This file was deleted or moved after it was opened. Copy the text into a new file to keep it.",
+  "guidelines.mode_uses": "Guidelines read along",
+  "guidelines.mode_uses_help": "Guidelines sent to the agent with this mode's guideline. A file of the same name in the work or a platform preset is sent instead.",
+  "guidelines.mode_uses_elsewhere": "not global (looked up in the work or presets)",
+  "agent.guidelines": "Guidelines:",
+  "agent.guidelines_help": "The guidelines in this request and their tokens (approximate).",
+  "agent.guideline_missing": "{name} missing"
 }

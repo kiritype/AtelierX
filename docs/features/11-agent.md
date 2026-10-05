@@ -93,7 +93,9 @@ LLM과 대화하며 작품을 쓰고 다듬는다. 대화 방식은 **모드 지
 
 ### 맥락 조립
 
-1. **시스템 메시지** = 앱 고정 지시 → 모드 지침 본문 → `platform.md` → 플랫폼 규칙 요약(항목 종류별 용량 제한, 응답 속 컴포넌트 표기).
+1. **시스템 메시지** = 앱 고정 지시 → 모드 지침 본문 → 모드가 함께 읽는 지침(`uses`, 이름마다 "참고 지침: <이름>"으로 전문) →
+   `platform.md` → 플랫폼 규칙 요약(항목 종류별 용량 제한, 응답 속 컴포넌트 표기). 기본 모드는 JSX 만들기가 `jsx.md`,
+   모순·누락 찾기가 `consistency.md`, 로어북 정리가 `compression.md`를 함께 읽는다.
 2. **작품 맥락**(시스템 메시지 끝) = 범위의 파일 목록(경로·종류·ID·크기, 본문을 넣었는지) → 범위의 본문(머리 메타데이터 포함, 파일마다
    `<<<file path="…">>>` 표지로 감쌈. 제안 형식과 같은 모양이라 모델이 따라 하기 쉽다).
 3. **대화 기록** = 지난 턴들. 오래된 턴부터 예산에 맞춰 뺀다.
@@ -120,7 +122,7 @@ LLM과 대화하며 작품을 쓰고 다듬는다. 대화 방식은 **모드 지
 | `GET /api/works/{id}/agent/modes` | 이 작품에서 쓸 모드 목록(겹침 적용) |
 | `GET /api/works/{id}/agent/sessions` · `POST …` | 대화 목록 · 새 대화 `{mode, scope}` |
 | `GET /api/works/{id}/agent/sessions/{sid}` · `PATCH …` · `DELETE …` | 대화 읽기 · 이름·범위 바꾸기 · 지우기 |
-| `POST …/sessions/{sid}/preview` | 보내기 전 맥락 크기 `{message, attachments}` → 파일·토큰·예산·빠진 파일 |
+| `POST …/sessions/{sid}/preview` | 보내기 전 맥락 크기 `{message, attachments}` → 파일·토큰·예산·빠진 파일, 들어간 지침(`guidelines`: 이름·토큰, 없으면 `missing`) |
 | `POST …/sessions/{sid}/send` | 메시지 보내기 → 스트림(이벤트: `context`, `delta`, `thinking`, `end{proposals, finish_reason}`) |
 | `POST …/sessions/{sid}/proposals/{turn}/{n}/review` | 제안을 임시 항목으로 → `{draft_id}` |
 | `POST /api/works/{id}/agent-drafts/{did}/apply` | 고른 결과 `{text}`를 저장(새 파일이면 만듦) |

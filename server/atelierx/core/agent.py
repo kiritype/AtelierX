@@ -80,11 +80,15 @@ def modes(work, paths, linked):
     return sorted(out, key=lambda m: (m['order'], m['name']))
 
 
-def mode_text(work, paths, linked, mode_id):
+def mode_guide(work, paths, linked, mode_id):
+    """``(body, uses)`` of a mode's guideline; ``('', [])`` for free conversation or a missing mode."""
     if not mode_id or not guidelines.AGENT_ID.fullmatch(str(mode_id)):
-        return ''
+        return '', []
     text, _ = guidelines.locate(work, paths, linked, f'agent/{mode_id}.md')
-    return guidelines.mode_head(text)[1].strip() if text else ''
+    if not text:
+        return '', []
+    head, body = guidelines.mode_head(text)
+    return body.strip(), head['uses']
 
 
 # --- conversations (.atelierx/agent/<id>.jsonl, data-model: 에이전트 대화) ------------------------------------
@@ -248,12 +252,25 @@ def attachment_text(work, attachment):
 
 def build(work, paths, effective, linked, session, message, attachments, budget):
     """Chat messages for the model and a summary of what went in (11-agent: 맥락 조립)."""
-    mode = mode_text(work, paths, linked, session['mode'])
+    mode, uses = mode_guide(work, paths, linked, session['mode'])
     platform = guidelines.find(work, paths, linked, 'platform.md').strip()
     system = [FIXED_RULES]
+    # Which guidelines went in and their size, for the panel (11-agent: 맥락 조립). A missing one is listed too.
+    read = []
     if mode:
         system.append(f'## 모드 지침\n\n{mode}')
+        read.append({'name': f'agent/{session["mode"]}.md', 'tokens': estimate_tokens(mode)})
+    # The guidelines the mode names (uses) come whole, looked up like any other: work, presets, global, defaults.
+    for name in uses:
+        text = guidelines.find(work, paths, linked, name).strip()
+        if not text:
+            read.append({'name': name, 'tokens': 0, 'missing': True})
+            continue
+        system.append(f'## 참고 지침: {name}\n\n{text}')
+        read.append({'name': name, 'tokens': estimate_tokens(text)})
     system.append(f'## 플랫폼 규칙\n\n{platform}\n\n{platform_summary(effective)}'.strip())
+    if platform:
+        read.append({'name': 'platform.md', 'tokens': estimate_tokens(platform)})
 
     attached = [attachment_text(work, a) for a in attachments or []]
     asked = '\n\n'.join([*attached, message]) if attached else message
@@ -301,6 +318,7 @@ def build(work, paths, effective, linked, session, message, attachments, budget)
     ]
     summary = {
         'files': len(bodies),
+        'guidelines': read,
         'tokens': used,
         'budget': budget,
         'omitted': omitted,

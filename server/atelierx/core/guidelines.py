@@ -101,8 +101,34 @@ def _names(folder):
     return {p.relative_to(folder).as_posix() for p in folder.rglob('*.md') if p.is_file()}
 
 
+MAX_USES = 8
+
+
+def mode_uses(value):
+    """The guidelines a mode reads along with its own text (``uses: [jsx.md, …]``): valid names only, no modes or
+    ``platform.md``, in
+    the order written, at most ``MAX_USES``."""
+    if isinstance(value, str):
+        value = [part.strip() for part in value.strip().strip('[]').split(',')]
+    if not isinstance(value, list):
+        return []
+    names = []
+    for name in value:
+        name = str(name or '').strip()
+        # platform.md always goes in after the mode, so naming it would only repeat it.
+        if (
+            NAME.fullmatch(name)
+            and not name.startswith('agent/')
+            and name != 'platform.md'
+            and name not in names
+        ):
+            names.append(name)
+    return names[:MAX_USES]
+
+
 def mode_head(text):
-    """Front matter of an agent mode guideline: name, description, scope (file|work), order."""
+    """Front matter of an agent mode guideline: name, description, scope (file|work), order and the guidelines it
+    reads along (uses)."""
     try:
         meta, body, _ = frontmatter.split(text, '.md')
     except frontmatter.MetaError:
@@ -118,6 +144,7 @@ def mode_head(text):
         'description': str(meta.get('description') or '').strip(),
         'scope': scope,
         'order': order,
+        'uses': mode_uses(meta.get('uses')),
     }, body
 
 

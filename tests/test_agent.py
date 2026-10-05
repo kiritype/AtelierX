@@ -347,3 +347,42 @@ def test_a_file_attached_whole_counts_as_seen(unlocked):
     assert agent.proposals(work, proposal, seen)[0]['warnings'] == []
     (work.folder / path).write_text(text + '\n바뀜\n', encoding='utf-8')
     assert agent.proposals(work, proposal, seen)[0]['warnings'] == ['changed_since']
+
+
+def test_a_mode_reads_the_guidelines_it_names(unlocked, paths):
+    from atelierx.core import guidelines
+
+    head, _ = guidelines.mode_head(
+        '---\nname: x\nuses: [jsx.md, agent/idea.md, ../x.md, jsx.md, platform.md]\n---\nbody'
+    )
+    assert head['uses'] == ['jsx.md']  # modes, bad names, repeats and platform.md (always sent) are dropped
+    written_plainly = guidelines.mode_head('---\nname: x\nuses: jsx.md, image-prompt.md\n---\n')[0]
+    assert written_plainly['uses'] == ['jsx.md', 'image-prompt.md']
+
+    c = unlocked
+    wid = _work(c)
+    s = unlocked.app.state.app
+    work = s.works.get(wid)
+    session = {'mode': 'jsx', 'scope': {'kind': 'work', 'paths': []}, 'turns': []}
+    jsx_rules = (paths.defaults / 'guidelines' / 'jsx.md').read_text(encoding='utf-8').strip()
+    messages, summary = agent.build(
+        work, s.paths, {'values': {}}, [], session, '상태창 만들어 줘', [], 100000
+    )
+    system = messages[0]['content']
+    assert '## 참고 지침: jsx.md' in system and jsx_rules in system
+    assert (
+        system.index('## 모드 지침') < system.index('## 참고 지침: jsx.md') < system.index('## 플랫폼 규칙')
+    )
+    names = [g['name'] for g in summary['guidelines']]
+    assert names == ['agent/jsx.md', 'jsx.md', 'platform.md']
+    assert all(g['tokens'] > 0 for g in summary['guidelines'])
+
+    # A work's own copy wins, and a guideline that exists nowhere is reported as missing.
+    (work.app / 'guidelines' / 'agent').mkdir(parents=True, exist_ok=True)
+    (work.app / 'guidelines' / 'jsx.md').write_text('작품 전용 JSX 규칙', encoding='utf-8')
+    (work.app / 'guidelines' / 'agent' / 'jsx.md').write_text(
+        '---\nname: JSX\nuses: [jsx.md, none.md]\n---\n모드 본문', encoding='utf-8'
+    )
+    messages, summary = agent.build(work, s.paths, {'values': {}}, [], session, 'x', [], 100000)
+    assert '작품 전용 JSX 규칙' in messages[0]['content'] and jsx_rules not in messages[0]['content']
+    assert summary['guidelines'][2] == {'name': 'none.md', 'tokens': 0, 'missing': True}

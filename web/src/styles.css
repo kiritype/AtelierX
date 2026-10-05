@@ -620,6 +620,9 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .guideline-form { display: grid; grid-template-columns: 1fr 140px 90px; gap: 8px; }
 .guideline-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
 .guideline-form .wide { grid-column: 1 / -1; }
+.guideline-uses { display: flex; flex-wrap: wrap; gap: 4px 14px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin: 0; }
+.guideline-uses legend { font-size: 12px; color: var(--text-2); padding: 0 4px; }
+.guideline-uses > .faint { flex-basis: 100%; }
 .guideline-body { height: 340px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .guideline-body .cm-host { height: 100%; }
 .guideline-new { padding: 8px; border: 1px dashed var(--border); border-radius: var(--radius); }
