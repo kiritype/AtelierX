@@ -55,6 +55,7 @@ export default function ItemEditor({
   const [body, setBody] = useState('');
   const [dirty, setDirty] = useState(false);
   const [imageDirty, setImageDirty] = useState(false);
+  const [jsxDirty, setJsxDirty] = useState(false);
   const [inner, setInner] = useState('body');
   const [error, setError] = useState('');
   const baseHash = useRef<string | null>(null);
@@ -87,15 +88,15 @@ export default function ItemEditor({
   useEffect(() => {
     const m = measure(body, countMode);
     statusRef.current({
-      dirty: dirty || imageDirty,
+      dirty: dirty || imageDirty || jsxDirty,
       size: m.amount,
       unit: m.unit,
       estimated: m.estimated,
       kind,
       save: () => saveRef.current(),
-      textOnly: !imageDirty,
+      textOnly: !imageDirty && !jsxDirty,
     });
-  }, [dirty, imageDirty, body, kind, countMode]);
+  }, [dirty, imageDirty, jsxDirty, body, kind, countMode]);
 
   const save = useCallback(async () => {
     if (saving.current) return false;
@@ -299,6 +300,7 @@ export default function ItemEditor({
             info={info}
             setDefault={(name) => change('default_props', name)}
             openItem={onOpen}
+            onDirtyChange={setJsxDirty}
           />
         )}
       </div>
