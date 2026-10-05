@@ -94,7 +94,7 @@
   "history.restore_all": "전체 복원",
   "history.restore_all_confirm": "현재 상태를 스냅숏으로 남기고 이 시점으로 되돌립니다. 계속할까요?",
   "history.restore_file": "이 파일 복원",
-  "history.restore_file_confirm": "이 파일을 이 시점 내용으로 되돌릴까요?",
+  "history.restore_file_confirm": "이 파일을 스냅숏 때 상태로 되돌릴까요? 스냅숏 뒤에 만든 파일이면 휴지통으로 갑니다. 되돌리기 전 상태도 스냅숏으로 남깁니다.",
   "history.restored": "복원했습니다.",
   "history.show_diff": "차이 표시",
   "history.vs_current": "현재와 비교",
@@ -1769,5 +1769,7 @@
   "server.export.into_work": "작품이 들어 있는 폴더입니다. 작품 밖의 폴더를 고르세요.",
   "server.export.into_app": "앱 폴더 밖의 폴더를 고르세요.",
   "agent.warning.changed_since": "요청을 보낸 뒤 이 파일이 바뀌었습니다. 제안은 바뀌기 전 내용을 보고 만든 것이라 채택할 수 없습니다. 다시 요청하세요.",
-  "agent.warning.not_in_context": "에이전트에게 보내지 않은 파일입니다. 지금 내용을 모르고 쓴 제안일 수 있으니 차이를 꼭 확인하세요."
+  "agent.warning.not_in_context": "에이전트에게 보내지 않은 파일입니다. 지금 내용을 모르고 쓴 제안일 수 있으니 차이를 꼭 확인하세요.",
+  "history.restored_n": "{n}개 파일을 스냅숏 때로 되돌렸습니다.",
+  "history.nothing_to_restore": "바뀐 것이 없어 되돌릴 파일이 없습니다."
 }
