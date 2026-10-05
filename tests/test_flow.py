@@ -376,3 +376,12 @@ def test_save_points_prune_and_export_leftovers(unlocked, tmp_path):
     (target / '옛' / '지운 항목.md').write_text('x', encoding='utf-8')
     state = c.get(f'/api/works/{wid}/export/preview', params={'target': str(target)}).json()['target']
     assert state['exists'] and state['leftovers'] == ['옛/지운 항목.md']
+
+
+def test_samples_install_without_unreadable_component_calls(unlocked):
+    c = unlocked
+    for sample in ('single', 'ensemble', 'simulation'):
+        wid = c.post(f'/api/samples/{sample}/install').json()['id']
+        issues = c.get(f'/api/works/{wid}/check').json()
+        keys = [i['message']['key'] for i in issues]
+        assert 'check.jsx_example_unreadable' not in keys, (sample, issues)
