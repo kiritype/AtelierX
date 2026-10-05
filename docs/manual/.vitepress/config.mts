@@ -19,7 +19,7 @@ const base = process.env.DOCS_BASE || '/';
 if (!base.startsWith('/') || !base.endsWith('/') || base.includes('..')) throw new Error('DOCS_BASE must be an absolute URL path ending in /');
 
 export default defineConfig({
-  lang: 'ko-KR', title: 'AtelierX', description: 'RP 챗봇 원고와 캐릭터 이미지를 한 작업실에서',
+  lang: 'ko-KR', title: 'AtelierX', description: '쓰고, 그리고, 대화로 다듬는 RP 챗봇 작업실',
   base, outDir: '../../dist/manual-site',
   srcExclude: ['node_modules/**', 'README.md'],
   cleanUrls: false,
