@@ -75,7 +75,10 @@ export default function ItemEditor({
     [workId, path], // eslint-disable-line react-hooks/exhaustive-deps
   );
   // Closing the item without saving (the user chose to discard) writes nothing more.
-  useEffect(() => () => jsxSaver.dispose(), [jsxSaver]);
+  useEffect(() => {
+    jsxSaver.activate();
+    return () => jsxSaver.dispose();
+  }, [jsxSaver]);
   const [inner, setInner] = useState('body');
   const [error, setError] = useState('');
   const baseHash = useRef<string | null>(null);
