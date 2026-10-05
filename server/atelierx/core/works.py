@@ -50,6 +50,34 @@ def check_id(value):
     return value
 
 
+def trash_bundle(folder, bundle_id):
+    """The trash bundle a request names: one folder directly inside ``folder``, never a path that steps out of it."""
+    name = str(bundle_id or '')
+    path = Path(folder) / name
+    if (
+        not name
+        or any(c in name for c in '/\\:\x00')
+        or not name.strip('. ')
+        or path.resolve().parent != Path(folder).resolve()
+        or not path.is_dir()
+    ):
+        raise AppError(Msg('server.trash.missing', 'This trash entry does not exist.'), 404)
+    return path
+
+
+def restore_name(dest, is_dir):
+    """``dest``, or the first free "(되살림)", "(되살림 2)" … name next to it. An existing file is never replaced."""
+    if not dest.exists():
+        return dest
+    stem, suffix = (dest.name, '') if is_dir else (dest.stem, dest.suffix)
+    n = 1
+    while True:
+        candidate = dest.with_name(f'{stem} (되살림{"" if n == 1 else f" {n}"}){suffix}')
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
 def next_code(prefix, used, width=3):
     used = {u.lower() for u in used}
     n = 1
@@ -337,17 +365,40 @@ class Work:
                     out.append({'id': bundle.name, **entry})
         return out
 
+    def _trash_target(self, rel):
+        """Where a trash entry path goes back to: inside the work, never into the trash or the history."""
+        rel = str(rel or '').rstrip('/')
+        parts = rel.split('/')
+        if (
+            not rel
+            or '\\' in rel
+            or ':' in rel
+            or any(not p.strip('. ') or p != p.rstrip('. ') for p in parts)
+        ):
+            raise AppError(Msg('server.trash.damaged', 'This trash entry is damaged.'))
+        dest = self.folder.joinpath(*parts)
+        resolved = dest.resolve()
+        if self.folder.resolve() not in resolved.parents:
+            raise AppError(Msg('server.trash.damaged', 'This trash entry is damaged.'))
+        for kept in (self.app / 'trash', self.app / 'history'):
+            if resolved == kept.resolve() or kept.resolve() in resolved.parents:
+                raise AppError(Msg('server.trash.damaged', 'This trash entry is damaged.'))
+        return rel, dest
+
     def restore_trash(self, bundle_id):
-        bundle = self.app / 'trash' / bundle_id
+        bundle = trash_bundle(self.app / 'trash', bundle_id)
         entry = read_json(bundle / 'entry.json')
         if entry is None:
             raise AppError(Msg('server.trash.missing', 'This trash entry does not exist.'), 404)
-        for rel in entry['paths']:
-            rel = rel.rstrip('/')
+        # Check every path before moving anything, so a damaged entry changes nothing.
+        moves = []
+        for rel, dest in (self._trash_target(rel) for rel in entry.get('paths', [])):
             source = bundle / 'files' / rel
-            dest = self.folder / rel
-            if dest.exists():
-                dest = dest.with_name(f'{dest.stem} (되살림){dest.suffix}')
+            if not source.exists():
+                raise AppError(Msg('server.trash.damaged', 'This trash entry is damaged.'))
+            moves.append((source, dest))
+        for source, dest in moves:
+            dest = restore_name(dest, source.is_dir())
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(dest))
         shutil.rmtree(bundle)
@@ -355,7 +406,10 @@ class Work:
 
     def purge_trash(self, bundle_id=None):
         folder = self.app / 'trash'
-        targets = [folder / bundle_id] if bundle_id else (list(folder.iterdir()) if folder.is_dir() else [])
+        if bundle_id:
+            shutil.rmtree(trash_bundle(folder, bundle_id))
+            return
+        targets = list(folder.iterdir()) if folder.is_dir() else []
         for target in targets:
             if target.is_dir():
                 shutil.rmtree(target)
@@ -535,14 +589,12 @@ class WorkStore:
         return out
 
     def restore(self, bundle_id):
-        bundle = self.paths.data_trash / bundle_id
+        bundle = trash_bundle(self.paths.data_trash, bundle_id)
         entry = read_json(bundle / 'entry.json')
         if entry is None:
             raise AppError(Msg('server.trash.missing', 'This trash entry does not exist.'), 404)
         for source in (bundle / 'files').iterdir():
-            dest = self.paths.works / source.name
-            if dest.exists():
-                dest = dest.with_name(f'{source.name} (되살림)')
+            dest = restore_name(self.paths.works / source.name, True)
             shutil.move(str(source), str(dest))
             work = Work(dest)
             if any(w.folder != dest and w.id.lower() == work.id.lower() for w in self.all()):
@@ -551,11 +603,10 @@ class WorkStore:
         return entry
 
     def purge(self, bundle_id=None):
-        targets = (
-            [self.paths.data_trash / bundle_id]
-            if bundle_id
-            else (list(self.paths.data_trash.iterdir()) if self.paths.data_trash.is_dir() else [])
-        )
+        if bundle_id:
+            shutil.rmtree(trash_bundle(self.paths.data_trash, bundle_id))
+            return
+        targets = list(self.paths.data_trash.iterdir()) if self.paths.data_trash.is_dir() else []
         for target in targets:
             if target.is_dir():
                 shutil.rmtree(target)
