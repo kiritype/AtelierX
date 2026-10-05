@@ -498,7 +498,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                     )}
                     {tab.type === 'work-settings' && <WorkSettings workId={workId} info={info.data!} />}
                       {tab.type === 'settings' && <AppSettings onDirtyChange={(dirty) => {
-                        if (dirty) setFormDirty((keys) => keys.includes(key) ? keys : [...keys, key]);
+                        setFormDirty((keys) => dirty ? (keys.includes(key) ? keys : [...keys, key]) : keys.filter((k) => k !== key));
                       }} />}
                     {tab.type === 'review' && <ReviewTab workId={workId} draftId={tab.draft} onDone={() => close(key)} openItem={(path) => open({ type: 'item', path })} />}
                     {tab.type === 'compare' && <CompareTab workId={workId} snapshot={tab.snapshot} />}
