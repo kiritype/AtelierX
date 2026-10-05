@@ -45,7 +45,10 @@ export default function PersonaDialog({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  // The list being edited and the revision it came from are taken together when the dialog opens; a list refreshed
+  // meanwhile (another window) must not lend its newer revision to this older copy.
   const [items, setItems] = useState<Persona[]>(list.personas);
+  const [baseRevision] = useState(list.revision);
   const [focus, setFocus] = useState<string | null>(selectedId ?? list.personas[0]?.id ?? null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -77,10 +80,11 @@ export default function PersonaDialog({
     try {
       let saved = list;
       if (dirty) {
-        saved = await put<PersonaList>('/api/personas', { base_revision: list.revision, personas: items });
+        saved = await put<PersonaList>('/api/personas', { base_revision: baseRevision, personas: items });
         qc.setQueryData(['personas'], saved);
       }
-      if (use !== 'keep') await onChoose(use === null ? null : (saved.personas[use]?.id ?? null));
+      // A saved list keeps the edited order (new ones get their ids there); an unchanged one is chosen by id.
+      if (use !== 'keep') await onChoose(use === null ? null : dirty ? (saved.personas[use]?.id ?? null) : (items[use]?.id ?? null));
       else if (selectedId && !saved.personas.some((p) => p.id === selectedId)) await onChoose(null);
       onClose();
     } catch (err) {
