@@ -1771,5 +1771,7 @@
   "agent.warning.changed_since": "요청을 보낸 뒤 이 파일이 바뀌었습니다. 제안은 바뀌기 전 내용을 보고 만든 것이라 채택할 수 없습니다. 다시 요청하세요.",
   "agent.warning.not_in_context": "에이전트에게 보내지 않은 파일입니다. 지금 내용을 모르고 쓴 제안일 수 있으니 차이를 꼭 확인하세요.",
   "history.restored_n": "{n}개 파일을 스냅숏 때로 되돌렸습니다.",
-  "history.nothing_to_restore": "바뀐 것이 없어 되돌릴 파일이 없습니다."
+  "history.nothing_to_restore": "바뀐 것이 없어 되돌릴 파일이 없습니다.",
+  "editor.reload_confirm": "저장하지 않은 변경을 버리고 디스크의 내용을 불러올까요?",
+  "editor.reload_failed": "파일을 다시 불러오지 못했습니다. 변경 내용은 그대로 남아 있습니다."
 }

@@ -1643,5 +1643,7 @@
   "agent.warning.changed_since": "This file changed after the request was sent. The proposal was made from the earlier text and cannot be adopted; ask again.",
   "agent.warning.not_in_context": "This file was not sent to the agent. The proposal may ignore its current text; check the changes closely.",
   "history.restored_n": "Restored {n} files to the snapshot.",
-  "history.nothing_to_restore": "Nothing differs, so nothing was restored."
+  "history.nothing_to_restore": "Nothing differs, so nothing was restored.",
+  "editor.reload_confirm": "Discard the unsaved changes and load the file from disk?",
+  "editor.reload_failed": "The file could not be reloaded. Your changes are still here."
 }
