@@ -207,6 +207,15 @@ class Providers:
         write_json(self.file, doc)
         return doc
 
+    def on_gpu(self, task, override=None):
+        """Whether ``task`` would go to a model on this PC's GPU. Batch jobs to such a model run one at a time; jobs to
+        other services do not wait for each other."""
+        try:
+            provider, _, _ = self.resolve(task, override)
+        except AppError:
+            return False  # the job itself reports the missing connection
+        return self._on_gpu(provider, task)
+
     def _on_gpu(self, provider, task):
         return task not in GPU_HELD_TASKS and uses_local_gpu(provider)
 

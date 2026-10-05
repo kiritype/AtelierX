@@ -163,7 +163,13 @@ async def run_action(request):
         return {'draft': draft['id']}
 
     return _ok(
-        s.jobs.submit(task, f'편집기 · {work.name}', runner, gpu=(action == 'format'), work_id=work.id)
+        s.jobs.submit(
+            task,
+            f'편집기 · {work.name}',
+            runner,
+            gpu=action == 'format' and s.llm.on_gpu(task, data.get('llm')),
+            work_id=work.id,
+        )
     )
 
 
