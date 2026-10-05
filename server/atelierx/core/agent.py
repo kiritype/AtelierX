@@ -13,6 +13,7 @@ from . import frontmatter, guidelines
 from .count import estimate_tokens
 from .fsutil import sha256_text
 from .i18n import AppError, Msg
+from .model_limits import known
 from .works import ITEM_SUFFIXES, now_iso
 
 # The rules every mode starts with. Users cannot change them (Settings → 지침 shows them read-only).
@@ -55,6 +56,9 @@ OMISSION = re.compile(
 WRAPPED_REF = re.compile(r'[`\'"]\{\{(?:user|char)\}\}[`\'"]')
 SESSION_ID = re.compile(r'\d{8}T\d{6}-[0-9a-f]{4}')
 DEFAULT_CONTEXT = 8192
+# A model may read a million tokens; filling all of it is slow and costly, so the agent stops at the cap
+# (providers.json ``context_cap``, Settings → LLM).
+DEFAULT_CONTEXT_CAP = 131072
 CONTEXT_SHARE = 0.6  # the rest is left for the answer: whole files are long
 ATTACHMENT_LIMIT = 40000
 
@@ -196,9 +200,12 @@ def scope_items(work, scope):
 
 
 # --- context ---------------------------------------------------------------------------------------------------
-def context_budget(provider, model):
-    context = ((provider.get('models') or {}).get(model) or {}).get('context') or DEFAULT_CONTEXT
-    return int(int(context) * CONTEXT_SHARE)
+def context_budget(provider, model, cap=None):
+    """Tokens of work text for a request: the model's context (saved, else the known-model table, else 8192) up to
+    the cap, less the share kept for the answer."""
+    saved = ((provider.get('models') or {}).get(model) or {}).get('context')
+    context = saved or (known(model) or {}).get('context') or DEFAULT_CONTEXT
+    return int(min(int(context), int(cap or DEFAULT_CONTEXT_CAP)) * CONTEXT_SHARE)
 
 
 def platform_summary(effective):

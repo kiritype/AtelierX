@@ -999,7 +999,8 @@ activation:
 | `key` | 금고 항목 참조(`secret:<이름>`). 필요 없으면 `null`. |
 | `local_gpu` | 선택. 이 연결의 모델이 이 PC의 GPU에서 도는지. `true`면 요청이 이미지 작업과 GPU를 번갈아 쓴다. 없으면 주소가 이 PC일 때 `true`로 본다. |
 | `trusted` | 같은 네트워크의 "내 서버"로 표시. `true`거나 주소가 이 PC(`127.0.0.1`, `localhost`, `::1`)면 로컬로 보고 외부 전송 확인을 하지 않는다. |
-| `models` | 쓸 모델. `context`(맥락 길이), `tokenizer`(토크나이저 이름, 없으면 추정), `price`(선택, 100만 토큰당 가격. 사용자가 입력하며, 없으면 비용 대신 토큰 수만 보여 준다). |
+| `models` | 쓸 모델. `context`(맥락 길이, 토큰), `max_output`(선택, 최대 출력 토큰), `context_source`(`manual`·`service`·`table`, 값을 어디서 얻었는지), `tokenizer`(토크나이저 이름, 없으면 추정), `price`(선택, 100만 토큰당 가격. 사용자가 입력하며, 없으면 비용 대신 토큰 수만 보여 준다). 토큰 수는 0보다 큰 정수. |
+| `context_cap` | 선택. 에이전트가 한 요청에 쓸 맥락의 상한(토큰). 없으면 131,072. |
 | `tasks` | 작업별 기본 연결·모델·생성 설정. 작업: `compression`, `image_prompt`, `jsx_prompt`, `authoring`, `consistency`, `chat_test`, `agent`. 정하지 않은 작업은 `local`의 `default_model`을 쓴다. |
 
 - 사용량 기록(`usage/<연-월>.jsonl`)은 요청 하나에 한 줄: 시각, 연결 ID, 모델, 작업, 작품 ID, 입력·출력 토큰, 비용(가격이 있을 때).

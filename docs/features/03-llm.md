@@ -19,8 +19,24 @@
 1. 설정 → LLM 연결 → "연결 추가". 연결 방식은 OpenAI 호환이다.
 2. 이름, 주소, 인증 정보(필요하면 금고 항목 고르기 또는 새로 등록)를 입력한다. 같은 네트워크의 다른 PC에 있는 내 서버면
    "내 서버"로 표시한다.
-3. "연결 시험" → 모델 목록을 받아 온다. 쓸 모델을 고르고, 모델마다 맥락 길이를 확인·수정한다.
+3. "연결 시험" → 모델 목록을 받아 온다. 쓸 모델을 고르고, 모델마다 맥락 길이를 확인·수정한다(아래 "모델 맥락 길이").
 4. 외부 서비스면 모델별 가격을 입력할 수 있다(선택). 입력하지 않으면 비용 대신 토큰 수만 보여 준다.
+
+### 모델 맥락 길이
+
+연결 카드에 그 연결로 쓰는 모델(기본 모델과 작업별로 정한 모델)마다 맥락 길이(토큰) 칸이 있다. "맥락 길이 읽기"는
+서비스에 물어 채우고, 알려 주지 않는 서비스는 앱의 기본 표로 채운다. 값마다 출처(직접 입력·서비스·기본 표)를 함께 보인다.
+
+| 연결 | 읽는 곳 |
+|---|---|
+| Ollama(클라우드·로컬) | `POST <주소의 호스트>/api/show` → `model_info["<구조>.context_length"]`. 로컬 모델에 `num_ctx`가 더 작게 정해져 있으면 그 값 |
+| Gemini API | `models.get`의 `inputTokenLimit`·`outputTokenLimit` |
+| OpenRouter | `/models`의 `context_length`·`top_provider.max_completion_tokens` |
+| 이 PC의 서버(LM Studio) | `/api/v0/models/<모델>`의 `loaded_context_length`(없으면 `max_context_length`) |
+| Vertex AI, DeepSeek 등 | 기본 표(Gemini 계열, DeepSeek chat·reasoner) |
+
+- 저장된 값이 늘 먼저다. 저장된 값이 없으면 기본 표, 그것도 없으면 8,192로 계산한다.
+- 에이전트는 맥락 길이를 "에이전트 맥락 상한"(기본 131,072)까지만 쓴다. 100만 토큰급 모델을 다 채우면 느리고 비용이 들기 때문이다.
 
 ### 작업별 모델 정하기
 
@@ -155,6 +171,7 @@ LLM 연결                                         [연결 추가]
 |---|---|
 | `GET /api/providers` · `POST /api/providers` · `PUT /api/providers/{id}` · `DELETE /api/providers/{id}` | 연결 관리 |
 | `POST /api/providers/{id}/test` | 연결 시험, 모델 목록 받기 |
+| `GET /api/providers/{id}/model-info?model=` | 모델의 맥락 길이·최대 출력·기능 `{context, max_output, capabilities, source}` |
 | `GET /api/llm/tasks` · `PUT /api/llm/tasks` | 작업별 기본 모델 |
 | `POST /api/llm/estimate` | 작업 요청의 예상 토큰·비용·맥락 초과 여부 |
 | `POST /api/tokenize` | `{tokenizer, text}` → 토큰 수(용량 게이지용) |

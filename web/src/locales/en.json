@@ -1651,5 +1651,20 @@
   "llm.local_gpu_help": "When on, this connection's requests take turns on the GPU with image generation, VLM review and LoRA training. On by default for this PC's address (127.0.0.1, localhost).",
   "agent.warning.deleted_since": "This file was deleted or moved after the request. Adopting would bring back the old text, so it is blocked; ask again if needed.",
   "server.agent.deleted": "The file was deleted or moved after the request. Ask again if it should come back.",
-  "agent.stop_to_switch": "The conversation cannot change while an answer comes. Stop it first."
+  "agent.stop_to_switch": "The conversation cannot change while an answer comes. Stop it first.",
+  "llm.context_title": "Model context length (tokens)",
+  "llm.context_help": "How much the model reads at once. The agent uses it to decide how much of the work to send.",
+  "llm.context_read": "Read context lengths",
+  "llm.context_read_done": "Filled the context length of {found} of {n} models. Save to keep them.",
+  "llm.context_length": "Context length of {model}",
+  "llm.context_unknown": "Unknown",
+  "llm.context_source.manual": "Entered",
+  "llm.context_source.service": "From the service",
+  "llm.context_source.table": "App's table",
+  "llm.context_source.none": "Unknown — 8,192 unless the table knows it",
+  "llm.max_output": "output up to {n}",
+  "llm.context_cap": "Agent context cap (tokens)",
+  "llm.context_cap_help": "The agent fills at most this much even when the model reads more. Longer is slower and costs more. Empty means 131,072.",
+  "server.llm.invalid_tokens": "Token counts must be whole numbers above zero.",
+  "server.llm.no_model_named": "Name the model first."
 }

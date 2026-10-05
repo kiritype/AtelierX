@@ -1779,5 +1779,20 @@
   "llm.local_gpu_help": "켜 두면 이 연결의 요청은 이미지 생성·VLM 검수·LoRA 학습과 GPU를 번갈아 씁니다. 이 PC 주소(127.0.0.1·localhost)면 기본으로 켜집니다.",
   "agent.warning.deleted_since": "요청을 보낸 뒤 이 파일이 지워지거나 옮겨졌습니다. 채택하면 옛 내용으로 다시 생기므로 막았습니다. 필요하면 다시 요청하세요.",
   "server.agent.deleted": "요청을 보낸 뒤 파일이 지워지거나 옮겨졌습니다. 다시 만들려면 새로 요청하세요.",
-  "agent.stop_to_switch": "응답을 받는 중에는 대화를 바꿀 수 없습니다. 먼저 중지하세요."
+  "agent.stop_to_switch": "응답을 받는 중에는 대화를 바꿀 수 없습니다. 먼저 중지하세요.",
+  "llm.context_title": "모델 맥락 길이(토큰)",
+  "llm.context_help": "모델이 한 번에 읽을 수 있는 길이입니다. 에이전트가 원고를 얼마나 넣을지 정하는 데 씁니다.",
+  "llm.context_read": "맥락 길이 읽기",
+  "llm.context_read_done": "{n}개 중 {found}개 모델의 맥락 길이를 채웠습니다. 저장해야 반영됩니다.",
+  "llm.context_length": "{model}의 맥락 길이",
+  "llm.context_unknown": "모름",
+  "llm.context_source.manual": "직접 입력",
+  "llm.context_source.service": "서비스에서 읽음",
+  "llm.context_source.table": "앱의 기본 표",
+  "llm.context_source.none": "모름 — 기본 표에 없으면 8,192로 계산",
+  "llm.max_output": "최대 출력 {n}",
+  "llm.context_cap": "에이전트 맥락 상한(토큰)",
+  "llm.context_cap_help": "모델이 더 길게 읽을 수 있어도 에이전트는 이 길이까지만 채웁니다. 길수록 느리고 비용이 듭니다. 비워 두면 131,072.",
+  "server.llm.invalid_tokens": "토큰 수는 0보다 큰 정수여야 합니다.",
+  "server.llm.no_model_named": "먼저 모델 이름을 정하세요."
 }

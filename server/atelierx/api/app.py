@@ -338,6 +338,11 @@ async def providers_models(request):
     return ok({'models': await st(request).llm.models(request.path_params['pid'])})
 
 
+async def providers_model_info(request):
+    llm = st(request).llm
+    return ok(await llm.model_info(request.path_params['pid'], request.query_params.get('model')))
+
+
 async def providers_probe(request):
     return ok(await st(request).llm.probe(request.path_params['pid']))
 
@@ -1375,6 +1380,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route('/api/providers', providers_put, methods=['PUT']),
         Route('/api/providers/{pid}/models', providers_models),
         Route('/api/providers/{pid}/probe', providers_probe, methods=['POST']),
+        Route('/api/providers/{pid}/model-info', providers_model_info),
         Route('/api/usage', usage),
         Route('/api/usage/log', usage_log),
         Route('/api/usage.csv', usage_csv),

@@ -89,7 +89,7 @@ def _prepare(request, data):
         session,
         str(data.get('message') or ''),
         attachments,
-        agent.context_budget(provider, model),
+        agent.context_budget(provider, model, s.llm.doc().get('context_cap')),
     )
     return (
         s,
