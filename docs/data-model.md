@@ -524,7 +524,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 | 필드 | 뜻 |
 |---|---|
-| `kind` | 종류: `compression`(압축 후보), `image_prompt`(이미지 프롬프트 변환), `jsx_prompt`(JSX 프롬프트용 문구), `authoring`(뼈대 작성 초안), `relations`(본문에서 찾은 관계 후보), `consistency`(모순 검사 결과), `agent_file`(에이전트의 파일 전체 교체 제안: `candidates[0].text`가 새 내용 전체, `request`에 대화 ID·턴·경고, 새 파일이면 `target.new: true`). 종류마다 검토 화면이 다르다. |
+| `kind` | 종류: `compression`(압축 후보), `image_prompt`(이미지 프롬프트 변환), `jsx_prompt`(JSX 프롬프트용 문구), `authoring`(뼈대 작성 초안), `relations`(본문에서 찾은 관계 후보), `consistency`(모순 검사 결과), `agent_file`(에이전트의 파일 전체 교체 제안: `candidates[0].text`가 새 내용 전체, `request`에 대화 ID·턴·경고와 응답 때의 원본 `original`, 새 파일이면 `target.new: true`). 종류마다 검토 화면이 다르다. |
 | `target` | 대상. `id`로 찾고 `path`는 표시용. `base_hash`는 만들 때의 대상 본문 해시. |
 | `guidelines` | 사용한 가이드라인 목록: 이름, 찾은 위치(`work`, `preset:<ID>`, `global`), 그때의 해시. |
 | `model` | 사용한 LLM 연결과 모델. |

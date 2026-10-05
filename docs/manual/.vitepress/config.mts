@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const guide = fileURLToPath(new URL('../guide/', import.meta.url));
-const order = ['getting-started', 'walkthrough', 'editing', 'ai-tools', 'chat-test', 'connections', 'image-setup', 'character-images', 'generation', 'gallery-export', 'lora', 'platforms', 'maintenance', 'external', 'release-status'];
+const order = ['getting-started', 'walkthrough', 'editing', 'ai-tools', 'agent', 'chat-test', 'connections', 'image-setup', 'character-images', 'generation', 'gallery-export', 'lora', 'platforms', 'maintenance', 'external', 'release-status'];
 const files = readdirSync(guide).filter(f => f.endsWith('.md')).sort((a, b) => order.indexOf(a.slice(0, -3)) - order.indexOf(b.slice(0, -3)));
 const items = files.map(file => ({
   text: readFileSync(`${guide}/${file}`, 'utf8').match(/^# (.+)$/m)?.[1] ?? file,
