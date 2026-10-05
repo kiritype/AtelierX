@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
 import ImageSettings from './ImageSettings';
@@ -10,32 +10,41 @@ import { AboutContent, useHelp } from './Help';
 import { useToast } from './Toasts';
 
 type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'about';
+const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'about'];
 
 export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
   const [section, setSection] = useState<Section>('general');
-  const [guidelinesVisited, setGuidelinesVisited] = useState(false);
+  // A section stays mounted once opened, so moving to another one and back keeps what was typed but not yet saved.
+  const [visited, setVisited] = useState<Set<Section>>(() => new Set(['general']));
   const selectSection = (key: Section) => {
     setSection(key);
-    if (key === 'guidelines') setGuidelinesVisited(true);
+    setVisited((all) => (all.has(key) ? all : new Set([...all, key])));
+  };
+  const panes: Record<Section, ReactNode> = {
+    general: <General />,
+    presets: <Presets />,
+    llm: <LlmSettings />,
+    vault: <VaultSection />,
+    guidelines: <GuidelineSettings onDirtyChange={onDirtyChange} />,
+    image: <ImageSettings />,
+    install: <InstallSettings />,
+    about: <About />,
   };
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', height: '100%' }}>
       <div style={{ borderRight: '1px solid var(--border)', paddingTop: 8 }}>
-        {(['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'about'] as Section[]).map((key) => (
+        {SECTIONS.map((key) => (
           <div key={key} className={`tree-row${section === key ? ' sel' : ''}`} onClick={() => selectSection(key)}>
             {t(`settings.${key}`)}
           </div>
         ))}
       </div>
       <div className="pad" style={{ overflow: 'auto' }}>
-        {section === 'general' && <General />}
-        {section === 'presets' && <Presets />}
-        {section === 'llm' && <LlmSettings />}
-        {section === 'vault' && <VaultSection />}
-        {guidelinesVisited && <div hidden={section !== 'guidelines'}><GuidelineSettings onDirtyChange={onDirtyChange} /></div>}
-        {section === 'image' && <ImageSettings />}
-        {section === 'install' && <InstallSettings />}
-        {section === 'about' && <About />}
+        {SECTIONS.filter((key) => visited.has(key)).map((key) => (
+          <div key={key} hidden={section !== key}>
+            {panes[key]}
+          </div>
+        ))}
       </div>
     </div>
   );
