@@ -27,16 +27,19 @@ import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
 
-// Most entries toggle a side panel; relations and glossary open as editor tabs.
-const ACTIVITY: ({ key: PanelKey; icon: IconName } | { tab: 'relations' | 'glossary'; icon: IconName })[] = [
+// Side panels: one is selected at a time. Below a divider, relations and glossary are launchers that open their editor
+// tab; they never show a selected state, so the activity bar always marks exactly the panel that is open.
+const PANELS: { key: PanelKey; icon: IconName }[] = [
   { key: 'files', icon: 'files' },
   { key: 'search', icon: 'search' },
-  { tab: 'relations', icon: 'relations' },
-  { tab: 'glossary', icon: 'glossary' },
   { key: 'image', icon: 'image' },
   { key: 'drafts', icon: 'drafts' },
   { key: 'history', icon: 'history' },
   { key: 'trash', icon: 'trash' },
+];
+const LAUNCHERS: { tab: 'relations' | 'glossary'; icon: IconName }[] = [
+  { tab: 'relations', icon: 'relations' },
+  { tab: 'glossary', icon: 'glossary' },
 ];
 
 export default function WorkWindow({ workId, onLeave, onLock }: { workId: string; onLeave: () => void; onLock: () => void }) {
@@ -375,30 +378,25 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         style={{ ['--side' as string]: panel ? '240px' : '0px', display: testing ? 'none' : undefined }}
       >
         <div className="activity">
-          {ACTIVITY.map((a) =>
-            'tab' in a ? (
-              <button
-                key={a.tab}
-                className={active === a.tab ? 'on' : ''}
-                title={t(`panel.${a.tab}`)}
-                onClick={() => open({ type: a.tab })}
-              >
-                <Icon name={a.icon} size={20} />
-                <span className="label">{t(`panel.${a.tab}`)}</span>
-              </button>
-            ) : (
-              <button
-                key={a.key}
-                className={panel === a.key ? 'on' : ''}
-                title={t(`panel.${a.key}`)}
-                onClick={() => setPanel(panel === a.key ? null : a.key)}
-              >
-                <Icon name={a.icon} size={20} />
-                <span className="label">{t(`panel.${a.key}`)}</span>
-                {a.key === 'drafts' && pendingDrafts > 0 && <span className="dot">{pendingDrafts}</span>}
-              </button>
-            ),
-          )}
+          {PANELS.map((a) => (
+            <button
+              key={a.key}
+              className={panel === a.key ? 'on' : ''}
+              title={t(`panel.${a.key}`)}
+              onClick={() => setPanel(panel === a.key ? null : a.key)}
+            >
+              <Icon name={a.icon} size={20} />
+              <span className="label">{t(`panel.${a.key}`)}</span>
+              {a.key === 'drafts' && pendingDrafts > 0 && <span className="dot">{pendingDrafts}</span>}
+            </button>
+          ))}
+          <div className="activity-divider" />
+          {LAUNCHERS.map((a) => (
+            <button key={a.tab} className="launcher" title={t('activity.open_tab', { name: t(`panel.${a.tab}`) })} onClick={() => open({ type: a.tab })}>
+              <Icon name={a.icon} size={20} />
+              <span className="label">{t(`panel.${a.tab}`)}</span>
+            </button>
+          ))}
           <span className="grow" />
           <button className={aux ? 'on' : ''} title={t('aux.toggle')} onClick={() => setAux(aux ? null : 'check')}>
             <Icon name="aux" size={20} />

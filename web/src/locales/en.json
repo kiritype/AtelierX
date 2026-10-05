@@ -115,7 +115,6 @@
   "image.convert": "Convert to prompt",
   "image.convert_started": "Conversion started.",
   "image.empty": "No image design yet.",
-  "image.library_later": "The image library comes in a later stage.",
   "image.need_id": "Set an ID first.",
   "image.no_characters": "No character items.",
   "image.outfit": "Outfit",
@@ -1436,5 +1435,9 @@
   "editor.id_link.image": "image data",
   "editor.id_link.jsx": "JSX examples",
   "editor.id_link.char": "the chat partner",
-  "editor.id_link.relations": "the relation map"
+  "editor.id_link.relations": "the relation map",
+  "image.characters": "Characters",
+  "image.open_gallery": "Click to open the gallery",
+  "image.document": "Document",
+  "activity.open_tab": "Open the {name} tab"
 }

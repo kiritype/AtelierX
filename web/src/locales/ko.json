@@ -125,7 +125,6 @@
   "image.convert": "프롬프트로 변환",
   "image.convert_started": "변환 작업을 시작했습니다.",
   "image.empty": "아직 이미지 설계가 없습니다.",
-  "image.library_later": "이미지 라이브러리는 이후 단계에서 지원합니다.",
   "image.need_id": "ID를 먼저 정하세요.",
   "image.no_characters": "등장인물 항목이 없습니다.",
   "image.outfit": "의상",
@@ -1539,5 +1538,9 @@
   "editor.id_link.jsx": "JSX 예시",
   "editor.id_link.char": "대화 상대 설정",
   "editor.id_link.relations": "관계도",
-  "server.works.id_linked": "ID {id}는 연결된 데이터(이미지 데이터, JSX 예시, 대화 상대 설정, 관계도)에서 쓰고 있어 여기서 바꿀 수 없습니다."
+  "server.works.id_linked": "ID {id}는 연결된 데이터(이미지 데이터, JSX 예시, 대화 상대 설정, 관계도)에서 쓰고 있어 여기서 바꿀 수 없습니다.",
+  "image.characters": "캐릭터",
+  "image.open_gallery": "눌러서 갤러리 열기",
+  "image.document": "문서",
+  "activity.open_tab": "{name} 탭 열기"
 }
