@@ -162,6 +162,7 @@ works/청원고/
     │   └── characters/<캐릭터 ID>/
     ├── jsx/<JSX ID>/props/       JSX 예시(컴포넌트 호출)
     ├── tests/runs/<시각>.jsonl   테스트 화면의 대화 기록
+    ├── agent/<대화 ID>.jsonl     에이전트 대화 기록
     ├── drafts/                   검토 대기 중인 임시 항목
     ├── trash/                    작품 안에서 지운 것
     └── history/                  스냅샷 저장소
@@ -172,8 +173,8 @@ works/청원고/
 - 트리에서 **항목**은 `.md`와 `.jsx` 파일이다. 그 밖의 파일은 트리에 보이지만 앱이 처리하거나 내보내지 않는다.
 - 파일·폴더 이름에는 Windows에서 쓸 수 없는 문자(`\ / : * ? " < > |`)를 쓸 수 없다. 같은 폴더에 같은 이름(대소문자 무시)은
   둘 수 없다. 사용자 트리에 `.atelierx`라는 이름은 쓸 수 없다.
-- 스냅샷에 들어가는 것: 사용자 트리의 **항목**(`.md`·`.jsx`)과 `.atelierx/`의 파일(빼는 것: `tests/runs/`, `drafts/`, `trash/`,
-  `history/`). 항목이 아닌 파일(이미지, 빌드 결과, 스크립트 등)은 이력에 넣지 않는다.
+- 스냅샷에 들어가는 것: 사용자 트리의 **항목**(`.md`·`.jsx`)과 `.atelierx/`의 파일(빼는 것: `tests/runs/`, `agent/`, `drafts/`,
+  `trash/`, `history/`). 항목이 아닌 파일(이미지, 빌드 결과, 스크립트 등)은 이력에 넣지 않는다.
 
 ### work.json
 
@@ -445,6 +446,33 @@ function StatusPanel(props) {
 테스트 화면([08-chat-test](features/08-chat-test.md))의 대화를 한 줄에 한 턴으로 남긴다: 보낸 맥락 요약(불러온 메인 프롬프트·로어북,
 예산 때문에 빠진 항목, 크기), 응답 속 컴포넌트 호출, 모델, 응답, 걸린 시간. 스냅샷에 넣지 않는다. 최근 100개를 남긴다.
 
+### 에이전트 대화
+
+위치: `.atelierx/agent/<대화 ID>.jsonl` (대화 ID는 `<시각>-<무작위 4자>`)
+
+에이전트 패널([11-agent](features/11-agent.md))의 대화 하나가 파일 하나다. 한 줄에 사건 하나를 덧붙여 쓰고, 읽을 때 차례로 적용한다.
+스냅샷·내보내기에 넣지 않고 자동으로 지우지 않는다.
+
+```jsonl
+{"type": "meta", "mode": "character", "title": "말투 다듬기", "scope": {"kind": "file", "paths": ["인물/한서윤.md"]}, "at": "…"}
+{"type": "user", "text": "말투를 조금 더 건조하게", "attachments": [{"path": "인물/한서윤.md", "from": 12, "to": 30}], "at": "…"}
+{"type": "assistant", "text": "…<<<file path=\"인물/한서윤.md\">>>…<<<end>>>", "model": {"provider": "local", "name": "…"},
+ "finish_reason": "stop", "context": {"files": 1, "tokens": 1820, "omitted": []},
+ "proposals": [{"n": 1, "path": "인물/한서윤.md", "new": false, "truncated": false, "base_hash": "…", "warnings": []}], "at": "…"}
+{"type": "proposal", "turn": 2, "n": 1, "draft_id": "20261005T142233-agent_file-a1b2"}
+{"type": "meta", "title": "한서윤 말투"}
+```
+
+| 사건 | 뜻 |
+|---|---|
+| `meta` | 대화 정보. 첫 줄은 모드·범위·만든 시각, 뒤의 `meta`는 바뀐 필드만(이름·범위 바꾸기). |
+| `user` | 사용자 메시지와 첨부(경로, 줄 범위 `from`·`to`; 없으면 파일 전체). |
+| `assistant` | 응답 원문, 쓴 모델, 끝난 이유(`stop`·`length` 등), 보낸 맥락 요약, 응답에서 읽은 제안 목록. `base_hash`는 응답을 받은 때의 원본 해시(새 파일이면 없음). |
+| `proposal` | 제안을 검토로 보냄. `turn`은 0부터 센 줄 순서가 아니라 `user`·`assistant` 턴 번호(1부터). |
+
+- 제안의 `warnings`: `shrunk`(원본의 60% 미만), `omission`(생략 표시), `id_changed`, `kind_changed`.
+- 인증 정보는 남기지 않는다.
+
 ### 임시 항목
 
 위치: `.atelierx/drafts/<시각>-<종류>.json`
@@ -478,7 +506,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 | 필드 | 뜻 |
 |---|---|
-| `kind` | 종류: `compression`(압축 후보), `image_prompt`(이미지 프롬프트 변환), `jsx_prompt`(JSX 프롬프트용 문구), `authoring`(뼈대 작성 초안), `relations`(본문에서 찾은 관계 후보), `consistency`(모순 검사 결과). 종류마다 검토 화면이 다르다. |
+| `kind` | 종류: `compression`(압축 후보), `image_prompt`(이미지 프롬프트 변환), `jsx_prompt`(JSX 프롬프트용 문구), `authoring`(뼈대 작성 초안), `relations`(본문에서 찾은 관계 후보), `consistency`(모순 검사 결과), `agent_file`(에이전트의 파일 전체 교체 제안: `candidates[0].text`가 새 내용 전체, `request`에 대화 ID·턴·경고, 새 파일이면 `target.new: true`). 종류마다 검토 화면이 다르다. |
 | `target` | 대상. `id`로 찾고 `path`는 표시용. `base_hash`는 만들 때의 대상 본문 해시. |
 | `guidelines` | 사용한 가이드라인 목록: 이름, 찾은 위치(`work`, `preset:<ID>`, `global`), 그때의 해시. |
 | `model` | 사용한 LLM 연결과 모델. |
@@ -953,7 +981,7 @@ activation:
 | `key` | 금고 항목 참조(`secret:<이름>`). 필요 없으면 `null`. |
 | `trusted` | 같은 네트워크의 "내 서버"로 표시. `true`거나 주소가 이 PC(`127.0.0.1`, `localhost`, `::1`)면 로컬로 보고 외부 전송 확인을 하지 않는다. |
 | `models` | 쓸 모델. `context`(맥락 길이), `tokenizer`(토크나이저 이름, 없으면 추정), `price`(선택, 100만 토큰당 가격. 사용자가 입력하며, 없으면 비용 대신 토큰 수만 보여 준다). |
-| `tasks` | 작업별 기본 연결·모델·생성 설정. 작업: `compression`, `image_prompt`, `jsx_prompt`, `authoring`, `consistency`, `chat_test`. 정하지 않은 작업은 `local`의 `default_model`을 쓴다. |
+| `tasks` | 작업별 기본 연결·모델·생성 설정. 작업: `compression`, `image_prompt`, `jsx_prompt`, `authoring`, `consistency`, `chat_test`, `agent`. 정하지 않은 작업은 `local`의 `default_model`을 쓴다. |
 
 - 사용량 기록(`usage/<연-월>.jsonl`)은 요청 하나에 한 줄: 시각, 연결 ID, 모델, 작업, 작품 ID, 입력·출력 토큰, 비용(가격이 있을 때).
   요청·응답 내용은 남기지 않는다.
@@ -984,8 +1012,33 @@ activation:
 | `authoring/<규모>.md` | 뼈대 작성(04) | 규모별(`single`, `ensemble`, `simulation`) 뼈대 질문(`## 질문` 아래 목록을 앱이 양식으로 씀)과 구성 원칙 |
 | `consistency.md` | 모순 검사(04) | 검사할 항목과 판단 기준 |
 | `jsx.md` | JSX 프롬프트용 문구 만들기(07)와 JSX 편집 화면의 참고 | 플랫폼 JSX 사용 규칙: 제공 함수, 금지 사항, 권장 패턴, 응답에 넣는 방식 |
+| `agent/<모드>.md` | 에이전트 패널(11)의 모드 하나 | 모드 카드 정보(머리 메타데이터)와 대화 방식 |
 
 - 이름은 기능 문서를 쓰면서 늘어날 수 있다. 새 이름은 이 표에 추가한다.
+
+### 에이전트 모드 지침
+
+`agent/` 폴더의 `.md` 파일 하나가 모드 하나다. 파일 이름(확장자 뺌)이 모드 ID다. 같은 ID는 작품 → 플랫폼 프리셋 → 전역 순서로
+먼저 찾은 것을 쓰고, 목록은 세 곳을 합친다.
+
+```markdown
+---
+name: 캐릭터 다듬기
+description: 캐릭터 파일의 말투와 설정을 대화로 다듬고 파일 전체를 제안합니다.
+scope: file
+order: 30
+---
+(대화 방식: 먼저 물을 것, 정리 순서, 끝에 내놓을 것)
+```
+
+| 필드 | 뜻 |
+|---|---|
+| `name` | 카드 이름. 없으면 모드 ID. |
+| `description` | 카드 설명 한 줄. |
+| `scope` | 기본 범위: `file`(현재 파일), `work`(작품 전체). 없으면 `file`. |
+| `order` | 카드 순서(작은 것부터). 없으면 100. |
+
+- 앱 고정 지시는 파일이 아니라 앱 안에 있고 설정 화면에서 읽기만 할 수 있다.
 - 요청 조립 순서와 앱 고정 지시와의 관계는 [03-llm](features/03-llm.md)의 "요청 조립".
 
 ## 내보내기
