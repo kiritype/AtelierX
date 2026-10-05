@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import MessageMarkdown, { safeMessageUrl } from './MessageMarkdown';
-import { splitReply } from '../screens/TestScreen';
+import { splitReply } from '../lib/componentCalls';
 
 describe('MessageMarkdown', () => {
   it('renders Markdown structure and escaped raw HTML as text', () => {

@@ -4,16 +4,19 @@ import { ApiError, del, get, post, q } from '../api';
 import { t, tm } from '../i18n';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import type { WorkInfo } from '../types';
+import { findCalls, type ResponseRule } from '../lib/componentCalls';
 import CodeEditor from './CodeEditor';
 import JsxPreview, { type PreviewCall } from './JsxPreview';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
 
-type Example = { name: string; data: unknown; text: string; error: string | null };
+// An example is a call as a reply writes it (`<Name c='C001' />`); `legacy` ones were saved as JSON props.
+type Example = { name: string; text: string; legacy?: boolean };
 
 const WIDTHS = { narrow: 360, normal: 560, wide: undefined } as const;
 
-// [미리보기·props] tab of a JSX item: live preview of the editor's current source with an example props file.
+// [미리보기·props] tab of a JSX item: live preview of the editor's current source for the calls in the preview input,
+// read with the work's response rule exactly as a reply would be.
 export default function JsxWorkbench({
   workId,
   jsxId,
@@ -42,12 +45,11 @@ export default function JsxWorkbench({
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [text, setText] = useState('');
-  const [parseError, setParseError] = useState('');
   const [width, setWidth] = useState<keyof typeof WIDTHS>('normal');
   const [dark, setDark] = useState(false);
   const [calls, setCalls] = useState<PreviewCall[]>([]);
   const editing = useRef(false);
-  const [dialog, setDialog] = useState<'prompt' | 'try' | null>(null);
+  const [dialog, setDialog] = useState<'prompt' | null>(null);
   const usages = useQuery<{ path: string; elements: { raw: string; errors: string[] }[] }[]>({
     queryKey: ['jsx-usages', workId, jsxId],
     queryFn: () => get(`/api/works/${workId}/jsx/${q(jsxId!)}/usages`),
@@ -58,15 +60,12 @@ export default function JsxWorkbench({
   const current = list.find((e) => e.name === selected) ?? list.find((e) => e.name === defaultProps) ?? list[0] ?? null;
 
   useEffect(() => {
-    if (current && !editing.current) {
-      setText(current.text);
-      setParseError(current.error ?? '');
-    }
+    if (current && !editing.current) setText(current.text);
   }, [current?.name, current?.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Save a valid example shortly after the last keystroke.
+  // Save the example shortly after the last keystroke.
   useEffect(() => {
-    if (!editing.current || !current || parseError) return;
+    if (!editing.current || !current || !text.trim()) return;
     const timer = setTimeout(async () => {
       try {
         const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(current.name)}`, { method: 'PUT', body: text });
@@ -78,18 +77,18 @@ export default function JsxWorkbench({
       }
     }, 700);
     return () => clearTimeout(timer);
-  }, [text, parseError, current?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text, current?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!jsxId) return <div className="pad muted">{t('jsx.need_id')}</div>;
 
-  let props: unknown = current?.data ?? {};
-  if (editing.current && !parseError) props = JSON.parse(text);
-  const rules = info.effective.values.jsx ?? {};
+  const rules: { hooks?: string[]; globals?: { name: string; stub?: string }[]; response?: ResponseRule } = info.effective.values.jsx ?? {};
+  const found = findCalls(text, [name], rules.response);
+  const format = rules.response?.attribute_format ?? 'json_lenient';
 
   async function create(base?: Example) {
     const next = prompt(t('jsx.props_name_prompt'), base ? `${base.name}-2` : 'basic');
     if (!next) return;
-    const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(next)}`, { method: 'PUT', body: base?.text ?? '{}' });
+    const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(next)}`, { method: 'PUT', body: base?.text ?? `<${name} />` });
     if (!response.ok) {
       toast({ text: tm((await response.json()).error), tone: 'error' });
       return;
@@ -118,23 +117,40 @@ export default function JsxWorkbench({
           </button>
         </div>
         <span className="grow" />
-        <button onClick={() => setDialog('try')}>{t('jsx.try_reply')}</button>
         <button onClick={() => setDialog('prompt')}>{t('jsx.prompt_text')}</button>
       </div>
       <div className="jsx-bench-body">
         <div className={`jsx-stage${dark ? ' dark' : ''}`}>
-          {current || list.length === 0 ? (
+          {list.length === 0 ? (
             <JsxPreview
               code={source}
               name={name}
-              props={props}
+              props={{}}
               hooks={rules.hooks ?? []}
               globals={rules.globals ?? []}
               theme={dark ? 'dark' : 'light'}
               width={WIDTHS[width]}
               onCall={(call) => setCalls((all) => [call, ...all].slice(0, 30))}
             />
-          ) : null}
+          ) : found.length === 0 ? (
+            <div className="empty">{t('jsx.no_calls_found', { name })}</div>
+          ) : (
+            // One preview per call, in order; several calls (or a whole reply) show stacked.
+            found.map((call, n) => (
+              <JsxPreview
+                key={`${n}:${call.raw}`}
+                code={source}
+                name={name}
+                props={call.attrs}
+                hooks={rules.hooks ?? []}
+                globals={rules.globals ?? []}
+                theme={dark ? 'dark' : 'light'}
+                width={WIDTHS[width]}
+                autoHeight={found.length > 1}
+                onCall={(c) => setCalls((all) => [c, ...all].slice(0, 30))}
+              />
+            ))
+          )}
         </div>
         <div className="jsx-props">
           <div className="row">
@@ -180,6 +196,7 @@ export default function JsxWorkbench({
             </div>
           ) : (
             <>
+              <div className="faint small">{t('jsx.preview_input_hint', { name })}</div>
               <div className="jsx-json">
                 <CodeEditor
                   key={current?.name}
@@ -188,16 +205,31 @@ export default function JsxWorkbench({
                   onChange={(value) => {
                     editing.current = true;
                     setText(value);
-                    try {
-                      JSON.parse(value);
-                      setParseError('');
-                    } catch (err) {
-                      setParseError((err as Error).message);
-                    }
                   }}
                 />
               </div>
-              {parseError && <div className="error-text">{t('jsx.json_error', { error: parseError })}</div>}
+              {current?.legacy && <div className="faint small">{t('jsx.legacy_example')}</div>}
+              <div className="section-title">{t('jsx.read_props', { format: t(`jsx.format.${format}`) })}</div>
+              {found.length === 0 ? (
+                <div className="warn-text">{t('jsx.no_calls_found', { name })}</div>
+              ) : (
+                found.map((call, n) => (
+                  <div key={n} className="jsx-read">
+                    {found.length > 1 && <div className="faint small">#{n + 1}</div>}
+                    {Object.keys(call.attrs).length === 0 && <span className="faint">{t('jsx.no_props')}</span>}
+                    {Object.entries(call.attrs).map(([key, value]) => (
+                      <div key={key} className="mono small">
+                        {key}: {JSON.stringify(value)}
+                      </div>
+                    ))}
+                    {call.errors.map((error) => (
+                      <div key={error} className="warn-text">
+                        {error}
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
             </>
           )}
           <div className="section-title">{t('jsx.usages')}</div>
@@ -236,12 +268,10 @@ export default function JsxWorkbench({
           workId={workId}
           jsxId={jsxId}
           examples={list}
+          propsOf={(example) => findCalls(example.text, [name], rules.response)[0]?.attrs ?? {}}
           initial={current?.name ?? null}
           onClose={() => setDialog(null)}
         />
-      )}
-      {dialog === 'try' && (
-        <TryReplyDialog workId={workId} name={name} source={source} rules={rules} onClose={() => setDialog(null)} />
       )}
     </div>
   );
@@ -251,12 +281,14 @@ function PromptTextDialog({
   workId,
   jsxId,
   examples,
+  propsOf,
   initial,
   onClose,
 }: {
   workId: string;
   jsxId: string;
   examples: Example[];
+  propsOf: (example: Example) => Record<string, unknown>;
   initial: string | null;
   onClose: () => void;
 }) {
@@ -273,7 +305,8 @@ function PromptTextDialog({
           className="primary"
           onClick={async () => {
             try {
-              const props = examples.find((e) => e.name === example)?.data ?? {};
+              const chosen = examples.find((e) => e.name === example);
+              const props = chosen ? propsOf(chosen) : {};
               await post(`/api/works/${workId}/jsx/${q(jsxId)}/prompt-text`, { props, feedback, llm });
               toast({ text: t('jsx.prompt_started') });
               onClose();
@@ -303,44 +336,6 @@ function PromptTextDialog({
       </label>
       <RunLlmSelector task="jsx_prompt" value={llm} onChange={setLlm} />
       <p className="faint">{t('jsx.prompt_note')}</p>
-    </Dialog>
-  );
-}
-
-function TryReplyDialog({
-  workId,
-  name,
-  source,
-  rules,
-  onClose,
-}: {
-  workId: string;
-  name: string;
-  source: string;
-  rules: { hooks?: string[]; globals?: { name: string; stub?: string }[] };
-  onClose: () => void;
-}) {
-  const [text, setText] = useState('');
-  const [found, setFound] = useState<{ raw: string; attrs: Record<string, unknown>; errors: string[] }[]>([]);
-  useEffect(() => {
-    const timer = setTimeout(async () => setFound(text.trim() ? await post(`/api/works/${workId}/jsx/elements`, { text, name }) : []), 400);
-    return () => clearTimeout(timer);
-  }, [text, workId, name]);
-  return (
-    <Dialog title={t('jsx.try_reply')} onClose={onClose}>
-      <textarea rows={6} value={text} placeholder={t('jsx.try_hint', { name })} onChange={(e) => setText(e.target.value)} />
-      {text.trim() && found.length === 0 && <div className="warn-text">{t('jsx.no_elements', { name })}</div>}
-      <div className="col" style={{ maxHeight: '45vh', overflow: 'auto' }}>
-        {found.map((el, n) =>
-          el.errors.length ? (
-            <div key={n} className="warn-text">
-              ⚠ {el.raw.slice(0, 80)} — {el.errors[0]}
-            </div>
-          ) : (
-            <JsxPreview key={n} code={source} name={name} props={el.attrs} hooks={rules.hooks ?? []} globals={rules.globals ?? []} autoHeight />
-          ),
-        )}
-      </div>
     </Dialog>
   );
 }

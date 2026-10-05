@@ -157,6 +157,19 @@ function Presets() {
             <input type="number" min="0" disabled={readonly} value={doc.limits?.lorebook_entry?.max ?? ''} onChange={(e) => changeLimit('lorebook_entry', e.target.value)} />
           </label>
           <span className="faint">{t('settings.platform_limits_note')}</span>
+          {/* How this platform passes attribute values of component calls in a reply (07-jsx: 응답 속 컴포넌트 표기). */}
+          <label className="col"><span className="muted">{t('settings.platform_attribute_format')}</span>
+            <select
+              disabled={readonly}
+              value={doc.jsx?.response?.attribute_format ?? 'json_lenient'}
+              onChange={(e) => setDraft({ ...doc, jsx: { ...doc.jsx, response: { syntax: 'element', ...doc.jsx?.response, attribute_format: e.target.value } } })}
+            >
+              {(['text', 'json_lenient', 'json'] as const).map((format) => (
+                <option key={format} value={format}>{t(`jsx.format.${format}`)}</option>
+              ))}
+            </select>
+          </label>
+          <span className="faint">{t('settings.platform_attribute_format_note')}</span>
         </div>
       )}
       {!readonly && doc && (
