@@ -430,3 +430,37 @@ def test_saving_never_brings_back_a_deleted_file_or_writes_other_kinds(unlocked)
     assert not (work.folder / path).exists()
     other = c.put(f'/api/works/{wid}/file', params={'path': 'run.bat'}, json={'meta': {}, 'body': 'x'})
     assert other.status_code == 400 and not (work.folder / 'run.bat').exists()
+
+
+def test_checks_find_references_the_export_would_break(unlocked):
+    c = unlocked
+    wid = c.post('/api/samples/simulation/install').json()['id']
+    work = unlocked.app.state.app.works.get(wid)
+    keys = lambda: {(i['path'], i['message']['key']) for i in c.get(f'/api/works/{wid}/check').json()}
+    assert not {
+        k
+        for k in keys()
+        if k[1] in ('check.jsx_call_missing', 'check.jsx_call_disabled', 'check.char_missing')
+    }
+
+    main = next(i for i in work.index() if i['kind'] == 'main')
+    item = c.get(f'/api/works/{wid}/file', params={'path': main['path']}).json()
+    body = item['body'] + "\n<Inventory data='[]' />\n"
+    c.put(
+        f'/api/works/{wid}/file',
+        params={'path': main['path']},
+        json={'meta': {}, 'body': body, 'base_hash': item['hash']},
+    )
+    assert (main['path'], 'check.jsx_call_missing') in keys()
+
+    jsx_item = next(i for i in work.index() if i['kind'] == 'jsx')
+    jsx_doc = c.get(f'/api/works/{wid}/file', params={'path': jsx_item['path']}).json()
+    c.put(
+        f'/api/works/{wid}/file',
+        params={'path': jsx_item['path']},
+        json={'meta': {'enabled': False}, 'body': None, 'base_hash': jsx_doc['hash']},
+    )
+    assert any(k[1] == 'check.jsx_call_disabled' for k in keys())
+
+    work.update_doc({'char': 'C999'})
+    assert (None, 'check.char_missing') in keys()

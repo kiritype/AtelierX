@@ -557,7 +557,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         )}
       </div>
       {quickOpen && <QuickOpen workId={workId} onClose={() => setQuickOpen(false)} onOpen={(path) => open({ type: 'item', path })} />}
-      {exporting && <ExportDialog workId={workId} onClose={() => setExporting(false)} />}
+      {exporting && <ExportDialog workId={workId} onClose={() => setExporting(false)} openItem={(path) => open({ type: 'item', path })} />}
       {renaming && <RenameDialog workId={workId} renamePath={renamePath} onClose={() => setRenaming(false)} />}
       {llmJob && <Dialog title={t('llm_tools.title')} onClose={() => !llmBusy && setLlmJob(null)} actions={<button className="primary" disabled={llmBusy} onClick={runLlmJob}>{t('llm_tools.run')}</button>}>
         <RunLlmSelector task="consistency" value={llm} onChange={setLlm} disabled={llmBusy} />
