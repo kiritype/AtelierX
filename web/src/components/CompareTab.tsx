@@ -4,6 +4,7 @@ import { get, post } from '../api';
 import { t } from '../i18n';
 import { useToast } from './Toasts';
 import { diffLines } from '../lib/diff';
+import { snapshotTime } from '../types';
 
 export default function CompareTab({ workId, snapshot }: { workId: string; snapshot: string }) {
   const qc = useQueryClient();
@@ -11,6 +12,8 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
   const [against, setAgainst] = useState('current');
   const [path, setPath] = useState<string | null>(null);
   const [showDiff, setShowDiff] = useState(true);
+  const snaps = useQuery({ queryKey: ['snapshots', workId], queryFn: () => get(`/api/works/${workId}/snapshots`) });
+  const info = (snaps.data ?? []).find((s: any) => s.id === snapshot);
   const changes = useQuery({
     queryKey: ['diff', workId, snapshot, against],
     queryFn: () => get(`/api/works/${workId}/snapshots/${snapshot}/diff?against=${against}`),
@@ -39,7 +42,11 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
     <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', height: '100%' }}>
       <div style={{ borderRight: '1px solid var(--border)', overflow: 'auto' }}>
         <div className="pad col" style={{ gap: 6 }}>
-          <strong>{snapshot}</strong>
+          <strong title={snapshot}>
+            {snapshotTime(snapshot)}
+            {info && ` · ${t(`reason.${info.reason}`)}`}
+          </strong>
+          {info?.label && <div className="muted">{info.label}</div>}
           <select value={against} onChange={(e) => setAgainst(e.target.value)}>
             <option value="current">{t('history.vs_current')}</option>
             <option value="parent">{t('history.vs_parent')}</option>
