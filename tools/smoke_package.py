@@ -251,7 +251,8 @@ def run_phase(client: Client, root: Path, password: str, report: dict):
         'compression guideline readback failed',
     )
 
-    export_dir = root / 'smoke-export'
+    # Exports never go inside the app folder, so the target sits next to the isolated root.
+    export_dir = root.parent / 'smoke-export'
     export_dir.mkdir(exist_ok=True)
     queued = client.json(f'/api/works/{wid}/export', 'POST', {'target': str(export_dir), 'overwrite': False})
     job_id = queued.get('id')
