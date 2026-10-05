@@ -389,6 +389,9 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .image-gen-pick { border-right: 1px solid var(--border); overflow: auto; }
 .image-gen-run { overflow: auto; }
 .gen-char { gap: 2px; padding: 2px 0; }
+/* A long notice wraps under the name instead of squeezing it letter by letter. */
+.gen-char > label { flex-wrap: wrap; }
+.gen-char > label strong, .gen-char > label .mono { white-space: nowrap; }
 .gen-field { gap: 2px; }
 .gen-settings { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; gap: 8px; }
 .compose-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; display: flex; flex-direction: column; gap: 4px; background: var(--panel); }
