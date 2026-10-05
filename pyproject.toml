@@ -1,6 +1,6 @@
 [project]
 name = "atelierx"
-version = "0.0.2"
+version = "0.0.3"
 description = "RP chatbot authoring tool"
 readme = "README.md"
 license = "MIT"
