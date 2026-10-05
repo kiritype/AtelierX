@@ -35,7 +35,7 @@ from ..core.vault import Vault
 from ..core.works import KIND_PREFIX, WorkStore
 from ..image import designs as image_designs
 from ..image.runtime import ImageRuntime
-from . import editor_routes, image_routes, lora_routes, tool_routes
+from . import agent_routes, editor_routes, image_routes, lora_routes, tool_routes
 
 
 class State:
@@ -1268,7 +1268,7 @@ async def chat_send(request):
             async for event in s.llm.stream('chat_test', messages, work_id=work.id, override=data.get('llm')):
                 if event['type'] == 'thinking':
                     yield f'event: thinking\ndata: {event["chars"]}\n\n'
-                else:
+                elif event['type'] == 'text':
                     yield f'event: delta\ndata: {json.dumps(event["text"], ensure_ascii=False)}\n\n'
         except AppError as error:
             yield f'event: error\ndata: {json.dumps(error.msg.as_dict(), ensure_ascii=False)}\n\n'
@@ -1343,6 +1343,10 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route('/api/open-in-browser', open_in_browser, methods=['POST']),
         Route('/api/settings', settings_get),
         Route('/api/settings', settings_patch, methods=['PATCH']),
+        Route('/api/guidelines', agent_routes.guidelines_list),
+        Route('/api/guidelines/file', agent_routes.guideline_get),
+        Route('/api/guidelines/file', agent_routes.guideline_put, methods=['PUT']),
+        Route('/api/guidelines/file', agent_routes.guideline_delete, methods=['DELETE']),
         Route('/api/settings/compression-guideline', compression_guideline_get),
         Route('/api/settings/compression-guideline', compression_guideline_put, methods=['PUT']),
         Route('/api/personas', personas_get),
@@ -1408,6 +1412,20 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route(f'{w}/drafts/{{did}}/discard', draft_discard, methods=['POST']),
         Route(f'{w}/compress', compress, methods=['POST']),
         Route(f'{w}/editor/{{action}}', editor_routes.run_action, methods=['POST']),
+        Route(f'{w}/agent/modes', agent_routes.modes),
+        Route(f'{w}/agent/sessions', agent_routes.sessions_list),
+        Route(f'{w}/agent/sessions', agent_routes.sessions_create, methods=['POST']),
+        Route(f'{w}/agent/sessions/{{sid}}', agent_routes.session_get),
+        Route(f'{w}/agent/sessions/{{sid}}', agent_routes.session_patch, methods=['PATCH']),
+        Route(f'{w}/agent/sessions/{{sid}}', agent_routes.session_delete, methods=['DELETE']),
+        Route(f'{w}/agent/sessions/{{sid}}/preview', agent_routes.preview, methods=['POST']),
+        Route(f'{w}/agent/sessions/{{sid}}/send', agent_routes.send, methods=['POST']),
+        Route(
+            f'{w}/agent/sessions/{{sid}}/proposals/{{turn:int}}/{{n:int}}/review',
+            agent_routes.proposal_review,
+            methods=['POST'],
+        ),
+        Route(f'{w}/agent-drafts/{{did}}/apply', agent_routes.draft_apply, methods=['POST']),
         Route(f'{w}/editor-drafts/{{did}}/apply', editor_routes.apply_edit, methods=['POST']),
         Route(f'{w}/image/characters/{{cid}}', image_design),
         Route(f'{w}/image/characters/{{cid}}', image_design_update, methods=['PUT']),

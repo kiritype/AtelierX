@@ -315,6 +315,48 @@ class Work:
         atomic_write_text(path, frontmatter.join(meta, new_body, path.suffix))
         return self.read_item(path)
 
+    def write_whole(self, rel, text, base_hash=None, new=False):
+        """Write a whole file as given (an adopted agent proposal, 11-agent): its head must read and IDs stay unique."""
+        path = self.resolve(rel)
+        if path.suffix not in ITEM_SUFFIXES:
+            raise AppError(Msg('server.works.bad_path', 'This path is not allowed.'))
+        text = text.replace('\r\n', '\n')
+        old_id = None
+        if new:
+            if path.exists():
+                raise AppError(Msg('server.works.exists', 'Something with this name already exists.'), 409)
+            for part in PurePosixPath(self.rel(path)).parts:
+                check_name(part)
+        else:
+            if not path.is_file():
+                raise AppError(
+                    Msg('server.works.item_missing', 'The file does not exist: {path}', path=rel), 404
+                )
+            current = path.read_text(encoding='utf-8')
+            if sha256_text(current) != base_hash:
+                raise AppError(
+                    Msg('server.works.changed_on_disk', 'The file changed on disk since it was opened.'), 409
+                )
+            try:
+                old_meta, _, _ = frontmatter.split(current, path.suffix)
+                old_id = (old_meta or {}).get('id')
+            except frontmatter.MetaError:
+                old_id = None
+        try:
+            meta, _, _ = frontmatter.split(text, path.suffix)
+        except frontmatter.MetaError as error:
+            raise AppError(
+                Msg('server.works.bad_head', 'The metadata head cannot be read: {error}', error=str(error)),
+                400,
+            ) from error
+        new_id = (frontmatter.to_plain(meta) or {}).get('id')
+        if new_id:
+            check_id(new_id)
+        self._check_id_change(rel, old_id, new_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(path, text)
+        return self.read_item(path)
+
     def create_file(self, rel, kind=None):
         path = self.resolve(rel)
         if path.suffix not in ITEM_SUFFIXES:

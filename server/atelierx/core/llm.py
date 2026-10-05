@@ -13,7 +13,16 @@ import httpx
 from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 
-TASKS = ('compression', 'image_prompt', 'jsx_prompt', 'authoring', 'consistency', 'chat_test', 'image_review')
+TASKS = (
+    'compression',
+    'image_prompt',
+    'jsx_prompt',
+    'authoring',
+    'consistency',
+    'chat_test',
+    'image_review',
+    'agent',
+)
 PROVIDER_PRESETS = {'ollama', 'gemini', 'vertex', 'openrouter', 'deepseek', 'custom'}
 VERTEX_PROJECT = re.compile(r'^[a-z][a-z0-9-]{4,28}[a-z0-9]$')
 VERTEX_LOCATION = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
@@ -24,6 +33,7 @@ DEFAULT_PARAMS = {
     'authoring': {'temperature': 0.7},
     'consistency': {'temperature': 0.0},
     'chat_test': {'temperature': 0.8},
+    'agent': {'temperature': 0.5},
     'image_review': {'temperature': 0.0, 'max_tokens': 400},
 }
 THINK = re.compile(r'<think>.*?</think>\s*', re.DOTALL)
@@ -374,14 +384,17 @@ class Providers:
         return {'text': strip_thinking(text), 'model': model, 'provider': provider['id'], 'usage': usage}
 
     async def stream(self, task, messages, work_id=None, override=None):
-        """Yield ``{'type': 'text', 'text': …}`` pieces of the answer and occasional ``{'type': 'thinking', 'chars': n}``.
+        """Yield ``{'type': 'text', 'text': …}`` pieces of the answer, occasional ``{'type': 'thinking', 'chars': n}`` and
+        last ``{'type': 'done', 'finish_reason': …}`` (``length`` when the answer hit the output limit).
 
         Reasoning arrives either in separate delta fields or inside <think> … </think>; it is counted, never shown.
         """
         provider, model, params = self.resolve(task, override)
         if provider.get('type') == 'mock':
-            for piece in mock_answer(task, messages).split(' '):
-                yield {'type': 'text', 'text': piece + ' '}
+            pieces = mock_answer(task, messages).split(' ')
+            for n, piece in enumerate(pieces):
+                yield {'type': 'text', 'text': piece if n == len(pieces) - 1 else piece + ' '}
+            yield {'type': 'done', 'finish_reason': 'stop'}
             return
         body = {
             'model': model,
@@ -392,6 +405,7 @@ class Providers:
         }
         state = {'inside': False, 'buffer': '', 'thought': 0, 'reported': 0}
         usage = None
+        finish_reason = None
         try:
             async with (
                 httpx.AsyncClient(timeout=TIMEOUT) as client,
@@ -415,6 +429,7 @@ class Providers:
                     usage = data.get('usage') or usage
                     choices = data.get('choices') or []
                     delta = (choices[0].get('delta') or {}) if choices else {}
+                    finish_reason = (choices[0].get('finish_reason') if choices else None) or finish_reason
                     reasoning = delta.get('reasoning_content') or delta.get('reasoning') or ''
                     state['thought'] += len(reasoning)
                     for event in _split_think(state, delta.get('content') or ''):
@@ -427,6 +442,7 @@ class Providers:
         except httpx.HTTPError as exc:
             raise self._unreachable(provider) from exc
         self._log_usage(provider, model, task, work_id, usage)
+        yield {'type': 'done', 'finish_reason': finish_reason}
 
 
 def _split_think(state, piece):
@@ -472,6 +488,10 @@ def mock_answer(task, messages):
     last = next((m['content'] for m in reversed(messages) if m['role'] == 'user'), '')
     if task == 'chat_test':
         return f'(모의 응답) "{last[:60]}"에 대한 답입니다. 설정 → LLM에서 실제 연결을 고르면 진짜 응답이 나옵니다.'
+    if task == 'agent':
+        from .agent import mock_reply
+
+        return mock_reply(messages)
     if task == 'image_review':
         return '{"verdict": "pass", "evidence": "(모의 검수) 모의 연결은 그림을 보지 않고 통과로 답합니다."}'
     return '{}'
