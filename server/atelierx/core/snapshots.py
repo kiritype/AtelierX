@@ -30,13 +30,22 @@ class Snapshots:
         """The file a snapshot path names: relative, '/'-separated, inside the work folder, not the history itself."""
         rel = str(rel or '')
         pieces = rel.split('/')
-        if not rel or '\\' in rel or ':' in rel or any(p in ('', '.', '..') for p in pieces):
-            raise _bad_path()
-        if pieces[0] == APP_DIR and len(pieces) > 1 and pieces[1] in EXCLUDED_APP:
+        if (
+            not rel
+            or '\\' in rel
+            or ':' in rel
+            or any(p in ('', '.', '..') or p != p.rstrip('. ') for p in pieces)
+        ):
             raise _bad_path()
         path = self.work.folder.joinpath(*PurePosixPath(rel).parts)
-        if self.work.folder.resolve() not in path.resolve().parents:
+        resolved = path.resolve()
+        if self.work.folder.resolve() not in resolved.parents:
             raise _bad_path()
+        # Compared on the resolved path, so other spellings of the same folder (case on Windows) are caught too.
+        for name in EXCLUDED_APP:
+            kept = (self.work.app / name).resolve()
+            if resolved == kept or kept in resolved.parents:
+                raise _bad_path()
         return path
 
     def _object(self, digest):
