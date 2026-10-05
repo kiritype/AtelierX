@@ -15,7 +15,16 @@ import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
 import { KindIcon } from './icons';
 
-export type EditorStatus = { dirty: boolean; size: number; unit: 'bytes' | 'chars' | 'tokens'; estimated: boolean; kind: Kind };
+// `save` stores the text and form; `textOnly` is false while the image design has unsaved changes of its own.
+export type EditorStatus = {
+  dirty: boolean;
+  size: number;
+  unit: 'bytes' | 'chars' | 'tokens';
+  estimated: boolean;
+  kind: Kind;
+  save?: () => Promise<boolean>;
+  textOnly?: boolean;
+};
 
 const FORM_KEYS = ['schema_version', 'id', 'kind', 'enabled', 'keywords', 'priority', 'always', 'default_props'];
 
@@ -74,9 +83,18 @@ export default function ItemEditor({
   const statusRef = useRef(onStatus);
   statusRef.current = onStatus;
   const countMode = info.effective.values.count;
+  const saveRef = useRef<() => Promise<boolean>>(async () => true);
   useEffect(() => {
     const m = measure(body, countMode);
-    statusRef.current({ dirty: dirty || imageDirty, size: m.amount, unit: m.unit, estimated: m.estimated, kind });
+    statusRef.current({
+      dirty: dirty || imageDirty,
+      size: m.amount,
+      unit: m.unit,
+      estimated: m.estimated,
+      kind,
+      save: () => saveRef.current(),
+      textOnly: !imageDirty,
+    });
   }, [dirty, imageDirty, body, kind, countMode]);
 
   const save = useCallback(async () => {
@@ -109,6 +127,8 @@ export default function ItemEditor({
       saving.current = false;
     }
   }, [dirty, meta, body, kind, suggest.data, workId, path, qc]);
+
+  saveRef.current = save;
 
   // Autosave after the user pauses typing (02-editor: 편집과 저장).
   useEffect(() => {

@@ -63,6 +63,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [renaming, setRenaming] = useState(false);
   const [authoring, setAuthoring] = useState(false);
   const [restored, setRestored] = useState(false);
+  // Leaving the work or locking waits here while tabs have unsaved changes (the server cannot keep what only the page has).
+  const [pending, setPending] = useState<{ run: () => Promise<void> } | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   // Restore open tabs from the last session of this work.
   useEffect(() => {
@@ -204,17 +207,41 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  // Closing a work keeps a save point of what changed since the last snapshot (09-snapshots).
-  async function leave() {
-    await post(`/api/works/${workId}/snapshots/save-point`).catch(() => undefined);
-    onLeave();
+  const unsavedTabs = tabs.filter((tab) => status[tabKey(tab)]?.dirty || formDirty.includes(tabKey(tab)));
+  // Only item text and form can be saved from here; image designs and settings tabs keep their own save buttons.
+  const savable = (tab: Tab) => tab.type === 'item' && !!status[tabKey(tab)]?.save && status[tabKey(tab)]?.textOnly !== false && !formDirty.includes(tabKey(tab));
+  const guarded = (run: () => Promise<void>) => () => (unsavedTabs.length ? setPending({ run }) : run());
+
+  async function saveAllAndContinue() {
+    if (!pending) return;
+    setSavingAll(true);
+    try {
+      for (const tab of unsavedTabs) {
+        if (!(await status[tabKey(tab)]!.save!())) {
+          setActive(tabKey(tab));
+          toast({ text: t('leave.save_failed', { name: tabTitle(tab) ?? '' }), tone: 'error' });
+          return;
+        }
+      }
+      const run = pending.run;
+      setPending(null);
+      await run();
+    } finally {
+      setSavingAll(false);
+    }
   }
 
-  async function lock() {
+  // Closing a work keeps a save point of what changed since the last snapshot (09-snapshots).
+  const leave = guarded(async () => {
+    await post(`/api/works/${workId}/snapshots/save-point`).catch(() => undefined);
+    onLeave();
+  });
+
+  const lock = guarded(async () => {
     await post(`/api/works/${workId}/snapshots/save-point`).catch(() => undefined);
     await post('/api/auth/lock');
     onLock();
-  }
+  });
 
   const current = tabs.find((tab) => tabKey(tab) === active) ?? null;
   const currentStatus = active ? status[active] : undefined;
@@ -517,6 +544,40 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         <RunLlmSelector task="consistency" value={llm} onChange={setLlm} disabled={llmBusy} />
       </Dialog>}
       {authoring && <AuthoringDialog workId={workId} onClose={() => setAuthoring(false)} />}
+      {pending && (
+        <Dialog
+          title={t('leave.title')}
+          onClose={() => !savingAll && setPending(null)}
+          actions={
+            <>
+              <button
+                className="danger"
+                disabled={savingAll}
+                onClick={() => {
+                  const run = pending.run;
+                  setPending(null);
+                  run();
+                }}
+              >
+                {t('leave.discard')}
+              </button>
+              <button className="primary" disabled={savingAll || !unsavedTabs.every(savable)} onClick={saveAllAndContinue}>
+                {t('leave.save_all')}
+              </button>
+            </>
+          }
+        >
+          <p>{t('leave.body')}</p>
+          <ul className="col" style={{ gap: 2, margin: 0 }}>
+            {unsavedTabs.map((tab) => (
+              <li key={tabKey(tab)}>
+                {tabTitle(tab)}
+                {!savable(tab) && <span className="faint"> — {t('leave.save_there')}</span>}
+              </li>
+            ))}
+          </ul>
+        </Dialog>
+      )}
     </div>
   );
 }
