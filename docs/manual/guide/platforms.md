@@ -16,7 +16,7 @@
 
 `platform.md` 같은 플랫폼 가이드라인 파일은 프롬프트 생성 작업에 적용될 수 있지만 플랫폼 화면에서 편집할 수 없습니다. 적용되는 길이 제한은 아래 그림처럼 메인·로어북 항목별 입력칸으로 조정합니다.
 
-![플랫폼 프리셋 설정](../screenshots/platforms.jpg)
+![플랫폼 프리셋 설정](../screenshots/settings-presets.webp)
 
 ## 다음 단계
 
