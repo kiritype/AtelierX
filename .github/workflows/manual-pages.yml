@@ -32,7 +32,8 @@ jobs:
       - run: npm run build
         working-directory: docs/manual
         env:
-          DOCS_BASE: ${{ vars.DOCS_BASE || (endsWith(github.event.repository.name, '.github.io') && '/' || format('/{0}/', github.event.repository.name)) }}
+          # The manual is served at the root of its own domain (atelierx.cftm.net); a repository variable can still override.
+          DOCS_BASE: ${{ vars.DOCS_BASE || '/' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/manual-site

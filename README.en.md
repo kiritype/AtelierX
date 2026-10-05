@@ -1,6 +1,6 @@
 # AtelierX
 
-[Download for Windows](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://kiritype.github.io/AtelierX/)
+[Download for Windows](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://atelierx.cftm.net/)
 
 [한국어](README.md) | English
 
@@ -37,7 +37,7 @@ catalog and synthetic response/streaming session; Vertex AI and live image gener
 
 The image features use the following, downloaded separately. The app fetches pinned versions from their own sources
 in Settings → Install and does not redistribute them. Versions, licenses and sources are listed in the manual's
-[external components](https://kiritype.github.io/AtelierX/guide/external.html) page (Korean).
+[external components](https://atelierx.cftm.net/guide/external.html) page (Korean).
 
 - Image server: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 - Custom nodes: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),

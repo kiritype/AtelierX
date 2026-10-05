@@ -30,7 +30,7 @@ export function useHelp() {
   const toast = useToast();
   const about = useQuery<About>({ queryKey: ['about'], queryFn: () => get('/api/about'), staleTime: Infinity });
   const entries: MenuEntry[] = [
-    { label: t('help.manual'), run: () => open(about.data?.links.manual ?? 'https://kiritype.github.io/AtelierX/') },
+    { label: t('help.manual'), run: () => open(about.data?.links.manual ?? 'https://atelierx.cftm.net/') },
     ...(about.data?.offline_manual ? [{ label: t('help.manual_offline'), run: () => open('/manual/index.html') }] : []),
     { label: t('help.shortcuts'), run: () => setDialog('shortcuts') },
     ...(about.data?.desktop

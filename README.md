@@ -1,6 +1,6 @@
 # AtelierX
 
-[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://kiritype.github.io/AtelierX/)
+[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://atelierx.cftm.net/)
 
 한국어 | [English](README.en.md)
 
@@ -28,7 +28,7 @@ Ollama Cloud 연결 점검은 모델 목록과 합성 응답·스트리밍을 �
 ## 외부 구성 요소
 
 이미지 기능은 아래를 따로 받아 씁니다. 앱은 설정 → 설치에서 원래 배포처로부터 정해진 판을 받을 뿐 함께 배포하지 않습니다.
-판·라이선스·받는 곳 전체 목록은 설명서의 [외부 구성 요소](https://kiritype.github.io/AtelierX/guide/external.html)에 있습니다.
+판·라이선스·받는 곳 전체 목록은 설명서의 [외부 구성 요소](https://atelierx.cftm.net/guide/external.html)에 있습니다.
 
 - 이미지 생성 서버: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
 - 확장 노드: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),
