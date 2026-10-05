@@ -41,6 +41,14 @@ jobs:
       - name: Frontend tests
         working-directory: web
         run: node node_modules/vitest/vitest.mjs run
+      # Pull requests into dev must catch type and build errors before staging packages the app.
+      - name: Frontend type check and build
+        working-directory: web
+        run: |
+          node node_modules/typescript/bin/tsc -b
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node node_modules/vite/bin/vite.js build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
   package:
     needs: test
