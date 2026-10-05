@@ -153,3 +153,69 @@ def test_other_connections_skip_the_gpu_and_share_request_slots(paths):
     assert len(asyncio.run(run())) == 5
     assert most == 2
     assert broker.holder == 'training'
+
+
+def test_request_slots_are_shared_with_the_image_worker_thread(paths):
+    # VLM review calls the LLM from the image worker thread through asyncio.run, in an event loop of its own.
+    llm, _, _ = _setup(paths, MOCK_ELSEWHERE, limit=1)
+    lock = threading.Lock()
+    running, most = 0, 0
+    original = llm._complete
+
+    async def slow(*args):
+        nonlocal running, most
+        with lock:
+            running += 1
+            most = max(most, running)
+        await asyncio.sleep(0.05)
+        with lock:
+            running -= 1
+        return await original(*args)
+
+    llm._complete = slow
+    errors, worker_alive = [], [False]
+
+    def review():
+        try:
+            for _ in range(3):
+                asyncio.run(llm.complete('image_review', [{'role': 'user', 'content': 'x'}]))
+        except Exception as error:  # noqa: BLE001 - reported below
+            errors.append(error)
+
+    async def run():
+        worker = threading.Thread(target=review, daemon=True)
+        worker.start()
+        calls = [llm.complete('compression', [{'role': 'user', 'content': str(n)}]) for n in range(4)]
+        await asyncio.wait_for(asyncio.gather(*calls), 5)
+        await asyncio.to_thread(worker.join, 5)
+        worker_alive[0] = worker.is_alive()
+
+    asyncio.run(run())
+    assert not worker_alive[0] and errors == [] and most == 1
+
+
+def test_a_lower_limit_counts_the_requests_already_running(paths):
+    limit = [2]
+    llm, _, _ = _setup(paths, MOCK_ELSEWHERE)
+    llm.gate.limit = lambda: limit[0]
+    started = []
+
+    async def run():
+        gate = asyncio.Event()
+
+        async def hold(n):
+            async with llm.gate.external():
+                started.append(n)
+                await gate.wait()
+
+        first = [asyncio.create_task(hold(n)) for n in (1, 2)]
+        await asyncio.sleep(0.05)
+        limit[0] = 1
+        third = asyncio.create_task(hold(3))
+        await asyncio.sleep(0.05)
+        assert started == [1, 2]  # two still run, so the new limit of one keeps the third waiting
+        gate.set()
+        await asyncio.wait_for(asyncio.gather(*first, third), 2)
+
+    asyncio.run(run())
+    assert started == [1, 2, 3]
