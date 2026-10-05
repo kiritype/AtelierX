@@ -532,6 +532,9 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .install-section > .row:first-child .section-title { min-width: 220px; }
 .image-flow { padding: 8px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .menu-button { display: inline-flex; align-items: center; gap: 4px; }
+.update-notes { max-height: 50vh; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--panel-2);
+  padding: 8px 10px; border-radius: var(--radius); margin: 0; }
+.about-name { font-size: 18px; }
 .llm-tools-menu { border-color: var(--accent); color: var(--accent); font-weight: 600; padding: 5px 10px 5px 14px; }
 .llm-tools-menu:hover, .llm-tools-menu.on { background: var(--accent-bg); }
 .message-markdown { white-space: normal; overflow-wrap: anywhere; }

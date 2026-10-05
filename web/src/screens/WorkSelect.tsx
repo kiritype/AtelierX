@@ -6,11 +6,16 @@ import { ChipsInput, ContextMenu, Dialog, formatBytes, type MenuItem } from '../
 import { t, tm } from '../i18n';
 import type { WorkCard } from '../types';
 import { Icon } from '../components/icons';
+import { useHelp, useStartupUpdateCheck } from '../components/Help';
+import { MenuButton } from '../components/MenuBar';
 
 export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const works = useQuery({ queryKey: ['works'], queryFn: () => get('/api/works') });
+  const help = useHelp();
+  const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
+  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
   const ui = useQuery({ queryKey: ['ui-state'], queryFn: () => get('/api/ui-state') });
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<null | 'new' | 'samples' | 'trash' | { dup: WorkCard } | { rename: WorkCard }>(
@@ -49,6 +54,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
     <div className="select-page">
       <div className="row">
         <h2 className="grow">AtelierX</h2>
+        <MenuButton className="ghost" label={t('menu.help')} items={help.entries} />
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}
         </button>
@@ -151,6 +157,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
           }}
         />
       )}
+      {help.element}
     </div>
   );
 }

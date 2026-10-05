@@ -6,6 +6,7 @@ import ImageSettings from './ImageSettings';
 import InstallSettings from './InstallSettings';
 import LlmSettings from './LlmSettings';
 import CompressionGuidelineSettings from './CompressionGuidelineSettings';
+import { AboutContent, useHelp } from './Help';
 import { useToast } from './Toasts';
 
 type Section = 'general' | 'presets' | 'llm' | 'vault' | 'compression' | 'image' | 'install' | 'about';
@@ -72,6 +73,10 @@ function General() {
       <label className="row">
         <input type="checkbox" checked={s.autosave.enabled} onChange={(e) => update({ autosave: { enabled: e.target.checked } })} />
         {t('settings.autosave')}
+      </label>
+      <label className="row" title={t('settings.update_check_note')}>
+        <input type="checkbox" checked={!!s.update_check_on_start} onChange={(e) => update({ update_check_on_start: e.target.checked })} />
+        {t('settings.update_check_on_start')}
       </label>
       <label className="col" style={{ gap: 2 }}>
         <span className="muted">{t('settings.default_preset')}</span>
@@ -286,10 +291,18 @@ function VaultSection() {
 }
 
 function About() {
+  const help = useHelp();
+  const about = useQuery({ queryKey: ['about'], queryFn: () => get('/api/about'), staleTime: Infinity });
   return (
-    <div className="col">
-      <strong>AtelierX {__APP_VERSION__}</strong>
+    <div className="col" style={{ maxWidth: 560 }}>
+      {about.data ? <AboutContent about={about.data} /> : <strong>AtelierX {__APP_VERSION__}</strong>}
       <span className="faint">{t('settings.about_stage')}</span>
+      <div className="row wrap">
+        {help.entries.filter((e) => e !== null).map((e) => (
+          <button key={e!.label} onClick={e!.run}>{e!.label}</button>
+        ))}
+      </div>
+      {help.element}
     </div>
   );
 }

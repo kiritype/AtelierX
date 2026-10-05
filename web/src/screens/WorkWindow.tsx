@@ -18,6 +18,7 @@ import ReviewTab from '../components/ReviewTab';
 import { useToast } from '../components/Toasts';
 import { ContextMenu, Dialog, ErrorBoundary, formatBytes, type MenuItem } from '../components/ui';
 import { Icon, type IconName } from '../components/icons';
+import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import WorkSettings from '../components/WorkSettings';
 import ImageScreen from './ImageScreen';
 import TestScreen from './TestScreen';
@@ -66,6 +67,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [renaming, setRenaming] = useState(false);
   const [authoring, setAuthoring] = useState(false);
   const [restored, setRestored] = useState(false);
+  const help = useHelp();
+  const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
+  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
   // Leaving the work or locking waits here while tabs have unsaved changes (the server cannot keep what only the page has).
   const [pending, setPending] = useState<{ run: () => Promise<void> } | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -332,6 +336,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         { label: t('image_menu.lora'), run: image('lora') },
       ],
     },
+    { label: t('menu.help'), items: help.entries },
   ];
 
   return (
@@ -542,6 +547,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         <RunLlmSelector task="consistency" value={llm} onChange={setLlm} disabled={llmBusy} />
       </Dialog>}
       {authoring && <AuthoringDialog workId={workId} onClose={() => setAuthoring(false)} />}
+      {help.element}
       {pending && (
         <Dialog
           title={t('leave.title')}
