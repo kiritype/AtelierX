@@ -293,6 +293,7 @@
   "server.presets.not_found": "프리셋 {id}를 찾을 수 없습니다.",
   "server.presets.readonly": "generic 프리셋은 읽기 전용입니다. 새 프리셋으로 복제해 수정하세요.",
   "server.snapshots.missing": "스냅숏이 없습니다.",
+  "server.snapshots.damaged": "스냅숏 기록이 손상되었습니다.",
   "server.trash.missing": "휴지통 항목이 없습니다.",
   "server.vault.already_set_up": "API 키·인증 정보가 이미 설정되어 있습니다.",
   "server.vault.locked": "앱이 잠겨 있습니다.",

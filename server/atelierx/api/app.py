@@ -487,7 +487,7 @@ async def snap_file(request):
     snaps = Snapshots(work_of(request))
     path = request.query_params['path']
     sid = request.path_params['sid']
-    current = snaps.work.folder / path
+    current = snaps.path_in_work(path)
     return ok(
         {
             'snapshot': snaps.file_text(sid, path),

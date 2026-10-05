@@ -1,7 +1,9 @@
 """Content-addressed snapshots of items and app data (decision 0003, data-model: 스냅샷)."""
 
+import re
 import secrets
 from datetime import datetime, timedelta
+from pathlib import PurePosixPath
 
 from .fsutil import atomic_write_bytes, read_json, sha256_bytes, write_json
 from .i18n import AppError, Msg
@@ -9,12 +11,38 @@ from .works import APP_DIR, ITEM_SUFFIXES, now_iso
 
 EXCLUDED_APP = ('history', 'trash', 'drafts')
 PROTECTED = ('manual', 'before_bulk')
+SNAPSHOT_ID = re.compile(r'[0-9A-Za-z-]+')
+DIGEST = re.compile(r'[0-9a-f]{64}')
+
+
+def _bad_path():
+    return AppError(Msg('server.works.bad_path', 'This path is not allowed.'))
 
 
 class Snapshots:
     def __init__(self, work):
         self.work = work
         self.root = work.app / 'history'
+
+    # Paths, ids and digests come from requests and from snapshot files; none may lead outside the work folder or the
+    # store, whatever a snapshot file says.
+    def path_in_work(self, rel):
+        """The file a snapshot path names: relative, '/'-separated, inside the work folder, not the history itself."""
+        rel = str(rel or '')
+        pieces = rel.split('/')
+        if not rel or '\\' in rel or ':' in rel or any(p in ('', '.', '..') for p in pieces):
+            raise _bad_path()
+        if pieces[0] == APP_DIR and len(pieces) > 1 and pieces[1] in EXCLUDED_APP:
+            raise _bad_path()
+        path = self.work.folder.joinpath(*PurePosixPath(rel).parts)
+        if self.work.folder.resolve() not in path.resolve().parents:
+            raise _bad_path()
+        return path
+
+    def _object(self, digest):
+        if not isinstance(digest, str) or not DIGEST.fullmatch(digest):
+            raise AppError(Msg('server.snapshots.damaged', 'This snapshot is damaged.'))
+        return self.root / 'objects' / digest[:2] / digest
 
     def _files(self):
         folder = self.work.folder
@@ -56,6 +84,8 @@ class Snapshots:
         return out
 
     def get(self, snapshot_id):
+        if not SNAPSHOT_ID.fullmatch(str(snapshot_id or '')):
+            raise AppError(Msg('server.snapshots.missing', 'This snapshot does not exist.'), 404)
         doc = read_json(self.root / 'snapshots' / f'{snapshot_id}.json')
         if doc is None:
             raise AppError(Msg('server.snapshots.missing', 'This snapshot does not exist.'), 404)
@@ -104,19 +134,24 @@ class Snapshots:
         digest = self.get(snapshot_id)['files'].get(path)
         if not digest:
             return None
-        return (self.root / 'objects' / digest[:2] / digest).read_bytes().decode('utf-8', errors='replace')
+        return self._object(digest).read_bytes().decode('utf-8', errors='replace')
 
     def restore(self, snapshot_id, paths=None):
         target = self.get(snapshot_id)['files']
+        # Check everything first: a bad path or digest stops the restore before any file is written.
+        for path, digest in target.items():
+            self.path_in_work(path)
+            self._object(digest)
+        for path in paths or ():
+            self.path_in_work(path)
         self.create('before_restore', force=True)
         current = self.current()
         chosen = paths or sorted(set(target) | set(current))
         restored = []
         for path in chosen:
-            dest = self.work.folder / path
+            dest = self.path_in_work(path)
             if path in target:
-                digest = target[path]
-                data = (self.root / 'objects' / digest[:2] / digest).read_bytes()
+                data = self._object(target[path]).read_bytes()
                 atomic_write_bytes(dest, data)
                 restored.append(path)
             elif path in current and not paths:
