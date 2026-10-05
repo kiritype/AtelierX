@@ -1767,5 +1767,7 @@
   "agent.card.discarded": "버림",
   "server.export.relative": "절대 경로로 된 폴더를 입력하세요.",
   "server.export.into_work": "작품이 들어 있는 폴더입니다. 작품 밖의 폴더를 고르세요.",
-  "server.export.into_app": "앱 폴더 밖의 폴더를 고르세요."
+  "server.export.into_app": "앱 폴더 밖의 폴더를 고르세요.",
+  "agent.warning.changed_since": "요청을 보낸 뒤 이 파일이 바뀌었습니다. 제안은 바뀌기 전 내용을 보고 만든 것이라 채택할 수 없습니다. 다시 요청하세요.",
+  "agent.warning.not_in_context": "에이전트에게 보내지 않은 파일입니다. 지금 내용을 모르고 쓴 제안일 수 있으니 차이를 꼭 확인하세요."
 }

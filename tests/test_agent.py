@@ -261,3 +261,43 @@ def test_bodies_that_do_not_fit_the_budget_stay_in_the_listing_only(unlocked, pa
         100000,
     )
     assert attached[-1]['content'].startswith('[첨부 인물/윤하람.md:3-4]\n고른 글')
+
+
+def test_an_edit_saved_while_the_answer_streams_is_not_overwritten(unlocked, monkeypatch):
+    c = unlocked
+    wid = _work(c)
+    path = '인물/윤하람.md'
+    s = unlocked.app.state.app
+    work = s.works.get(wid)
+    real_stream = s.llm.stream
+
+    async def stream_with_an_edit(task, messages, **kwargs):
+        edited = False
+        async for event in real_stream(task, messages, **kwargs):
+            if not edited:
+                # The user saves while the answer is still coming; the model saw the text before this edit.
+                item = work.get_item(path)
+                work.save_item(path, {}, item['body'] + '\nUSER EDIT\n', item['hash'])
+                edited = True
+            yield event
+
+    monkeypatch.setattr(s.llm, 'stream', stream_with_an_edit)
+    sid = c.post(
+        f'/api/works/{wid}/agent/sessions', json={'mode': 'free', 'scope': {'kind': 'file', 'paths': [path]}}
+    ).json()['id']
+    end = json.loads(
+        _events(c.post(f'/api/works/{wid}/agent/sessions/{sid}/send', json={'message': '고쳐 줘'}))[-1][1]
+    )
+    assert end['proposals'][0]['warnings'] == ['changed_since']
+    review = c.post(f'/api/works/{wid}/agent/sessions/{sid}/proposals/2/1/review')
+    assert review.status_code == 409 and review.json()['error']['key'] == 'server.agent.stale'
+    assert 'USER EDIT' in work.get_item(path)['body']
+
+
+def test_a_proposal_for_a_file_the_model_never_saw_is_flagged(unlocked):
+    c = unlocked
+    wid = _work(c)
+    work = unlocked.app.state.app.works.get(wid)
+    text = (work.folder / '장소' / '카페 노을.md').read_text(encoding='utf-8')
+    found = agent.proposals(work, f'<<<file path="장소/카페 노을.md">>>\n{text}<<<end>>>', seen={})
+    assert found[0]['warnings'] == ['not_in_context']

@@ -288,6 +288,9 @@ def build(work, paths, effective, linked, session, message, attachments, budget)
         'omitted': omitted,
         'history': len(history),
         'history_dropped': len(session['turns']) - len(history),
+        # The files exactly as the model saw them: a proposal is checked against these, not against the file as it is
+        # when the answer ends (the user may save while waiting).
+        'seen': {path: sha256_text(text) for path, text in bodies},
     }
     return messages, summary
 
@@ -308,7 +311,7 @@ def _head(text, suffix):
         return {}, str(error)
 
 
-def proposals(work, text):
+def proposals(work, text, seen=None):
     """Read the file proposals of an answer. Each has the new text, whether it is cut off, and warnings."""
     found = {}
     for match in MARK.finditer(text):
@@ -331,8 +334,22 @@ def proposals(work, text):
         }  # the same path twice: the later wins
     out = []
     for n, entry in enumerate(found.values(), start=1):
-        out.append({'n': n, **_check(work, entry)})
+        out.append({'n': n, **_against_request(_check(work, entry), seen)})
     return out
+
+
+def _against_request(result, seen):
+    """Pin an existing file's base to the text sent with the request. ``seen`` is None for answers stored before
+    0.0.4, which keep the old rule (the file when the answer ended)."""
+    if seen is None or result['rejected'] or result['new']:
+        return result
+    if result['path'] in seen:
+        if seen[result['path']] != result['base_hash']:
+            result['warnings'].append('changed_since')
+        result['base_hash'] = seen[result['path']]
+    else:
+        result['warnings'].append('not_in_context')
+    return result
 
 
 def _check(work, entry):
