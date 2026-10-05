@@ -17,7 +17,9 @@ export default defineConfig({
   base, outDir: '../../dist/manual-site',
   srcExclude: ['node_modules/**', 'README.md'],
   cleanUrls: false,
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }]],
   themeConfig: {
+    logo: '/icon.svg',
     nav: [{ text: '사용 설명서', link: '/' }, { text: '시작하기', link: '/guide/getting-started' }],
     sidebar: [{ text: '사용 설명서', items }],
     search: { provider: 'local', options: { locales: { root: { translations: {
