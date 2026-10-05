@@ -76,3 +76,13 @@ describe('line diff', () => {
     expect(compose(rewritten, hunks(rewritten), new Set())).toBe(a.join('\n'));
   });
 });
+
+describe('very long documents', () => {
+  it('diffs tens of thousands of different lines without overflowing the call stack', () => {
+    const a = Array.from({ length: 70000 }, (_, i) => `a ${i}`);
+    const b = Array.from({ length: 70000 }, (_, i) => `b ${i}`);
+    const ops = diffLines(a, b);
+    expect(ops).toHaveLength(140000);
+    expect(compose(ops, hunks(ops), new Set())).toBe(a.join('\n'));
+  });
+});
