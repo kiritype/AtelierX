@@ -267,9 +267,12 @@ class Work:
         return places
 
     def _check_id_change(self, rel, old, new):
-        """An ID may be set freely while nothing refers to it; it must stay unique in the work (case ignored)."""
+        """An ID may be set freely while nothing refers to it; it must stay unique in the work (case ignored).
+
+        A change of case alone is a change too: references are matched exactly, so ``C001`` → ``c001`` would break them.
+        """
         old_key, new_key = str(old or '').casefold(), str(new or '').casefold()
-        if old_key == new_key:
+        if str(old or '') == str(new or ''):
             return
         this = self.rel(self.resolve(rel))
         if new_key and any(

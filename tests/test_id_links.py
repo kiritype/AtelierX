@@ -59,3 +59,17 @@ def test_ids_are_unique_in_the_work_ignoring_case(unlocked, work):
     assert first['meta']['id'] == 'L099' and first['id_links'] == []
     # Nothing refers to L099 yet, so it can still change.
     assert put(unlocked, wid, new['path'], meta={'id': 'L100'}, base_hash=first['hash']).status_code == 200
+
+
+def test_a_change_of_case_is_a_change(unlocked, work):
+    wid, _ = work
+    item = get(unlocked, wid, '인물/윤하람.md')
+    response = put(
+        unlocked, wid, '인물/윤하람.md', meta={**item['meta'], 'id': 'c001'}, base_hash=item['hash']
+    )
+    assert response.status_code == 409 and response.json()['error']['key'] == 'server.works.id_linked'
+
+    new = unlocked.post(f'/api/works/{wid}/file', json={'path': '장소/서점'}).json()
+    first = put(unlocked, wid, new['path'], meta={'id': 'L099'}, base_hash=new['hash']).json()
+    # Nothing refers to L099, so its case may change.
+    assert put(unlocked, wid, new['path'], meta={'id': 'l099'}, base_hash=first['hash']).status_code == 200
