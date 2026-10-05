@@ -4,6 +4,7 @@ import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
 import { LLM_PRESETS, newProvider, vertexUrl } from './llmPresets';
+import UsageReport from './UsageReport';
 
 type Provider = { name: string; type: string; preset?: string; vertex_project?: string; vertex_location?: string; base_url?: string; key?: string | null; trusted?: boolean; default_model?: string | null; models?: Record<string, unknown> };
 type TaskSetting = { provider?: string; model?: string; params?: { temperature?: number } };
@@ -23,11 +24,10 @@ export default function LlmSettings() {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [presetId, setPresetId] = useState('ollama');
-  const vault = useQuery<{ name: string; kind: string }[]>({ queryKey: ['vault'], queryFn: () => get('/api/vault') });
-  const usage = useQuery<{ month: string; rows: { provider: string; model: string; task: string; requests: number; input_tokens: number; output_tokens: number }[] }>({
-    queryKey: ['usage'],
-    queryFn: () => get('/api/usage'),
-  });
+  const vault = useQuery<{ name: string; kind: string; masked: string }[]>({ queryKey: ['vault'], queryFn: () => get('/api/vault') });
+  // Keys typed into a connection card; "Save" stores them in the vault (encrypted) and links them to the connection.
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [changingKey, setChangingKey] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (query.data && !dirty) setDoc(query.data);
@@ -74,8 +74,24 @@ export default function LlmSettings() {
 
   async function save() {
     try {
-      const saved = await put<Doc>('/api/providers', doc);
+      let next = doc!;
+      for (const [id, value] of Object.entries(keys)) {
+        if (!value.trim() || !next.providers[id]) continue;
+        // One vault entry per connection, so changing this key never changes another connection's.
+        const name = `llm-${id}`;
+        await post('/api/vault', {
+          name,
+          kind: next.providers[id].type === 'vertex_openai' ? 'service_token' : 'llm_api_key',
+          value: value.trim(),
+          note: next.providers[id].name,
+        });
+        next = { ...next, providers: { ...next.providers, [id]: { ...next.providers[id], key: `secret:${name}` } } };
+      }
+      const saved = await put<Doc>('/api/providers', next);
       qc.setQueryData(['providers'], saved);
+      qc.invalidateQueries({ queryKey: ['vault'] });
+      setKeys({});
+      setChangingKey({});
       setDirty(false);
       toast({ text: t('common.saved') });
     } catch (err) {
@@ -121,20 +137,27 @@ export default function LlmSettings() {
           {provider.type === 'vertex_openai' && <p className="faint">{t('llm.vertex_help')}</p>}
           {provider.preset === 'gemini' && <p className="faint">{t('llm.gemini_help')}</p>}
           {provider.type !== 'mock' && (
-            <div className="row">
+            <div className="row wrap">
               <span className="muted">{provider.type === 'vertex_openai' ? t('llm.oauth_token') : t('llm.key')}</span>
-              <select
-                aria-label={provider.type === 'vertex_openai' ? t('llm.oauth_token') : t('llm.key')}
-                value={provider.key ? String(provider.key).replace(/^secret:/, '') : ''}
-                onChange={(e) => setProvider(id, { key: e.target.value ? `secret:${e.target.value}` : null })}
-              >
-                <option value="">{t('llm.no_key')}</option>
-                {(vault.data ?? []).map((v) => (
-                  <option key={v.name} value={v.name}>
-                    {v.name} ({v.kind})
-                  </option>
-                ))}
-              </select>
+              <KeyField
+                provider={provider}
+                vault={vault.data ?? []}
+                typed={keys[id] ?? ''}
+                changing={!!changingKey[id]}
+                onType={(value) => {
+                  setKeys((k) => ({ ...k, [id]: value }));
+                  setDirty(true);
+                }}
+                onChange={(on) => {
+                  setChangingKey((c) => ({ ...c, [id]: on }));
+                  if (!on) setKeys((k) => ({ ...k, [id]: '' }));
+                }}
+                onPick={(name) => {
+                  setKeys((k) => ({ ...k, [id]: '' }));
+                  setChangingKey((c) => ({ ...c, [id]: false }));
+                  setProvider(id, { key: name ? `secret:${name}` : null });
+                }}
+              />
               <label className="row" style={{ gap: 4 }}>
                 <input type="checkbox" checked={!!provider.trusted} onChange={(e) => setProvider(id, { trusted: e.target.checked })} />
                 {t('llm.trusted')}
@@ -142,7 +165,7 @@ export default function LlmSettings() {
             </div>
           )}
           {provider.type !== 'mock' && <p className="faint">{t('llm.credentials_help')}</p>}
-          <div className="row">
+          <div className="row wrap">
             <span className="muted">{t('llm.default_model')}</span>
             <input aria-label={t('llm.default_model')} list={`models-${id}`} value={provider.default_model ?? ''} placeholder={t('llm.model_placeholder')} onChange={(e) => setProvider(id, { default_model: e.target.value || null })} />
             <datalist id={`models-${id}`}>{modelOptions(id, provider.default_model).map(m => <option key={m} value={m} />)}</datalist>
@@ -184,7 +207,7 @@ export default function LlmSettings() {
                   <input list={`models-${providerId}`} value={setting.model ?? ''} placeholder={t('llm.use_default', { model: doc.providers[providerId]?.default_model ?? '—' })} onChange={(e) => setTask(task, { model: e.target.value || undefined })} />
                 </td>
                 <td>
-                  <label className="row" style={{ gap: 4 }}>
+                  <label className="row" style={{ gap: 4 }} title={t('llm.temperature_help')}>
                     <span className="faint">{t('llm.temperature')}</span>
                     <input
                       type="number"
@@ -197,46 +220,88 @@ export default function LlmSettings() {
                     />
                   </label>
                 </td>
+                <td>
+                  {setting.params?.temperature !== undefined && setting.params.temperature !== DEFAULT_TEMPERATURE[task] && (
+                    <button
+                      className="ghost small"
+                      title={t('llm.temperature_default', { n: DEFAULT_TEMPERATURE[task] })}
+                      onClick={() => setTask(task, { params: { ...setting.params, temperature: undefined } })}
+                    >
+                      {t('llm.temperature_reset')}
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <p className="faint">{t('llm.temperature_note')}</p>
       <p className="faint">{t('llm.reasoning_note')}</p>
-      <div className="section-title">{t('llm.usage', { month: usage.data?.month ?? '' })}</div>
-      {(usage.data?.rows ?? []).length === 0 ? (
-        <div className="faint">{t('llm.no_usage')}</div>
-      ) : (
-        <table className="plain">
-          <thead>
-            <tr className="faint">
-              <td>{t('llm.connections')}</td>
-              <td>{t('llm.model')}</td>
-              <td>{t('llm.task_col')}</td>
-              <td>{t('llm.requests')}</td>
-              <td>{t('llm.tokens_in_out')}</td>
-            </tr>
-          </thead>
-          <tbody>
-            {usage.data!.rows.map((row, n) => (
-              <tr key={n}>
-                <td>{doc.providers[row.provider]?.name ?? row.provider}</td>
-                <td className="mono">{row.model}</td>
-                <td>{t(`llm.task.${row.task}`)}</td>
-                <td>{row.requests.toLocaleString()}</td>
-                <td>
-                  {row.input_tokens.toLocaleString()} / {row.output_tokens.toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <UsageReport providerName={(id) => doc.providers[id]?.name ?? id} />
       <div>
         <button className="primary" disabled={!dirty} onClick={save}>
           {t('common.save')}
         </button>
       </div>
     </div>
+  );
+}
+
+// A connection's key: the stored one masked with change/remove, or a field to paste a new one. Keys stored for other
+// connections can still be picked, for a key shared by several connections.
+function KeyField({
+  provider,
+  vault,
+  typed,
+  changing,
+  onType,
+  onChange,
+  onPick,
+}: {
+  provider: Provider;
+  vault: { name: string; kind: string; masked: string }[];
+  typed: string;
+  changing: boolean;
+  onType: (value: string) => void;
+  onChange: (on: boolean) => void;
+  onPick: (name: string | null) => void;
+}) {
+  const name = provider.key ? String(provider.key).replace(/^secret:/, '') : '';
+  const stored = vault.find((v) => v.name === name);
+  if (stored && !changing) {
+    return (
+      <>
+        <code>{stored.masked}</code>
+        <span className="faint small">{stored.name}</span>
+        <button onClick={() => onChange(true)}>{t('llm.key_change')}</button>
+        <button className="ghost" onClick={() => onPick(null)}>{t('llm.key_remove')}</button>
+      </>
+    );
+  }
+  return (
+    <>
+      {name && !stored && <span className="warn-text">{t('llm.key_missing', { name })}</span>}
+      <input
+        type="password"
+        className="grow"
+        style={{ minWidth: 200 }}
+        autoComplete="off"
+        placeholder={t('llm.key_paste')}
+        value={typed}
+        onChange={(e) => onType(e.target.value)}
+      />
+      {vault.length > 0 && (
+        <select aria-label={t('llm.key_pick')} value="" onChange={(e) => e.target.value && onPick(e.target.value)}>
+          <option value="">{t('llm.key_pick')}</option>
+          {vault.map((v) => (
+            <option key={v.name} value={v.name}>
+              {v.name} ({v.masked})
+            </option>
+          ))}
+        </select>
+      )}
+      {changing && <button className="ghost" onClick={() => onChange(false)}>{t('common.cancel')}</button>}
+    </>
   );
 }

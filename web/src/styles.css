@@ -321,6 +321,7 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .skeleton-detail textarea { min-height: 320px; }
 .llm-provider { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; gap: 6px; }
 .llm-provider > .row > label.grow { min-width: 240px; }
+.llm-provider .muted { white-space: nowrap; }
 
 /* Support reviews */
 .chip.status-new { background: var(--success-bg); color: var(--success); }
@@ -549,3 +550,6 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .test-bar .run-llm-selector { flex: 1 1 360px; min-width: 0; }
 .run-llm-selector .row { flex-wrap: wrap; }
 .run-llm-selector input, .run-llm-selector select { max-width: 100%; }
+/* Usage tables keep each cell on one line and scroll sideways in a narrow window. */
+.usage-table { overflow-x: auto; }
+.usage-table td { white-space: nowrap; }
