@@ -1666,5 +1666,6 @@
   "llm.context_cap": "Agent context cap (tokens)",
   "llm.context_cap_help": "The agent fills at most this much even when the model reads more. Longer is slower and costs more. Empty means 131,072.",
   "server.llm.invalid_tokens": "Token counts must be whole numbers above zero.",
-  "server.llm.no_model_named": "Name the model first."
+  "server.llm.no_model_named": "Name the model first.",
+  "server.works.gone": "This file was deleted or moved after it was opened. Copy the text into a new file to keep it."
 }

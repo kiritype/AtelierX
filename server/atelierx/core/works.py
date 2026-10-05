@@ -293,9 +293,20 @@ class Work:
             )
 
     def save_item(self, rel, meta_changes, body, base_hash):
+        """Change an existing item. Saving never makes a file: one deleted or moved while it was open stays gone."""
         path = self.resolve(rel)
-        text = path.read_text(encoding='utf-8') if path.is_file() else ''
-        if base_hash and path.is_file() and sha256_text(text) != base_hash:
+        if path.suffix not in ITEM_SUFFIXES:
+            raise AppError(Msg('server.works.bad_path', 'This path is not allowed.'))
+        if not path.is_file():
+            raise AppError(
+                Msg(
+                    'server.works.gone',
+                    'This file was deleted or moved after it was opened. Copy the text into a new file to keep it.',
+                ),
+                409,
+            )
+        text = path.read_text(encoding='utf-8')
+        if base_hash and sha256_text(text) != base_hash:
             raise AppError(
                 Msg('server.works.changed_on_disk', 'The file changed on disk since it was opened.'), 409
             )
