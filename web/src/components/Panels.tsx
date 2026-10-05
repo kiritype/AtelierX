@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { del, get, patch, post } from '../api';
 import { t } from '../i18n';
-import type { Tab, TreeEntry, WorkInfo } from '../types';
+import type { ImageView, Tab, TreeEntry, WorkInfo } from '../types';
 import FileTree from './FileTree';
 import RenameDialog from './RenameDialog';
 import { useToast } from './Toasts';
@@ -94,16 +94,43 @@ function flatten(entries: TreeEntry[]): TreeEntry[] {
 function ImagePanel({ workId, open }: Props) {
   const tree = useQuery<TreeEntry[]>({ queryKey: ['tree', workId], queryFn: () => get(`/api/works/${workId}/tree`) });
   const characters = flatten(tree.data ?? []).filter((e) => e.kind === 'character');
+  // The same screens as the Image menu, then each character: a click opens its gallery, the small buttons go to
+  // generation, LoRA or the character's document. A character without an ID has no images yet, so it opens the document.
+  const views: ImageView[] = ['library', 'generate', 'queue', 'lab', 'gallery', 'tools', 'lora'];
+  const image = (view: ImageView, characterId?: string) => open({ type: 'image', view, characterId });
   return (
     <>
       <div className="side-head">{t('panel.image')}</div>
+      <div className="tree">
+        {views.map((view) => (
+          <div key={view} className="tree-row" title={t(`image_menu.${view}_about`)} onClick={() => image(view)}>
+            <span className="grow">{t(`image_menu.${view}`)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="side-head">{t('image.characters')}</div>
       {characters.length === 0 && <div className="empty">{t('image.no_characters')}</div>}
-      {characters.map((c) => (
-        <div key={c.path} className="tree-row" onClick={() => open({ type: 'item', path: c.path })}>
-          <Icon name="character" /> <span className="grow">{c.name.replace(/\.md$/, '')}</span> <span className="faint">{c.id}</span>
-        </div>
-      ))}
-      <div className="empty faint">{t('image.library_later')}</div>
+      <div className="tree">
+        {characters.map((c) => (
+          <div
+            key={c.path}
+            className="tree-row character-row"
+            title={c.id ? t('image.open_gallery') : t('image.need_id')}
+            onClick={() => (c.id ? image('gallery', c.id) : open({ type: 'item', path: c.path }))}
+          >
+            <Icon name="character" />
+            <span className="grow ellipsis">{c.name.replace(/\.md$/, '')}</span>
+            <span className="tree-id">{c.id}</span>
+            {c.id && (
+              <span className="row-actions" onClick={(e) => e.stopPropagation()}>
+                <button className="ghost" onClick={() => image('generate', c.id!)}>{t('image_menu.generate')}</button>
+                <button className="ghost" onClick={() => image('lora', c.id!)}>LoRA</button>
+                <button className="ghost" onClick={() => open({ type: 'item', path: c.path })}>{t('image.document')}</button>
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
