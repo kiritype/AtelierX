@@ -199,6 +199,9 @@ function VaultSection() {
   const fail = useFail();
   const toast = useToast();
   const vault = useQuery({ queryKey: ['vault'], queryFn: () => get('/api/vault') });
+  const providers = useQuery<{ providers: Record<string, { name: string; key?: string | null }> }>({ queryKey: ['providers'], queryFn: () => get('/api/providers') });
+  const usedBy = (name: string) =>
+    Object.values(providers.data?.providers ?? {}).filter((p) => p.key === `secret:${name}`).map((p) => p.name);
   const [form, setForm] = useState({ name: '', kind: 'llm_api_key', value: '', note: '' });
   const [pw, setPw] = useState({ old: '', new: '' });
   return (
@@ -208,11 +211,15 @@ function VaultSection() {
         <div key={v.name} className="list-row">
           <span className="grow">
             <strong>{v.name}</strong> <span className="faint">{v.kind}</span> <code>{v.masked}</code>
+            <div className="faint small">
+              {usedBy(v.name).length ? t('settings.vault_used_by', { names: usedBy(v.name).join(', ') }) : t('settings.vault_unused')}
+            </div>
           </span>
           <button
             className="danger"
             onClick={async () => {
-              if (!confirm(t('settings.vault_delete_confirm'))) return;
+              const users = usedBy(v.name);
+              if (!confirm(users.length ? t('settings.vault_delete_used', { names: users.join(', ') }) : t('settings.vault_delete_confirm'))) return;
               await del(`/api/vault/${encodeURIComponent(v.name)}`);
               qc.invalidateQueries({ queryKey: ['vault'] });
             }}
