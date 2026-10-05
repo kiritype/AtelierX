@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError, post } from '../api';
+import { AppMark } from '../components/AppMark';
 import { t, tm } from '../i18n';
 
 export default function Lock({ wait, onDone }: { wait: number; onDone: () => void }) {
@@ -62,7 +63,9 @@ export default function Lock({ wait, onDone }: { wait: number; onDone: () => voi
   return (
     <div className="center">
       <form className="card" onSubmit={unlock}>
-        <h2>AtelierX</h2>
+        <h2>
+          <AppMark size={28} />
+        </h2>
         <label>
           {t('lock.password')}
           <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
