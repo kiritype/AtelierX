@@ -5,13 +5,15 @@ import { t, tm } from '../i18n';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import type { WorkInfo } from '../types';
 import { findCalls, type ResponseRule } from '../lib/componentCalls';
+import { createSaver } from '../lib/exampleSaver';
 import CodeEditor from './CodeEditor';
 import JsxPreview, { type PreviewCall } from './JsxPreview';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
 
-// An example is a call as a reply writes it (`<Name c='C001' />`); `legacy` ones were saved as JSON props.
-type Example = { name: string; text: string; legacy?: boolean };
+// An example is a call as a reply writes it (`<Name c='C001' />`); `legacy` ones were saved as JSON props, and
+// `convert_error` marks an old JSON example that cannot be written as a call under the work's rule (`text` is the JSON).
+type Example = { name: string; text: string; legacy?: boolean; convert_error?: boolean };
 
 const WIDTHS = { narrow: 360, normal: 560, wide: undefined } as const;
 
@@ -26,6 +28,7 @@ export default function JsxWorkbench({
   info,
   setDefault,
   openItem,
+  onDirtyChange,
 }: {
   workId: string;
   jsxId: string | undefined;
@@ -35,6 +38,7 @@ export default function JsxWorkbench({
   info: WorkInfo;
   setDefault: (name: string) => void;
   openItem?: (path: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -49,6 +53,16 @@ export default function JsxWorkbench({
   const [dark, setDark] = useState(false);
   const [calls, setCalls] = useState<PreviewCall[]>([]);
   const editing = useRef(false);
+  // A save answer only ends editing when no newer edit came in meanwhile (lib/exampleSaver).
+  const saver = useRef(
+    createSaver(async (example, body) => {
+      const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(example)}`, { method: 'PUT', body });
+      if (!response.ok) throw new ApiError(response.status, (await response.json()).error);
+      return response.json();
+    }),
+  ).current;
+  const dirtyRef = useRef(onDirtyChange);
+  dirtyRef.current = onDirtyChange;
   const [dialog, setDialog] = useState<'prompt' | null>(null);
   const usages = useQuery<{ path: string; elements: { raw: string; errors: string[] }[] }[]>({
     queryKey: ['jsx-usages', workId, jsxId],
@@ -63,29 +77,54 @@ export default function JsxWorkbench({
     if (current && !editing.current) setText(current.text);
   }, [current?.name, current?.text]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Store the pending edit; true when nothing is left unsaved.
+  async function flush(): Promise<boolean> {
+    if (!saver.dirty) return true;
+    if (!saver.job!.text.trim()) return false;
+    try {
+      const { saved, clean } = await saver.flush();
+      if (clean) {
+        editing.current = false;
+        dirtyRef.current?.(false);
+      }
+      qc.setQueryData(['jsx-props', workId, jsxId], saved);
+      return clean;
+    } catch (err) {
+      toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+      return false;
+    }
+  }
+
   // Save the example shortly after the last keystroke.
   useEffect(() => {
-    if (!editing.current || !current || !text.trim()) return;
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(current.name)}`, { method: 'PUT', body: text });
-        if (!response.ok) throw new ApiError(response.status, (await response.json()).error);
-        editing.current = false;
-        qc.setQueryData(['jsx-props', workId, jsxId], await response.json());
-      } catch (err) {
-        toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
-      }
-    }, 700);
+    if (!saver.dirty) return;
+    const timer = setTimeout(flush, 700);
     return () => clearTimeout(timer);
-  }, [text, current?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Leaving the tab (or the item) sends what is still unsaved.
+  useEffect(
+    () => () => {
+      const job = saver.job;
+      if (job?.text.trim()) {
+        fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(job.name)}`, { method: 'PUT', body: job.text, keepalive: true });
+      }
+    },
+    [workId, jsxId],
+  );
 
   if (!jsxId) return <div className="pad muted">{t('jsx.need_id')}</div>;
 
   const rules: { hooks?: string[]; globals?: { name: string; stub?: string }[]; response?: ResponseRule } = info.effective.values.jsx ?? {};
-  const found = findCalls(text, [name], rules.response);
+  // An old JSON example that cannot become a call previews its JSON props until it is edited.
+  const legacyProps = current?.convert_error && !editing.current ? parseJson(current.text) : undefined;
+  const found = legacyProps !== undefined
+    ? [{ name, raw: '', attrs: legacyProps as Record<string, unknown>, errors: [], index: 0 }]
+    : findCalls(text, [name], rules.response);
   const format = rules.response?.attribute_format ?? 'json_lenient';
 
   async function create(base?: Example) {
+    if (!(await flush())) return;
     const next = prompt(t('jsx.props_name_prompt'), base ? `${base.name}-2` : 'basic');
     if (!next) return;
     const response = await fetch(`/api/works/${workId}/jsx/${q(jsxId!)}/props/${q(next)}`, { method: 'PUT', body: base?.text ?? `<${name} />` });
@@ -157,9 +196,11 @@ export default function JsxWorkbench({
             <strong>{t('jsx.examples')}</strong>
             <select
               value={current?.name ?? ''}
-              onChange={(e) => {
+              onChange={async (e) => {
+                const next = e.target.value;
+                if (!(await flush())) return;
                 editing.current = false;
-                setSelected(e.target.value);
+                setSelected(next);
               }}
             >
               {list.map((e) => (
@@ -180,6 +221,12 @@ export default function JsxWorkbench({
                   className="danger"
                   onClick={async () => {
                     if (!confirm(t('jsx.delete_confirm', { name: current.name }))) return;
+                    // An edit still waiting for the deleted example must not bring it back.
+                    if (saver.job?.name === current.name) {
+                      saver.drop();
+                      editing.current = false;
+                      dirtyRef.current?.(false);
+                    }
                     qc.setQueryData(['jsx-props', workId, jsxId], await del(`/api/works/${workId}/jsx/${q(jsxId)}/props/${q(current.name)}`));
                     setSelected(null);
                   }}
@@ -204,11 +251,17 @@ export default function JsxWorkbench({
                   language="jsx"
                   onChange={(value) => {
                     editing.current = true;
+                    saver.edit(current!.name, value);
+                    dirtyRef.current?.(true);
                     setText(value);
                   }}
                 />
               </div>
-              {current?.legacy && <div className="faint small">{t('jsx.legacy_example')}</div>}
+              {current?.legacy && (
+                <div className={current.convert_error ? 'warn-text' : 'faint small'}>
+                  {t(current.convert_error ? 'jsx.legacy_unconvertible' : 'jsx.legacy_example')}
+                </div>
+              )}
               <div className="section-title">{t('jsx.read_props', { format: t(`jsx.format.${format}`) })}</div>
               {found.length === 0 ? (
                 <div className="warn-text">{t('jsx.no_calls_found', { name })}</div>
@@ -338,4 +391,13 @@ function PromptTextDialog({
       <p className="faint">{t('jsx.prompt_note')}</p>
     </Dialog>
   );
+}
+
+function parseJson(text: string): unknown {
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
 }

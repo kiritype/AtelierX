@@ -1472,10 +1472,11 @@
   "jsx.no_calls_found": "No <{name} … /> call found.",
   "jsx.read_props": "Props read ({format})",
   "jsx.no_props": "No attributes",
-  "jsx.legacy_example": "An older JSON example, shown as a call. Editing saves it in this form.",
+  "jsx.legacy_example": "An older JSON example, shown as a call with the same values. Editing saves it in this form; the JSON file is kept.",
   "jsx.format.text": "Text as written",
   "jsx.format.json_lenient": "JSON (lenient)",
   "jsx.format.json": "JSON (strict)",
   "settings.platform_attribute_format": "Attribute values of components in replies",
-  "settings.platform_attribute_format_note": "\"Text as written\" when the platform passes c='C001' as the text in the quotes; JSON when it passes data='{\"hp\": 3}' as an object. The JSX preview, the chat test and the example check read calls this way."
+  "settings.platform_attribute_format_note": "\"Text as written\" when the platform passes c='C001' as the text in the quotes; JSON when it passes data='{\"hp\": 3}' as an object. The JSX preview, the chat test and the example check read calls this way.",
+  "jsx.legacy_unconvertible": "This old example cannot be written as a call under the current rule, so its JSON is shown and previewed as is. Editing saves a call; the JSON file is kept."
 }

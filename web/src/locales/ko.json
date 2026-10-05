@@ -1574,12 +1574,13 @@
   "jsx.no_calls_found": "<{name} … /> 호출을 찾지 못했습니다.",
   "jsx.read_props": "읽은 props ({format})",
   "jsx.no_props": "속성 없음",
-  "jsx.legacy_example": "예전 JSON 예시를 호출로 바꿔 보여 줍니다. 고치면 이 형식으로 저장됩니다.",
+  "jsx.legacy_example": "예전 JSON 예시를 같은 값의 호출로 바꿔 보여 줍니다. 고치면 이 형식으로 저장되고, 원래 JSON 파일은 지우지 않습니다.",
   "jsx.format.text": "문자열 그대로",
   "jsx.format.json_lenient": "JSON(느슨하게)",
   "jsx.format.json": "JSON(엄격)",
   "settings.platform_attribute_format": "응답 속 컴포넌트의 속성 값",
   "settings.platform_attribute_format_note": "c='C001'처럼 따옴표 안 값을 플랫폼이 그대로 넘기면 \"문자열 그대로\", data='{\"hp\": 3}'를 객체로 넘기면 JSON입니다. JSX 미리보기·대화 테스트·문구 속 예시 검사가 이 방식으로 읽습니다.",
   "server.jsx.bad_example": "<이름 />처럼 호출을 적어 주세요(2만 자까지).",
-  "server.presets.invalid_attribute_format": "속성 값은 text, json, json_lenient 중 하나로 읽습니다."
+  "server.presets.invalid_attribute_format": "속성 값은 text, json, json_lenient 중 하나로 읽습니다.",
+  "jsx.legacy_unconvertible": "이 예시는 지금 표기 규칙으로는 호출로 옮길 수 없어 원래 JSON 그대로 보여 줍니다(미리보기는 이 JSON으로). 고쳐서 저장하면 호출로 저장되고, 원래 JSON 파일은 지우지 않습니다."
 }
