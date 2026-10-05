@@ -295,6 +295,7 @@
   "server.snapshots.missing": "스냅숏이 없습니다.",
   "server.snapshots.damaged": "스냅숏 기록이 손상되었습니다.",
   "server.trash.missing": "휴지통 항목이 없습니다.",
+  "server.trash.damaged": "휴지통 기록이 손상되었습니다.",
   "server.vault.already_set_up": "API 키·인증 정보가 이미 설정되어 있습니다.",
   "server.vault.locked": "앱이 잠겨 있습니다.",
   "server.vault.password_too_short": "비밀번호는 4자 이상이어야 합니다.",
