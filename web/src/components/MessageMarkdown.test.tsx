@@ -14,6 +14,15 @@ describe('MessageMarkdown', () => {
     expect(html).not.toContain('<script>');
   });
 
+  it('keeps event handler attributes and script links as text (the document preview uses this renderer)', () => {
+    const html = renderToStaticMarkup(
+      createElement(MessageMarkdown, { text: 'before\n\n<img src="x" onerror="alert(1)">\n\n[x](javascript:alert(1))' }),
+    );
+    expect(html).not.toContain('<img');
+    expect(html).toContain('onerror=&quot;alert(1)&quot;');
+    expect(html).not.toContain('href="javascript');
+  });
+
   it('does not render or call the component handler for fenced or inline code', () => {
     const component = vi.fn(() => createElement('b', null, 'rendered component'));
     const html = renderToStaticMarkup(
