@@ -217,6 +217,17 @@ def file_block(path, text):
     return f'<<<file path="{path}">>>\n{text.rstrip(chr(10))}\n<<<end>>>'
 
 
+def whole_attachment(work, attachment):
+    """The text of a whole-file attachment ("현재 파일 첨부") when all of it went in, else None."""
+    if attachment.get('from') or isinstance(attachment.get('text'), str):
+        return None
+    try:
+        text = work.resolve(str(attachment.get('path') or '')).read_text(encoding='utf-8')
+    except (OSError, AppError):
+        return None
+    return text if len(text) <= ATTACHMENT_LIMIT else None
+
+
 def attachment_text(work, attachment):
     path = str(attachment.get('path') or '')
     text = attachment.get('text')
@@ -290,7 +301,7 @@ def build(work, paths, effective, linked, session, message, attachments, budget)
         'history_dropped': len(session['turns']) - len(history),
         # The files exactly as the model saw them: a proposal is checked against these, not against the file as it is
         # when the answer ends (the user may save while waiting).
-        'seen': {path: sha256_text(text) for path, text in bodies},
+        'seen': _seen(work, bodies, attachments),
     }
     return messages, summary
 
@@ -309,6 +320,16 @@ def _head(text, suffix):
         return frontmatter.to_plain(meta) or {}, None
     except frontmatter.MetaError as error:
         return {}, str(error)
+
+
+def _seen(work, bodies, attachments):
+    seen = {path: sha256_text(text) for path, text in bodies}
+    # A file attached whole was seen just as well as one in the scope's bodies.
+    for attachment in attachments or []:
+        text = whole_attachment(work, attachment)
+        if text is not None:
+            seen.setdefault(attachment['path'], sha256_text(text))
+    return seen
 
 
 def proposals(work, text, seen=None):
@@ -341,7 +362,13 @@ def proposals(work, text, seen=None):
 def _against_request(result, seen):
     """Pin an existing file's base to the text sent with the request. ``seen`` is None for answers stored before
     0.0.4, which keep the old rule (the file when the answer ended)."""
-    if seen is None or result['rejected'] or result['new']:
+    if seen is None or result['rejected']:
+        return result
+    if result['new']:
+        if result['path'] in seen:
+            # The file was there when the request went and is gone now (deleted or moved while waiting): adopting would
+            # bring it back from the old text.
+            result['warnings'].append('deleted_since')
         return result
     if result['path'] in seen:
         if seen[result['path']] != result['base_hash']:

@@ -207,6 +207,14 @@ async def proposal_review(request):
         raise AppError(
             Msg('server.agent.truncated', 'This proposal was cut off. Ask the agent to continue.'), 400
         )
+    if 'deleted_since' in proposal['warnings']:
+        raise AppError(
+            Msg(
+                'server.agent.deleted',
+                'The file was deleted or moved after the request. Ask again if it should come back.',
+            ),
+            409,
+        )
     # The draft keeps the file as the model saw it (or, for older answers, as it was when the answer came); any edit
     # since then is caught here and again when adopting.
     base_hash = stored.get('base_hash') if stored else proposal['base_hash']

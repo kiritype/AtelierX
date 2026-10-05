@@ -301,3 +301,49 @@ def test_a_proposal_for_a_file_the_model_never_saw_is_flagged(unlocked):
     text = (work.folder / '장소' / '카페 노을.md').read_text(encoding='utf-8')
     found = agent.proposals(work, f'<<<file path="장소/카페 노을.md">>>\n{text}<<<end>>>', seen={})
     assert found[0]['warnings'] == ['not_in_context']
+
+
+def test_a_file_deleted_while_the_answer_streams_is_not_brought_back(unlocked, monkeypatch):
+    c = unlocked
+    wid = _work(c)
+    path = '인물/윤하람.md'
+    s = unlocked.app.state.app
+    work = s.works.get(wid)
+    real_stream = s.llm.stream
+
+    async def stream_with_a_delete(task, messages, **kwargs):
+        deleted = False
+        async for event in real_stream(task, messages, **kwargs):
+            if not deleted:
+                work.delete(path)
+                deleted = True
+            yield event
+
+    monkeypatch.setattr(s.llm, 'stream', stream_with_a_delete)
+    sid = c.post(
+        f'/api/works/{wid}/agent/sessions', json={'mode': 'free', 'scope': {'kind': 'file', 'paths': [path]}}
+    ).json()['id']
+    end = json.loads(
+        _events(c.post(f'/api/works/{wid}/agent/sessions/{sid}/send', json={'message': '고쳐 줘'}))[-1][1]
+    )
+    assert end['proposals'][0]['warnings'] == ['deleted_since']
+    review = c.post(f'/api/works/{wid}/agent/sessions/{sid}/proposals/2/1/review')
+    assert review.status_code == 409 and review.json()['error']['key'] == 'server.agent.deleted'
+    assert not (work.folder / path).exists()
+
+
+def test_a_file_attached_whole_counts_as_seen(unlocked):
+    c = unlocked
+    wid = _work(c)
+    work = unlocked.app.state.app.works.get(wid)
+    path = '장소/카페 노을.md'
+    text = (work.folder / path).read_text(encoding='utf-8')
+    assert agent.whole_attachment(work, {'path': path}) == text
+    # A selection, or text sent from the editor, is not the file as it is on disk.
+    assert agent.whole_attachment(work, {'path': path, 'from': 1, 'to': 2}) is None
+    assert agent.whole_attachment(work, {'path': path, 'text': 'x'}) is None
+    seen = agent._seen(work, [], [{'path': path}])
+    proposal = f'<<<file path="{path}">>>\n{text}<<<end>>>'
+    assert agent.proposals(work, proposal, seen)[0]['warnings'] == []
+    (work.folder / path).write_text(text + '\n바뀜\n', encoding='utf-8')
+    assert agent.proposals(work, proposal, seen)[0]['warnings'] == ['changed_since']
