@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
-import { useReportDirty } from './settingsDirty';
+import { useUnsaved } from './Unsaved';
 import { LLM_PRESETS, newProvider, usesLocalGpu, vertexUrl } from './llmPresets';
 import UsageReport from './UsageReport';
 
@@ -37,7 +37,7 @@ export default function LlmSettings() {
   // Keys typed into a connection card; "Save" stores them in the vault (encrypted) and links them to the connection.
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [changingKey, setChangingKey] = useState<Record<string, boolean>>({});
-  useReportDirty('llm', dirty);
+  useUnsaved('llm', dirty);
 
   useEffect(() => {
     if (query.data && !dirty) setDoc(query.data);

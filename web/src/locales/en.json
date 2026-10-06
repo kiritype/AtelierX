@@ -1309,7 +1309,6 @@
   "tabs.close_right": "Close tabs to the right",
   "tabs.pin": "Pin tab",
   "tabs.unpin": "Unpin tab",
-  "tabs.close_forms_warning": "These tabs may contain unsaved form entries. Close them?\n{names}",
   "inner.gallery": "Image gallery",
   "flow.navigation": "Image workflow",
   "flow.generate": "Generate images / expressions",
@@ -1955,5 +1954,6 @@
   "activity.kind.convert": "Image conversion",
   "activity.queue_counts": "{running} running · {queued} queued",
   "activity.paused": "paused",
-  "activity.open": "Open"
+  "activity.open": "Open",
+  "tabs.close_unsaved": "There are unsaved changes in: {names}\nThey will be lost. Close anyway?"
 }

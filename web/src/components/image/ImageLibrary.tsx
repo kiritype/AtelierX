@@ -6,6 +6,7 @@ import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
 import GenSettings, { type GenerationSettings } from './GenSettings';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
+import { useUnsaved } from '../Unsaved';
 
 type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets', 'targets'];
@@ -72,6 +73,9 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
     const item = selected ? items.data?.[selected] : null;
     setDraft(item ? { ...item, scope: item.scope ?? 'global' } : null);
   }, [selected, items.data]);
+  // The item being edited differs from what is stored (a new one always does) until it is saved.
+  const stored = draft ? items.data?.[draft.id] : undefined;
+  useUnsaved(`library-${kind}`, !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft)));
 
   async function save() {
     if (!draft) return;
@@ -287,6 +291,11 @@ function Presets({ workId }: { workId: string }) {
   const commons = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
   const styles = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'styles', workId], queryFn: () => get(`/api/image/library/styles?work=${workId}`) });
   const [draft, setDraft] = useState<Preset | null>(null);
+  const storedPreset = draft ? presets.data?.find((p) => p.id === draft.id) : undefined;
+  useUnsaved(
+    'library-presets',
+    !!draft && (!storedPreset || JSON.stringify({ ...storedPreset, settings: { ...storedPreset.settings, family: storedPreset.family } }) !== JSON.stringify(draft)),
+  );
 
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
   return (
@@ -384,8 +393,9 @@ function Targets() {
   const rules = useQuery<Rules>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
   const [list, setList] = useState<Target[] | null>(null);
   useEffect(() => setList(rules.data?.targets ?? null), [rules.data]);
+  const changed = !!list && JSON.stringify(list) !== JSON.stringify(rules.data?.targets);
+  useUnsaved('library-targets', changed);
   if (!list) return null;
-  const changed = JSON.stringify(list) !== JSON.stringify(rules.data?.targets);
 
   async function save() {
     try {

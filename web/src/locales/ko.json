@@ -1412,7 +1412,6 @@
   "tabs.close_right": "오른쪽 탭 모두 닫기",
   "tabs.pin": "탭 고정",
   "tabs.unpin": "고정 해제",
-  "tabs.close_forms_warning": "입력한 설정이나 작업 내용이 남아 있을 수 있습니다. 다음 탭을 닫을까요?\n{names}",
   "inner.gallery": "이미지 갤러리",
   "flow.navigation": "이미지 제작 단계",
   "flow.generate": "이미지·감정 애셋 생성",
@@ -2081,5 +2080,6 @@
   "activity.kind.convert": "이미지 변환",
   "activity.queue_counts": "실행 {running} · 대기 {queued}",
   "activity.paused": "일시 정지",
-  "activity.open": "열기"
+  "activity.open": "열기",
+  "tabs.close_unsaved": "저장하지 않은 변경이 있습니다: {names}\n닫으면 사라집니다. 닫을까요?"
 }
