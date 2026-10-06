@@ -2,13 +2,13 @@
 blank_issues_enabled: false
 contact_links:
   - name: 오류 제보 (Bug report)
-    url: https://github.com/kiritype/AtelierX/discussions/new?category=%EC%98%A4%EB%A5%98-%EC%A0%9C%EB%B3%B4
+    url: https://github.com/kiritype/AtelierX/discussions/new?category=bug-reports
     about: 실행 오류나 이상한 동작을 알려 주세요. 확인되면 이슈로 옮겨 진행합니다.
   - name: 기능 제안 (Feature request)
-    url: https://github.com/kiritype/AtelierX/discussions/new?category=%EA%B8%B0%EB%8A%A5-%EC%A0%9C%EC%95%88
+    url: https://github.com/kiritype/AtelierX/discussions/new?category=ideas
     about: 새 기능이나 개선 의견을 남겨 주세요.
   - name: 질문·문의 (Questions)
-    url: https://github.com/kiritype/AtelierX/discussions/new?category=%EC%A7%88%EB%AC%B8-%EB%AC%B8%EC%9D%98
+    url: https://github.com/kiritype/AtelierX/discussions/new?category=q-a
     about: 설치·설정·사용법 질문
   - name: 사용 설명서 (User manual)
     url: https://atelierx.cftm.net/
