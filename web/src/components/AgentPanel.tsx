@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { ApiError, askConsent, del, get, patch, post } from '../api';
+import { ApiError, del, get, patch, post } from '../api';
+import { applyEvent, postStream, streamErrorText, useStreamOwner } from '../lib/stream';
 import { t, tm } from '../i18n';
 import { splitAnswer } from '../lib/agentText';
 import type { TreeEntry } from '../types';
@@ -96,16 +97,15 @@ export default function AgentPanel({
   const [live, setLive] = useState<Live | null>(null);
   const [preview, setPreview] = useState<Summary | null>(null);
   const [scopeOpen, setScopeOpen] = useState(false);
-  const abort = useRef<AbortController | null>(null);
   const log = useRef<HTMLDivElement>(null);
 
   // One answer at a time: while it streams the conversation cannot change (stop it first). Leaving the work or closing
   // the panel stops it; the server keeps what came so far as a stopped answer.
   const streaming = live !== null;
-  useEffect(() => () => abort.current?.abort(), [workId]);
+  const owner = useStreamOwner([workId]);
 
   const choose = (next: string | null) => {
-    if (abort.current) return;
+    if (owner.busy()) return;
     setSid(next);
     remember(workId, next);
     setLive(null);
@@ -146,8 +146,7 @@ export default function AgentPanel({
     const message = input.trim();
     if (!message || !session.data || live) return;
     const url = `/api/works/${workId}/agent/sessions/${session.data.id}/send`;
-    const controller = new AbortController();
-    abort.current = controller;
+    const controller = owner.begin();
     let state: Live = { text: '', thinking: 0, done: false };
     setLive(state);
     setInput('');
@@ -158,59 +157,21 @@ export default function AgentPanel({
       old ? { ...old, turns: [...old.turns, { turn: old.turns.length + 1, role: 'user', text: message, attachments: sent }] } : old,
     );
     try {
-      const request = () =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, attachments: sent, llm }),
-          signal: controller.signal,
-        });
-      let response = await request();
-      if (response.status === 428) {
-        const error = (await response.json()).error;
-        if (!(await askConsent(error, url))) throw new Error(tm(error));
-        response = await request();
-      }
-      if (!response.ok) {
-        const error = (await response.json().catch(() => null))?.error;
-        throw new Error(error ? tm(error) : response.statusText);
-      }
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split('\n\n');
-        buffer = events.pop()!;
-        for (const raw of events) {
-          const type = /event: (\w+)/.exec(raw)?.[1];
-          const data = /data: (.*)/s.exec(raw)?.[1];
-          if (!type || data === undefined) continue;
-          if (type === 'context') state = { ...state, context: JSON.parse(data) };
-          if (type === 'thinking') state = { ...state, thinking: Number(data) };
-          if (type === 'waiting') state = { ...state, waiting: tm(JSON.parse(data)) };
-          if (type === 'delta') state = { ...state, text: state.text + JSON.parse(data) };
-          if (type === 'error') state = { ...state, error: tm(JSON.parse(data)) };
-          if (type === 'end') state = { ...state, done: true };
-          setLive(state);
-        }
-      }
+      await postStream(url, { message, attachments: sent, llm }, controller.signal, (event) => {
+        state = applyEvent(state, event);
+        setLive(state);
+      });
     } catch (err) {
       if (!controller.signal.aborted) {
         setInput(message);
         setAttachments(sent);
-        toast({ text: String((err as Error).message ?? err), tone: 'error' });
+        toast({ text: streamErrorText(err), tone: 'error' });
       }
     } finally {
       await qc.invalidateQueries({ queryKey: ['agent-session', workId, session.data.id] });
       qc.invalidateQueries({ queryKey: ['agent-sessions', workId] });
       // Only the request still in charge clears the shared state.
-      if (abort.current === controller) {
-        abort.current = null;
-        setLive(null);
-      }
+      if (owner.finish(controller)) setLive(null);
     }
   }
 
@@ -372,7 +333,7 @@ export default function AgentPanel({
               </button>
               <span className="grow" />
               {live ? (
-                <button onClick={() => abort.current?.abort()}>{t('test.stop')}</button>
+                <button onClick={owner.stop}>{t('test.stop')}</button>
               ) : (
                 <button className="primary" onClick={send} disabled={!input.trim()}>
                   {t('agent.send')}

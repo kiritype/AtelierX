@@ -26,6 +26,9 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
+// For requests made outside `api` (streams) that find the session gone.
+export const notifyUnauthorized = () => onUnauthorized();
+
 export async function api<T = any>(method: string, url: string, body?: unknown, retried = false): Promise<T> {
   const response = await fetch(url, {
     method,
