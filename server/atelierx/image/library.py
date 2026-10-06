@@ -24,6 +24,47 @@ DEFAULT_TARGETS = [
 ]
 # Before #80 an item named one model family (or 'shared' for both).
 LEGACY_FAMILIES = ('anima', 'sdxl')
+# Deployment codes (decision 0023): any text that can be one part of a path. Same codes are allowed (the screens say so).
+MAX_CODE = 64
+BAD_CODE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def clean_code(value):
+    """A deployment code as given, trimmed; '' when not set. Refuses what cannot be one part of a path."""
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        raise ValueError(Msg('server.image.code_text', 'The deployment code must be text.'))
+    code = value.strip()
+    if len(code) > MAX_CODE or BAD_CODE.search(code) or code in ('.', '..'):
+        raise ValueError(
+            Msg(
+                'server.image.code_invalid',
+                'The deployment code "{code}" cannot be part of a path. Leave out / \\ : * ? " < > |.',
+                code=code[:MAX_CODE],
+            )
+        )
+    return code
+
+
+def fill_default_codes(paths):
+    """Give the global expressions that came with the app the codes the defaults have now, once.
+
+    Only items that never had a `code` field get one, so a code the user cleared ('') stays cleared.
+    """
+    defaults = (read_json(paths.defaults / 'image' / 'expressions.json', {}) or {}).get('items') or {}
+    path = paths.data / 'image' / 'expressions.json'
+    doc = read_json(path, None)
+    if not isinstance(doc, dict) or not isinstance(doc.get('items'), dict):
+        return
+    changed = False
+    for ident, item in doc['items'].items():
+        code = (defaults.get(ident) or {}).get('code')
+        if isinstance(item, dict) and code and 'code' not in item:
+            item['code'] = code
+            changed = True
+    if changed:
+        atomic_json(path, doc)
 
 
 def _check_kind(kind):
@@ -141,6 +182,8 @@ def clean_item(kind, item, rules):
     if targets:
         out['targets'] = targets
     if kind == 'expressions':
+        # Always written, '' when empty, so the default codes are filled only into items that never had one.
+        out['code'] = clean_code(item.get('code'))
         ratings = {r['id'] for r in rules['ratings']}
         out['rating'] = item.get('rating') if item.get('rating') in ratings else rules['ratings'][0]['id']
         if item.get('composition'):
