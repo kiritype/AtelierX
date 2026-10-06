@@ -246,7 +246,7 @@ class LabMixin:
                     'lab_variant': meta.get('lab_variant'),
                     'lab_sweep': meta.get('lab_sweep'),
                     'seed': meta.get('seed'),
-                    'status': 'completed',
+                    'status': 'done',
                     'path': item['path'],
                     'image_url': item['image_url'],
                     'source': meta.get('lab_source'),

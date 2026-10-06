@@ -8,6 +8,7 @@
 import re
 
 from ...core.i18n import Msg
+from ...core.lifecycle import normalize
 from ..util import atomic_json, code, read_json
 
 RECORD_ID = re.compile(r'^[A-Z]\d{3,}$')
@@ -42,7 +43,7 @@ def _list(folder):
     for path in sorted(folder.glob('*.json')):
         data = read_json(path)
         if isinstance(data, dict):
-            out.append({**data, 'id': path.stem})
+            out.append(normalize({**data, 'id': path.stem}))
     return out
 
 
@@ -71,4 +72,4 @@ def read(path):
     data = read_json(path)
     if not isinstance(data, dict):
         raise ValueError(Msg('server.lora.missing', 'The record does not exist.'))
-    return {**data, 'id': path.stem}
+    return normalize({**data, 'id': path.stem})

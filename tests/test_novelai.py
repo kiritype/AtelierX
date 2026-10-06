@@ -98,7 +98,7 @@ def test_an_image_is_requested_as_documented_and_saved_with_its_own_metadata(unl
     )
     wid, runtime = _setup(c, server)
     job = _queue_and_run(c, wid, runtime)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
 
     request = server.requests[0]
     assert str(request.url) == 'https://image.novelai.net/ai/generate-image'
@@ -124,7 +124,7 @@ def test_a_base64_json_answer_works_too(unlocked):
     wid, runtime = _setup(
         c, Server(httpx.Response(201, json={'images': [{'index': 0, 'seed': 1, 'image': png}]}))
     )
-    assert _queue_and_run(c, wid, runtime)['status'] == 'completed'
+    assert _queue_and_run(c, wid, runtime)['status'] == 'done'
 
 
 def test_refusals_fail_the_job_with_the_reason_and_pause_the_queue(unlocked):
@@ -149,7 +149,7 @@ def test_busy_refusals_are_retried_but_a_request_without_answer_is_not(unlocked,
     server = Server(httpx.Response(429, json={'message': 'Concurrent generation is locked'}), ok)
     wid, runtime = _setup(c, server)
     job = _queue_and_run(c, wid, runtime)
-    assert job['status'] == 'completed' and len(server.requests) == 2
+    assert job['status'] == 'done' and len(server.requests) == 2
 
     def no_answer(request):
         raise httpx.ReadTimeout('timed out', request=request)
@@ -180,7 +180,7 @@ def test_an_image_arriving_after_a_cancel_is_kept(unlocked):
     holder['job'] = job = runtime.jobs[-1]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed' and job['image_url']
+    assert job['status'] == 'done' and job['image_url']
 
 
 def test_the_same_request_again_soon_asks_first(unlocked):

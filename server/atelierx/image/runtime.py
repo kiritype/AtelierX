@@ -3,6 +3,7 @@
 import threading
 
 from ..core.i18n import AppError, Msg
+from ..core.lifecycle import CANCELLING, QUEUED, RUNNING, UNFINISHED
 from . import board, comfy_locate
 from .comfy import Comfy
 from .control import ComfyControl
@@ -15,6 +16,7 @@ from .internet.pixai import PixAIService
 from .job_queue import JobQueue
 from .lab import LabMixin
 from .lora import models as lora_models
+from .lora import store as lora_store
 from .lora.trainer import LoraTrainer
 from .models import FAMILY_LABELS, ModelProfiles
 from .review_rounds import ReviewRounds
@@ -133,6 +135,48 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             catalog['families'] = self.models.classify(catalog)
         catalog['family_labels'] = FAMILY_LABELS
         return catalog
+
+    # --- what the jobs panel shows besides LLM work (#89) -------------------------------------------------------------
+    def activity(self):
+        """Unfinished image work, in the shared life cycle: the queue, an install, a LoRA training, conversions."""
+        out = []
+        counts = {}
+        for job in self.queue.select(lambda j: j['status'] in UNFINISHED):
+            counts[job['status']] = counts.get(job['status'], 0) + 1
+        if counts:
+            out.append(
+                {
+                    'kind': 'image_queue',
+                    'status': RUNNING if counts.get(RUNNING) or counts.get(CANCELLING) else QUEUED,
+                    'counts': counts,
+                    'paused': self.queue.paused,
+                }
+            )
+        run = self.installs.run
+        if run and run['status'] in UNFINISHED:
+            out.append({'kind': 'install', 'status': run['status'], 'section': run['section']})
+        if self.trainer.active:
+            work_id, character_id, run_id = self.trainer.active
+            try:
+                record = lora_store.read(lora_store.run_file(self.works.get(work_id), character_id, run_id))
+            except Exception:  # the record is being written or the work is gone: show it as running
+                record = {'status': RUNNING}
+            out.append(
+                {
+                    'kind': 'lora',
+                    'status': record.get('status', RUNNING),
+                    'phase': record.get('phase'),
+                    'title': record.get('output_name') or run_id,
+                    'work_id': work_id,
+                    'character_id': character_id,
+                }
+            )
+        for task in list(self.convert.tasks.values()):
+            if task['status'] == RUNNING:
+                out.append(
+                    {'kind': 'convert', 'status': RUNNING, 'done': task['done'], 'total': task['total']}
+                )
+        return out
 
     # --- image services on the internet (#41) ---------------------------------------------------------------------
     def image_services(self):

@@ -72,7 +72,7 @@ def test_a_local_request_lets_the_image_in_progress_finish(paths):
     async def run():
         async def finish_later():
             await asyncio.sleep(0.05)
-            image_jobs[0]['status'] = 'completed'
+            image_jobs[0]['status'] = 'done'
 
         finishing = asyncio.create_task(finish_later())
         answer = await llm.complete('compression', [{'role': 'user', 'content': 'x'}])

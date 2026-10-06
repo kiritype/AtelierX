@@ -486,7 +486,7 @@ class GenerationMixin:
         kind = job.get('kind')
         if kind == 'tag':
             tags = self.finish_tags(job, result['entry'])
-            self.queue.update(job, status='completed', tag_count=len(tags), finished_at=now(), progress=done)
+            self.queue.update(job, status='done', tag_count=len(tags), finished_at=now(), progress=done)
             return
         if kind == 'post':
             image_url, _ = self.save_post(job, result['image'], sent['record'])
@@ -494,7 +494,7 @@ class GenerationMixin:
             image_url = self.save_result(job, result['image'], sent['record'], sent['id'])
         self.queue.update(
             job,
-            status='completed',
+            status='done',
             image_url=image_url,
             metadata_url=image_url.rsplit('.', 1)[0] + '.json',
             finished_at=now(),

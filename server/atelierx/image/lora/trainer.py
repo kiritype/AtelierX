@@ -18,13 +18,13 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from PIL import Image
 
 from ...core.i18n import Msg, message_of
+from ...core.lifecycle import UNFINISHED
 from ...core.proc import NO_WINDOW, stop_tree
 from ..util import code, now
 from . import models, setup, store
 
 log = logging.getLogger(__name__)
 
-ACTIVE = ('waiting_gpu', 'preprocessing', 'training')
 DEFAULT_PARAMS = {
     'epochs': 40,
     'save_every': 10,
@@ -112,7 +112,7 @@ class LoraTrainer:
             folder = work.app / 'image' / 'characters'
             for path in sorted(folder.glob('*/lora/runs/*.json')) if folder.is_dir() else []:
                 run = store.read(path)
-                if run.get('status') in ACTIVE:
+                if run.get('status') in UNFINISHED:
                     run.update(status='interrupted', error=INTERRUPTED, updated_at=now())
                     store.write(path, run)
 
@@ -213,7 +213,8 @@ class LoraTrainer:
                 'output_name': f'{work.id}_{character_id}_{run_id}',
                 'base_model': base['base_model'],
                 'settings': {**params, 'preset': base['preset']},
-                'status': 'waiting_gpu',
+                'status': 'queued',
+                'phase': 'waiting_gpu',
                 'created_at': now(),
                 'outputs': [],
                 'log': {'root': 'output', 'path': f'{work.id}/{character_id}/lora/{run_id}/logs/train.log'},
@@ -233,15 +234,20 @@ class LoraTrainer:
                     Msg('server.trainer.this_training_is_not_running', 'This training is not running.')
                 )
             self.cancel_requested = True
+            work_run = store.run_file(work, code(character_id), run_id)
+            current = store.read(work_run)
+            if current.get('status') in UNFINISHED:
+                store.write(work_run, {**current, 'status': 'cancelling', 'updated_at': now()})
             # The trainer starts worker processes of its own; stop the whole tree.
             stop_tree(self.process)
         return {'ok': True}
 
     def shutdown(self, timeout=10):
-        """The app is closing: a training run stops with it and is recorded as cancelled."""
+        """The app is closing: a training run stops with it and is recorded as interrupted (it can be run again)."""
         with self.lock:
             if self.active is None:
                 return
+            self.closing = True
             self.cancel_requested = True
             process = self.process
         stop_tree(process)
@@ -339,7 +345,7 @@ class LoraTrainer:
             self._export(run, dataset, values, base)
             name, params = run['output_name'], run['settings']
             gpu.update('training', 'preprocessing')
-            run.update(status='preprocessing', started_at=now())
+            run.update(status='running', phase='preprocessing', started_at=now())
             self._write(work, run)
             env = {
                 'METHOD': params['method'],
@@ -348,7 +354,7 @@ class LoraTrainer:
             }
             self._call(values, ['tasks.py', 'preprocess'], logs / 'train.log', env)
             gpu.update('training', 'training')
-            run['status'] = 'training'
+            run['phase'] = 'training'
             self._write(work, run)
             self._call(
                 values,
@@ -369,14 +375,20 @@ class LoraTrainer:
             outputs = self._collect_outputs(run, values)
             # Give the GPU back before reporting "done", so a finished run never blocks generation.
             gpu.release('training')
-            run.update(status='done', finished_at=now(), outputs=outputs)
+            run.update(status='done', phase=None, finished_at=now(), outputs=outputs)
             self._write(work, run)
         except Cancelled:
-            run.update(status='cancelled', finished_at=now())
+            closing = getattr(self, 'closing', False)
+            run.update(
+                status='interrupted' if closing else 'cancelled',
+                phase=None,
+                finished_at=now(),
+                **({'error': INTERRUPTED} if closing else {}),
+            )
             self._write(work, run)
         except Exception as error:  # every failure is reported on the run
             log.exception('LoRA training failed: %s', run['output_name'])
-            run.update(status='failed', finished_at=now(), error=message_of(error))
+            run.update(status='failed', phase=None, finished_at=now(), error=message_of(error))
             self._write(work, run)
         finally:
             with self.lock:

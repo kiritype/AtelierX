@@ -82,8 +82,8 @@ class ComfyControl:
                         'Stop the ComfyUI this app started before changing the connection.',
                     )
                 )
-            if any(j['status'] in ('running', 'cancelling') for j in self.studio.jobs) or (
-                not self.studio.paused and any(j['status'] == 'queued' for j in self.studio.jobs)
+            if self.studio.queue.any_active() or (
+                not self.studio.queue.paused and self.studio.queue.any_queued()
             ):
                 raise ValueError(
                     Msg(
@@ -259,7 +259,7 @@ class ComfyControl:
                 deadline = time.monotonic() + 1800
                 while time.monotonic() < deadline:
                     with self.studio.lock:
-                        busy = any(j['status'] in ('running', 'cancelling') for j in self.studio.jobs)
+                        busy = self.studio.queue.any_active()
                     status = self.status()
                     if not busy and status['connected'] and not status['running'] and not status['pending']:
                         break

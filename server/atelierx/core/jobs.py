@@ -5,6 +5,7 @@ import secrets
 import traceback
 
 from .i18n import AppError, Msg
+from .lifecycle import CANCELLED, CANCELLING, DONE, FAILED, QUEUED, RUNNING
 from .works import now_iso
 
 
@@ -25,7 +26,7 @@ class Jobs:
             'id': job_id,
             'kind': kind,
             'title': title,
-            'status': 'queued',
+            'status': QUEUED,
             'progress': 0,
             'result': None,
             'error': None,
@@ -48,14 +49,14 @@ class Jobs:
         try:
             if gpu:
                 async with self._gpu:
-                    job['status'] = 'running'
+                    job['status'] = RUNNING
                     self.events.publish('job', self.public(job))
                     job['result'] = await runner(progress)
             else:
-                job['status'] = 'running'
+                job['status'] = RUNNING
                 self.events.publish('job', self.public(job))
                 job['result'] = await runner(progress)
-            job['status'], job['progress'] = 'done', 100
+            job['status'], job['progress'] = DONE, 100
             self.events.publish(
                 'notice',
                 {
@@ -66,12 +67,12 @@ class Jobs:
                 },
             )
         except asyncio.CancelledError:
-            job['status'] = 'cancelled'
+            job['status'] = CANCELLED
         except AppError as error:
-            job['status'], job['error'] = 'failed', error.msg.as_dict()
+            job['status'], job['error'] = FAILED, error.msg.as_dict()
         except Exception as error:  # noqa: BLE001 - surface unexpected failures as a failed job, not a crash
             traceback.print_exc()
-            job['status'] = 'failed'
+            job['status'] = FAILED
             job['error'] = Msg('server.jobs.failed', 'The job failed: {error}', error=str(error)).as_dict()
         self.events.publish('job', self.public(job))
 
@@ -79,5 +80,8 @@ class Jobs:
         job = self.jobs.get(job_id)
         if job is None:
             raise AppError(Msg('server.jobs.missing', 'This job does not exist.'), 404)
-        job['_task'].cancel()
+        if job['status'] in (QUEUED, RUNNING):
+            job['status'] = CANCELLING
+            self.events.publish('job', self.public(job))
+            job['_task'].cancel()
         return self.public(job)

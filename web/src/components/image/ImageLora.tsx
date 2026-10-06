@@ -5,6 +5,7 @@ import { t, tm } from '../../i18n';
 import { useToast } from '../Toasts';
 import { useCatalog } from './GenSettings';
 import { compareLorasInLab } from './ImageLab';
+import { unfinished } from '../../lib/lifecycle';
 
 type Design = { id: string; name: string; has_design: boolean; trigger?: string; outfits: { id: string; name: string }[] };
 type Candidate = { path: string; outfit_id: string; expression_id: string; expression_name: string; human_status: string; adopted: boolean; thumbnail_url: string };
@@ -13,6 +14,7 @@ type Dataset = { id: string; name: string; outfits: string[]; triggers: { charac
 type Run = {
   id: string;
   status: string;
+  phase?: string | null;
   dataset: string;
   dataset_name?: string;
   output_name: string;
@@ -40,7 +42,6 @@ type Model = {
 type Overview = { datasets: Dataset[]; runs: Run[]; models: Model[]; busy: boolean };
 
 const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
-const ACTIVE = ['waiting_gpu', 'preprocessing', 'training'];
 
 // Image menu → LoRA: per character, a dataset of adopted images with captions, training runs, and the LoRAs it uses.
 export default function ImageLora({ workId, openLab, initialCharacterId, initialOutfitId }: { workId: string; openLab?: () => void; initialCharacterId?: string; initialOutfitId?: string }) {
@@ -57,7 +58,7 @@ export default function ImageLora({ workId, openLab, initialCharacterId, initial
     queryKey: ['lora', workId, characterId],
     queryFn: () => get(base),
     enabled: !!characterId,
-    refetchInterval: (q) => ((q.state.data as Overview | undefined)?.runs.some((r) => ACTIVE.includes(r.status)) ? 2000 : 10000),
+    refetchInterval: (q) => ((q.state.data as Overview | undefined)?.runs.some((r) => unfinished(r.status)) ? 2000 : 10000),
   });
 
   return (
@@ -80,7 +81,7 @@ export default function ImageLora({ workId, openLab, initialCharacterId, initial
               {(['dataset', 'train', 'models'] as const).map((k) => (
                 <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
                   {t(`lora.tab.${k}`)}
-                  {k === 'train' && overview.data?.runs.some((r) => ACTIVE.includes(r.status)) ? ' ●' : ''}
+                  {k === 'train' && overview.data?.runs.some((r) => unfinished(r.status)) ? ' ●' : ''}
                 </button>
               ))}
             </div>
@@ -417,24 +418,24 @@ function RunCard({ base, run, act, openLab, dataset, showLog, logOpen, log }: { 
     <div className={`compose-card run-${run.status}`}>
       <div className="row">
         <strong>{run.id}</strong>
-        <span className={`chip ${run.status === 'done' ? 'status-new' : run.status === 'failed' ? 'type-mismatch' : ''}`}>{t(`lora.status.${run.status}`)}</span>
+        <span className={`chip ${run.status === 'done' ? 'status-new' : run.status === 'failed' ? 'type-mismatch' : ''}`}>{t(`lora.status.${run.phase ?? run.status}`)}</span>
         <span className="faint small grow">
           {run.dataset_name ?? run.dataset} · {run.base_model} · {run.settings.method} · {run.settings.epochs} ep · lr {run.settings.learning_rate}
         </span>
         <button className="ghost" onClick={showLog}>
           {t('lora.log')}
         </button>
-        {ACTIVE.includes(run.status) && run.active && (
+        {unfinished(run.status) && run.active && (
           <button className="danger" onClick={() => confirm(t('lora.cancel_confirm')) && act(() => post(`${base}/runs/${run.id}/cancel`))}>
             {t('common.cancel')}
           </button>
         )}
       </div>
-      {ACTIVE.includes(run.status) && (
+      {unfinished(run.status) && (
         <div className="col" style={{ gap: 2 }}>
           {percent !== null && <progress max={100} value={percent} />}
           <span className="faint small">
-            {p.step ? t('lora.progress', { step: p.step, total: p.total_steps ?? '?', epoch: p.epoch ?? '?', loss: p.loss?.toFixed?.(4) ?? '–' }) : t(`lora.status.${run.status}`)}
+            {p.step ? t('lora.progress', { step: p.step, total: p.total_steps ?? '?', epoch: p.epoch ?? '?', loss: p.loss?.toFixed?.(4) ?? '–' }) : t(`lora.status.${run.phase ?? run.status}`)}
           </span>
         </div>
       )}

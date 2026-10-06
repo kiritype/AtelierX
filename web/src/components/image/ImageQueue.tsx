@@ -4,6 +4,7 @@ import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
+import { finished } from '../../lib/lifecycle';
 
 type Job = {
   id: string;
@@ -29,7 +30,7 @@ type Job = {
 type Queue = { paused: boolean; jobs: Job[]; gpu: { holder: string | null; label: any; state_label: any; waiting: any } };
 
 const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
-const ORDER: Record<string, number> = { running: 0, cancelling: 0, queued: 1, failed: 2, interrupted: 2, cancelled: 3, completed: 4 };
+const ORDER: Record<string, number> = { running: 0, cancelling: 0, queued: 1, failed: 2, interrupted: 2, cancelled: 3, done: 4 };
 
 // Image menu → Generation queue: order, pause, retry, cancel; finished images show as thumbnails.
 export default function ImageQueue() {
@@ -58,7 +59,7 @@ export default function ImageQueue() {
       <div className="row">
         <strong>{data.paused ? t('queue.paused') : t('queue.running')}</strong>
         <span className="faint">
-          {t('queue.counts', { running: (counts.running ?? 0) + (counts.cancelling ?? 0), queued: counts.queued ?? 0, done: counts.completed ?? 0, failed: (counts.failed ?? 0) + (counts.interrupted ?? 0) })}
+          {t('queue.counts', { running: (counts.running ?? 0) + (counts.cancelling ?? 0), queued: counts.queued ?? 0, done: counts.done ?? 0, failed: (counts.failed ?? 0) + (counts.interrupted ?? 0) })}
         </span>
         <span className="grow" />
         {data.paused ? (
@@ -117,7 +118,7 @@ export default function ImageQueue() {
             <div className="row">
               {['queued', 'running'].includes(job.status) && <button onClick={() => act(`/api/image/jobs/${job.id}/cancel`)}>{t('common.cancel')}</button>}
               {['failed', 'cancelled', 'interrupted'].includes(job.status) && <button onClick={() => act(`/api/image/jobs/${job.id}/retry`)}>{t('queue.retry')}</button>}
-              {['completed', 'failed', 'cancelled', 'interrupted'].includes(job.status) && (
+              {finished(job.status) && (
                 <button className="ghost" onClick={() => act(`/api/image/jobs/${job.id}/remove`)}>
                   ×
                 </button>

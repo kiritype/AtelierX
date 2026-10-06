@@ -80,7 +80,7 @@ def test_a_job_becomes_a_task_that_is_checked_and_fetched(unlocked, monkeypatch)
     wid, runtime = _setup(c, server, monkeypatch, loras=[lora])
     settings = {'model': HARUKA, 'loras': [{'id': lora['id'], 'weight': 0.5, 'trigger_words': 'soft glow'}]}
     job = _run(c, wid, runtime, settings)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     assert job['prompt_id'] == 't1' and server.status_checks == 3 and server.downloads == 1
 
     body = server.created[0]
@@ -144,7 +144,7 @@ def test_a_failed_download_is_retried_without_a_new_task(unlocked, monkeypatch):
     assert again['resume'] == 't1'
     again['status'] = 'running'
     runtime.run_job(again)
-    assert again['status'] == 'completed' and len(server.created) == 1 and server.downloads == 2
+    assert again['status'] == 'done' and len(server.created) == 1 and server.downloads == 2
 
 
 def test_an_expired_result_says_so_and_is_not_resumed(unlocked, monkeypatch):
@@ -170,7 +170,7 @@ def test_after_a_restart_the_sent_task_is_fetched_not_sent_again(unlocked, monke
     assert sent['status'] == 'queued' and sent['resume'] == 't9' and unsent['status'] == 'queued'
     sent['status'] = 'running'
     runtime.run_job(sent)
-    assert sent['status'] == 'completed' and server.created == []
+    assert sent['status'] == 'done' and server.created == []
 
 
 def test_an_image_arriving_after_a_cancel_is_kept(unlocked, monkeypatch):
@@ -189,4 +189,4 @@ def test_an_image_arriving_after_a_cancel_is_kept(unlocked, monkeypatch):
     holder['job'] = job = runtime.jobs[-1]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed' and job['image_url']
+    assert job['status'] == 'done' and job['image_url']
