@@ -659,3 +659,7 @@ a.button.disabled { opacity: .5; pointer-events: none; }
   pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
 .tooltip kbd { margin-left: 8px; padding: 0 4px; border-radius: 3px; font-family: inherit; font-size: 11px; opacity: 0.75;
   border: 1px solid currentColor; }
+
+/* Library groups (#80) */
+.lib-group-title { padding: 8px 10px 2px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.lib-group-inline { min-width: 44px; }
