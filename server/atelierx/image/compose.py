@@ -9,7 +9,6 @@ from ..core.i18n import Msg
 from . import library
 from .util import read_json
 
-FAMILY_NAMES = {'anima': 'Anima', 'sdxl': 'SDXL·IL'}
 OVERRIDABLE = ('common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative')
 MAX_OVERRIDE = 30000
 
@@ -116,6 +115,42 @@ class Composer:
         commons = [self._pick('common', i, 'Common prompt') for i in common_ids]
         styles = [self._pick('styles', i, 'Style') for i in options.get('style_ids') or []]
 
+        # Items written for other targets (#80) stay out of the prompt and are named in the warnings. The expression
+        # is what the image is of, so it stays and is only named.
+        family = options.get('family') or 'anima'
+        names = {t['id']: t['name'] for t in self.rules['targets']}
+        warnings = []
+
+        def unfit(label, record, left_out=True):
+            targets = ', '.join(names.get(t, t) for t in record.get('targets') or [])
+            if left_out:
+                msg = Msg(
+                    'server.image.compose.left_out',
+                    '{label} {id} is for {targets}, so it was left out.',
+                    label=label,
+                    id=record['id'],
+                    targets=targets,
+                )
+            else:
+                msg = Msg(
+                    'server.image.compose.other_target',
+                    '{label} {id} is for {targets}.',
+                    label=label,
+                    id=record['id'],
+                    targets=targets,
+                )
+            warnings.append(msg)
+
+        if not library.fits(expression, family):
+            unfit('expression', expression, left_out=False)
+        if composition and not library.fits(composition, family):
+            unfit('composition', composition)
+            composition = None
+        for label, records in (('common', commons), ('style', styles)):
+            for record in [r for r in records if not library.fits(r, family)]:
+                unfit(label, record)
+                records.remove(record)
+
         parts = {
             'common': _join(*(c.get('prompt') for c in commons if c.get('target') != 'negative')),
             'style': _join(*(s.get('prompt') for s in styles)),
@@ -159,25 +194,6 @@ class Composer:
                     )
                 texts[key] = value.strip()
 
-        family = options.get('family') or 'anima'
-        warnings = []
-        for label, record in (
-            ('expression', expression),
-            ('composition', composition),
-            *(('style', s) for s in styles),
-            *(('common', c) for c in commons),
-        ):
-            written = (record or {}).get('model_family')
-            if record and written and written not in (family, 'shared'):
-                warnings.append(
-                    Msg(
-                        'server.image.compose.family',
-                        '{label} {id} was written for {family}.',
-                        label=label,
-                        id=record['id'],
-                        family=FAMILY_NAMES.get(written, written),
-                    )
-                )
         order_keys = [k for k in self.rules['order'] if k in parts]
         return {
             'character_id': character_id,

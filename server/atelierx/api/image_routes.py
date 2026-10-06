@@ -115,6 +115,8 @@ async def library_put(request):
     data = await _body(request)
     work = runtime.works.get(data['work']) if data.get('work') else None
     p = request.path_params
+    if p['kind'] == 'rules' and p['ident'] == 'targets':
+        return await call(library.save_targets, runtime.paths, data.get('targets'))
     return await call(
         library.save_item,
         runtime.paths,
