@@ -657,7 +657,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 | 파일 | 내용 | 항목의 주요 필드 |
 |---|---|---|
-| `compose.json` | 조합 규칙 (전역만) | `order`(조합 순서), `slots`(의상 부위와 순서), `ratings`(표정 등급과 순서) |
+| `compose.json` | 조합 규칙 (전역만) | `order`(조합 순서), `slots`(의상 부위와 순서), `ratings`(표정 등급과 순서), `targets`(사용 대상 목록) |
 | `expressions.json` | 표정 | `name`, `rating`, `prompt`, `negative`, `composition`(어울리는 구도 id) |
 | `compositions.json` | 구도 | `name`, `prompt`, `negative`, `suggest_slots`(이 구도에서 보이는 의상 부위) |
 | `styles.json` | 화풍 | `name`, `prompt` |
@@ -676,6 +676,19 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 }
 ```
 
+모든 종류의 항목은 다음 두 필드를 더 가질 수 있다(선택).
+
+| 필드 | 뜻 |
+|---|---|
+| `group` | 묶음 이름(최대 40자). 라이브러리와 생성 화면에서 같은 묶음끼리 모아 보인다. 없으면 "묶음 없음". |
+| `targets` | 이 항목을 쓰는 대상 id 목록(`compose.json`의 `targets`). 여러 개 고를 수 있고, 없거나 비면 모든 대상에 쓴다. |
+
+- 생성할 때 대상은 생성 설정의 모델 계열(`anima`, `sdxl`)이나 이미지 서비스(`novelai`, `pixai`)다. 대상에 맞지 않는 공통·화풍·구도
+  항목은 프롬프트에서 빠지고 미리보기 경고에 이름이 나온다. 표정은 빠지지 않고 경고만 한다.
+- 이전 형식의 `model_family`(`anima`·`sdxl`·`shared`)는 읽을 때 `targets`로 바꿔 본다(`anima` → `["anima"]`, `sdxl` → `["sdxl"]`,
+  `shared` → 모든 대상). 항목을 저장하면 `targets`로 쓴다.
+- 목록에 없는 대상 id는 무시한다. 대상을 목록에서 지우면 그 대상만 고른 항목은 모든 대상용이 된다.
+
 `compose.json`은 `items`가 아니라 조합 규칙 자체를 담는다.
 
 ```json
@@ -683,6 +696,8 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "schema_version": 1,
   "order": ["common", "style", "composition", "trigger", "appearance", "expression", "outfit"],
   "slots": [{"id": "full", "name": "전체"}, {"id": "top", "name": "상의"}],
+  "targets": [{"id": "sdxl", "name": "SDXL·IL"}, {"id": "anima", "name": "Anima"},
+              {"id": "novelai", "name": "NovelAI"}, {"id": "pixai", "name": "PixAI"}],
   "ratings": [{"id": "general", "name": "일반"}]
 }
 ```
@@ -690,6 +705,8 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - `order`: 최종 프롬프트를 합치는 순서. `common`(공통 positive, negative는 negative 쪽으로), `style`, `composition`, `trigger`
   (캐릭터의 트리거 단어), `appearance`, `expression`, `outfit`.
 - `slots`: 의상 부위와 그 순서. `ratings`: 표정 등급과 그 순서. 사용자가 더하거나 바꿀 수 있다.
+- `targets`: 라이브러리 항목의 사용 대상(모델 계열·이미지 서비스). SDXL·IL, Anima, PixAI는 같은 SDXL 계열 태그 프롬프트를 쓴다.
+  사용자가 더하거나 지울 수 있고, 하나 이상 있어야 한다. 없으면 위 기본 네 가지를 쓴다.
 
 - 모델·LoRA는 **파일 이름**으로 적는다. 실제 경로는 `config/settings.json`의 모델·LoRA 폴더 설정에서 찾는다(데이터 루트에
   절대 경로를 넣지 않음).

@@ -8,6 +8,12 @@
     {"id": "bottom", "name": "하의"},
     {"id": "shoes", "name": "신발"}
   ],
+  "targets": [
+    {"id": "sdxl", "name": "SDXL·IL"},
+    {"id": "anima", "name": "Anima"},
+    {"id": "novelai", "name": "NovelAI"},
+    {"id": "pixai", "name": "PixAI"}
+  ],
   "ratings": [
     {"id": "general", "name": "일반"}
   ]

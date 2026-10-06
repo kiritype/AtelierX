@@ -11,8 +11,19 @@ from .util import atomic_json, read_json
 KINDS = ('expressions', 'compositions', 'styles', 'common', 'outfits')
 SCOPES = ('global', 'work')
 ITEM_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
-FAMILIES = ('anima', 'sdxl', 'shared')
 MAX_TAGS = 300
+MAX_GROUP = 40
+MAX_TARGETS = 20
+# What an item can be written for (#80): model families of the local image server and the image services. Users may
+# add more in compose.json; an item without targets fits all of them.
+DEFAULT_TARGETS = [
+    {'id': 'sdxl', 'name': 'SDXL·IL'},
+    {'id': 'anima', 'name': 'Anima'},
+    {'id': 'novelai', 'name': 'NovelAI'},
+    {'id': 'pixai', 'name': 'PixAI'},
+]
+# Before #80 an item named one model family (or 'shared' for both).
+LEGACY_FAMILIES = ('anima', 'sdxl')
 
 
 def _check_kind(kind):
@@ -28,16 +39,41 @@ def _file(paths, work, kind, scope):
     raise ValueError(Msg('server.image.library.unknown_scope', 'Choose global or work.'))
 
 
+def targets_of(item, known=None):
+    """The targets an item is written for; empty means all. Reads the model_family of files from before #80."""
+    if isinstance(item.get('targets'), list):
+        wanted = [t for t in item['targets'] if isinstance(t, str)]
+    else:
+        family = item.get('model_family')
+        wanted = [family] if family in LEGACY_FAMILIES else []
+    return [t for t in dict.fromkeys(wanted) if known is None or t in known]
+
+
+def fits(item, target):
+    """Whether an item may go into a prompt for `target` (a model family or an image service)."""
+    wanted = item.get('targets') if 'targets' in item else targets_of(item)
+    return not target or not wanted or target in wanted
+
+
 def items(paths, work, kind):
-    """Merged items of one kind: {id: {..., 'scope': 'global'|'work', 'overrides': bool}}."""
+    """Merged items of one kind: {id: {..., 'group', 'targets', 'scope': 'global'|'work', 'overrides': bool}}."""
     _check_kind(kind)
+    known = {t['id'] for t in compose_rules(paths)['targets']}
     merged = {}
     for scope in SCOPES:
         if scope == 'work' and work is None:
             continue
         doc = read_json(_file(paths, work, kind, scope), {}) or {}
         for ident, item in (doc.get('items') or {}).items():
-            merged[ident] = {**item, 'id': ident, 'scope': scope, 'overrides': ident in merged}
+            entry = {k: v for k, v in item.items() if k != 'model_family'}
+            merged[ident] = {
+                **entry,
+                'group': str(item.get('group') or ''),
+                'targets': targets_of(item, known),
+                'id': ident,
+                'scope': scope,
+                'overrides': ident in merged,
+            }
     return merged
 
 
@@ -48,7 +84,34 @@ def compose_rules(paths):
         or ['common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit'],
         'slots': rules.get('slots') or [{'id': 'full', 'name': 'full'}],
         'ratings': rules.get('ratings') or [{'id': 'general', 'name': 'general'}],
+        'targets': _clean_targets(rules.get('targets')) or DEFAULT_TARGETS,
     }
+
+
+def _clean_targets(value):
+    out, seen = [], set()
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        ident = str(entry.get('id') or '').strip()
+        name = str(entry.get('name') or '').strip()[:MAX_GROUP] or ident
+        if ITEM_ID.match(ident) and ident not in seen:
+            seen.add(ident)
+            out.append({'id': ident, 'name': name})
+    return out[:MAX_TARGETS]
+
+
+def save_targets(paths, targets):
+    """Replace the target list in the global compose.json. Items keep their choices; a target no longer listed is
+    ignored, so an item written only for it fits every target again."""
+    cleaned = _clean_targets(targets)
+    if not cleaned:
+        raise ValueError(Msg('server.image.library.targets', 'Keep at least one target.'))
+    path = paths.data / 'image' / 'compose.json'
+    doc = read_json(path, {}) or {'schema_version': 1}
+    doc['targets'] = cleaned
+    atomic_json(path, doc)
+    return compose_rules(paths)
 
 
 def _tags(value, name):
@@ -71,9 +134,12 @@ def clean_item(kind, item, rules):
         'prompt': _tags(item.get('prompt'), 'prompt'),
         'negative': _tags(item.get('negative'), 'negative'),
     }
-    family = item.get('model_family')
-    if family in FAMILIES:
-        out['model_family'] = family
+    group = str(item.get('group') or '').strip()[:MAX_GROUP]
+    if group:
+        out['group'] = group
+    targets = targets_of(item, {t['id'] for t in rules['targets']})
+    if targets:
+        out['targets'] = targets
     if kind == 'expressions':
         ratings = {r['id'] for r in rules['ratings']}
         out['rating'] = item.get('rating') if item.get('rating') in ratings else rules['ratings'][0]['id']
