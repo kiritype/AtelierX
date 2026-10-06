@@ -773,13 +773,21 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 {
   "schema_version": 1,
   "max_images_per_run": 50,
-  "services": {"novelai": {"key": "secret:image-novelai", "interval": 3.0}}
+  "services": {
+    "novelai": {"key": "secret:image-novelai", "interval": 3.0},
+    "pixai": {"key": "secret:image-pixai", "interval": 3.0,
+              "loras": [{"id": "1700000000000000002", "name": "부드러운 빛", "weight": 1.0, "trigger_words": ""}]}
+  }
 }
 ```
 
 - `max_images_per_run`: 인터넷 서비스로 대기열에 한 번 넣을 때의 최대 장수. 0이면 제한 없음. 이 PC의 ComfyUI에는 적용하지 않는다.
 - `key`: 금고 항목 참조(`secret:<이름>`)만 둔다. 키 자체는 금고에만 있다(결정 0011).
 - `interval`: 같은 서비스로 보내는 요청 사이에 기다리는 초.
+- `loras`(PixAI): PixAI 모델 마켓 주소에서 읽은 LoRA 버전 ID, 표시 이름, 기본 강도(0~1), 트리거 단어(비우면 LoRA 기본값). PixAI
+  API에는 LoRA 목록을 받는 기능이 없어서 사용자가 등록한다.
+- 결과를 나중에 다시 물을 수 있는 서비스(PixAI)의 작업은 보낸 작업 ID(`prompt_id`)를 갖는다. 앱이 다시 시작되거나 받기만 실패하면
+  작업에 `resume`(그 ID)이 붙고, 실행·다시 시도할 때 새로 요청하지 않고 그 결과를 받는다.
 - 대기열 작업(`state/image/queue.json`)과 생성 기록에는 `service`가 붙는다. 이 PC의 GPU를 쓰는 서비스(ComfyUI)의 작업만 GPU 차례를
   기다리고, LoRA 학습·로컬 LLM도 그 작업만 기다린다.
 
