@@ -1958,5 +1958,13 @@
   "tabs.close_unsaved": "There are unsaved changes in: {names}\nThey will be lost. Close anyway?",
   "help.bug_report": "Report a bug",
   "help.feature_request": "Suggest a feature",
-  "help.questions": "Ask a question"
+  "help.questions": "Ask a question",
+  "tools.notice.offline.title": "Not connected to ComfyUI",
+  "tools.notice.offline.body": "Tagging, post-processing, censoring, background removal and inpainting run in ComfyUI on this PC. WebP conversion and prompt formats work without it.",
+  "tools.notice.offline.action": "Open Settings → Image",
+  "tools.notice.nodes.title": "ComfyUI is missing the nodes these tools need",
+  "tools.notice.nodes.body": "Install the image server nodes in Settings → Install, then restart ComfyUI.",
+  "tools.notice.nodes.action": "Open Settings → Install",
+  "tools.notice.recheck": "Check again",
+  "tools.notice.detail": "The detailer node is not installed, so the detailer is not in the list."
 }

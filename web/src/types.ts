@@ -65,7 +65,7 @@ export type WorkInfo = {
 export type Tab =
   | { type: 'item'; path: string }
   | { type: 'work-settings' }
-  | { type: 'settings' }
+  | { type: 'settings'; section?: string; at?: number }
   | { type: 'review'; draft: string }
   | { type: 'compare'; snapshot: string; label?: string }
   | { type: 'relations' }
