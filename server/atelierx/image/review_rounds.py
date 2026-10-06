@@ -270,6 +270,8 @@ class ReviewRounds:
             )
         }
         job['snapshot'] = snapshot
+        # Made again where it was made (#41); records from before services were ComfyUI's.
+        job['service'] = meta.get('service') or 'comfyui'
         job['source_path'] = relative
         job['postprocessed'] = bool((meta.get('postprocessing') or {}).get('applied'))
         if meta.get('kind') == 'lab':
@@ -490,6 +492,17 @@ class ReviewRounds:
                     source = self.source_job(round_['attempts'][-1]['path'])
                 except ValueError as error:
                     round_.update(status='needs_attention', error=message_of(error))
+                    continue
+                if not rt.on_gpu(source):
+                    # A paid internet service is never asked again without a person (#41).
+                    round_.update(
+                        status='needs_attention',
+                        error=Msg(
+                            'server.review.no_auto_paid',
+                            'Images from internet image services are not made again automatically. Regenerate it '
+                            'from the gallery if you want another.',
+                        ),
+                    )
                     continue
                 fresh = self.fresh_job(source, round_['regenerations'] + 1, round_['id'])
                 jobs.append(fresh)

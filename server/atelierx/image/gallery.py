@@ -198,6 +198,7 @@ class Gallery:
             'expression_name': str(meta.get('expression_name') or ''),
             'rating': str(meta.get('rating') or ''),
             'model_family': str(settings.get('family') or ('unknown' if not meta else 'anima')),
+            'service': str(meta.get('service') or ('comfyui' if meta else '')),
             'seed': meta.get('seed'),
             'postprocessed': bool((meta.get('postprocessing') or {}).get('applied')),
             'created_at': created,
