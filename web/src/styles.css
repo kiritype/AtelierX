@@ -682,3 +682,6 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 
 /* A note to read before acting (deployment targets): not an error, not dismissable. */
 .notice { gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--warning); border-radius: var(--radius); background: var(--panel-2); }
+.chip.warn { background: var(--warning-bg); color: var(--warning); }
+.deploy-rows td { vertical-align: middle; }
+.deploy-rows .chip { white-space: nowrap; }

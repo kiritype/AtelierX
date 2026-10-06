@@ -7,7 +7,7 @@ import type { ImageView, Job } from '../types';
 
 // Image work, installs and LoRA training, in the shared life cycle (#89): shown with the LLM jobs, opened where they run.
 export type Activity = {
-  kind: 'image_queue' | 'install' | 'lora' | 'convert';
+  kind: 'image_queue' | 'install' | 'lora' | 'convert' | 'deploy';
   status: string;
   phase?: string | null;
   counts?: Record<string, number>;
@@ -22,7 +22,7 @@ export type Activity = {
 export const useActivity = (refetch: number) =>
   useQuery<{ items: Activity[] }>({ queryKey: ['activity'], queryFn: () => get('/api/activity'), refetchInterval: refetch });
 
-const VIEWS: Record<Activity['kind'], ImageView | 'settings'> = { image_queue: 'queue', install: 'settings', lora: 'lora', convert: 'tools' };
+const VIEWS: Record<Activity['kind'], ImageView | 'settings'> = { image_queue: 'queue', install: 'settings', lora: 'lora', convert: 'tools', deploy: 'gallery' };
 
 function detail(item: Activity) {
   if (item.kind === 'image_queue') {
@@ -31,6 +31,7 @@ function detail(item: Activity) {
   }
   if (item.kind === 'install') return t(`install.section.${item.section}`) === `install.section.${item.section}` ? item.section : t(`install.section.${item.section}`);
   if (item.kind === 'lora') return `${item.title}${item.phase ? ` · ${t(`lora.status.${item.phase}`)}` : ''}`;
+  if (item.kind === 'deploy') return `${item.title} · ${item.done}/${item.total}`;
   return `${item.done}/${item.total}`;
 }
 
