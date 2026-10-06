@@ -334,7 +334,7 @@ class PostprocessMixin:
                 'available': False,
                 'error': Msg(
                     'server.postprocess.nodes_missing',
-                    'The post-processing nodes are not in ComfyUI. Run tools/install_comfy_nodes.py, '
+                    'The post-processing nodes are not in ComfyUI. Install them in Settings → Install → nodes, '
                     'then restart ComfyUI.',
                 ),
             }

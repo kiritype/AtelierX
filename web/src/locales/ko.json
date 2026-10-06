@@ -1198,7 +1198,7 @@
   "server.workspace.unknown_mask_type": "없는 마스크 종류입니다.",
   "server.postprocess.detailer_needs_record": "디테일러는 이 앱으로 만든(기록이 있는) 이미지만 됩니다: {missing}",
   "server.postprocess.inpaint_needs_record": "인페인트는 이 앱으로 만든(기록이 있는) 이미지만 됩니다: {missing}",
-  "server.postprocess.nodes_missing": "ComfyUI에 후처리 노드가 없습니다. tools/install_comfy_nodes.py를 실행한 뒤 ComfyUI를 다시 시작하세요.",
+  "server.postprocess.nodes_missing": "ComfyUI에 후처리 노드가 없습니다. 설정 → 설치 → 이미지 생성 서버 확장 노드에서 설치한 뒤 ComfyUI를 다시 시작하세요.",
   "gallery.trash": "휴지통",
   "gallery.delete": "지우기",
   "gallery.delete_confirm": "{n}장을 출력 휴지통으로 옮길까요? 휴지통에서 되살릴 수 있습니다.",
