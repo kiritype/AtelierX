@@ -2221,5 +2221,11 @@
   "server.import.too_big": "{name}이(가) 너무 큽니다(2MB까지).",
   "server.import.no_folder": "폴더가 없습니다: {path}",
   "server.import.not_ready": "종류, 올바른 ID, 깨진 메타데이터 처리를 정해야 하는 파일이 {n}개 있습니다.",
-  "server.import.nothing": "가져올 파일을 고르지 않았습니다."
+  "server.import.nothing": "가져올 파일을 고르지 않았습니다.",
+  "server.llm.http_hint.auth": "인증 정보를 확인하세요. Google Cloud 액세스 토큰은 만료되므로 바꿔 넣어야 합니다.",
+  "server.llm.http_hint.payment": "결제나 요금제가 필요합니다. 계정의 사용량 한도에 걸렸거나 이 모델이 유료 요금제 전용입니다. 서비스의 사용량·결제 화면을 확인하거나 설정 → LLM에서 이 작업에 다른 모델을 고르세요.",
+  "server.llm.http_hint.forbidden": "API 접근 권한, 프로젝트 권한, 사용 설정된 서비스를 확인하세요.",
+  "server.llm.http_hint.not_found": "API 주소와 모델 ID를 확인하세요. 모델 목록을 지원하지 않는 서비스도 있습니다.",
+  "server.llm.http_hint.rate": "사용량 또는 요청 한도에 걸렸습니다. 계정을 확인하고 잠시 뒤 다시 시도하세요.",
+  "server.llm.http_hint.other": "서비스가 요청을 거절했습니다. 지원하는 설정과 서비스 상태를 확인하세요."
 }

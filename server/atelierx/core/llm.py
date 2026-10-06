@@ -362,15 +362,25 @@ class Providers:
 
     def _http_error(self, provider, response):
         # An upstream error may echo authorization or request contents. Never persist/display it verbatim.
-        detail = {
-            401: 'Check the credential; Google Cloud access tokens expire and must be replaced.',
-            403: 'Check API access, project permissions and enabled services.',
-            404: 'Check the API base URL and model ID. Model listing may be unsupported.',
-            429: 'Quota or rate limit reached. Check the service account and retry later.',
-        }.get(
+        # What to check for each status, as its own message so the screen translates it.
+        hints = {
+            401: ('auth', 'Check the credential; Google Cloud access tokens expire and must be replaced.'),
+            402: (
+                'payment',
+                (
+                    "Payment or a plan is required: the account's usage limit is reached or this model needs a paid "
+                    "plan. Check the service's usage and billing page, or choose another model for this task."
+                ),
+            ),
+            403: ('forbidden', 'Check API access, project permissions and enabled services.'),
+            404: ('not_found', 'Check the API base URL and model ID. Model listing may be unsupported.'),
+            429: ('rate', 'Quota or rate limit reached. Check the service account and retry later.'),
+        }
+        key, text = hints.get(
             response.status_code,
-            'The service rejected the request. Check its supported parameters and status.',
+            ('other', 'The service rejected the request. Check its supported parameters and status.'),
         )
+        detail = Msg(f'server.llm.http_hint.{key}', text)
         return AppError(
             Msg(
                 'server.llm.http_error',
