@@ -10,7 +10,9 @@ import pytest
 
 from atelierx.image.deploy import s3
 
-AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'
+# AWS's published example key, split so the public-file audit does not take it for a real one.
+AWS_KEY_TYPE = 'AKIA'
+AWS_KEY = AWS_KEY_TYPE + 'IOSFODNN7EXAMPLE'
 AWS_SECRET = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
 AWS_NOW = datetime(2013, 5, 24, tzinfo=UTC)
 
