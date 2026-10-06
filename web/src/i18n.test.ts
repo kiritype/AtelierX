@@ -12,6 +12,17 @@ describe('tm', () => {
     expect(text).not.toContain('{error}');
   });
 
+  it('shows what a 402 from an LLM service means, in Korean', () => {
+    const text = tm({
+      key: 'server.llm.http_error',
+      text: 'Ollama Cloud answered 402: Payment or a plan is required.',
+      values: { name: 'Ollama Cloud', status: 402, detail: { key: 'server.llm.http_hint.payment', text: 'Payment or a plan is required.', values: {} } },
+    });
+    expect(text).toContain('Ollama Cloud');
+    expect(text).toContain('402');
+    expect(text).toContain('요금제');
+  });
+
   it('falls back to the English text of an unknown key', () => {
     expect(tm({ key: 'server.nope', text: 'Plain text' })).toBe('Plain text');
   });

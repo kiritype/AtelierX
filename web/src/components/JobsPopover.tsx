@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { get, post } from '../api';
-import { t } from '../i18n';
+import { t, tm } from '../i18n';
 import { cancellable } from '../lib/lifecycle';
 import type { ImageView, Job } from '../types';
 
@@ -88,7 +88,7 @@ export default function JobsPopover({
               <div style={{ width: `${job.progress}%` }} />
             </div>
           )}
-          {job.error && <div className="error-text">{job.error.text}</div>}
+          {job.error && <div className="error-text">{tm(job.error)}</div>}
         </div>
       ))}
     </div>

@@ -50,7 +50,8 @@ export type Job = {
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   progress: number;
   result: any;
-  error: { text: string } | null;
+  // A server message: translated with tm() (key and values), its English text otherwise.
+  error: { key: string; text: string; values?: Record<string, unknown> } | null;
   work_id: string | null;
 };
 
