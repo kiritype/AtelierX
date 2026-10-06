@@ -51,7 +51,7 @@ def test_service_settings_keep_vault_references_and_a_limit(unlocked):
     listed = c.get('/api/image/services').json()
     assert listed['max_images_per_run'] == 50
     assert [(s['id'], s['supported'], s['connected']) for s in listed['services']] == [
-        ('novelai', False, False),
+        ('novelai', True, False),
         ('pixai', False, False),
     ]
 

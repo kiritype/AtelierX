@@ -2,7 +2,7 @@
 
 import threading
 
-from ..core.i18n import AppError
+from ..core.i18n import AppError, Msg
 from . import board, comfy_locate
 from .comfy import Comfy
 from .control import ComfyControl
@@ -10,6 +10,7 @@ from .gallery import Gallery
 from .generation import GenerationMixin
 from .gpu import GpuBroker
 from .installs import Installs
+from .internet.novelai import NovelAIService
 from .job_queue import JobQueue
 from .lab import LabMixin
 from .lora import models as lora_models
@@ -40,8 +41,11 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.queue = JobQueue(state_file(paths, 'queue.json'), self.lock)
         self.comfy = Comfy(DEFAULT_URL)
         # Where queued jobs are made, by the job's ``service``.
-        self.services = {service.id: service for service in (ComfyService(self),)}
         self.service_config = ServiceConfig(paths, llm.vault)
+        self.services = {
+            service.id: service
+            for service in (ComfyService(self), NovelAIService(self.service_config, self.stop))
+        }
         self.models = ModelProfiles(paths)
         # Only jobs on this PC's GPU count for the GPU broker; an internet service's job does not hold it.
         self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.select(self.on_gpu))
@@ -116,6 +120,20 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
     def save_image_services(self, doc):
         self.service_config.save(doc)
         return self.image_services()
+
+    def _internet_service(self, ident):
+        service = self.services.get(ident)
+        if service is None or ident == 'comfyui':
+            raise ValueError(Msg('server.image.services.unknown', 'Unknown image service: {id}', id=ident))
+        return service
+
+    def image_service_info(self, ident):
+        """Models, choices and defaults of one internet service, for its settings panel."""
+        return self._internet_service(ident).info()
+
+    def image_service_account(self, ident):
+        """The account's state (credit left) as the service reports it."""
+        return self._internet_service(ident).account()
 
     # --- review hooks of the generation worker ----------------------------------------------------------------------
     def review_wanted(self):
