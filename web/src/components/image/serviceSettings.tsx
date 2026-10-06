@@ -1,13 +1,9 @@
-// Settings panels of the internet image services on the generate screen (#41). Each service adds its own panel
-// (#42 NovelAI, #43 PixAI); the generate screen keeps each service's last settings apart.
-
-import type { ComponentType } from 'react';
+// The generate screen's image services (#41): their names, the props of each internet service's settings panel, and
+// the last service and settings remembered (each service keeps its own).
 
 export type ServicePanelProps = { value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void };
 
 export const SERVICE_NAMES: Record<string, string> = { comfyui: 'ComfyUI', novelai: 'NovelAI', pixai: 'PixAI' };
-
-export const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = {};
 
 const SERVICE_KEY = (workId: string) => `atelierx-gen-service-${workId}`;
 const SETTINGS_KEY = 'atelierx-gen-service-settings';

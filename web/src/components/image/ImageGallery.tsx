@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
 import { PRESET_ID, presetFromRecord } from '../../lib/presetFromRecord';
 import { t, tm } from '../../i18n';
+import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import { DeploymentExport } from './DeploymentExport';
@@ -23,6 +24,7 @@ export type GalleryItem = {
   expression_name: string;
   rating: string;
   model_family: string;
+  service?: string;
   seed?: number;
   postprocessed: boolean;
   created_at: string;
@@ -400,6 +402,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
                 </button>
                 <input aria-label={item.path} type="checkbox" className="gallery-check" checked={selected.has(item.path)} onChange={(e) => toggle(item.path, e.target.checked)} />
                 <div className="gallery-badges">
+                  {item.service && item.service !== 'comfyui' && <span className="badge service">{SERVICE_NAMES[item.service] ?? item.service}</span>}
                   {item.adopted && (
                     <span className="badge adopted" title={t('gallery.adopted')}>
                       ★
