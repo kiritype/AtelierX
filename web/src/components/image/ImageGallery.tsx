@@ -7,6 +7,7 @@ import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import { DeploymentExport } from './DeploymentExport';
+import { DeployUpload } from './DeployUpload';
 
 export type GalleryItem = {
   path: string;
@@ -104,6 +105,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [showRounds, setShowRounds] = useState(false);
 
@@ -345,6 +347,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
             {openRounds + attention > 0 && <span className="chip accent">{openRounds + attention}</span>}
           </button>
           <button onClick={() => setExporting(true)}>{t('gallery.export')}</button>
+          <button onClick={() => setUploading(true)}>{t('deploy.upload_title')}</button>
           <button onClick={() => setTrashOpen(true)}>{t('gallery.trash')}</button>
         </div>
 
@@ -451,6 +454,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
         />
       )}
       {exporting && <DeploymentExport scope={scope} close={() => setExporting(false)} fail={fail} />}
+      {uploading && <DeployUpload scope={scope} close={() => setUploading(false)} fail={fail} />}
       {trashOpen && <TrashDialog close={() => setTrashOpen(false)} fail={fail} onChange={reload} />}
     </div>
   );
