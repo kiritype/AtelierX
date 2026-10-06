@@ -20,8 +20,15 @@ export function t(key: string, values?: Record<string, unknown>): string {
   return text;
 }
 
-export function tm(msg: { key: string; text: string; values?: Record<string, unknown> }): string {
-  return current[msg.key] ? t(msg.key, msg.values) : msg.text;
+type ServerMsg = { key: string; text: string; values?: Record<string, unknown> };
+const isMsg = (value: unknown): value is ServerMsg =>
+  !!value && typeof value === 'object' && typeof (value as ServerMsg).key === 'string' && typeof (value as ServerMsg).text === 'string';
+
+// A value can itself be a server message (the cause inside "Cannot connect: {error}"); it is translated too.
+export function tm(msg: ServerMsg): string {
+  if (!current[msg.key]) return msg.text;
+  const values = msg.values && Object.fromEntries(Object.entries(msg.values).map(([name, value]) => [name, isMsg(value) ? tm(value) : value]));
+  return t(msg.key, values);
 }
 
 export const getLanguage = () => currentLanguage;
