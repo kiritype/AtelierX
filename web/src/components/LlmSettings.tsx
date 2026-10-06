@@ -336,7 +336,7 @@ export default function LlmSettings() {
 
 // A connection's key: the stored one masked with change/remove, or a field to paste a new one. Keys stored for other
 // connections can still be picked, for a key shared by several connections.
-function KeyField({
+export function KeyField({
   provider,
   vault,
   typed,

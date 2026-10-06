@@ -517,6 +517,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                         openView={(view) => open({ type: 'image', view, characterId: tab.characterId, outfitId: tab.outfitId })}
                         openImage={(view, characterId, outfitId) => open({ type: 'image', view, characterId, outfitId })}
                         openItem={(path) => open({ type: 'item', path })}
+                        openSettings={() => open({ type: 'settings' })}
                       />
                     )}
                   </ErrorBoundary>
