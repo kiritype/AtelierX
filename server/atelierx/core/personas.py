@@ -5,7 +5,8 @@ Which persona a work uses is screen state (``state/ui.json``), not work data, so
 
 import secrets
 
-from .fsutil import read_json, sha256_text, write_json
+from . import revisions
+from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 from .works import now_iso
 
@@ -18,7 +19,7 @@ def _file(paths):
 
 
 def _revision(personas):
-    return sha256_text(repr([(p['id'], p['name'], p['description']) for p in personas]))
+    return revisions.of([[p['id'], p['name'], p['description']] for p in personas])
 
 
 def load(paths):

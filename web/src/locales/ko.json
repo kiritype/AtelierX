@@ -2065,5 +2065,7 @@
   "server.pixai.task_failed": "PixAI가 이미지를 만들지 못했습니다({status}).",
   "server.pixai.no_image": "PixAI가 이미지를 돌려주지 않았습니다.",
   "server.pixai.download_failed": "이미지는 만들어졌지만 받지 못했습니다: {error}. 다시 시도하면 새로 요청하지 않고 받기만 합니다.",
-  "server.pixai.expired": "PixAI에 이 이미지가 더 이상 없습니다(결과는 잠시만 보관됨)."
+  "server.pixai.expired": "PixAI에 이 이미지가 더 이상 없습니다(결과는 잠시만 보관됨).",
+  "server.save.stale": "연 뒤에 다른 곳에서 바뀌었습니다. 다시 불러왔으니 바꾼 내용을 다시 넣어 주세요.",
+  "save.reloaded": "다른 곳에서 바뀌어 다시 불러왔습니다. 방금 바꾼 내용은 저장되지 않았습니다."
 }

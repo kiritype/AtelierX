@@ -1939,5 +1939,7 @@
   "server.pixai.task_failed": "PixAI could not make the image ({status}).",
   "server.pixai.no_image": "PixAI returned no image.",
   "server.pixai.download_failed": "The image was made but could not be downloaded: {error}. Retrying downloads it without a new request.",
-  "server.pixai.expired": "PixAI no longer has this image (results are kept only for a while)."
+  "server.pixai.expired": "PixAI no longer has this image (results are kept only for a while).",
+  "server.save.stale": "This was changed elsewhere after you opened it. It has been reloaded; make your change again.",
+  "save.reloaded": "It was changed elsewhere and has been reloaded. Your last change was not saved."
 }

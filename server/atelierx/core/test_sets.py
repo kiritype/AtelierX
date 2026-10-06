@@ -9,7 +9,8 @@ import re
 import secrets
 from datetime import datetime
 
-from .fsutil import read_json, sha256_text, write_json
+from . import revisions
+from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 from .snapshots import Snapshots
 from .works import now_iso
@@ -35,7 +36,7 @@ class TestSets:
     def load(self):
         doc = read_json(self.sets_file) or {'schema_version': 1, 'sets': []}
         sets = doc.get('sets') or []
-        return {'sets': sets, 'revision': sha256_text(repr(sets))}
+        return {'sets': sets, 'revision': revisions.of(sets)}
 
     def save(self, data):
         """Replace the list. ``base_revision`` must match the list the screen started from."""
