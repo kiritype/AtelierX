@@ -16,6 +16,7 @@ export default function ImageScreen({
   openView,
   openImage,
   openItem,
+  openSettings,
   characterId,
   outfitId,
 }: {
@@ -24,13 +25,14 @@ export default function ImageScreen({
   openView: (view: ImageView) => void;
   openImage: (view: ImageView, characterId?: string, outfitId?: string) => void;
   openItem: (path: string) => void;
+  openSettings?: () => void;
   characterId?: string;
   outfitId?: string;
 }) {
   const content = () => {
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'board') return <ImageBoard workId={workId} openGenerate={() => openImage('generate')} openGallery={(c, o) => openImage('gallery', c, o)} />;
-  if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} />;
+  if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
   if (view === 'queue') return <ImageQueue />;
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
   if (view === 'lab') return <ImageLab workId={workId} />;

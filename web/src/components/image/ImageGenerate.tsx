@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
+import type { ImageServices } from '../ImageServiceSettings';
+import { SERVICE_NAMES, SERVICE_PANELS, lastService, lastServiceSettings, rememberService, rememberServiceSettings } from './serviceSettings';
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
@@ -47,7 +49,7 @@ function takeHanded(): Target[] | null {
   }
 }
 
-export default function ImageGenerate({ workId, openQueue, openItem, characterId, outfitId }: { workId: string; openQueue: () => void; openItem: (path: string) => void; characterId?: string; outfitId?: string }) {
+export default function ImageGenerate({ workId, openQueue, openItem, openSettings, characterId, outfitId }: { workId: string; openQueue: () => void; openItem: (path: string) => void; openSettings?: () => void; characterId?: string; outfitId?: string }) {
   const toast = useToast();
   const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
   const lib = (kind: string) => ({ queryKey: ['image-lib', kind, workId], queryFn: () => get<Record<string, LibItem>>(`/api/image/library/${kind}?work=${workId}`) });
@@ -66,6 +68,22 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   const [commonIds, setCommonIds] = useState<string[] | null>(null);
   const [presetId, setPresetId] = useState('');
   const [settings, setSettings] = useState<GenerationSettings>({ family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 });
+  // Where the images are made (#41): ComfyUI on this PC or an internet service. Each keeps its own last settings.
+  const services = useQuery<ImageServices>({ queryKey: ['image-services'], queryFn: () => get('/api/image/services') });
+  const [service, setServiceState] = useState(() => lastService(workId));
+  const [serviceSettings, setServiceSettings] = useState(lastServiceSettings);
+  const internet = service !== 'comfyui';
+  const serviceInfo = services.data?.services.find((s) => s.id === service);
+  const chooseService = (id: string) => {
+    setServiceState(id);
+    rememberService(workId, id);
+  };
+  const changeServiceSettings = (value: Record<string, unknown>) => {
+    const next = { ...serviceSettings, [service]: value };
+    setServiceSettings(next);
+    rememberServiceSettings(next);
+  };
+  const ServicePanel = SERVICE_PANELS[service];
   const [count, setCount] = useState(1);
   const [reviewLlm, setReviewLlm] = useState<LlmOverride | undefined>();
   const [preview, setPreview] = useState<Composed[] | null>(null);
@@ -102,15 +120,15 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   const single = targets.length === 1;
   const options = () => ({
     targets,
+    service,
     style_ids: styleIds,
     common_ids: chosenCommons,
     composition_id: composition || undefined,
-    preset_id: presetId || undefined,
-    settings,
+    ...(internet ? { settings: serviceSettings[service] ?? {} } : { preset_id: presetId || undefined, settings }),
     overrides: single ? overrides : {},
   });
 
-  useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings, handed]);
+  useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings, handed, service, serviceSettings]);
 
   function applyPreset(id: string) {
     setPresetId(id);
@@ -123,7 +141,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
 
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
-  const target = settings.family;
+  const target = internet ? service : settings.family;
   const notApplied = (item: Fragment) => (fits(item, target) ? null : <span className="warn-text small"> ({t('gen.not_applied')})</span>);
   const styleView = visibleFor(Object.values(styles.data ?? {}), target, styleIds, showOthers);
   const commonView = visibleFor(Object.values(commons.data ?? {}), target, chosenCommons, showOthers);
@@ -253,26 +271,62 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
       </div>
       <div className="image-gen-run pad col">
         <div className="row">
-          <label className="col" style={{ gap: 2 }}>
-            <span className="muted">{t('gen.preset')}</span>
-            <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
-              <option value="">{t('gen.no_preset')}</option>
-              {(presets.data ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <span className="muted">{t('gen.service')}</span>
+          <div className="service-switch" role="radiogroup" aria-label={t('gen.service')}>
+            <button role="radio" aria-checked={!internet} className={internet ? '' : 'on'} onClick={() => chooseService('comfyui')}>
+              {SERVICE_NAMES.comfyui}
+            </button>
+            {(services.data?.services ?? []).map((s) => (
+              <button
+                key={s.id}
+                role="radio"
+                aria-checked={service === s.id}
+                className={service === s.id ? 'on' : ''}
+                disabled={!s.supported}
+                title={!s.supported ? t('image_services.not_supported') : s.connected ? undefined : t('gen.service_needs_key')}
+                onClick={() => chooseService(s.id)}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
         </div>
-        <GenSettings value={settings} onChange={setSettings} />
+        {internet && serviceInfo && !serviceInfo.connected && (
+          <div className="warn-text row">
+            {t('gen.service_needs_key')}
+            {openSettings && <button className="ghost small" onClick={openSettings}>{t('gen.open_settings')}</button>}
+          </div>
+        )}
+        {!internet && (
+          <>
+            <div className="row">
+              <label className="col" style={{ gap: 2 }}>
+                <span className="muted">{t('gen.preset')}</span>
+                <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
+                  <option value="">{t('gen.no_preset')}</option>
+                  {(presets.data ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <GenSettings value={settings} onChange={setSettings} />
+          </>
+        )}
+        {internet && (ServicePanel ? <ServicePanel value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
+        {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <label className="col" style={{ gap: 2 }}>
             <span className="muted">{t('gen.count')}</span>
             <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
           </label>
-          <span className="grow faint">{t('gen.total', { targets: targets.length, n: targets.length * count })}</span>
+          <span className="grow faint">
+            {t('gen.total', { targets: targets.length, n: targets.length * count })}
+            {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
+          </span>
           <button
             disabled={!targets.length || busy}
             onClick={async () => {
@@ -287,8 +341,9 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
           </button>
           <button
             className="primary"
-            disabled={!targets.length || busy}
+            disabled={!targets.length || busy || (internet && !serviceInfo?.connected)}
             onClick={async () => {
+              if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
               setBusy(true);
               try {
                 const result = await post(`/api/works/${workId}/image/jobs`, {

@@ -663,3 +663,12 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 /* Library groups (#80) */
 .lib-group-title { padding: 8px 10px 2px; font-size: 12px; font-weight: 600; color: var(--text-2); }
 .lib-group-inline { min-width: 44px; }
+
+/* Image services (#41) */
+.chip.ok { background: var(--success-bg); color: var(--success); }
+.service-switch { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius); overflow: hidden; }
+.service-switch button { border: 0; border-radius: 0; background: transparent; padding: 4px 12px; }
+.service-switch button + button { border-left: 1px solid var(--border-strong); }
+.service-switch button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.service-switch button:disabled { color: var(--text-3); }
+.service-badge { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--panel-2); color: var(--text-2); }

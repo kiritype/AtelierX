@@ -2,12 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
+import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 
 type Job = {
   id: string;
   status: string;
   kind?: string;
+  service?: string;
   work_id: string;
   character_id: string;
   outfit_name?: string;
@@ -102,6 +104,7 @@ export default function ImageQueue() {
                     <strong>{job.character_id}</strong> · {job.outfit_name ?? job.outfit_id} · {job.expression_name ?? job.expression_id}
                   </>
                 )}
+                {job.service && job.service !== 'comfyui' && <span className="service-badge">{SERVICE_NAMES[job.service] ?? job.service}</span>}
                 {job.kind && job.kind !== 'image' && <span className="chip">{t(`queue.kind.${job.kind}`) === `queue.kind.${job.kind}` ? job.kind : t(`queue.kind.${job.kind}`)}</span>}
               </div>
               <div className="faint">

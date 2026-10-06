@@ -745,6 +745,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "outfit_id": "o01", "outfit_name": "근무복",
   "expression_id": "smile", "expression_name": "미소", "rating": "general",
   "composition_id": "upper_front", "outfit_slots": ["top", "full"],
+  "service": "comfyui",
   "common_ids": ["quality"], "style_ids": [], "trigger": "w001_c001", "model_family": "anima",
   "parts": {"common": "…", "style": "", "composition": "…", "trigger": "", "appearance": "…",
             "expression": "…", "outfit": "…", "negative": "…"},
@@ -763,6 +764,24 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 같은 이미지를 다시 만들 수 있는 정보를 모두 남긴다. 갤러리의 "새 시드로 다시 생성"은 이 기록에서 시드만 바꿔 대기열에 넣는다.
 - PNG에도 같은 정보를 넣는다: `prompt`(서버용 그래프), `workflow`(편집기용 그래프), `atelierx`(이 기록에서 `workflow`를 뺀 것).
 - 기록이 없거나 깨진 이미지도 갤러리에는 보인다(다시 생성만 안 됨).
+- `service`: 이미지를 만든 생성 서비스(`comfyui`, `novelai`, `pixai`). 없으면 `comfyui`. 인터넷 서비스의 `settings`는 그 서비스의
+  설정이고 `model_family`는 서비스 id다(라이브러리 사용 대상과 같은 값). `workflow`에는 그 서비스에 보낸 요청이 들어간다.
+
+#### 인터넷 이미지 서비스 설정 (`<데이터 루트>/image/services.json`)
+
+```json
+{
+  "schema_version": 1,
+  "max_images_per_run": 50,
+  "services": {"novelai": {"key": "secret:image-novelai", "interval": 3.0}}
+}
+```
+
+- `max_images_per_run`: 인터넷 서비스로 대기열에 한 번 넣을 때의 최대 장수. 0이면 제한 없음. 이 PC의 ComfyUI에는 적용하지 않는다.
+- `key`: 금고 항목 참조(`secret:<이름>`)만 둔다. 키 자체는 금고에만 있다(결정 0011).
+- `interval`: 같은 서비스로 보내는 요청 사이에 기다리는 초.
+- 대기열 작업(`state/image/queue.json`)과 생성 기록에는 `service`가 붙는다. 이 PC의 GPU를 쓰는 서비스(ComfyUI)의 작업만 GPU 차례를
+  기다리고, LoRA 학습·로컬 LLM도 그 작업만 기다린다.
 
 #### 검수 결과 (`<출력 루트>/reviews.json`)
 

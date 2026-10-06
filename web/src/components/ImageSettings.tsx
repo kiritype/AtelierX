@@ -4,6 +4,7 @@ import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
 import { useReportDirty } from './settingsDirty';
+import ImageServiceSettings from './ImageServiceSettings';
 
 type Connection = {
   status: {
@@ -32,6 +33,7 @@ export default function ImageSettings() {
   return (
     <div className="col" style={{ maxWidth: 820, gap: 16 }}>
       <ConnectionSection />
+      <ImageServiceSettings />
       <ModelsSection />
       <GpuSection />
       <ReviewSection />
