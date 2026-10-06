@@ -1967,5 +1967,9 @@
   "tools.notice.nodes.action": "Open Settings → Install",
   "tools.notice.recheck": "Check again",
   "tools.notice.detail": "The detailer node is not installed, so the detailer is not in the list.",
-  "help.key.test": "Open / close the test screen"
+  "help.key.test": "Open / close the test screen",
+  "install.tool_system": "{name}: this PC's own (runs)",
+  "install.tool_app": "{name}: the app's portable copy (runs)",
+  "install.tool_missing": "{name}: missing — {version} (about {mb} MB) is downloaded into the app folder when needed",
+  "install.tools_coming": "Downloaded along with this install: {list}"
 }

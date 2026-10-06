@@ -2093,5 +2093,9 @@
   "tools.notice.nodes.action": "설정 → 설치 열기",
   "tools.notice.recheck": "다시 확인",
   "tools.notice.detail": "디테일러 노드가 없어 디테일러는 작업 목록에 없습니다.",
-  "help.key.test": "테스트 화면 열기 / 닫기"
+  "help.key.test": "테스트 화면 열기 / 닫기",
+  "install.tool_system": "{name}: 이 PC에 설치된 것을 씀(실행 확인됨)",
+  "install.tool_app": "{name}: 앱 폴더의 휴대용(실행 확인됨)",
+  "install.tool_missing": "{name}: 없음 — 필요할 때 {version}(약 {mb}MB)을 앱 폴더에 받습니다",
+  "install.tools_coming": "설치할 때 함께 받습니다: {list}"
 }

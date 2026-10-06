@@ -9,7 +9,12 @@ type Item = { id: string; file: string; folder: string; size?: number; manual?: 
 type Group = { id: string; name: Record<string, string>; about: Record<string, string>; license: { name: string; url: string }; items: Item[] };
 type Status = {
   run: { section: string; status: string; log: string[]; error?: any; started_at: string } | null;
-  tools: { uv: string | null; git: string | null; bin: string };
+  tools: {
+    uv: string | null;
+    git: string | null;
+    bin: string;
+    downloads: Record<'uv' | 'git', { version: string; size: number }>;
+  };
   nodes: null | {
     comfy: string;
     python: string | null;
@@ -45,6 +50,30 @@ const readiness = {
     nodesReview: 'Review node conflicts or other versions.',
   },
 };
+
+type ToolName = 'uv' | 'git';
+const TOOL_LABEL: Record<ToolName, string> = { uv: 'uv', git: 'Git' };
+
+// A helper tool's state: the PC's own copy, the app's portable copy, or missing (and what would be downloaded).
+function toolState(tools: Status['tools'], name: ToolName) {
+  const path = tools[name];
+  if (!path) {
+    const d = tools.downloads[name];
+    return t('install.tool_missing', { name: TOOL_LABEL[name], version: d.version, mb: Math.round(d.size / 2 ** 20) });
+  }
+  const own = path.toLowerCase().startsWith(tools.bin.toLowerCase());
+  return t(own ? 'install.tool_app' : 'install.tool_system', { name: TOOL_LABEL[name] });
+}
+
+// Before an install that needs missing tools: they come along with it.
+function ToolsComing({ tools, need }: { tools: Status['tools']; need: ToolName[] }) {
+  const missing = need.filter((name) => !tools[name]);
+  if (!missing.length) return null;
+  const list = missing
+    .map((name) => `${name === 'git' ? 'MinGit' : 'uv'} ${tools.downloads[name].version} (${Math.round(tools.downloads[name].size / 2 ** 20)}MB)`)
+    .join(', ');
+  return <span className="faint small">{t('install.tools_coming', { list })}</span>;
+}
 
 function Mark({ ok, label }: { ok: boolean; label: string }) {
   return (
@@ -110,8 +139,8 @@ export default function InstallSettings() {
           </button>
         </div>
         <p className="faint small">{t('install.tools_about')}</p>
-        <Mark ok={!!s.tools.uv} label={`uv ${s.tools.uv ? (lang === 'ko' ? '실행 확인됨' : 'Executable verified') : t('install.missing')}`} />
-        <Mark ok={!!s.tools.git} label={`Git ${s.tools.git ? (lang === 'ko' ? '실행 확인됨' : 'Executable verified') : t('install.missing')}`} />
+        <Mark ok={!!s.tools.uv} label={toolState(s.tools, 'uv')} />
+        <Mark ok={!!s.tools.git} label={toolState(s.tools, 'git')} />
         <details><summary>{lang === 'ko' ? '도구 경로' : 'Tool paths'}</summary><div className="mono small">uv: {s.tools.uv ?? '—'}<br />Git: {s.tools.git ?? '—'}</div></details>
       </section>
 
@@ -132,6 +161,7 @@ export default function InstallSettings() {
           </button>
         </div>
         <p className="faint small">{t('install.nodes_about')}</p>
+        <ToolsComing tools={s.tools} need={['git']} />
         {!s.nodes ? (
           <div className="warn-text small">{t('install.no_comfy')}</div>
         ) : (
@@ -197,6 +227,7 @@ export default function InstallSettings() {
           </button>
         </div>
         <p className="faint small">{t('install.trainer_about', { commit: tr.version.commit.slice(0, 7), license: tr.version.license })}</p>
+        <ToolsComing tools={s.tools} need={['uv', 'git']} />
         <span className="faint small mono">{tr.folder}</span>
         <div className="row small" style={{ flexWrap: 'wrap', gap: 12 }}>
           <Mark ok={tr.trainer_found} label="anima_lora" />
