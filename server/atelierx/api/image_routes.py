@@ -11,6 +11,7 @@ from starlette.routing import Route
 from ..core.i18n import AppError, Msg, message_of, wire
 from ..image import library
 from ..image import settings as image_settings
+from ..image.deploy import targets as deploy_targets
 
 
 def _runtime(request):
@@ -103,6 +104,31 @@ async def image_service_info(request):
 
 async def image_service_account(request):
     return await call(_runtime(request).image_service_account, request.path_params['service'])
+
+
+# --- deployment targets (decision 0023) ---------------------------------------------------------------------------
+async def deploy_targets_get(request):
+    return await call(_runtime(request).deploy_targets.public)
+
+
+async def deploy_targets_put(request):
+    return await call(_runtime(request).deploy_targets.save, await _body(request))
+
+
+async def deploy_target_check(request):
+    return await call(_runtime(request).deploy_targets.check, request.path_params['target'])
+
+
+async def work_deploy_get(request):
+    runtime = _runtime(request)
+    return await call(deploy_targets.work_settings, runtime.works.get(request.path_params['wid']))
+
+
+async def work_deploy_put(request):
+    runtime = _runtime(request)
+    return await call(
+        deploy_targets.save_work_settings, runtime.works.get(request.path_params['wid']), await _body(request)
+    )
 
 
 async def settings_get(request):
@@ -426,6 +452,9 @@ def routes():
         Route(f'{p}/gpu', gpu_status),
         Route(f'{p}/gpu/reserve', gpu_reserve, methods=['POST']),
         Route(f'{p}/gpu/release', gpu_release, methods=['POST']),
+        Route(f'{p}/deploy/targets', deploy_targets_get),
+        Route(f'{p}/deploy/targets', deploy_targets_put, methods=['PUT']),
+        Route(f'{p}/deploy/targets/{{target}}/check', deploy_target_check, methods=['POST']),
         Route(f'{p}/services', image_services_get),
         Route(f'{p}/services', image_services_put, methods=['PUT']),
         Route(f'{p}/services/{{service}}/info', image_service_info),
@@ -466,6 +495,8 @@ def routes():
         Route(f'{p}/review/rounds/{{action}}', review_rounds_action, methods=['POST']),
         Route('/api/works/{wid}/image/designs', designs),
         Route('/api/works/{wid}/image/board', image_board),
+        Route('/api/works/{wid}/image/deploy', work_deploy_get),
+        Route('/api/works/{wid}/image/deploy', work_deploy_put, methods=['PUT']),
         Route('/api/works/{wid}/image/board/exclude', image_board_exclude, methods=['PUT']),
         Route('/api/works/{wid}/image/compose', compose_preview, methods=['POST']),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),
