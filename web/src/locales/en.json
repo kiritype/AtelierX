@@ -195,7 +195,7 @@
   "settings.vault": "Credentials & security",
   "settings.image": "Image",
   "settings.about": "About",
-  "settings.about_stage": "This is still a test-stage version. Please report problems as GitHub issues.",
+  "settings.about_stage": "A pre-1.0 version. Send problems and ideas through Help → Report a bug, Suggest a feature or Ask a question (GitHub Discussions).",
   "settings.autosave": "Autosave",
   "settings.change_password": "Change master password",
   "settings.default_preset": "Default platform preset for new works",

@@ -205,7 +205,7 @@
   "settings.vault": "인증 정보·보안",
   "settings.image": "이미지",
   "settings.about": "정보",
-  "settings.about_stage": "아직 테스트 단계의 버전입니다. 문제가 있으면 GitHub 이슈로 알려 주세요.",
+  "settings.about_stage": "1.0 이전 버전입니다. 문제나 의견은 도움말 → 오류 제보·기능 제안·질문·문의(GitHub Discussions)로 알려 주세요.",
   "settings.autosave": "자동 저장",
   "settings.change_password": "마스터 비밀번호 변경",
   "settings.default_preset": "새 작품의 기본 플랫폼 프리셋",
