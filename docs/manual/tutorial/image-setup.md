@@ -2,6 +2,8 @@
 
 캐릭터 이미지 생성과 후처리는 ComfyUI로 합니다. 이 장에서는 ComfyUI를 연결하고, 필요한 확장 노드·모델·보조 도구를 앱의 설치 화면에서 받습니다. 글만 쓸 거라면 이 장과 6·7장은 건너뛰어도 됩니다.
 
+> ComfyUI 없이 NovelAI나 PixAI로만 이미지를 만들 수도 있습니다. 그렇다면 이 장 대신 [인터넷 이미지 서비스](../guide/image-services.md)에서 키를 등록하고 6장으로 넘어가세요(후처리·LoRA 학습은 ComfyUI가 필요합니다).
+
 ## 준비
 
 - NVIDIA GPU가 있는 PC와 설치된 ComfyUI(Stability Matrix로 설치한 것도 됩니다). AtelierX는 ComfyUI를 함께 배포하지 않습니다.
