@@ -679,3 +679,6 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .service-switch button:disabled { color: var(--text-3); }
 .service-badge { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--panel-2); color: var(--text-2); }
 .gallery-badges .badge.service { width: auto; padding: 0 4px; font-size: 10px; }
+
+/* A note to read before acting (deployment targets): not an error, not dismissable. */
+.notice { gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--warning); border-radius: var(--radius); background: var(--panel-2); }
