@@ -5,7 +5,8 @@ import json
 import re
 from copy import deepcopy
 
-from ..core.i18n import AppError, Msg
+from ..core.i18n import AppError, Msg, message_of
+from .library import clean_code
 
 
 def character_design_path(work, character_id):
@@ -68,6 +69,11 @@ def validate(design):
             invalid()
         if not isinstance(outfit, dict) or not isinstance(outfit.get('name', outfit_id), str):
             invalid()
+        if 'code' in outfit:
+            try:
+                outfit['code'] = clean_code(outfit['code'])
+            except ValueError as error:
+                raise AppError(message_of(error), 400) from error
         if not tags(outfit.get('negative', [])):
             invalid()
         slots = outfit.get('slots', {})
@@ -123,8 +129,9 @@ def prepare_update(previous, submitted):
     new_outfits = deepcopy(submitted['outfits'])
     for key, outfit in new_outfits.items():
         previous_outfit = old_outfits.get(key) or {}
-        previous_content = {k: v for k, v in previous_outfit.items() if k != 'source'}
-        new_content = {k: v for k, v in outfit.items() if k != 'source'}
+        # The deployment code is not drawn from the text, so changing it keeps the outfit "from the text".
+        previous_content = {k: v for k, v in previous_outfit.items() if k not in ('source', 'code')}
+        new_content = {k: v for k, v in outfit.items() if k not in ('source', 'code')}
         if previous_outfit.get('source') and previous_content == new_content:
             outfit['source'] = deepcopy(previous_outfit['source'])
         else:
@@ -180,6 +187,9 @@ def reconcile_conversion(previous, generated):
                 number += 1
             match = f'o{number:02d}'
         used.add(match)
+        # A conversion redraws the prompt; the deployment code the user gave stays.
+        if 'code' in (old_outfits.get(match) or {}):
+            outfit = {**outfit, 'code': old_outfits[match]['code']}
         new_outfits[match] = outfit
 
     # Source-free parts are user-created and should survive conversion.

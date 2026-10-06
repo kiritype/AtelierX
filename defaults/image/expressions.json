@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "items": {
-    "neutral": {"name": "무표정", "rating": "general", "prompt": ["expressionless", "closed mouth"], "negative": [], "composition": "upper_front"},
-    "smile": {"name": "미소", "rating": "general", "prompt": ["smile", "closed mouth"], "negative": [], "composition": "upper_front"},
-    "laugh": {"name": "웃음", "rating": "general", "prompt": ["laughing", "open mouth", ":d"], "negative": [], "composition": "upper_front"},
-    "angry": {"name": "화남", "rating": "general", "prompt": ["angry", "frown", "v-shaped eyebrows"], "negative": ["smile"], "composition": "upper_front"},
-    "sad": {"name": "슬픔", "rating": "general", "prompt": ["sad", "frown", "downcast eyes"], "negative": ["smile"], "composition": "upper_front"},
-    "surprised": {"name": "놀람", "rating": "general", "prompt": ["surprised", "wide-eyed", "open mouth"], "negative": [], "composition": "upper_front"},
-    "embarrassed": {"name": "부끄러움", "rating": "general", "prompt": ["embarrassed", "blush", "looking away"], "negative": [], "composition": "upper_front"},
-    "thinking": {"name": "생각", "rating": "general", "prompt": ["thinking", "hand on own chin", "looking up"], "negative": [], "composition": "upper_front"}
+    "neutral": {"name": "무표정", "code": "001", "rating": "general", "prompt": ["expressionless", "closed mouth"], "negative": [], "composition": "upper_front"},
+    "smile": {"name": "미소", "code": "002", "rating": "general", "prompt": ["smile", "closed mouth"], "negative": [], "composition": "upper_front"},
+    "laugh": {"name": "웃음", "code": "003", "rating": "general", "prompt": ["laughing", "open mouth", ":d"], "negative": [], "composition": "upper_front"},
+    "angry": {"name": "화남", "code": "004", "rating": "general", "prompt": ["angry", "frown", "v-shaped eyebrows"], "negative": ["smile"], "composition": "upper_front"},
+    "sad": {"name": "슬픔", "code": "005", "rating": "general", "prompt": ["sad", "frown", "downcast eyes"], "negative": ["smile"], "composition": "upper_front"},
+    "surprised": {"name": "놀람", "code": "006", "rating": "general", "prompt": ["surprised", "wide-eyed", "open mouth"], "negative": [], "composition": "upper_front"},
+    "embarrassed": {"name": "부끄러움", "code": "007", "rating": "general", "prompt": ["embarrassed", "blush", "looking away"], "negative": [], "composition": "upper_front"},
+    "thinking": {"name": "생각", "code": "008", "rating": "general", "prompt": ["thinking", "hand on own chin", "looking up"], "negative": [], "composition": "upper_front"}
   }
 }
