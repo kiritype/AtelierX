@@ -660,6 +660,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "outfits": {
     "o01": {
       "name": "평상복",
+      "code": "casual",
       "slots": {
         "top": {"prompt": ["white blouse"]},
         "bottom": {"prompt": ["black pencil skirt"]},
@@ -677,7 +678,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 |---|---|
 | `trigger` | LoRA 학습·생성에 쓰는 캐릭터 고유 단어. 기본 제안값은 `<작품 ID>_<캐릭터 ID>`(소문자), 수정 가능. |
 | `appearance` | 외모 태그와 negative. |
-| `outfits` | 의상. 키가 의상 id(앱이 `o01`, `o02` …로 제안, 고칠 수 있음). `name`은 표시 이름(보통 본문의 소제목). `slots`의 부위 이름과 순서는 `compose.json`의 `slots`. |
+| `outfits` | 의상. 키가 의상 id(앱이 `o01`, `o02` …로 제안, 고칠 수 있음). `name`은 표시 이름(보통 본문의 소제목). `code`는 배포 경로에 쓰는 코드(선택, [배포 코드](#배포-코드)). `slots`의 부위 이름과 순서는 `compose.json`의 `slots`. |
 | `slots.<부위>` | 프롬프트를 바로 적거나(`prompt`), 공용 의상 부위를 참조한다(`ref`: `work:<id>` 또는 `global:<id>`). |
 | `source` | 바탕이 된 섹션 키, 소제목(`heading`, 선택), 그때의 본문 해시. 해시가 지금 본문과 다르면 "이미지 프롬프트가 오래됨"을 표시한다. 섹션 제목 글자를 바꿔도 키로 연결되므로 끊어지지 않는다. |
 | `default_outfit` | 의상을 고르지 않았을 때 쓸 의상. |
@@ -685,6 +686,19 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 프롬프트가 특정 모델 계열용이면 해당 항목에 `"model_family": "<이름>"`을 둔다(선택).
 - `source.hash`를 알 수 없는 디자인(샘플 등 앱 밖에서 만든 파일, 값이 `"sample"`처럼 해시가 아님)은 샘플 설치·작품 가져오기 때
   앱이 지금 본문으로 다시 계산해 "최신"으로 맞춘다.
+
+### 배포 코드
+
+표정과 의상은 내부 id(`smile`, `o01`)와 별도로 **배포 코드**(`code`)를 가질 수 있다. 채택 이미지를 배포 대상에 올릴 때 경로에
+쓰는 값이다([배포 대상](#배포-대상)).
+
+- 사용자가 정한다. 자릿수·문자 종류 제한이 없고(예: `001`, `smile_a`), 경로에 쓸 수 없는 문자(`/ \ : * ? " < > |`, 앞뒤 공백,
+  `.`·`..`)만 막는다.
+- 같은 코드를 막지 않는다. 표정은 같은 범위(전역·작품 라이브러리를 합친 것)에서, 의상은 같은 캐릭터 안에서 겹치면 편집 화면에
+  알린다. 겹친 코드로 배포 경로가 같아지면 업로드 미리보기의 충돌 검사에서 다시 막는다.
+- 비어 있을 수 있다. 내부 id로 대신 채우지 않고, 업로드 미리보기에서 코드가 없는 이미지로 표시한다.
+- 기본 라이브러리의 표정은 `001`부터 순서대로 코드를 갖는다.
+- id를 바꾸지 않으므로 출력 폴더, 검수·채택 기록, 완성도 보드는 그대로다.
 
 ### 라이브러리
 
@@ -695,7 +709,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 | 파일 | 내용 | 항목의 주요 필드 |
 |---|---|---|
 | `compose.json` | 조합 규칙 (전역만) | `order`(조합 순서), `slots`(의상 부위와 순서), `ratings`(표정 등급과 순서), `targets`(사용 대상 목록) |
-| `expressions.json` | 표정 | `name`, `rating`, `prompt`, `negative`, `composition`(어울리는 구도 id) |
+| `expressions.json` | 표정 | `name`, `code`(배포 코드, 선택), `rating`, `prompt`, `negative`, `composition`(어울리는 구도 id) |
 | `compositions.json` | 구도 | `name`, `prompt`, `negative`, `suggest_slots`(이 구도에서 보이는 의상 부위) |
 | `styles.json` | 화풍 | `name`, `prompt` |
 | `common.json` | 공통 프롬프트 | `name`, `target`(`positive`·`negative`), `prompt` |
@@ -707,7 +721,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 {
   "schema_version": 1,
   "items": {
-    "neutral": {"name": "무표정", "rating": "general", "prompt": ["expressionless", "closed mouth"],
+    "neutral": {"name": "무표정", "code": "001", "rating": "general", "prompt": ["expressionless", "closed mouth"],
                 "negative": [], "composition": "upper_front"}
   }
 }
@@ -827,6 +841,36 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   작업에 `resume`(그 ID)이 붙고, 실행·다시 시도할 때 새로 요청하지 않고 그 결과를 받는다.
 - 대기열 작업(`state/image/queue.json`)과 생성 기록에는 `service`가 붙는다. 이 PC의 GPU를 쓰는 서비스(ComfyUI)의 작업만 GPU 차례를
   기다리고, LoRA 학습·로컬 LLM도 그 작업만 기다린다.
+
+#### 배포 대상 (`<데이터 루트>/image/deploy.json`)
+
+채택 이미지를 올릴 곳이다. 지금은 Cloudflare R2(S3 호환 API)만 있다. 동작은 [25](features/25-deployment.md).
+
+```json
+{
+  "schema_version": 1,
+  "targets": {
+    "r2-main": {
+      "name": "내 R2",
+      "kind": "r2",
+      "account_id": "…",
+      "bucket": "rp-images",
+      "access_key_id": "secret:deploy-r2-main-id",
+      "secret_access_key": "secret:deploy-r2-main-secret",
+      "public_url": "https://img.example.com",
+      "path_format": "{work}/{character}/{outfit}/{expression}"
+    }
+  }
+}
+```
+
+- `access_key_id`·`secret_access_key`: 금고 항목 참조(`secret:<이름>`)만 둔다(결정 0011).
+- `public_url`: 공개 URL의 기준 주소. 올린 파일의 URL은 `<public_url>/<경로>`.
+- `path_format`: 기본 경로 형식. 자리표시 `{work}`(작품 ID), `{character}`(캐릭터 ID), `{outfit}`(의상 코드), `{expression}`(표정 코드).
+  확장자 `.webp`는 앱이 붙인다. 없으면 `{work}/{character}/{outfit}/{expression}`.
+- 작품은 `.atelierx/image/deploy.json`에 쓰는 대상과 작품만의 경로 형식(선택)을 둔다:
+  `{"schema_version": 1, "target": "r2-main", "path_format": null}`.
+- 업로드 결과는 저장하지 않는다. 새 파일·덮어쓰기·변경 없음은 올릴 때마다 버킷의 목록과 비교해 정한다.
 
 #### 검수 결과 (`<출력 루트>/reviews.json`)
 
