@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
+import DeploySettings from './DeploySettings';
 import ImageSettings from './ImageSettings';
 import InstallSettings from './InstallSettings';
 import LlmSettings from './LlmSettings';
@@ -11,8 +12,8 @@ import { useToast } from './Toasts';
 import { useUnsaved } from './Unsaved';
 import { SettingsPackages } from './Packages';
 
-type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'packages' | 'about';
-const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'packages', 'about'];
+type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'deploy' | 'install' | 'packages' | 'about';
+const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'deploy', 'install', 'packages', 'about'];
 
 export default function AppSettings({ request }: { request?: { section: string; at: number } }) {
   const [section, setSection] = useState<Section>('general');
@@ -34,6 +35,7 @@ export default function AppSettings({ request }: { request?: { section: string; 
     vault: <VaultSection />,
     guidelines: <GuidelineSettings />,
     image: <ImageSettings />,
+    deploy: <DeploySettings />,
     install: <InstallSettings />,
     packages: <SettingsPackages />,
     about: <About />,
