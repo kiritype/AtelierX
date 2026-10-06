@@ -164,3 +164,34 @@ def test_tag_and_upscale_jobs_run_through_the_queue(unlocked):
     assert '/_tools/' in job['image_url']
     record = json.loads(Image.open(io.BytesIO(c.get(job['image_url']).content)).text['atelierx'])
     assert record['op'] == 'upscale' and record['source']['tool_item'] == item['id']
+
+
+class OfflineComfy(ToolComfy):
+    def request(self, path, body=None, raw=False, timeout=15):
+        raise ConnectionError('refused')
+
+
+class BareComfy(ToolComfy):
+    """ComfyUI without any of the tool nodes."""
+
+    def request(self, path, body=None, raw=False, timeout=15):
+        if path.startswith('/object_info'):
+            return {}
+        return super().request(path, body, raw, timeout)
+
+
+def test_tool_info_says_why_it_cannot_run(unlocked):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = OfflineComfy()
+    for path in ('/api/image/tools/postprocess', '/api/image/tools/tagger'):
+        info = c.get(path).json()
+        assert info['available'] is False and info['reason'] == 'offline', path
+    runtime.comfy = BareComfy()
+    for path in ('/api/image/tools/postprocess', '/api/image/tools/tagger'):
+        info = c.get(path).json()
+        assert info['available'] is False and info['reason'] == 'nodes', path
+    runtime.comfy = ToolComfy()
+    info = c.get('/api/image/tools/postprocess').json()
+    # The fake has no detailer node: the tools work, the detailer is left out.
+    assert info['available'] is True and 'detail' not in info['ops']
