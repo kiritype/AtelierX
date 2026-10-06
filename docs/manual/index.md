@@ -15,7 +15,7 @@ hero:
       text: 처음 사용하기
       link: /tutorial/first-run
     - theme: alt
-      text: 0.1.1에서 바뀐 점
+      text: 0.2.0에서 바뀐 점
       link: /changelog
 features:
   - title: 파일로 쓰는 작품
@@ -25,23 +25,23 @@ features:
   - title: 대화 테스트
     details: 시작 상황과 페르소나를 골라 실제 모델로 대화해 봅니다. 이번 턴에 어떤 로어북이 불려 왔는지 함께 보여 줍니다.
   - title: 캐릭터 이미지
-    details: 외모·의상 설명을 이미지 프롬프트로 바꾸고, 표정·의상 조합을 ComfyUI로 생성해 갤러리에서 검수합니다.
+    details: 외모·의상 설명을 이미지 프롬프트로 바꾸고, 표정·의상 조합을 ComfyUI나 NovelAI·PixAI로 생성해 갤러리에서 검수합니다.
   - title: 후처리와 LoRA
-    details: 업스케일·디테일러·배경 제거 같은 후처리를 하고, 채택한 이미지로 데이터셋을 만들어 LoRA를 학습합니다.
+    details: 업스케일·디테일러·배경 제거 같은 후처리를 하고, 채택한 이미지를 R2에 올려 URL을 얻거나 데이터셋으로 LoRA를 학습합니다.
   - title: 로컬 우선, 포터블
     details: 로컬 LLM을 기본으로 쓰고 외부 서비스는 작품마다 동의를 받습니다. API 키는 마스터 비밀번호로 암호화하고, 앱 폴더 하나로 옮길 수 있습니다.
 ---
 
 ## 이 설명서는
 
-**AtelierX 0.1.1**을 기준으로 씁니다. 화면 캡처는 0.0.3에서 찍었습니다. 버전마다 바뀐 점은 [바뀐 점](changelog.md)에 모읍니다. 앱의 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다.
+**AtelierX 0.2.0**을 기준으로 씁니다. 화면 캡처는 0.0.3부터 0.2.0 사이에 찍어 버전마다 조금 다를 수 있습니다. 버전마다 바뀐 점은 [바뀐 점](changelog.md)에 모읍니다. 앱의 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다.
 
 ![작품 창: 파일 트리, 편집기, 에이전트 패널](screenshots/agent-conversation.webp)
 
 ## 어디서부터 읽을까요
 
 - **처음 설치했다면**: [처음 사용하기](tutorial/first-run.md)를 순서대로 따라가세요. 비밀번호 설정부터 작품 만들기, LLM·ComfyUI 연결, 에이전트로 원고 쓰기, 캐릭터 이미지 생성과 후처리, LLM으로 다듬기, 테스트와 내보내기까지 샘플 작품 하나로 이어 갑니다.
-- **기능별로 찾는다면**: [사용 설명서](guide/getting-started.md)에서 화면별 설명을 보세요.
+- **기능별로 찾는다면**: [사용 설명서](guide/getting-started.md)에서 화면별 설명을 보세요. 설정 화면 전체는 [설정 한눈에 보기](guide/settings.md)에 있습니다.
 - **업데이트했다면**: [바뀐 점](changelog.md)과 [유지 관리](guide/maintenance.md)의 업데이트 절차를 보세요.
 
 ## 필요한 것
@@ -50,7 +50,9 @@ features:
 |---|---|
 | Windows 10/11 x64, Microsoft Edge WebView2 Runtime | 항상 |
 | LLM: 로컬 서버(LM Studio 등 OpenAI 호환) 또는 외부 API(Ollama Cloud 등) | 에이전트, LLM 도구, 대화 테스트, 이미지 프롬프트 변환 |
-| ComfyUI와 GPU, 모델 파일 | 이미지 생성과 후처리 |
+| ComfyUI와 GPU, 모델 파일 | 이 PC에서 이미지 생성, 후처리 |
+| NovelAI 또는 PixAI 계정과 API 키 | ComfyUI 없이 인터넷 서비스로 이미지 생성 |
+| Cloudflare R2 버킷 | 채택 이미지를 올려 URL 얻기 |
 | LoRA 학습 도구(앱의 설치 화면에서 받음) | LoRA 학습 |
 
 글을 쓰고 정리하는 데에는 LLM이나 ComfyUI가 없어도 됩니다. 외부 프로그램과 모델의 판·라이선스는 [외부 구성 요소](guide/external.md)에 있습니다.
