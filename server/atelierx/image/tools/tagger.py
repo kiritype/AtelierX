@@ -180,16 +180,7 @@ class TaggerMixin:
             )
             for item in items
         ]
-        with self.lock:
-            if sum(j['status'] == 'queued' for j in self.jobs) + len(prepared) > 5000:
-                raise ValueError(
-                    Msg(
-                        'server.tagger.too_many_queued_jobs_let_the',
-                        'Too many queued jobs. Let the queue run first.',
-                    )
-                )
-            self.jobs.extend(prepared)
-            self.persist()
+        self.queue.add(prepared)
         return {
             'ok': True,
             'jobs': [{k: v for k, v in j.items() if k != 'snapshot'} for j in prepared],

@@ -1,8 +1,9 @@
-"""Image generation queue and worker (20-generation). The queue survives restarts (state/image/queue.json).
+"""Image generation (20-generation): composing and queueing images, and the worker that runs queued jobs.
 
-The worker runs in one daemon thread: it waits for the GPU and an idle image server, sends the graph,
-polls /history, downloads the image and saves it as PNG with ComfyUI's prompt/workflow chunks plus a
-JSON sidecar. A failure pauses the queue so a broken setting does not burn through every job.
+The queue itself is ``JobQueue`` (job_queue.py) and where a job is made is its generation service (services.py).
+The worker runs one job at a time in a daemon thread: it takes the GPU's turn for a local service, waits until the
+service is free, sends the job, checks on it, and saves the image as PNG (with the service's request) plus a JSON
+sidecar. A failure pauses the queue so a broken setting does not burn through every job.
 """
 
 import copy
@@ -12,86 +13,50 @@ import logging
 import secrets
 import time
 import uuid
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import Msg, message_of
 from . import library
 from .compose import Composer
-from .util import atomic_json, code, now, read_json, replace_file, state_file
-from .workflow import build_ui_workflow, build_workflow, validate_settings
+from .util import atomic_json, code, now, replace_file
+from .workflow import build_ui_workflow, validate_settings
 
 log = logging.getLogger(__name__)
 
-FINISHED = frozenset({'completed', 'failed', 'cancelled', 'interrupted'})
-FINISHED_SHOWN = 1000
-MAX_QUEUED = 5000
 MAX_REQUEST = 3000
-RETRY_KEYS = (
-    'work_id',
-    'character_id',
-    'outfit_id',
-    'expression_id',
-    'expression_name',
-    'outfit_name',
-    'rating',
-    'seed',
-    'snapshot',
-    'kind',
-    'title',
-    'lab_group',
-    'lab_index',
-    'lab_row',
-    'lab_column',
-    'lab_variant',
-    'lab_sweep',
-    'lab_source',
-    'review_requested',
-    'tool_item',
-    'tag_settings',
-    'post_op',
-    'post_options',
-    'post_prefix',
-    'post_source',
-    'post_mask',
-    'batch_id',
-)
+DEFAULT_SERVICE = 'comfyui'
 
 
 class GenerationMixin:
-    """Queue and worker of ``ImageRuntime`` (expects paths, works, lock, jobs, paused, comfy, gpu, stop)."""
+    """Generation over ``ImageRuntime`` (expects paths, works, queue, services, lock, gpu, stop)."""
 
-    # --- persistence ---------------------------------------------------------------------------------------------
+    # --- the queue's state, as callers and tests still read it --------------------------------------------------------
     @property
-    def queue_path(self):
-        return state_file(self.paths, 'queue.json')
+    def jobs(self):
+        return self.queue.jobs
+
+    @jobs.setter
+    def jobs(self, value):
+        self.queue.jobs = value
+
+    @property
+    def paused(self):
+        return self.queue.paused
+
+    @paused.setter
+    def paused(self, value):
+        self.queue.paused = value
 
     def load_queue(self):
-        saved = read_json(self.queue_path, {}) or {}
-        self.jobs = saved.get('jobs') or []
-        self.paused = bool(saved.get('paused'))
-        for job in self.jobs:
-            # Work cut off by a restart cannot be resumed; it is marked so it can be retried.
-            if job['status'] in ('running', 'cancelling'):
-                job.update(status='interrupted', progress=Msg('server.worker.interrupted', 'Interrupted'))
+        self.queue.load()
 
     def persist(self):
-        atomic_json(self.queue_path, {'schema_version': 1, 'paused': self.paused, 'jobs': self.jobs})
+        self.queue.persist()
 
     def public_jobs(self):
-        with self.lock:
-            finished = [i for i, j in enumerate(self.jobs) if j['status'] in FINISHED]
-            hidden = set(finished[:-FINISHED_SHOWN])
-            return {
-                'paused': self.paused,
-                'gpu': self.gpu.status(),
-                'jobs': [
-                    {k: v for k, v in j.items() if k not in ('snapshot', 'workflow')}
-                    for i, j in enumerate(self.jobs)
-                    if i not in hidden
-                ],
-            }
+        return self.queue.public(self.gpu.status())
 
     # --- composing and queueing ------------------------------------------------------------------------------------
     def _settings(self, body):
@@ -183,6 +148,7 @@ class GenerationMixin:
                         'id': uuid.uuid4().hex,
                         'status': 'queued',
                         'created_at': now(),
+                        'service': DEFAULT_SERVICE,
                         'work_id': work.id,
                         'character_id': snap['character_id'],
                         'outfit_id': snap['outfit_id'],
@@ -195,94 +161,42 @@ class GenerationMixin:
                         'snapshot': snapshot,
                     }
                 )
-        with self.lock:
-            if sum(j['status'] == 'queued' for j in self.jobs) + len(prepared) > MAX_QUEUED:
-                raise ValueError(
-                    Msg(
-                        'server.queue.too_many_queued_jobs_let_the',
-                        'Too many queued jobs. Let the queue run first.',
-                    )
-                )
-            # The generate screen may turn review off for one request; it is never on while disabled.
-            wanted = self.review_wanted() and body.get('review', True) is not False
-            for job in prepared:
+        # The generate screen may turn review off for one request; it is never on while disabled.
+        wanted = self.review_wanted() and body.get('review', True) is not False
+
+        def mark(jobs):
+            for job in jobs:
                 job['review_requested'] = wanted
                 if wanted and body.get('llm'):
                     job['review_llm'] = {
                         key: body['llm'][key] for key in ('provider', 'model') if key in body['llm']
                     }
-            self.jobs.extend(prepared)
-            self.persist()
-            self.register_jobs(prepared)
+            self.register_jobs(jobs)
+
+        self.queue.add(prepared, before_save=mark)
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
     # --- queue actions -----------------------------------------------------------------------------------------------
-    def _job(self, job_id):
-        job = next((j for j in self.jobs if j['id'] == job_id), None)
-        if job is None:
-            raise ValueError(Msg('server.queue.job_not_found', 'Job not found.'))
-        return job
-
     def cancel(self, job_id):
-        with self.lock:
-            job = self._job(job_id)
-            if job['status'] == 'queued':
-                job['status'] = 'cancelled'
-            elif job['status'] == 'running':
-                job['status'] = 'cancelling'
-            self.persist()
+        self.queue.cancel(job_id)
         return {'ok': True}
 
     def retry(self, job_id):
-        with self.lock:
-            old = self._job(job_id)
-            if old['status'] not in ('failed', 'cancelled', 'interrupted'):
-                raise ValueError(
-                    Msg(
-                        'server.queue.only_failed_cancelled_or_interrupted_jobs',
-                        'Only failed, cancelled or interrupted jobs can be retried.',
-                    )
-                )
-            job = {k: copy.deepcopy(v) for k, v in old.items() if k in RETRY_KEYS}
-            job.update(id=uuid.uuid4().hex, status='queued', created_at=now())
-            self.attach_retry(old, job)
-            self.jobs.append(job)
-            self.persist()
+        self.queue.retry(job_id, attach=self.attach_retry)
         return {'ok': True}
 
     def remove_finished(self, job_id=None):
-        with self.lock:
-            if job_id is not None and self._job(job_id)['status'] not in FINISHED:
-                raise ValueError(
-                    Msg(
-                        'server.queue.only_finished_jobs_can_be_cleared',
-                        'Only finished jobs can be cleared. Cancel running or queued ones first.',
-                    )
-                )
-            removed = {
-                j['id']
-                for j in self.jobs
-                if j['status'] in FINISHED and (job_id is None or j['id'] == job_id)
-            }
-            self.jobs = [j for j in self.jobs if j['id'] not in removed]
-            self.persist()
-            self.after_remove()
-            return {'ok': True, 'removed': len(removed)}
+        removed = self.queue.remove_finished(job_id)
+        self.after_remove()
+        return {'ok': True, 'removed': removed}
 
     def set_paused(self, paused):
-        with self.lock:
-            self.paused = bool(paused)
-            self.persist()
-            return {'ok': True, 'paused': self.paused}
+        return {'ok': True, 'paused': self.queue.set_paused(paused)}
 
     def cancel_queued(self):
         """Cancel every waiting job; the running image still finishes."""
-        with self.lock:
-            for job in self.jobs:
-                if job['status'] == 'queued':
-                    job['status'] = 'cancelled'
-            self.persist()
-            return {'ok': True}
+        self.queue.cancel_queued()
+        return {'ok': True}
 
     # --- saving results ----------------------------------------------------------------------------------------------
     def output_url(self, path):
@@ -356,7 +270,7 @@ class GenerationMixin:
     def worker(self):
         while not self.stop.wait(0.5):
             with self.lock:
-                pending = any(job['status'] == 'queued' for job in self.jobs)
+                pending = self.queue.any_queued()
                 free = not self.paused and self.gpu.generation_allowed()
             # Another program on the GPU holds new jobs back; the reason is shown in the UI.
             if pending and free and self.gpu.admit('generation'):
@@ -365,12 +279,12 @@ class GenerationMixin:
                 free = not self.paused and self.gpu.generation_allowed()
                 job = self.next_generation_job() if free else None
                 if job is not None:
-                    job.update(
+                    self.queue.update(
+                        job,
                         status='running',
                         started_at=now(),
                         progress=Msg('server.worker.connecting_to_comfyui', 'Connecting to ComfyUI'),
                     )
-                    self.persist()
             if job is None:
                 try:
                     self.process_ready()
@@ -379,140 +293,73 @@ class GenerationMixin:
                 continue
             self.run_job(job)
 
+    def service_for(self, job):
+        ident = job.get('service') or DEFAULT_SERVICE
+        service = self.services.get(ident)
+        if service is None:
+            raise RuntimeError(
+                Msg(
+                    'server.worker.unknown_service',
+                    'This job needs an image service that is not set up: {service}',
+                    service=ident,
+                )
+            )
+        return service
+
     def run_job(self, job):
+        """Run one job that the worker (or a test) marked running, on its service, to its end."""
         try:
-            # Wait for other clients; never clear or interrupt someone else's queue.
-            deadline = time.monotonic() + 1800
-            cancelling = False
+            service = self.service_for(job)
+
+            def cancelling():
+                return self.queue.status_of(job) == 'cancelling'
+
+            # Wait while the service works for others.
+            deadline = time.monotonic() + service.wait_limit
             while True:
                 if self.stop.is_set():
                     return
-                with self.lock:
-                    cancelling = job['status'] == 'cancelling'
-                if cancelling:
-                    break
-                queue = self.comfy.request('/queue')
-                if not queue.get('queue_running') and not queue.get('queue_pending'):
+                if cancelling() or not service.busy():
                     break
                 if time.monotonic() > deadline:
-                    raise RuntimeError(
-                        Msg(
-                            'server.worker.waited_30_minutes_for_other_comfyui',
-                            'Waited 30 minutes for other ComfyUI work.',
-                        )
-                    )
+                    raise RuntimeError(service.busy_too_long())
                 self.stop.wait(2)
-            if cancelling:
-                with self.lock:
-                    job['status'] = 'cancelled'
-                    self.persist()
+            if cancelling():
+                self.queue.update(job, status='cancelled')
                 return
-            snap = job['snapshot']
             self.ensure_generation_safe()
             kind = job.get('kind')
-            if kind == 'tag':
-                graph = self.tag_graph(job)
-            elif kind == 'post':
-                graph = self.post_graph(job)
-            else:
-                graph = build_workflow(snap['settings'], snap['positive'], snap['negative'], job['seed'])
-            response = self.comfy.request('/prompt', {'prompt': graph, 'client_id': 'atelierx-' + job['id']})
-            if response.get('node_errors') or not response.get('prompt_id'):
-                raise RuntimeError(
-                    Msg(
-                        'server.worker.workflow_validation_failed',
-                        'Workflow validation failed: {response}',
-                        response=json.dumps(response, ensure_ascii=False)[:3000],
-                    )
-                )
-            prompt_id = response['prompt_id']
-            with self.lock:
-                working = (
-                    Msg('server.worker.generating', 'Generating')
-                    if kind in (None, 'lab')
-                    else Msg('server.worker.processing', 'Processing')
-                )
-                job.update(prompt_id=prompt_id, progress=working)
-                self.persist()
-            deadline = time.monotonic() + 1800
-            interrupt_sent = False
+            sent = service.submit(job)
+            working = (
+                Msg('server.worker.generating', 'Generating')
+                if kind in (None, 'lab')
+                else Msg('server.worker.processing', 'Processing')
+            )
+            self.queue.update(job, prompt_id=sent['id'], progress=working)
+
+            # Check on it; a cancel asks the service once and then waits for its answer.
+            deadline = time.monotonic() + service.result_limit
+            stopping = cancel_sent = False
             while not self.stop.wait(1):
-                with self.lock:
-                    cancelling = job['status'] == 'cancelling'
-                if cancelling and not interrupt_sent:
-                    queue = self.comfy.request('/queue')
-                    if any(item[1] == prompt_id for item in queue.get('queue_running', [])):
-                        self.comfy.request('/interrupt', {'prompt_id': prompt_id})
-                    elif any(item[1] == prompt_id for item in queue.get('queue_pending', [])):
-                        self.comfy.request('/queue', {'delete': [prompt_id]})
+                stopping = cancelling()
+                if stopping and not cancel_sent:
+                    if service.cancel(job, sent):
                         break
-                    interrupt_sent = True
-                history = self.comfy.request('/history/' + quote(prompt_id))
-                if prompt_id in history:
-                    entry = history[prompt_id]
-                    if entry.get('status', {}).get('status_str') == 'error':
-                        if cancelling:
-                            break
-                        raise RuntimeError(
-                            Msg(
-                                'server.worker.comfyui_generation_error',
-                                'ComfyUI generation error: {status}',
-                                status=json.dumps(entry['status'].get('messages', []), ensure_ascii=False)[
-                                    -2500:
-                                ],
-                            )
-                        )
-                    if cancelling:
+                    cancel_sent = True
+                result = service.poll(job, sent)
+                if result is not None:
+                    if stopping:
                         break
-                    if kind == 'tag':
-                        tags = self.finish_tags(job, entry)
-                        with self.lock:
-                            job.update(
-                                status='completed',
-                                tag_count=len(tags),
-                                finished_at=now(),
-                                progress=Msg('server.worker.done', 'Done'),
-                            )
-                            self.persist()
-                        break
-                    images = entry.get('outputs', {}).get('output', {}).get('images', [])
-                    if not images:
-                        raise RuntimeError(
-                            Msg('server.worker.comfyui_returned_no_image', 'ComfyUI returned no image.')
-                        )
-                    item = images[0]
-                    data = self.comfy.request(
-                        '/view?' + urlencode({k: item.get(k, '') for k in ('filename', 'subfolder', 'type')}),
-                        raw=True,
-                    )
-                    if kind == 'post':
-                        image_url, _ = self.save_post(job, data, graph)
-                    else:
-                        image_url = self.save_result(job, data, graph, prompt_id)
-                    with self.lock:
-                        job.update(
-                            status='completed',
-                            image_url=image_url,
-                            metadata_url=image_url.rsplit('.', 1)[0] + '.json',
-                            finished_at=now(),
-                            progress=Msg('server.worker.done', 'Done'),
-                        )
-                        self.persist()
-                    self.after_generation(job)
+                    if 'error' in result:
+                        raise RuntimeError(result['error'])
+                    self._finish(job, result, sent)
                     break
                 if time.monotonic() > deadline:
-                    raise RuntimeError(
-                        Msg(
-                            'server.worker.waited_more_than_30_minutes_for',
-                            'Waited more than 30 minutes for the result. Check progress in ComfyUI.',
-                        )
-                    )
-            if cancelling:
-                with self.lock:
-                    job.update(
-                        status='cancelled', finished_at=now(), progress=Msg('server.worker.cancel', 'Cancel')
-                    )
-                    self.persist()
+                    raise RuntimeError(service.too_long())
+            if stopping:
+                self.queue.update(
+                    job, status='cancelled', finished_at=now(), progress=Msg('server.worker.cancel', 'Cancel')
+                )
         except Exception as error:
             log.exception('Image job failed: %s', job['id'])
             with self.lock:
@@ -525,6 +372,27 @@ class GenerationMixin:
                 self.paused = True
                 self.persist()
 
+    def _finish(self, job, result, sent):
+        done = Msg('server.worker.done', 'Done')
+        kind = job.get('kind')
+        if kind == 'tag':
+            tags = self.finish_tags(job, result['entry'])
+            self.queue.update(job, status='completed', tag_count=len(tags), finished_at=now(), progress=done)
+            return
+        if kind == 'post':
+            image_url, _ = self.save_post(job, result['image'], sent['record'])
+        else:
+            image_url = self.save_result(job, result['image'], sent['record'], sent['id'])
+        self.queue.update(
+            job,
+            status='completed',
+            image_url=image_url,
+            metadata_url=image_url.rsplit('.', 1)[0] + '.json',
+            finished_at=now(),
+            progress=done,
+        )
+        self.after_generation(job)
+
     # --- hooks the later stages fill in (review, tools, LoRA) -----------------------------------------------------------
     def review_wanted(self):
         return False
@@ -536,7 +404,7 @@ class GenerationMixin:
         return None
 
     def next_generation_job(self):
-        return next((j for j in self.jobs if j['status'] == 'queued'), None)
+        return next(iter(self.queue.select(lambda j: j['status'] == 'queued')), None)
 
     def process_ready(self):
         return None

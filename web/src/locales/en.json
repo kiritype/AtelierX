@@ -1070,7 +1070,6 @@
   "server.postprocess.the_prompt_must_be_text_of": "The {key} prompt must be text of 8000 characters or fewer.",
   "server.postprocess.there_is_no_keep_mask_split": "There is no keep mask. Split the background or paint with the brush, then save.",
   "server.postprocess.there_is_no_mask_for_the": "There is no mask for the area to redraw.",
-  "server.postprocess.too_many_queued_jobs_let_the": "Too many queued jobs. Let the queue run first.",
   "server.postprocess.unknown_post_process": "Unknown post-process.",
   "server.postprocess.unknown_post_process_or_comfyui_lacks": "Unknown post-process, or ComfyUI lacks the nodes it needs.",
   "server.postprocess.upscale": "Upscale",
@@ -1081,7 +1080,6 @@
   "server.tagger.the_export_format_is_txt_or": "The export format is txt or json.",
   "server.tagger.the_tagger_returned_no_result": "The tagger returned no result.",
   "server.tagger.thresholds_must_be_between_0_and": "Thresholds must be between 0 and 1.",
-  "server.tagger.too_many_queued_jobs_let_the": "Too many queued jobs. Let the queue run first.",
   "server.tagger.wd14_tagger_node_not_found": "WD14 tagger node not found: {error}",
   "server.workspace.a_zip_may_hold_up_to": "A ZIP may hold up to {max_zip_files} files.",
   "server.workspace.animated_images_are_not_supported": "{name}: animated images are not supported.",
@@ -1855,5 +1853,8 @@
   "gen.not_applied": "not applied",
   "server.image.compose.left_out": "{label} {id} is for {targets}, so it was left out.",
   "server.image.compose.other_target": "{label} {id} is for {targets}.",
-  "server.image.library.targets": "Keep at least one target."
+  "server.image.library.targets": "Keep at least one target.",
+  "server.worker.service_busy": "Waited 30 minutes for the image service.",
+  "server.worker.result_too_long": "Waited more than 30 minutes for the result.",
+  "server.worker.unknown_service": "This job needs an image service that is not set up: {service}"
 }

@@ -150,7 +150,7 @@ class ReviewRounds:
                     changed = True
             if changed:
                 self.persist()
-                self.rt.persist()
+                self.rt.queue.persist()
 
     def attach_retry(self, old, new):
         """A retried generation keeps its round."""
@@ -169,22 +169,20 @@ class ReviewRounds:
 
     def human_changed(self):
         """A person passed an image of a round's combination: the round is done and its pending work cancelled."""
-        with self.rt.lock, self.lock:
-            changed = False
+        # The queue's lock first, as everywhere both are held.
+        with self.rt.queue.lock, self.lock:
+            accepted = []
             for round_ in self.rounds:
                 if round_['status'] in SHOWN and self._accepted(round_):
                     round_['status'] = 'human_accepted'
-                    for job in self.rt.jobs:
-                        if job['id'] == round_['current_job_id'] and job['status'] == 'queued':
-                            job['status'] = 'cancelled'
-                    changed = True
-            if changed:
+                    accepted.append(round_['current_job_id'])
+            if accepted:
                 self.persist()
-                self.rt.persist()
+                self.rt.queue.cancel_waiting(accepted)
 
     def reconcile(self):
-        with self.rt.lock, self.lock:
-            jobs = {j['id']: j for j in self.rt.jobs}
+        with self.rt.queue.lock, self.lock:
+            jobs = self.rt.queue.by_id()
             changed = False
             for round_ in self.rounds:
                 if round_['status'] != 'waiting_generation':
@@ -207,8 +205,8 @@ class ReviewRounds:
                 self.persist()
 
     def public(self):
-        with self.rt.lock, self.lock:
-            jobs = {j['id']: j for j in self.rt.jobs}
+        with self.rt.queue.lock, self.lock:
+            jobs = self.rt.queue.by_id()
             rounds = []
             for round_ in self.rounds:
                 if round_['status'] == 'dismissed':
@@ -311,13 +309,12 @@ class ReviewRounds:
                 round_ = self._new_round(job, relative, manual=True)
                 job['review_round_id'] = round_['id']
             prepared.append((round_, job))
-        with self.rt.lock, self.lock:
+        with self.rt.queue.lock, self.lock:
+            self.rt.queue.add([j for _, j in prepared])
             rounds = [r for r, _ in prepared if r]
             self.rounds.extend(rounds)
             if rounds:
                 self.persist()
-            self.rt.jobs.extend(j for _, j in prepared)
-            self.rt.persist()
         return {
             'count': len(prepared),
             'reviewing': bool(rounds),
@@ -382,12 +379,13 @@ class ReviewRounds:
         """Review every ready image once generation is idle. Returns True when something was reviewed."""
         self.reconcile()
         rt = self.rt
-        with rt.lock, self.lock:
+        with rt.queue.lock, self.lock:
             if (
-                rt.paused
+                rt.queue.paused
                 or not self.settings['enabled']
                 or not rt.gpu.generation_allowed()
-                or any(j['status'] in ('queued', 'running', 'cancelling') for j in rt.jobs)
+                or rt.queue.any_queued()
+                or rt.queue.any_active()
             ):
                 return False
             ready = [r for r in self.rounds if r['status'] == 'pending_review']
@@ -420,8 +418,8 @@ class ReviewRounds:
 
     def _review_round(self, round_):
         rt = self.rt
-        with rt.lock, self.lock:
-            if round_['status'] != 'pending_review' or rt.paused:
+        with rt.queue.lock, self.lock:
+            if round_['status'] != 'pending_review' or rt.queue.paused:
                 return
             relative = round_.get('image_path')
             if not relative:
@@ -442,7 +440,7 @@ class ReviewRounds:
         except Exception as error:  # any failure becomes an 'error' verdict for a person
             log.exception('VLM review failed')
             result = {'verdict': 'error', 'evidence': message_of(error)}
-        with rt.lock, self.lock:
+        with rt.queue.lock, self.lock:
             round_['attempts'].append(
                 {
                     'job_id': round_['current_job_id'],
@@ -481,7 +479,7 @@ class ReviewRounds:
 
     def _regenerate_failed(self, ready):
         rt = self.rt
-        with rt.lock, self.lock:
+        with rt.queue.editing() as jobs, self.lock:
             for round_ in ready:
                 if round_['status'] != 'failed_review':
                     continue
@@ -494,11 +492,10 @@ class ReviewRounds:
                     round_.update(status='needs_attention', error=message_of(error))
                     continue
                 fresh = self.fresh_job(source, round_['regenerations'] + 1, round_['id'])
-                rt.jobs.append(fresh)
+                jobs.append(fresh)
                 round_.update(current_job_id=fresh['id'], status='waiting_generation')
                 round_['regenerations'] += 1
             self.persist()
-            rt.persist()
 
     def _unload(self):
         command = self.settings.get('unload_command') or []

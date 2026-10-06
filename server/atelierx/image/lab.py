@@ -214,16 +214,7 @@ class LabMixin:
                         },
                     }
                 )
-        with self.lock:
-            if sum(j['status'] == 'queued' for j in self.jobs) + len(prepared) > 5000:
-                raise ValueError(
-                    Msg(
-                        'server.queue.too_many_queued_jobs_let_the',
-                        'Too many queued jobs. Let the queue run first.',
-                    )
-                )
-            self.jobs.extend(prepared)
-            self.persist()
+        self.queue.add(prepared)
         return {'lab_group': group, 'count': len(prepared), 'seeds': seeds}
 
     def lab_runs(self):
@@ -261,8 +252,7 @@ class LabMixin:
                     'source': meta.get('lab_source'),
                 },
             )
-        with self.lock:
-            live = [j for j in self.jobs if j.get('kind') == 'lab' and j.get('lab_group')]
+        live = self.queue.select(lambda j: j.get('kind') == 'lab' and j.get('lab_group'))
         for job in live:
             cell(
                 job['lab_group'],

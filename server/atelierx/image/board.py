@@ -85,12 +85,12 @@ def board(runtime, work):
     ]
     made = Counter((i.get('character_id'), i.get('outfit_id'), i.get('expression_id')) for i in images)
     adopted = _adopted(runtime, images)
-    with runtime.lock:
-        waiting = Counter(
-            (j.get('character_id'), j.get('outfit_id'), j.get('expression_id'))
-            for j in runtime.jobs
-            if j.get('kind') is None and j.get('work_id') == work.id and j.get('status') in WAITING
+    waiting = Counter(
+        (j.get('character_id'), j.get('outfit_id'), j.get('expression_id'))
+        for j in runtime.queue.select(
+            lambda j: j.get('kind') is None and j.get('work_id') == work.id and j.get('status') in WAITING
         )
+    )
     excluded = exclusions(work)
     characters, total_required, total_adopted = [], 0, 0
     for character in _characters(work):

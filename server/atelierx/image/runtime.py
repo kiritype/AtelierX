@@ -10,18 +10,21 @@ from .gallery import Gallery
 from .generation import GenerationMixin
 from .gpu import GpuBroker
 from .installs import Installs
+from .job_queue import JobQueue
 from .lab import LabMixin
 from .lora import models as lora_models
 from .lora.trainer import LoraTrainer
 from .models import FAMILY_LABELS, ModelProfiles
 from .review_rounds import ReviewRounds
 from .reviews import ReviewStore
+from .services import ComfyService
 from .tags import TagLookup
 from .tools.convert import ConvertTasks
 from .tools.postprocess import PostprocessMixin
 from .tools.tagger import TaggerMixin
 from .tools.workspace import ToolWorkspace
 from .trash import OutputTrash
+from .util import state_file
 
 DEFAULT_URL = 'http://127.0.0.1:8188'
 
@@ -33,11 +36,12 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self._thread = None
         # One lock guards the queue and GPU ownership, as the generation worker and the API share them.
         self.lock = threading.RLock()
-        self.jobs = []
-        self.paused = False
+        self.queue = JobQueue(state_file(paths, 'queue.json'), self.lock)
         self.comfy = Comfy(DEFAULT_URL)
+        # Where queued jobs are made, by the job's ``service``.
+        self.services = {service.id: service for service in (ComfyService(self),)}
         self.models = ModelProfiles(paths)
-        self.gpu = GpuBroker(paths, self.lock, lambda: self.jobs)
+        self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.jobs)
         self.control = ComfyControl(self)
         self.tags = TagLookup(paths)
         self.gallery = Gallery(paths)
@@ -117,8 +121,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
 
     def after_remove(self):
         # Inpaint jobs keep a copy of their mask; copies of jobs that are gone are deleted.
-        with self.lock:
-            keep = {j['post_mask'] for j in self.jobs if j.get('post_mask')}
+        keep = {j['post_mask'] for j in self.queue.select(lambda j: j.get('post_mask'))}
         self.tools.prune_job_masks(keep)
 
     def auto_loras(self, work, character_id, outfit_id, family):
