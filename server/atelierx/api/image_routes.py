@@ -119,6 +119,22 @@ async def deploy_target_check(request):
     return await call(_runtime(request).deploy_targets.check, request.path_params['target'])
 
 
+async def deploy_plan(request):
+    return await call(_runtime(request).deploy.plan, await _body(request))
+
+
+async def deploy_upload(request):
+    return await call(_runtime(request).deploy.start, await _body(request))
+
+
+async def deploy_run(request):
+    return await call(_runtime(request).deploy.public, request.path_params['run'])
+
+
+async def deploy_cancel(request):
+    return await call(_runtime(request).deploy.cancel, request.path_params['run'])
+
+
 async def work_deploy_get(request):
     runtime = _runtime(request)
     return await call(deploy_targets.work_settings, runtime.works.get(request.path_params['wid']))
@@ -455,6 +471,10 @@ def routes():
         Route(f'{p}/deploy/targets', deploy_targets_get),
         Route(f'{p}/deploy/targets', deploy_targets_put, methods=['PUT']),
         Route(f'{p}/deploy/targets/{{target}}/check', deploy_target_check, methods=['POST']),
+        Route(f'{p}/deploy/plan', deploy_plan, methods=['POST']),
+        Route(f'{p}/deploy/upload', deploy_upload, methods=['POST']),
+        Route(f'{p}/deploy/runs/{{run}}', deploy_run),
+        Route(f'{p}/deploy/runs/{{run}}/cancel', deploy_cancel, methods=['POST']),
         Route(f'{p}/services', image_services_get),
         Route(f'{p}/services', image_services_put, methods=['PUT']),
         Route(f'{p}/services/{{service}}/info', image_service_info),

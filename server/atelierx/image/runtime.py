@@ -8,6 +8,7 @@ from . import board, comfy_locate
 from .comfy import Comfy
 from .control import ComfyControl
 from .deploy.targets import DeployTargets
+from .deploy.upload import DeployUploads
 from .gallery import Gallery
 from .generation import GenerationMixin
 from .gpu import GpuBroker
@@ -63,6 +64,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.tags = TagLookup(paths)
         self.gallery = Gallery(paths)
         self.reviews = ReviewStore(paths, self.gallery)
+        self.deploy = DeployUploads(self)
         self.reviews.adjust_plan = self._adjust_export_plan
         self.tools = ToolWorkspace(paths, self.gallery)
         self.convert = ConvertTasks(paths, self.tools, self.gallery)
@@ -172,6 +174,16 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
                     'title': record.get('output_name') or run_id,
                     'work_id': work_id,
                     'character_id': character_id,
+                }
+            )
+        for run in self.deploy.active():
+            out.append(
+                {
+                    'kind': 'deploy',
+                    'status': run['status'],
+                    'done': run['done'],
+                    'total': run['total'],
+                    'title': run['target_name'],
                 }
             )
         for task in list(self.convert.tasks.values()):
