@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { get, post, put } from '../../api';
-import { t } from '../../i18n';
+import { t, tm } from '../../i18n';
 import { useToast } from '../Toasts';
 
 type Scope = { work?: string; character?: string; outfit?: string };
@@ -275,7 +275,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                   <div className="col small">
                     {failed.map((r) => (
                       <span key={r.path} className="error-text">
-                        <span className="mono">{r.path}</span>: {r.error?.text}
+                        <span className="mono">{r.path}</span>: {r.error ? tm(r.error) : ''}
                       </span>
                     ))}
                     <div>

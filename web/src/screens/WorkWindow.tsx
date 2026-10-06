@@ -194,7 +194,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         const others = list.filter((j) => j.id !== event.data.id);
         return [event.data, ...others];
       });
-      if (event.data.status === 'failed') toast({ text: `${event.data.title}: ${event.data.error?.text ?? ''}`, tone: 'error' });
+      if (event.data.status === 'failed') toast({ text: `${event.data.title}: ${event.data.error ? tm(event.data.error) : ''}`, tone: 'error' });
     } else if (event.type === 'notice') {
       const draft = event.data.result?.draft;
       toast({
