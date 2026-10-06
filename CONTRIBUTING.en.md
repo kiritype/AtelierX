@@ -93,6 +93,20 @@ The reasoning is in [decision 0020](docs/decisions/0020-branch-flow.md) (Korean)
 - Hotfix: branch `fix/*` from `main`, then bring the fix into `main`, `dev` and any open `staging` candidate. A changed
   candidate is verified again.
 
+## Fixing only the manual
+
+The manual site follows main (the released version). A fix to the manual alone can go out before the next release, without
+pushing to main:
+
+1. Make a `docs/*` branch from **main**, change only `docs/manual/`, and push it.
+2. In GitHub **Actions → Manual on GitHub Pages → Run workflow**, keep the branch on **main** and put the branch name in `ref`.
+   The site is updated. The run stops if the branch does not contain main or changes anything outside `docs/manual/`, so
+   nothing unreleased reaches the site.
+3. Open a pull request from the same branch into `dev`. For a documentation-only pull request, CI skips the app's tests and
+   only checks the offline manual's links, so it finishes quickly. The fix ships in the app's manual with the next release.
+
+A manual change that goes with a feature belongs in that feature's pull request and goes public with the release.
+
 ## Versions and milestones
 
 The reasoning is in [decision 0022](docs/decisions/0022-versioning.md) (Korean).

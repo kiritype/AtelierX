@@ -91,6 +91,20 @@ cd web && npm test && npm run typecheck && npm run build
 - 급한 수정: `main`에서 `fix/*` 브랜치를 만들고, 수정 내용을 `main`·`dev`·진행 중인 `staging` 후보에 모두 반영합니다.
   후보가 바뀌면 다시 검증합니다.
 
+## 매뉴얼만 고칠 때
+
+설명서 사이트는 main(릴리스된 버전)을 따릅니다. 릴리스를 기다리지 않고 매뉴얼 수정만 먼저 공개할 수 있습니다. main에 직접
+push하지는 않습니다.
+
+1. **main**에서 `docs/*` 브랜치를 만들어 `docs/manual/`만 고치고 push합니다.
+2. GitHub **Actions → Manual on GitHub Pages → Run workflow**에서 브랜치는 **main**으로 두고, `ref`에 그 브랜치 이름을 넣어 실행하면
+   사이트에 반영됩니다. 그 브랜치가 main을 포함하지 않거나 `docs/manual/` 밖을 바꿨으면 워크플로가 멈춥니다(릴리스 안 된 내용이
+   사이트에 나가지 않게).
+3. 같은 브랜치로 `dev`에 PR을 엽니다. 문서만 바뀐 PR은 CI가 앱 테스트를 건너뛰고 오프라인 설명서 링크 검사만 해서 빨리 끝납니다.
+   다음 릴리스의 앱 안 설명서에 들어갑니다.
+
+기능과 함께 바뀌는 매뉴얼은 기능 PR에 넣어 릴리스 때 공개합니다.
+
 ## 버전과 마일스톤
 
 이유는 [결정 0022](docs/decisions/0022-versioning.md)에 있습니다.
