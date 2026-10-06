@@ -211,3 +211,34 @@ def test_the_account_shows_anlas_left(unlocked):
     c.put('/api/image/services', json={'services': {'novelai': {'key': None}}})
     missing = c.get('/api/image/services/novelai/account')
     assert missing.status_code == 502 and missing.json()['error']['key'] == 'server.image.services.no_key'
+
+
+def test_regenerating_a_novelai_image_asks_novelai_and_never_automatically(unlocked):
+    c = unlocked
+    wid, runtime = _setup(c, Server(httpx.Response(200, content=_zip(_png()))))
+    job = _queue_and_run(c, wid, runtime)
+    relative = job['image_url'].removeprefix('/api/image/files/')
+    item = c.get('/api/image/gallery', params={'work': wid}).json()['results'][0]
+    assert item['service'] == 'novelai'
+
+    again = c.post('/api/image/gallery/regenerate', json={'items': [relative], 'review': False}).json()
+    assert again['count'] == 1
+    fresh = runtime.jobs[-1]
+    assert fresh['service'] == 'novelai' and fresh['seed'] != job['seed']
+    assert fresh['snapshot']['settings']['model'] == 'nai-diffusion-5-full'
+
+    # A failed automatic review does not send a paid request again on its own.
+    rounds = runtime.rounds
+    round_ = {
+        'id': 'r1',
+        'status': 'failed_review',
+        'regenerations': 0,
+        'max_auto_regenerations': 2,
+        'attempts': [{'path': relative}],
+        'current_job_id': job['id'],
+    }
+    rounds.rounds.append(round_)
+    before = len(runtime.jobs)
+    rounds._regenerate_failed([round_])
+    assert len(runtime.jobs) == before
+    assert round_['status'] == 'needs_attention' and round_['error'].key == 'server.review.no_auto_paid'
