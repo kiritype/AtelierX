@@ -19,6 +19,7 @@ from starlette.staticfiles import StaticFiles
 
 from ..core import about, authoring, chat, checks, exporter, guidelines, personas, rename, review
 from ..core import draft_apply as draft_apply_module
+from ..core import item_import as item_import_core
 from ..core.auth import COOKIE, Sessions
 from ..core.bootstrap import ensure_layout
 from ..core.drafts import Drafts
@@ -537,6 +538,16 @@ async def item_put(request):
 async def item_create(request):
     data = await body(request)
     return ok(work_of(request).create_file(data['path'], data.get('kind')), 201)
+
+
+async def item_import(request):
+    """Bring single .md/.jsx files in (#115): a preview of what each becomes, or (``apply``) writing them."""
+    data = await body(request)
+    work = work_of(request)
+    args = (work, data.get('folder'), data.get('files'), data.get('choices'))
+    if data.get('apply'):
+        return ok(item_import_core.apply(*args))
+    return ok(item_import_core.public(item_import_core.plan(*args)))
 
 
 async def folder_create(request):
@@ -1076,6 +1087,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route(f'{w}/file', item_create, methods=['POST']),
         Route(f'{w}/file', item_delete, methods=['DELETE']),
         Route(f'{w}/folder', folder_create, methods=['POST']),
+        Route(f'{w}/import', item_import, methods=['POST']),
         Route(f'{w}/move', item_move, methods=['POST']),
         Route(f'{w}/kind', item_kind, methods=['POST']),
         Route(f'{w}/suggest-id', suggest_item_id),
