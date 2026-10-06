@@ -182,6 +182,9 @@ def test_provider_secrets_and_errors_do_not_leak(unlocked):
     provider = service.doc()['providers']['cloud']
     response = httpx.Response(401, json={'error': {'message': 'echo test-private-token'}})
     assert 'test-private-token' not in str(service._http_error(provider, response))
+    # A 402 is about payment or a plan, not parameters; the hint is its own message so the screen translates it.
+    paid = service._http_error(provider, httpx.Response(402, json={'error': 'limit'})).args[0]
+    assert paid.values['detail'].key == 'server.llm.http_hint.payment' and 'paid plan' in str(paid)
     service.vault.delete('cloud')
     with pytest.raises(AppError):
         service._headers(provider)
