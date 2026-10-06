@@ -255,11 +255,21 @@ def test_image_review_run_override_requires_selected_consent_and_is_kept_on_roun
     assert c.get('/api/providers').json()['tasks'].get('image_review') is None
 
 
+def stop_worker(runtime):
+    """End the image worker thread, so a test that runs jobs and reviews itself does not race it."""
+    runtime.stop.set()
+    if runtime._thread is not None:
+        runtime._thread.join(timeout=5)
+        runtime._thread = None
+    runtime.stop.clear()  # jobs run by the test check the same signal
+
+
 def test_vlm_fail_regenerates_until_the_limit(unlocked):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     runtime = c.app.state.app.image
     runtime.comfy = FakeComfy()
+    stop_worker(runtime)
     runtime.gpu.admit = lambda kind: None
     runtime.rounds.review_one = lambda path, snapshot, work, override=None: {
         'verdict': 'fail',
