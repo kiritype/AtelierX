@@ -7,6 +7,7 @@ from ..core.lifecycle import CANCELLING, QUEUED, RUNNING, UNFINISHED
 from . import board, comfy_locate
 from .comfy import Comfy
 from .control import ComfyControl
+from .deploy.targets import DeployTargets
 from .gallery import Gallery
 from .generation import GenerationMixin
 from .gpu import GpuBroker
@@ -45,6 +46,8 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.comfy = Comfy(DEFAULT_URL)
         # Where queued jobs are made, by the job's ``service``.
         self.service_config = ServiceConfig(paths, llm.vault)
+        # Where adopted images are uploaded (decision 0023).
+        self.deploy_targets = DeployTargets(paths, llm.vault)
         self.services = {
             service.id: service
             for service in (
