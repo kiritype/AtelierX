@@ -4,6 +4,8 @@ Stored in data/image/services.json. A key is never written here, only ``secret:<
 file can travel in a settings package without credentials. ComfyUI on this PC is configured elsewhere (connection).
 """
 
+import re
+
 from ..core.i18n import Msg
 from .util import atomic_json, read_json
 
@@ -12,6 +14,9 @@ DEFAULT_LIMIT = 50  # images one "Add to queue" may ask an internet service for;
 MAX_LIMIT = 100000
 DEFAULT_INTERVAL = 3.0  # seconds between two requests to the same service
 MAX_INTERVAL = 600
+WITH_LORAS = ('pixai',)  # services whose own LoRAs can be listed here
+LORA_ID = re.compile(r'^\d{6,25}$')
+MAX_LORAS_LISTED = 200
 
 
 class ServiceConfig:
@@ -28,6 +33,8 @@ class ServiceConfig:
                     'key': entry.get('key') if _is_reference(entry.get('key')) else None,
                     'interval': _interval(entry.get('interval')),
                 }
+                if ident in WITH_LORAS:
+                    services[ident]['loras'] = _clean_loras(entry.get('loras'), strict=False)
         limit = raw.get('max_images_per_run', DEFAULT_LIMIT)
         return {
             'schema_version': 1,
@@ -75,6 +82,8 @@ class ServiceConfig:
                     )
                 )
             services[ident] = {'key': key, 'interval': float(interval)}
+            if ident in WITH_LORAS:
+                services[ident]['loras'] = _clean_loras(entry.get('loras'), strict=True)
         out = {'schema_version': 1, 'max_images_per_run': limit, 'services': services}
         atomic_json(self.file, out)
         return out
@@ -89,6 +98,9 @@ class ServiceConfig:
             return self.vault.reveal(reference[len('secret:') :]) or None
         except Exception:  # locked vault: the same as no key
             return None
+
+    def loras(self, ident):
+        return (self.doc()['services'].get(ident) or {}).get('loras') or []
 
     def interval(self, ident):
         return (self.doc()['services'].get(ident) or {}).get('interval', DEFAULT_INTERVAL)
@@ -111,9 +123,40 @@ class ServiceConfig:
                     'interval': entry.get('interval', DEFAULT_INTERVAL),
                     'supported': ready,
                     'connected': ready and self.key(ident) is not None,
+                    **({'loras': entry.get('loras') or []} if ident in WITH_LORAS else {}),
                 }
             )
         return {'max_images_per_run': doc['max_images_per_run'], 'services': listed}
+
+
+def _clean_loras(value, strict):
+    """PixAI LoRAs registered from their Model Market address: version id, a name, default weight and trigger words."""
+    out, seen = [], set()
+    for entry in value if isinstance(value, list) else []:
+        ident = str((entry or {}).get('id') or '') if isinstance(entry, dict) else ''
+        weight = entry.get('weight', 1.0) if isinstance(entry, dict) else None
+        good_weight = isinstance(weight, (int, float)) and not isinstance(weight, bool) and 0 <= weight <= 1
+        if not LORA_ID.match(ident) or not good_weight:
+            if strict:
+                raise ValueError(
+                    Msg(
+                        'server.image.services.lora',
+                        'A LoRA needs the version id from its PixAI address and a weight from 0 to 1.',
+                    )
+                )
+            continue
+        if ident in seen:
+            continue
+        seen.add(ident)
+        out.append(
+            {
+                'id': ident,
+                'name': str(entry.get('name') or ident).strip()[:100],
+                'weight': float(weight),
+                'trigger_words': str(entry.get('trigger_words') or '').strip()[:500],
+            }
+        )
+    return out[:MAX_LORAS_LISTED]
 
 
 def _is_reference(value):

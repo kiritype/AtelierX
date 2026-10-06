@@ -20,6 +20,7 @@ from PIL import Image, PngImagePlugin
 from ..core.i18n import AppError, Msg, message_of
 from . import library
 from .compose import Composer
+from .services import ResultPending
 from .util import atomic_json, code, now, replace_file
 from .workflow import build_ui_workflow, validate_settings
 
@@ -413,9 +414,11 @@ class GenerationMixin:
             def cancelling():
                 return self.queue.status_of(job) == 'cancelling'
 
+            # A job whose request already went out (restart, failed download) asks about it again: no new request.
+            resume = job.get('resume') if service.resumable else None
             # Wait while the service works for others.
             deadline = time.monotonic() + service.wait_limit
-            while True:
+            while not resume:
                 if self.stop.is_set():
                     return
                 if cancelling() or not service.busy():
@@ -423,12 +426,12 @@ class GenerationMixin:
                 if time.monotonic() > deadline:
                     raise RuntimeError(service.busy_too_long())
                 self.stop.wait(2)
-            if cancelling():
+            if cancelling() and not resume:
                 self.queue.update(job, status='cancelled')
                 return
             self.ensure_generation_safe()
             kind = job.get('kind')
-            sent = service.submit(job)
+            sent = {'id': resume, 'record': service.request_body(job)} if resume else service.submit(job)
             working = (
                 Msg('server.worker.generating', 'Generating')
                 if kind in (None, 'lab')
@@ -466,6 +469,9 @@ class GenerationMixin:
         except Exception as error:
             log.exception('Image job failed: %s', job['id'])
             with self.lock:
+                if isinstance(error, ResultPending):
+                    # Kept so that Retry fetches this result instead of asking (and paying) again.
+                    job['resume'] = error.task_id
                 job.update(
                     status='failed',
                     error=message_of(error),

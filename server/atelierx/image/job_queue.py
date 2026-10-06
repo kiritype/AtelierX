@@ -46,6 +46,7 @@ RETRY_KEYS = (
     'post_source',
     'post_mask',
     'batch_id',
+    'resume',
 )
 
 

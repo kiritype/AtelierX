@@ -4,12 +4,13 @@ import io
 
 from PIL import Image
 
+from atelierx.image.services import GenerationService
 from test_image import FakeComfy
 
 TARGET = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
 
 
-class InternetService:
+class InternetService(GenerationService):
     """Stands in for NovelAI: its own settings, no GPU."""
 
     id = 'novelai'
@@ -52,7 +53,7 @@ def test_service_settings_keep_vault_references_and_a_limit(unlocked):
     assert listed['max_images_per_run'] == 50
     assert [(s['id'], s['supported'], s['connected']) for s in listed['services']] == [
         ('novelai', True, False),
-        ('pixai', False, False),
+        ('pixai', True, False),
     ]
 
     c.post('/api/vault', json={'name': 'image-novelai', 'kind': 'api_key', 'value': 'pst-test-123'})
@@ -129,7 +130,7 @@ def test_a_job_for_an_internet_service_is_composed_for_it_and_skips_local_parts(
 
     refused = c.post(f'/api/works/{wid}/image/jobs', json={**body, 'settings': {'model': 'v9'}})
     assert refused.status_code == 400
-    unknown = c.post(f'/api/works/{wid}/image/jobs', json={**body, 'service': 'pixai'})
+    unknown = c.post(f'/api/works/{wid}/image/jobs', json={**body, 'service': 'nowhere'})
     assert unknown.status_code == 400 and unknown.json()['error']['key'] == 'server.worker.unknown_service'
 
 
