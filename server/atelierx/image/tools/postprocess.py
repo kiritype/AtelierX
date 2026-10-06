@@ -446,29 +446,19 @@ class PostprocessMixin:
             )
             for item in items
         ]
-        with self.lock:
-            if sum(j['status'] == 'queued' for j in self.jobs) + len(prepared) > 5000:
-                raise ValueError(
-                    Msg(
-                        'server.postprocess.too_many_queued_jobs_let_the',
-                        'Too many queued jobs. Let the queue run first.',
-                    )
-                )
-            # Each inpaint job keeps the mask as it is now; generating and pasting back
-            # both use this copy even if the mask is edited while the job waits or runs.
-            previous, frozen = self.jobs[:], []
-            try:
-                for job in prepared:
-                    if op == 'inpaint':
-                        job['post_mask'] = self.tools.freeze_mask(job['tool_item'], 'inpaint')
-                        frozen.append(job['post_mask'])
-                self.jobs.extend(prepared)
-                self.persist()
-            except Exception:
-                self.jobs = previous
-                for token in frozen:
-                    self.tools.job_mask_path(token).unlink(missing_ok=True)
-                raise
+        # Each inpaint job keeps the mask as it is now; generating and pasting back
+        # both use this copy even if the mask is edited while the job waits or runs.
+        frozen = []
+        try:
+            for job in prepared:
+                if op == 'inpaint':
+                    job['post_mask'] = self.tools.freeze_mask(job['tool_item'], 'inpaint')
+                    frozen.append(job['post_mask'])
+            self.queue.add(prepared)
+        except Exception:
+            for token in frozen:
+                self.tools.job_mask_path(token).unlink(missing_ok=True)
+            raise
         public = [{k: v for k, v in j.items() if k != 'snapshot'} for j in prepared]
         return {'ok': True, 'jobs': public}
 

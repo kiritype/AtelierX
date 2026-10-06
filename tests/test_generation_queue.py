@@ -7,6 +7,7 @@ can hold a job, fail it or return a blank image.
 import io
 
 from PIL import Image
+
 from test_image import FakeComfy
 
 TARGET = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
@@ -39,13 +40,17 @@ class HeldComfy(FakeComfy):
                 return {}
             if not self.prompts:
                 return {}
-            return {'queue_running': [[0, 'p1']]} if self.place == 'running' else {'queue_pending': [[0, 'p1']]}
+            return (
+                {'queue_running': [[0, 'p1']]} if self.place == 'running' else {'queue_pending': [[0, 'p1']]}
+            )
         if path == '/interrupt':
             self.interrupted = True
             return {}
         if path.startswith('/history/'):
             if self.interrupted:
-                return {'p1': {'status': {'status_str': 'error', 'messages': [['execution_interrupted', {}]]}}}
+                return {
+                    'p1': {'status': {'status_str': 'error', 'messages': [['execution_interrupted', {}]]}}
+                }
             return {}
         return super().request(path, body, raw, timeout)
 
@@ -145,7 +150,6 @@ def test_a_failed_job_is_retried_as_a_new_job_with_the_same_request(unlocked):
     runtime.comfy = FakeComfy()
     done = _run(runtime, fresh)
     assert done['status'] == 'completed' and done['image_url'].endswith('.png')
-    assert runtime.retry is not None
     refused = None
     try:
         runtime.retry(done['id'])
@@ -156,7 +160,7 @@ def test_a_failed_job_is_retried_as_a_new_job_with_the_same_request(unlocked):
 
 def test_a_restart_marks_unfinished_work_interrupted_and_keeps_the_rest(unlocked):
     runtime = _queued(unlocked, FakeComfy(), count=3)
-    first, second, third = runtime.jobs
+    first, second, _ = runtime.jobs
     first['status'] = 'running'
     second['status'] = 'cancelling'
     runtime.persist()
@@ -175,3 +179,46 @@ def test_clearing_finished_jobs_and_cancelling_the_waiting_ones(unlocked):
     runtime.cancel_queued()
     assert [j['status'] for j in runtime.jobs] == ['completed', 'cancelled', 'cancelled']
     assert runtime.remove_finished()['removed'] == 3 and runtime.jobs == []
+
+
+class PaintService:
+    """An image service that is not ComfyUI: no GPU turn, answers on the second check."""
+
+    id = 'paint'
+    local_gpu = False
+    wait_limit = result_limit = 60
+
+    def __init__(self):
+        self.sent, self.checks = [], 0
+
+    def busy(self):
+        return False
+
+    def submit(self, job):
+        self.sent.append(job['snapshot']['positive'])
+        return {'id': 'remote-1', 'record': {'prompt': job['snapshot']['positive']}}
+
+    def poll(self, job, sent):
+        self.checks += 1
+        return None if self.checks < 2 else {'image': _png((10, 120, 200))}
+
+    def cancel(self, job, sent):
+        return True
+
+
+def test_a_job_runs_on_the_service_it_names_without_comfyui(unlocked):
+    runtime = _queued(unlocked, HeldComfy())
+    paint = PaintService()
+    runtime.services['paint'] = paint
+    job = runtime.jobs[0]
+    assert job['service'] == 'comfyui'
+    job['service'] = 'paint'
+    _run(runtime, job)
+    assert job['status'] == 'completed' and job['prompt_id'] == 'remote-1'
+    assert paint.sent and paint.checks == 2 and runtime.comfy.prompts == []
+
+    job = runtime.jobs[0]
+    job['service'] = 'nowhere'
+    runtime.jobs.append({**job, 'id': 'x', 'status': 'running'})
+    failed = runtime.run_job(runtime.jobs[-1]) or runtime.jobs[-1]
+    assert failed['status'] == 'failed' and failed['error'].key == 'server.worker.unknown_service'

@@ -1170,7 +1170,6 @@
   "server.postprocess.the_prompt_must_be_text_of": "{key} 프롬프트는 8000자 이하 글자여야 합니다.",
   "server.postprocess.there_is_no_keep_mask_split": "남길 부분 마스크가 없습니다. 배경을 분리하거나 브러시로 칠한 뒤 저장하세요.",
   "server.postprocess.there_is_no_mask_for_the": "다시 그릴 부분 마스크가 없습니다.",
-  "server.postprocess.too_many_queued_jobs_let_the": "대기 작업이 너무 많습니다. 기존 작업을 먼저 처리하세요.",
   "server.postprocess.unknown_post_process": "없는 후처리입니다.",
   "server.postprocess.unknown_post_process_or_comfyui_lacks": "없는 후처리이거나 ComfyUI에 필요한 노드가 없습니다.",
   "server.postprocess.upscale": "업스케일",
@@ -1181,7 +1180,6 @@
   "server.tagger.the_export_format_is_txt_or": "내보내기 형식은 txt 또는 json입니다.",
   "server.tagger.the_tagger_returned_no_result": "태거가 결과를 돌려주지 않았습니다.",
   "server.tagger.thresholds_must_be_between_0_and": "임계값은 0~1 사이여야 합니다.",
-  "server.tagger.too_many_queued_jobs_let_the": "대기 작업이 너무 많습니다. 기존 작업을 먼저 처리하세요.",
   "server.tagger.wd14_tagger_node_not_found": "WD14 태거 노드를 찾지 못했습니다: {error}",
   "server.workspace.a_zip_may_hold_up_to": "ZIP 안 파일은 {max_zip_files}개까지입니다.",
   "server.workspace.animated_images_are_not_supported": "{name}: 움직이는 이미지는 지원하지 않습니다.",
@@ -1981,5 +1979,8 @@
   "gen.not_applied": "적용 안 됨",
   "server.image.compose.left_out": "{label} {id}은(는) {targets}용이라 프롬프트에서 뺐습니다.",
   "server.image.compose.other_target": "{label} {id}은(는) {targets}용입니다.",
-  "server.image.library.targets": "사용 대상은 하나 이상 있어야 합니다."
+  "server.image.library.targets": "사용 대상은 하나 이상 있어야 합니다.",
+  "server.worker.service_busy": "이미지 서비스가 비기를 30분 동안 기다렸습니다.",
+  "server.worker.result_too_long": "결과를 30분 넘게 기다렸습니다.",
+  "server.worker.unknown_service": "이 작업에 필요한 이미지 서비스가 설정되어 있지 않습니다: {service}"
 }

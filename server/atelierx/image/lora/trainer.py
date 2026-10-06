@@ -262,9 +262,11 @@ class LoraTrainer:
             if gpu.generation_allowed() and gpu.admit('training'):
                 time.sleep(WAIT_POLL_SECONDS)
                 continue
-            with self.rt.lock:
-                running = any(job['status'] in ('running', 'cancelling') for job in self.rt.jobs)
-                if not running and gpu.acquire('training', 'preparing', run['output_name']):
+            # Checked and taken under the queue's lock, so no job starts in between.
+            with self.rt.queue.lock:
+                if not self.rt.queue.any_active() and gpu.acquire(
+                    'training', 'preparing', run['output_name']
+                ):
                     return
             time.sleep(WAIT_POLL_SECONDS)
 
