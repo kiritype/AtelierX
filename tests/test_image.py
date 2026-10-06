@@ -116,7 +116,7 @@ def test_library_compose_queue_and_save(unlocked, tmp_path):
     job = runtime.jobs[0]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     graph = runtime.comfy.prompts[0]
     assert graph['1']['class_type'] == 'UNETLoader' and 'soft lighting' in json.dumps(
         graph, ensure_ascii=False
@@ -164,7 +164,7 @@ def test_gallery_review_export_and_vlm_round(unlocked):
     for job in list(runtime.jobs):
         job['status'] = 'running'
         runtime.run_job(job)
-        assert job['status'] == 'completed', job.get('error')
+        assert job['status'] == 'done', job.get('error')
     assert all(j.get('review_round_id') for j in runtime.jobs)
 
     tree = c.get('/api/image/gallery/tree').json()
@@ -305,7 +305,7 @@ def test_lab_sweep_runs_survive_clearing_the_queue(unlocked):
     job = runtime.jobs[1]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     assert '/_lab/' in job['image_url'] and runtime.comfy.prompts[0]
     c.post('/api/image/queue/cancel-queued')
     c.post('/api/image/queue/clear-finished')
@@ -377,7 +377,7 @@ def test_lab_lora_files_share_seeds_and_preserve_other_settings(unlocked):
     job = runtime.jobs[1]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     c.post('/api/image/queue/cancel-queued')
     c.post('/api/image/queue/clear-finished')
     run = c.get('/api/image/lab/runs').json()['runs'][0]

@@ -126,7 +126,7 @@ def test_a_job_for_an_internet_service_is_composed_for_it_and_skips_local_parts(
     assert runtime.gpu.try_llm() is True
     runtime.gpu.end_llm()
     runtime.run_job(job)
-    assert job['status'] == 'completed' and job['prompt_id'] == 'n1'
+    assert job['status'] == 'done' and job['prompt_id'] == 'n1'
 
     refused = c.post(f'/api/works/{wid}/image/jobs', json={**body, 'settings': {'model': 'v9'}})
     assert refused.status_code == 400

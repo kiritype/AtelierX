@@ -150,7 +150,7 @@ def test_a_failed_job_is_retried_as_a_new_job_with_the_same_request(unlocked):
 
     runtime.comfy = FakeComfy()
     done = _run(runtime, fresh)
-    assert done['status'] == 'completed' and done['image_url'].endswith('.png')
+    assert done['status'] == 'done' and done['image_url'].endswith('.png')
     refused = None
     try:
         runtime.retry(done['id'])
@@ -176,9 +176,9 @@ def test_a_restart_marks_unfinished_work_interrupted_and_keeps_the_rest(unlocked
 def test_clearing_finished_jobs_and_cancelling_the_waiting_ones(unlocked):
     runtime = _queued(unlocked, FakeComfy(), count=3)
     done = _run(runtime, runtime.jobs[0])
-    assert done['status'] == 'completed'
+    assert done['status'] == 'done'
     runtime.cancel_queued()
-    assert [j['status'] for j in runtime.jobs] == ['completed', 'cancelled', 'cancelled']
+    assert [j['status'] for j in runtime.jobs] == ['done', 'cancelled', 'cancelled']
     assert runtime.remove_finished()['removed'] == 3 and runtime.jobs == []
 
 
@@ -215,7 +215,7 @@ def test_a_job_runs_on_the_service_it_names_without_comfyui(unlocked):
     assert job['service'] == 'comfyui'
     job['service'] = 'paint'
     _run(runtime, job)
-    assert job['status'] == 'completed' and job['prompt_id'] == 'remote-1'
+    assert job['status'] == 'done' and job['prompt_id'] == 'remote-1'
     assert paint.sent and paint.checks == 2 and runtime.comfy.prompts == []
 
     job = runtime.jobs[0]

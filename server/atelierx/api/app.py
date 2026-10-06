@@ -962,6 +962,11 @@ async def jobs_list(request):
     return ok([s.jobs.public(j) for j in s.jobs.list()])
 
 
+async def activity(request):
+    """Unfinished work other than the LLM jobs, for the jobs panel (#89)."""
+    return ok({'items': st(request).image.activity()})
+
+
 async def jobs_cancel(request):
     return ok(st(request).jobs.cancel(request.path_params['jid']))
 
@@ -1141,6 +1146,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         Route(f'{w}/tests/runs/{{rid}}', test_run_put, methods=['PUT']),
         Route(f'{w}/tests/runs/{{rid}}', test_run_delete, methods=['DELETE']),
         Route('/api/jobs', jobs_list),
+        Route('/api/activity', activity),
         Route('/api/jobs/{jid}/cancel', jobs_cancel, methods=['POST']),
         Route('/api/events', events),
         *image_routes.routes(),

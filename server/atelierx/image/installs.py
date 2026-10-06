@@ -24,6 +24,7 @@ import zipfile
 from pathlib import Path
 
 from ..core.i18n import Msg, message_of
+from ..core.lifecycle import UNFINISHED
 from ..core.proc import NO_WINDOW, stop_tree
 from . import comfy_locate, node_install
 from . import settings as image_settings
@@ -319,7 +320,7 @@ class Installs:
         if section not in SECTIONS:
             raise ValueError(Msg('server.installs.unknown', 'Unknown install section.'))
         with self.lock:
-            if self.run and self.run['status'] == 'running':
+            if self.run and self.run['status'] in UNFINISHED:
                 raise ValueError(
                     Msg('server.installs.busy', 'Another install is running. Wait for it to finish.')
                 )
@@ -340,12 +341,14 @@ class Installs:
     def cancel(self):
         with self.lock:
             self.cancel_requested = True
+            if self.run and self.run['status'] == 'running':
+                self.run['status'] = 'cancelling'
             stop_tree(self.process)
         return {'ok': True}
 
     def shutdown(self):
         """The app is closing: an install in progress stops with it."""
-        if self.run and self.run['status'] == 'running':
+        if self.run and self.run['status'] in UNFINISHED:
             self.cancel()
 
     def _execute(self, work, body):

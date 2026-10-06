@@ -73,6 +73,25 @@
 - `settings.json`의 `default_platform_preset`: 새 작품에 자동으로 붙일 플랫폼 프리셋 ID. 비어 있으면 새 작품은 어떤 프리셋에도
   연결되지 않는다([플랫폼 프리셋](#플랫폼-프리셋)).
 
+### 작업 상태
+
+오래 걸리는 작업(LLM 작업, 이미지 대기열, 설치, LoRA 학습, 이미지 변환)은 같은 상태 이름을 쓴다. 실행 방식(스레드·asyncio)은 종류마다 다르다.
+
+| 상태 | 뜻 |
+|---|---|
+| `queued` | 시작 전 |
+| `running` | 실행 중. `phase`가 단계를 알린다(예: LoRA 학습의 `waiting_gpu`·`preprocessing`·`training`) |
+| `cancelling` | 취소를 받았고 실제로 멈추기를 기다리는 중 |
+| `done` | 끝남 |
+| `failed` | 실패. `error`에 이유 |
+| `cancelled` | 사용자가 취소함 |
+| `interrupted` | 앱이 꺼지며 끊김. 다시 시도할 수 있다 |
+
+- 앱이 꺼지면 진행 중인 작업은 멈추고, 다시 켜면 `interrupted`로 보인다. 결과를 서비스가 들고 있는 인터넷 이미지 작업(PixAI)만 같은 작업을
+  이어서 받는다.
+- 이전 이름은 읽을 때 바꿔 본다: 이미지 대기열의 `completed` → `done`, LoRA 학습의 `waiting_gpu` → `queued`(+`phase`),
+  `preprocessing`·`training` → `running`(+`phase`).
+
 ## 금고
 
 마스터 비밀번호 하나로 **앱 실행 인증**과 **인증 정보 암호화**를 함께 한다. 첫 실행 때 비밀번호를 정하고, 이후 실행할

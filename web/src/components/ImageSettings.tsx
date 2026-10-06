@@ -5,6 +5,7 @@ import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
 import { useReportDirty } from './settingsDirty';
 import ImageServiceSettings from './ImageServiceSettings';
+import { unfinished } from '../lib/lifecycle';
 
 type Connection = {
   status: {
@@ -440,7 +441,7 @@ function TrainingSection() {
   const installs = useQuery<InstallStatus>({
     queryKey: ['installs'],
     queryFn: () => get('/api/image/installs'),
-    refetchInterval: (q) => ((q.state.data as InstallStatus | undefined)?.run?.status === 'running' ? 1200 : 15000),
+    refetchInterval: (q) => (unfinished((q.state.data as InstallStatus | undefined)?.run?.status) ? 1200 : 15000),
   });
   const connection = useQuery<Connection>({ queryKey: ['image-connection'], queryFn: () => get('/api/image/connection'), refetchInterval: 4000 });
   const [form, setForm] = useState<Training | null>(null);
@@ -452,7 +453,7 @@ function TrainingSection() {
     if (status.data && !form) setForm(status.data.settings);
   }, [status.data, form]);
   const run = installs.data?.run;
-  const running = run?.status === 'running';
+  const running = unfinished(run?.status);
   const dirty = !!form && !!status.data && JSON.stringify(form) !== JSON.stringify(status.data.settings);
   useReportDirty('image-training', dirty);
   const modelGroup = installs.data?.models?.groups?.find((group) => group.id === 'training_base');
@@ -462,8 +463,8 @@ function TrainingSection() {
     logRef.current?.scrollTo(0, logRef.current.scrollHeight);
     const runId = run?.started_at ?? '';
     const prior = previousRun.current;
-    const newRunFinished = !!run && run.section === 'training' && run.status !== 'running'
-      && ((prior?.id === runId && prior.status === 'running')
+    const newRunFinished = !!run && run.section === 'training' && !unfinished(run.status)
+      && ((prior?.id === runId && unfinished(prior.status))
         || (pendingSetupFrom.current !== undefined && runId !== pendingSetupFrom.current));
     if (newRunFinished) {
       pendingSetupFrom.current = undefined;
@@ -525,7 +526,7 @@ function TrainingSection() {
         {!connection.data?.status.connected && <div className="warn-text small">{t('image_settings.training.comfy_required')}</div>}
         {dirty && <div className="warn-text small">{t('image_settings.training.save_first')}</div>}
         {running && <div className="faint small">{t(run?.section === 'training' ? 'image_settings.training.running' : 'image_settings.training.install_busy')}</div>}
-        {run?.section === 'training' && run.status !== 'running' && <div className={run.status === 'failed' ? 'error-text small' : 'ok-text small'}>{t(`install.status.${run.status}`)}</div>}
+        {run?.section === 'training' && !unfinished(run.status) && <div className={run.status === 'failed' ? 'error-text small' : 'ok-text small'}>{t(`install.status.${run.status}`)}</div>}
         {run?.section === 'training' && run.error && <div className="error-text small">{message(run.error)}</div>}
         {run?.section === 'training' && <pre ref={logRef} className="lora-log mono small">{run.log.join('\n') || '…'}</pre>}
       </div>

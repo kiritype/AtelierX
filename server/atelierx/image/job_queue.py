@@ -10,10 +10,9 @@ import uuid
 from contextlib import contextmanager
 
 from ..core.i18n import Msg
+from ..core.lifecycle import ACTIVE, FINISHED, RETRYABLE, normalize
 from .util import atomic_json, now, read_json
 
-FINISHED = frozenset({'completed', 'failed', 'cancelled', 'interrupted'})
-ACTIVE = frozenset({'running', 'cancelling'})
 FINISHED_SHOWN = 1000
 MAX_QUEUED = 5000
 # What a retried job keeps from the one it replaces: the request, never the outcome.
@@ -65,6 +64,7 @@ class JobQueue:
             self.jobs = saved.get('jobs') or []
             self.paused = bool(saved.get('paused'))
             for job in self.jobs:
+                normalize(job)  # names from before #89 ('completed')
                 # Work cut off by a restart cannot be resumed; it is marked so it can be retried.
                 if job['status'] in ACTIVE:
                     job.update(status='interrupted', progress=Msg('server.worker.interrupted', 'Interrupted'))
@@ -190,7 +190,7 @@ class JobQueue:
         """A new queued job with the request of a failed, cancelled or interrupted one."""
         with self.lock:
             old = self.get(job_id)
-            if old['status'] not in ('failed', 'cancelled', 'interrupted'):
+            if old['status'] not in RETRYABLE:
                 raise ValueError(
                     Msg(
                         'server.queue.only_failed_cancelled_or_interrupted_jobs',

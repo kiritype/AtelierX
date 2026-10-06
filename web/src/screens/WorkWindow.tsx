@@ -12,7 +12,7 @@ import GlossaryTab from '../components/GlossaryTab';
 import MenuBar, { type Menu } from '../components/MenuBar';
 import RenameDialog from '../components/RenameDialog';
 import ItemEditor, { type EditorStatus } from '../components/ItemEditor';
-import JobsPopover from '../components/JobsPopover';
+import JobsPopover, { useActivity } from '../components/JobsPopover';
 import Panels, { type PanelKey } from '../components/Panels';
 import QuickOpen from '../components/QuickOpen';
 import RelationsTab from '../components/RelationsTab';
@@ -30,6 +30,7 @@ import { bulkCloseKeys, nextActiveKey, tracksFormChanges } from './tabActions';
 import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
+import { unfinished } from '../lib/lifecycle';
 
 // Side panels: one is selected at a time. Below a divider, relations and glossary are launchers that open their editor
 // tab; they never show a selected state, so the activity bar always marks exactly the panel that is open.
@@ -74,6 +75,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<Record<string, EditorStatus>>({});
   const [showJobs, setShowJobs] = useState(false);
+  const activity = useActivity(5000);
   const [quickOpen, setQuickOpen] = useState(false);
   const [packing, setPacking] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -267,7 +269,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const currentStatus = active ? status[active] : undefined;
   const effective = info.data?.effective;
   const limits = effective?.values?.limits ?? {};
-  const running = (jobs.data ?? []).filter((j) => j.status === 'queued' || j.status === 'running');
+  // The count on the jobs button: LLM jobs and other unfinished work (image queue, install, training, conversions).
+  const runningJobs = (jobs.data ?? []).filter((j) => unfinished(j.status));
+  const running = [...runningJobs, ...(activity.data?.items ?? [])];
   const pendingDrafts = drafts.data?.length ?? 0;
 
   const sizeLimit = useMemo(() => {
@@ -382,7 +386,12 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
           <Icon name="lock" size={18} />
         </button>
         {showJobs && (
-          <JobsPopover jobs={jobs.data ?? []} onClose={() => setShowJobs(false)} openDraft={(draft) => open({ type: 'review', draft })} />
+          <JobsPopover
+            jobs={jobs.data ?? []}
+            onClose={() => setShowJobs(false)}
+            openDraft={(draft) => open({ type: 'review', draft })}
+            openView={(view, characterId) => (view === 'settings' ? open({ type: 'settings' }) : open({ type: 'image', view, characterId }))}
+          />
         )}
       </div>
       <div style={{ display: testing ? 'contents' : 'none' }}>
@@ -556,9 +565,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         )}
         <span>{t('status.preset', { name: effective?.linked?.join(', ') || 'generic' })}</span>
         <span className="grow" />
-        {running[0] && (
+        {runningJobs[0] && (
           <span className="row" style={{ gap: 4 }}>
-            <Icon name="jobs" size={13} /> {running[0].title} {running[0].progress}%
+            <Icon name="jobs" size={13} /> {runningJobs[0].title} {runningJobs[0].progress}%
           </span>
         )}
       </div>

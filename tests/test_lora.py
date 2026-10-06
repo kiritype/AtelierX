@@ -85,7 +85,7 @@ def test_dataset_training_register_and_auto_apply(unlocked, tmp_path):
     assert c.post(f'{base}/runs', json={'dataset_id': 'D001'}).status_code == 400  # one at a time
     for _ in range(200):
         runs = c.get(base).json()['runs']
-        if runs[0]['status'] not in ('waiting_gpu', 'preprocessing', 'training'):
+        if runs[0]['status'] not in ('queued', 'running', 'cancelling'):
             break
         time.sleep(0.05)
     (done,) = runs

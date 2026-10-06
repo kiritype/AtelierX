@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { ApiError, get, post } from '../api';
 import { getLanguage, t, tm } from '../i18n';
 import { useToast } from './Toasts';
+import { unfinished } from '../lib/lifecycle';
 
 type Item = { id: string; file: string; folder: string; size?: number; manual?: string; installed: string | null; target: string | null };
 type Group = { id: string; name: Record<string, string>; about: Record<string, string>; license: { name: string; url: string }; items: Item[] };
@@ -61,17 +62,17 @@ export default function InstallSettings() {
   const status = useQuery<Status>({
     queryKey: ['installs'],
     queryFn: () => get('/api/image/installs'),
-    refetchInterval: (q) => ((q.state.data as Status | undefined)?.run?.status === 'running' ? 1200 : 15000),
+    refetchInterval: (q) => (unfinished((q.state.data as Status | undefined)?.run?.status) ? 1200 : 15000),
   });
   const s = status.data;
-  const running = s?.run?.status === 'running';
+  const running = unfinished(s?.run?.status);
   const logRef = useRef<HTMLPreElement>(null);
   const lastStatus = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     logRef.current?.scrollTo(0, logRef.current.scrollHeight);
     // When a run ends, what it installed changes other screens' lists too.
-    if (lastStatus.current === 'running' && s?.run?.status !== 'running') {
+    if (unfinished(lastStatus.current) && !unfinished(s?.run?.status)) {
       for (const key of ['training-status', 'image-catalog', 'tool-post', 'tool-tagger', 'image-connection']) qc.invalidateQueries({ queryKey: [key] });
     }
     lastStatus.current = s?.run?.status;

@@ -188,7 +188,7 @@ class ReviewRounds:
                 if round_['status'] != 'waiting_generation':
                     continue
                 job = jobs.get(round_['current_job_id'])
-                if job and job['status'] == 'completed' and job.get('image_url'):
+                if job and job['status'] == 'done' and job.get('image_url'):
                     # The image path is kept so clearing the queue history does not orphan the round.
                     round_['image_path'] = unquote(job['image_url'].removeprefix('/api/image/files/'))
                     round_['status'] = 'pending_review'

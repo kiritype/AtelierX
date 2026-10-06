@@ -159,7 +159,7 @@ class ConvertTasks:
             with self.lock:
                 task['done'] += 1
         with self.lock:
-            task['status'] = 'completed'
+            task['status'] = 'done'
             task['finished_at'] = now()
 
     def get(self, task_id):

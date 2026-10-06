@@ -84,7 +84,7 @@ def test_workspace_convert_mask_and_cpu_tools(unlocked):
     ).json()['task']
     for _ in range(100):
         task = c.get('/api/image/tools/convert/task', params={'id': task['id']}).json()
-        if task['status'] == 'completed':
+        if task['status'] == 'done':
             break
         time.sleep(0.05)
     (converted,) = task['results']
@@ -138,7 +138,7 @@ def test_tag_and_upscale_jobs_run_through_the_queue(unlocked):
     job = next(j for j in runtime.jobs if j['id'] == jobs[0]['id'])
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     tagged = c.get('/api/image/tools/items').json()['items'][0]
     assert tagged['tags']['tags'] == ['1girl', 'smile', 'long hair']
     exported = c.get('/api/image/tools/tags/export', params={'ids': item['id'], 'format': 'json'}).json()
@@ -155,7 +155,7 @@ def test_tag_and_upscale_jobs_run_through_the_queue(unlocked):
     job = runtime.jobs[-1]
     job['status'] = 'running'
     runtime.run_job(job)
-    assert job['status'] == 'completed', job.get('error')
+    assert job['status'] == 'done', job.get('error')
     graph = runtime.comfy.prompts[-1]
     assert (
         graph['2']['class_type'] == 'AtelierXUpscale'
