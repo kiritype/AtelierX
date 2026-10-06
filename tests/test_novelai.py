@@ -206,7 +206,7 @@ def test_the_account_shows_anlas_left(unlocked):
     _setup(c, server)
     account = c.get('/api/image/services/novelai/account').json()
     assert account == {'tier': 3, 'active': True, 'anlas': 9500, 'opus': True}
-    assert str(server.requests[0].url) == 'https://api.novelai.net/user/subscription'
+    assert str(server.requests[0].url) == 'https://image.novelai.net/user/subscription'
 
     c.put('/api/image/services', json={'services': {'novelai': {'key': None}}})
     missing = c.get('/api/image/services/novelai/account')
