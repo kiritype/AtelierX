@@ -122,6 +122,7 @@ const SHORTCUTS: [string, string][] = [
   ['Ctrl+Shift+F', 'panel.search'],
   ['Ctrl+W', 'tabs.close'],
   ['Ctrl+Shift+L', 'common.lock'],
+  ['F5', 'help.key.test'],
   ['Ctrl+Z / Ctrl+Y', 'help.key.undo'],
 ];
 

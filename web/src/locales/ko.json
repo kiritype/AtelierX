@@ -310,7 +310,7 @@
   "check.export_name_clash": "내보내기 키워드 표의 예약 이름(_keywords.md)과 겹칩니다.",
   "server.export.name_clash": "{path}이(가) 내보내기 예약 이름과 겹칩니다. 이름을 먼저 바꾸세요.",
   "test.open": "테스트",
-  "test.back": "← 작업으로",
+  "test.back": "작업으로",
   "test.title": "테스트",
   "test.replay": "입력 다시 보내기 ({n})",
   "test.replay_hint": "지난 대화의 내 메시지를 차례로 다시 보냅니다. 새 대화에서만 쓸 수 있습니다.",
@@ -2092,5 +2092,6 @@
   "tools.notice.nodes.body": "설정 → 설치에서 이미지 생성 서버 확장 노드를 설치하고 ComfyUI를 다시 시작하세요.",
   "tools.notice.nodes.action": "설정 → 설치 열기",
   "tools.notice.recheck": "다시 확인",
-  "tools.notice.detail": "디테일러 노드가 없어 디테일러는 작업 목록에 없습니다."
+  "tools.notice.detail": "디테일러 노드가 없어 디테일러는 작업 목록에 없습니다.",
+  "help.key.test": "테스트 화면 열기 / 닫기"
 }

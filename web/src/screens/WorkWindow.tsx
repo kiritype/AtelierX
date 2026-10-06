@@ -220,6 +220,11 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         setPanel('search');
+      } else if (e.key === 'F5' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        // F5 opens and closes the test screen instead of reloading the window (which would drop unsaved edits).
+        // Ctrl+R and Ctrl+F5 still reload.
+        e.preventDefault();
+        if (!e.repeat) setTesting((on) => !on);
       } else if (e.ctrlKey && e.key.toLowerCase() === 'w' && active) {
         e.preventDefault();
         close(active);
@@ -368,7 +373,14 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
           {info.data.name} <Icon name="menu" size={14} />
         </span>
         <MenuBar menus={menus} />
-        <button className={testing ? 'primary' : 'ghost'} onClick={() => setTesting(!testing)}>
+        {/* Set apart from the menus: the test screen is a mode of the window, not a menu. */}
+        <span className="topbar-sep" />
+        <button
+          className={`with-icon test-button ${testing ? 'primary' : ''}`}
+          onClick={() => setTesting(!testing)}
+          title={`${testing ? t('test.back') : t('test.open')} (F5)`}
+        >
+          <Icon name={testing ? 'back' : 'test'} size={14} />
           {testing ? t('test.back') : t('test.open')}
         </button>
         <span className="grow" />
