@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ApiError, get, post, put } from '../api';
 import AppSettings from '../components/AppSettings';
 import AuxPanel, { type AuxTab } from '../components/AuxPanel';
@@ -26,11 +26,13 @@ import WorkSettings from '../components/WorkSettings';
 import ImageScreen from './ImageScreen';
 import TestScreen from './TestScreen';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
-import { bulkCloseKeys, nextActiveKey, tracksFormChanges } from './tabActions';
+import { bulkCloseKeys, nextActiveKey } from './tabActions';
 import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
 import { unfinished } from '../lib/lifecycle';
+import { TabScope } from '../components/Unsaved';
+import { UnsavedRegistry } from '../lib/unsaved';
 
 // Side panels: one is selected at a time. Below a divider, relations and glossary are launchers that open their editor
 // tab; they never show a selected state, so the activity bar always marks exactly the panel that is open.
@@ -58,7 +60,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const jobs = useQuery<Job[]>({ queryKey: ['jobs'], queryFn: () => get('/api/jobs') });
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
-  const [formDirty, setFormDirty] = useState<string[]>([]);
+  // Unsaved changes of every tab (#88): each screen registers its own; closing, leaving and locking ask here.
+  const [unsaved] = useState(() => new UnsavedRegistry());
+  useSyncExternalStore(unsaved.subscribe, unsaved.snapshot);
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey | null>('files');
@@ -118,14 +122,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   }, []);
 
   const confirmClose = useCallback((keys: string[]) => {
-    const dirtyEditors = keys.some((key) => status[key]?.dirty);
-    const dirtyForms = tabs.filter((tab) => keys.includes(tabKey(tab)) && tab.type !== 'item' && formDirty.includes(tabKey(tab)));
-    const warnings = [
-      ...(dirtyEditors ? [t('editor.close_unsaved')] : []),
-      ...(dirtyForms.length ? [t('tabs.close_forms_warning', { names: dirtyForms.map(tabTitle).join(', ') })] : []),
-    ];
-    return !warnings.length || confirm(warnings.join('\n'));
-  }, [formDirty, status, tabs]);
+    const dirty = tabs.filter((tab) => keys.includes(tabKey(tab)) && unsaved.dirty(tabKey(tab)));
+    return !dirty.length || confirm(t('tabs.close_unsaved', { names: dirty.map(tabTitle).join(', ') }));
+  }, [unsaved, tabs]);
 
   const close = useCallback(
     (key: string) => {
@@ -135,10 +134,10 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       setTabs(tabs.filter((tab) => tabKey(tab) !== key));
       setPinned((pins) => pins.filter((p) => p !== key));
       setStatus((all) => Object.fromEntries(Object.entries(all).filter(([statusKey]) => statusKey !== key)));
-      setFormDirty((dirty) => dirty.filter((x) => x !== key));
+      unsaved.forget(key);
       if (active === key) setActive(nextActiveKey(keys, closing, active));
     },
-    [active, confirmClose, tabs],
+    [active, confirmClose, tabs, unsaved],
   );
 
   const closeMany = useCallback((keys: string[]) => {
@@ -149,9 +148,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     setTabs(remaining);
     setPinned((pins) => pins.filter((key) => !closing.has(key)));
     setStatus((all) => Object.fromEntries(Object.entries(all).filter(([key]) => !closing.has(key))));
-    setFormDirty((dirty) => dirty.filter((key) => !closing.has(key)));
+    closing.forEach((key) => unsaved.forget(key));
     if (active && closing.has(active)) setActive(nextActiveKey(tabs.map(tabKey), closing, active));
-  }, [active, confirmClose, tabs]);
+  }, [active, confirmClose, tabs, unsaved]);
 
   const tabMenuItems = (key: string): MenuItem[] => {
     const keys = tabs.map(tabKey);
@@ -185,8 +184,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     setPinned((keys) => [...new Set(keys.map(remapKey))]);
     setActive((key) => (key ? remapKey(key) : null));
     setStatus((all) => Object.fromEntries(Object.entries(all).map(([key, value]) => [remapKey(key), value])));
-    setFormDirty((keys) => [...new Set(keys.map(remapKey))]);
-  }, []);
+    unsaved.rename(remapKey);
+  }, [unsaved]);
 
   useServerEvents(true, (event) => {
     if (event.type === 'job') {
@@ -229,9 +228,9 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const unsavedTabs = tabs.filter((tab) => status[tabKey(tab)]?.dirty || formDirty.includes(tabKey(tab)));
-  // Only item text and form can be saved from here; image designs and settings tabs keep their own save buttons.
-  const savable = (tab: Tab) => tab.type === 'item' && !!status[tabKey(tab)]?.save && status[tabKey(tab)]?.textOnly !== false && !formDirty.includes(tabKey(tab));
+  const unsavedTabs = tabs.filter((tab) => unsaved.dirty(tabKey(tab)));
+  // What can be saved from here (item text and the like); screens saved only with their own button cannot.
+  const savable = (tab: Tab) => unsaved.canSave(tabKey(tab));
   const guarded = (run: () => Promise<void>) => () => (unsavedTabs.length ? setPending({ run }) : run());
 
   async function saveAllAndContinue() {
@@ -239,7 +238,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     setSavingAll(true);
     try {
       for (const tab of unsavedTabs) {
-        if (!(await status[tabKey(tab)]!.save!())) {
+        if (!(await unsaved.save(tabKey(tab)))) {
           setActive(tabKey(tab));
           toast({ text: t('leave.save_failed', { name: tabTitle(tab) ?? '' }), tone: 'error' });
           return;
@@ -464,7 +463,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                 >
                   {pinned.includes(key) && <span className="pin" title={t('tabs.pin')}><Icon name="pin" size={13} /></span>}
                   <span className="tab-title">{tabTitle(tab)}</span>
-                  {status[key]?.dirty && <span className="dirty" title={t('status.unsaved')}>●</span>}
+                  {unsaved.dirty(key) && <span className="dirty" title={t('status.unsaved')}>●</span>}
                   <button
                     className="x"
                     aria-label={t('tabs.close')}
@@ -488,14 +487,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                 <div
                   key={key}
                   style={{ display: key === active ? 'contents' : 'none' }}
-                  onChangeCapture={(event) => {
-                    if (!tracksFormChanges(tab)) return;
-                    const target = event.target;
-                    if (target instanceof HTMLElement && target.matches('input, textarea, select, [contenteditable="true"]')) {
-                      setFormDirty((dirty) => dirty.includes(key) ? dirty : [...dirty, key]);
-                    }
-                  }}
                 >
+                  <TabScope registry={unsaved} tab={key}>
                   <ErrorBoundary label={tabTitle(tab)}>
                     {tab.type === 'item' && (
                       <ItemEditor
@@ -510,9 +503,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                       />
                     )}
                     {tab.type === 'work-settings' && <WorkSettings workId={workId} info={info.data!} />}
-                      {tab.type === 'settings' && <AppSettings onDirtyChange={(dirty) => {
-                        setFormDirty((keys) => dirty ? (keys.includes(key) ? keys : [...keys, key]) : keys.filter((k) => k !== key));
-                      }} />}
+                      {tab.type === 'settings' && <AppSettings />}
                     {tab.type === 'review' && <ReviewTab workId={workId} draftId={tab.draft} onDone={() => close(key)} openItem={(path) => open({ type: 'item', path })} />}
                     {tab.type === 'compare' && <CompareTab workId={workId} snapshot={tab.snapshot} />}
                     {tab.type === 'relations' && <RelationsTab workId={workId} openItem={(path) => open({ type: 'item', path })} />}
@@ -530,6 +521,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                       />
                     )}
                   </ErrorBoundary>
+                  </TabScope>
                 </div>
               );
             })}
@@ -552,7 +544,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         </div>
       </div>
       <div className="statusbar">
-        <span>{currentStatus ? (currentStatus.dirty ? t('status.unsaved') : t('status.saved')) : ''}</span>
+        <span>{currentStatus ? (active && unsaved.dirty(active) ? t('status.unsaved') : t('status.saved')) : ''}</span>
         {currentStatus && (
           <span
             className={

@@ -4,7 +4,7 @@ import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { KeyField } from './LlmSettings';
 import { useToast } from './Toasts';
-import { useReportDirty } from './settingsDirty';
+import { useUnsaved } from './Unsaved';
 import { pixaiVersionId, type PixAILora } from '../lib/pixai';
 
 export type ImageService = { id: string; name: string; key: string | null; interval: number; supported: boolean; connected: boolean; loras?: PixAILora[] };
@@ -37,7 +37,7 @@ export default function ImageServiceSettings() {
     if (query.data && !form) setForm(formOf(query.data));
   }, [query.data, form]);
   const dirty = !!form && !!query.data && (JSON.stringify(form) !== JSON.stringify(formOf(query.data)) || Object.values(keys).some((k) => k.trim()));
-  useReportDirty('image-services', dirty);
+  useUnsaved('image-services', dirty);
   if (!form || !query.data) return null;
 
   const setService = (id: string, change: Partial<Form['services'][string]>) =>

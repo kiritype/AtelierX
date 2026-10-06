@@ -15,16 +15,14 @@ import { createSaver } from '../lib/exampleSaver';
 import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
 import { KindIcon } from './icons';
+import { useUnsaved } from './Unsaved';
 
-// `save` stores the text, form and JSX examples; `textOnly` is false while the image design has unsaved changes of its own.
+// What the status bar shows of the open item. Unsaved changes go to the register (Unsaved.tsx), not here.
 export type EditorStatus = {
-  dirty: boolean;
   size: number;
   unit: 'bytes' | 'chars' | 'tokens';
   estimated: boolean;
   kind: Kind;
-  save?: () => Promise<boolean>;
-  textOnly?: boolean;
 };
 
 const FORM_KEYS = ['schema_version', 'id', 'kind', 'enabled', 'keywords', 'priority', 'always', 'default_props'];
@@ -110,16 +108,10 @@ export default function ItemEditor({
   const saveRef = useRef<() => Promise<boolean>>(async () => true);
   useEffect(() => {
     const m = measure(body, countMode);
-    statusRef.current({
-      dirty: dirty || imageDirty || jsxDirty,
-      size: m.amount,
-      unit: m.unit,
-      estimated: m.estimated,
-      kind,
-      save: () => saveRef.current(),
-      textOnly: !imageDirty,
-    });
-  }, [dirty, imageDirty, jsxDirty, body, kind, countMode]);
+    statusRef.current({ size: m.amount, unit: m.unit, estimated: m.estimated, kind });
+  }, [body, kind, countMode]);
+  // The text, form and JSX examples, saved together (also by "Save all and leave").
+  useUnsaved('text', dirty || jsxDirty, () => saveRef.current());
 
   const save = useCallback(async () => {
     if (saving.current) return false;

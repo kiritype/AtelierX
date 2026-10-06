@@ -6,6 +6,7 @@ import { useToast } from '../Toasts';
 import { useCatalog } from './GenSettings';
 import { compareLorasInLab } from './ImageLab';
 import { unfinished } from '../../lib/lifecycle';
+import { useUnsaved } from '../Unsaved';
 
 type Design = { id: string; name: string; has_design: boolean; trigger?: string; outfits: { id: string; name: string }[] };
 type Candidate = { path: string; outfit_id: string; expression_id: string; expression_name: string; human_status: string; adopted: boolean; thumbnail_url: string };
@@ -146,6 +147,7 @@ function DatasetTab({ base, design, datasets, initialOutfitId }: { base: string;
   };
   const outfitName = (id: string) => design.outfits.find((o) => o.id === id)?.name ?? id;
   const changed = Object.keys(captions).length > 0;
+  useUnsaved('lora-captions', changed);
 
   return (
     <div className="col">
@@ -464,6 +466,7 @@ function ModelsTab({ base, design, models }: { base: string; design: Design; mod
   const act = useAct();
   const catalog = useCatalog();
   const [edits, setEdits] = useState<Record<string, Partial<Model>>>({});
+  useUnsaved('lora-models', Object.values(edits).some(Boolean));
   const [external, setExternal] = useState('');
   const loras = useMemo(() => catalog.data?.loras ?? [], [catalog.data]);
   const value = <K extends keyof Model>(m: Model, k: K): Model[K] => (edits[m.id]?.[k] ?? m[k]) as Model[K];

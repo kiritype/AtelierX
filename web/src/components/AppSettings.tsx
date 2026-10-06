@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
 import ImageSettings from './ImageSettings';
@@ -8,13 +8,13 @@ import LlmSettings from './LlmSettings';
 import GuidelineSettings from './GuidelineSettings';
 import { AboutContent, useHelp } from './Help';
 import { useToast } from './Toasts';
-import { SettingsDirty, useReportDirty } from './settingsDirty';
+import { useUnsaved } from './Unsaved';
 import { SettingsPackages } from './Packages';
 
 type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'packages' | 'about';
 const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'packages', 'about'];
 
-export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) {
+export default function AppSettings() {
   const [section, setSection] = useState<Section>('general');
   // A section stays mounted once opened, so moving to another one and back keeps what was typed but not yet saved.
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(['general']));
@@ -22,15 +22,6 @@ export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty:
     setSection(key);
     setVisited((all) => (all.has(key) ? all : new Set([...all, key])));
   };
-  // Unsaved forms by key (settingsDirty.ts); the tab is unsaved while any of them is.
-  const [dirtyKeys, setDirtyKeys] = useState<string[]>([]);
-  const report = useCallback((key: string, dirty: boolean) => {
-    setDirtyKeys((keys) => (dirty ? (keys.includes(key) ? keys : [...keys, key]) : keys.includes(key) ? keys.filter((k) => k !== key) : keys));
-  }, []);
-  const notify = useRef(onDirtyChange);
-  notify.current = onDirtyChange;
-  const anyDirty = dirtyKeys.length > 0;
-  useEffect(() => notify.current?.(anyDirty), [anyDirty]);
   const panes: Record<Section, ReactNode> = {
     general: <General />,
     presets: <Presets />,
@@ -43,7 +34,6 @@ export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty:
     about: <About />,
   };
   return (
-    <SettingsDirty.Provider value={report}>
     <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', height: '100%' }}>
       <div style={{ borderRight: '1px solid var(--border)', paddingTop: 8 }}>
         {SECTIONS.map((key) => (
@@ -60,7 +50,6 @@ export default function AppSettings({ onDirtyChange }: { onDirtyChange?: (dirty:
         ))}
       </div>
     </div>
-    </SettingsDirty.Provider>
   );
 }
 
@@ -131,7 +120,7 @@ function Presets() {
   const preset = useQuery({ queryKey: ['platform', selected], queryFn: () => get(`/api/platforms/${selected}`) });
   const [draft, setDraft] = useState<any>(null);
   const readonly = list.data?.find((p: any) => p.id === selected)?.readonly;
-  useReportDirty('presets', !!draft);
+  useUnsaved('presets', !!draft);
   const doc = draft ?? preset.data;
   const changeLimit = (key: 'main' | 'lorebook_entry', value: string) => {
     setDraft({ ...doc, count: 'utf8_bytes', limits: { ...doc.limits,
@@ -246,7 +235,7 @@ function VaultSection() {
     Object.values(providers.data?.providers ?? {}).filter((p) => p.key === `secret:${name}`).map((p) => p.name);
   const [form, setForm] = useState({ name: '', kind: 'llm_api_key', value: '', note: '' });
   const [pw, setPw] = useState({ old: '', new: '' });
-  useReportDirty('vault', !!(form.name || form.value || form.note || pw.old || pw.new));
+  useUnsaved('vault', !!(form.name || form.value || form.note || pw.old || pw.new));
   return (
     <div className="col" style={{ maxWidth: 640 }}>
       <p className="faint">{t('settings.vault_note')}</p>

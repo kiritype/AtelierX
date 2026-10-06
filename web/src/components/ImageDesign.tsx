@@ -5,6 +5,7 @@ import { t, tm } from '../i18n';
 import type { WorkInfo, ImageView } from '../types';
 import { useToast } from './Toasts';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
+import { useUnsaved } from './Unsaved';
 
 type Prompt = { prompt?: string[]; negative?: string[]; ref?: string; [key: string]: any };
 type Outfit = { name: string; slots?: Record<string, Prompt>; negative?: string[]; [key: string]: any };
@@ -30,6 +31,8 @@ export default function ImageDesign({ workId, characterId, info, onReview: _onRe
   useEffect(() => { if (!editing && designQuery.data) setDraft(designQuery.data.design ? structuredClone(designQuery.data.design) : null); }, [designQuery.data, editing]);
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(designQuery.data?.design ?? null);
   useEffect(() => { onDirtyChange?.(!!dirty); }, [dirty, onDirtyChange]);
+  // Saved with its own button only: leaving asks instead of saving it.
+  useUnsaved('image-design', !!dirty);
   if (!characterId) return <div className="empty">{t('image.need_id')}</div>;
   const doc = draft; const status = designQuery.data?.status ?? {};
   const slots = rules.data?.slots ?? [{ id: 'full', name: '전체' }, { id: 'hands', name: '손' }, { id: 'top', name: '상의' }, { id: 'bottom', name: '하의' }, { id: 'shoes', name: '신발' }];

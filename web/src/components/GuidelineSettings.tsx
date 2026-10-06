@@ -6,7 +6,7 @@ import { diffLines } from '../lib/diff';
 import CodeEditor from './CodeEditor';
 import { Icon } from './icons';
 import { useToast } from './Toasts';
-import { useReportDirty } from './settingsDirty';
+import { useUnsaved } from './Unsaved';
 
 // Settings → 지침 (11-agent): the global guidelines in collapsible groups. One guideline is open at a time; an agent mode
 // gets a form for its card (name, description, default scope, order) above its Markdown body.
@@ -92,7 +92,7 @@ export default function GuidelineSettings() {
   const [dirty, setDirty] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  useReportDirty('guidelines', dirty);
+  useUnsaved('guidelines', dirty);
   useEffect(() => {
     try {
       localStorage.setItem(OPEN_KEY, JSON.stringify(open));

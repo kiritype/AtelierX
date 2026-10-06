@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
-import { useReportDirty } from './settingsDirty';
+import { useUnsaved } from './Unsaved';
 import ImageServiceSettings from './ImageServiceSettings';
 import { unfinished } from '../lib/lifecycle';
 
@@ -74,7 +74,7 @@ function ConnectionSection() {
       setBase(JSON.stringify(connection.data.config));
     }
   }, [connection.data, form]);
-  useReportDirty('image-connection', !!form && base !== null && JSON.stringify(form) !== base);
+  useUnsaved('image-connection', !!form && base !== null && JSON.stringify(form) !== base);
 
   if (!connection.data || !form) return null;
   const { status, gpu } = connection.data;
@@ -201,7 +201,7 @@ function ModelsSection() {
   const [showLoras, setShowLoras] = useState(false);
   const data = catalog.data;
   const folder = dir ?? settings.data?.models_dir ?? '';
-  useReportDirty('image-models', dir !== null && dir !== (settings.data?.models_dir ?? ''));
+  useUnsaved('image-models', dir !== null && dir !== (settings.data?.models_dir ?? ''));
 
   async function setFamily(kind: string, name: string, family: string) {
     try {
@@ -292,7 +292,7 @@ function GpuSection() {
       setBase(JSON.stringify(query.data));
     }
   }, [query.data, form]);
-  useReportDirty('image-gpu', !!form && base !== null && JSON.stringify(form) !== base);
+  useUnsaved('image-gpu', !!form && base !== null && JSON.stringify(form) !== base);
   if (!form) return null;
   return (
     <section className="col">
@@ -371,7 +371,7 @@ function ReviewSection() {
       setBase(JSON.stringify(query.data));
     }
   }, [query.data, form]);
-  useReportDirty('image-review', !!form && base !== null && JSON.stringify(form) !== base);
+  useUnsaved('image-review', !!form && base !== null && JSON.stringify(form) !== base);
   if (!form) return null;
   const connection = form.connection;
   return (
@@ -455,7 +455,7 @@ function TrainingSection() {
   const run = installs.data?.run;
   const running = unfinished(run?.status);
   const dirty = !!form && !!status.data && JSON.stringify(form) !== JSON.stringify(status.data.settings);
-  useReportDirty('image-training', dirty);
+  useUnsaved('image-training', dirty);
   const modelGroup = installs.data?.models?.groups?.find((group) => group.id === 'training_base');
   const modelBytes = modelGroup?.items.filter((item) => !item.installed).reduce((sum, item) => sum + (item.size ?? 0), 0);
   const modelSize = modelBytes === undefined ? '5.6GB' : `${(modelBytes / 1e9).toFixed(1)}GB`;
