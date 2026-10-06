@@ -19,6 +19,8 @@ class GenerationService:
     id = ''
     # Runs on this PC's GPU: the worker takes the GPU broker's turn first and LoRA training waits for it.
     local_gpu = False
+    # Whether an image that arrives after a cancel is saved (a request to a paid service cannot be called back).
+    keep_on_cancel = False
     # How long the worker waits for a free service and for one result.
     wait_limit = 1800
     result_limit = 1800

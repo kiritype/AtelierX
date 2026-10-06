@@ -17,7 +17,7 @@ from urllib.parse import quote
 
 from PIL import Image, PngImagePlugin
 
-from ..core.i18n import Msg, message_of
+from ..core.i18n import AppError, Msg, message_of
 from . import library
 from .compose import Composer
 from .util import atomic_json, code, now, replace_file
@@ -152,6 +152,7 @@ class GenerationMixin:
                     )
                 )
             settings = service.validate_settings(raw_settings)
+            self._check_repeat(service, body, settings)
         composer = Composer(self.paths, work)
         if len(targets) > 1:
             # Per-target edits would land on the wrong images when several are queued at once.
@@ -230,6 +231,38 @@ class GenerationMixin:
         self.queue.add(prepared, before_save=mark)
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
+    REPEAT_WINDOW = 600
+
+    def _check_repeat(self, service, body, settings):
+        signature = json.dumps(
+            {
+                'service': service.id,
+                'settings': {k: v for k, v in settings.items() if k != 'seed'},
+                **{
+                    k: body.get(k)
+                    for k in ('targets', 'count', 'style_ids', 'common_ids', 'composition_id', 'overrides')
+                },
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        recent = getattr(self, '_recent_requests', None)
+        if recent is None:
+            recent = self._recent_requests = {}
+        moment = time.monotonic()
+        for old in [s for s, at in recent.items() if moment - at > self.REPEAT_WINDOW]:
+            del recent[old]
+        if signature in recent and not body.get('repeat_ok'):
+            raise AppError(
+                Msg(
+                    'server.image.services.repeat',
+                    'The same request went to {service} a moment ago. Send it again?',
+                    service=getattr(service, 'name', service.id),
+                ),
+                409,
+            )
+        recent[signature] = moment
+
     # --- queue actions -----------------------------------------------------------------------------------------------
     def cancel(self, job_id):
         self.queue.cancel(job_id)
@@ -303,14 +336,20 @@ class GenerationMixin:
             postprocessing={'applied': False, 'source_image': None},
         )
         info = PngImagePlugin.PngInfo()
-        info.add_text('prompt', json.dumps(graph, ensure_ascii=False))
-        try:
-            editor = build_ui_workflow(
-                metadata['settings'], metadata['positive'], metadata['negative'], job['seed']
-            )
-            info.add_text('workflow', json.dumps(editor, ensure_ascii=False))
-        except (KeyError, ValueError):
-            log.warning('No editor workflow for job %s; the API prompt is still saved.', job['id'])
+        if (job.get('service') or DEFAULT_SERVICE) == DEFAULT_SERVICE:
+            info.add_text('prompt', json.dumps(graph, ensure_ascii=False))
+            try:
+                editor = build_ui_workflow(
+                    metadata['settings'], metadata['positive'], metadata['negative'], job['seed']
+                )
+                info.add_text('workflow', json.dumps(editor, ensure_ascii=False))
+            except (KeyError, ValueError):
+                log.warning('No editor workflow for job %s; the API prompt is still saved.', job['id'])
+        else:
+            # An internet service's own PNG text (its generation settings) stays with the image.
+            for name, value in (getattr(image, 'text', None) or {}).items():
+                if name != 'atelierx' and isinstance(value, str):
+                    info.add_text(name, value)
         info.add_text(
             'atelierx', json.dumps({k: v for k, v in metadata.items() if k != 'workflow'}, ensure_ascii=False)
         )
@@ -408,11 +447,15 @@ class GenerationMixin:
                     cancel_sent = True
                 result = service.poll(job, sent)
                 if result is not None:
-                    if stopping:
-                        break
                     if 'error' in result:
+                        if stopping:
+                            break
                         raise RuntimeError(result['error'])
+                    if stopping and not service.keep_on_cancel:
+                        break
+                    # A paid image that arrives after a cancel is kept: the request could not be called back.
                     self._finish(job, result, sent)
+                    stopping = False
                     break
                 if time.monotonic() > deadline:
                     raise RuntimeError(service.too_long())

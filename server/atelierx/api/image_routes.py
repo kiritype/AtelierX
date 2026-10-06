@@ -97,6 +97,14 @@ async def image_services_put(request):
     return await call(runtime.save_image_services, await _body(request))
 
 
+async def image_service_info(request):
+    return await call(_runtime(request).image_service_info, request.path_params['service'])
+
+
+async def image_service_account(request):
+    return await call(_runtime(request).image_service_account, request.path_params['service'])
+
+
 async def settings_get(request):
     runtime = _runtime(request)
     return await call(image_settings.get, runtime.paths, request.path_params['section'])
@@ -420,6 +428,8 @@ def routes():
         Route(f'{p}/gpu/release', gpu_release, methods=['POST']),
         Route(f'{p}/services', image_services_get),
         Route(f'{p}/services', image_services_put, methods=['PUT']),
+        Route(f'{p}/services/{{service}}/info', image_service_info),
+        Route(f'{p}/services/{{service}}/account', image_service_account),
         Route(f'{p}/settings/{{section}}', settings_get),
         Route(f'{p}/settings/{{section}}', settings_put, methods=['PUT']),
         Route(f'{p}/tags/complete', tags_complete),
