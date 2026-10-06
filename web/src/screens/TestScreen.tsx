@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { askConsent, get, post, put } from '../api';
+import { useRef, useState } from 'react';
+import { get, post, put } from '../api';
+import { applyEvent, postStream, streamErrorText, useStreamOwner } from '../lib/stream';
 import { TestSetsDialog, type TestSet } from '../components/TestSets';
 import { startText as loadStart } from '../lib/testRuns';
-import { t, tm } from '../i18n';
+import { t } from '../i18n';
 import JsxPreview from '../components/JsxPreview';
 import MessageMarkdown from '../components/MessageMarkdown';
 import PersonaDialog, { usePersona } from '../components/PersonaDialog';
@@ -55,16 +56,8 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const [previousInputs, setPreviousInputs] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const abort = useRef<AbortController | null>(null);
   // Leaving the test screen stops the answer on its way and any resend still to come.
-  const alive = useRef(true);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      abort.current?.abort();
-    };
-  }, []);
+  const owner = useStreamOwner([]);
   const [llm, setLlm] = useState<LlmOverride | undefined>();
   const [selected, setSelected] = useState<number | null>(null);
   const [rawShown, setRawShown] = useState<Set<number>>(new Set());
@@ -89,54 +82,18 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     const plain = history.map(({ role, text }) => ({ role, text }));
     let reply: Turn = { role: 'assistant', text: '' };
     setTurns([...history, { role: 'user', text: message }, reply]);
-    const controller = new AbortController();
-    abort.current = controller;
+    const controller = owner.begin();
     try {
-      const url = `/api/works/${workId}/chat/send`;
-      const request = () =>
-        fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ llm, history: plain, message, persona: who }),
-          signal: controller.signal,
-        });
-      let response = await request();
-      if (response.status === 428) {
-        const error = (await response.json()).error;
-        if (!(await askConsent(error, url))) throw new Error(tm(error));
-        response = await request();
-      }
-      if (!response.ok) {
-        const error = (await response.json().catch(() => null))?.error;
-        throw new Error(error ? tm(error) : response.statusText);
-      }
-      const reader = response.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split('\n\n');
-        buffer = events.pop()!;
-        for (const raw of events) {
-          const type = /event: (\w+)/.exec(raw)?.[1];
-          const data = /data: (.*)/s.exec(raw)?.[1];
-          if (!type || data === undefined) continue;
-          if (type === 'context') reply = { ...reply, context: JSON.parse(data) };
-          if (type === 'thinking') reply = { ...reply, thinking: Number(data) };
-          if (type === 'waiting') reply = { ...reply, waiting: tm(JSON.parse(data)) };
-          if (type === 'delta') reply = { ...reply, text: reply.text + JSON.parse(data) };
-          if (type === 'error') reply = { ...reply, error: tm(JSON.parse(data)) };
-          setTurns([...history, { role: 'user', text: message }, reply]);
-        }
+      await postStream(`/api/works/${workId}/chat/send`, { llm, history: plain, message, persona: who }, controller.signal, (event) => {
+        reply = applyEvent(reply, event);
+        setTurns([...history, { role: 'user', text: message }, reply]);
         log.current?.scrollTo(0, log.current.scrollHeight);
-      }
+      });
     } catch (err) {
       if (controller.signal.aborted) reply = { ...reply, stopped: true };
-      else reply = { ...reply, error: String((err as Error).message ?? err) };
+      else reply = { ...reply, error: streamErrorText(err) };
     } finally {
-      abort.current = null;
+      owner.finish(controller);
     }
     reply = { ...reply, text: reply.text.trimEnd(), thinking: undefined, waiting: undefined };
     const next = [...history, { role: 'user' as const, text: message }, reply];
@@ -170,7 +127,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
     setBusy(true);
     try {
       const history: Turn[] = startText ? [{ role: 'assistant', text: startText, start: true }] : [];
-      await replayInputs(previousInputs, history, sendOne, () => !alive.current);
+      await replayInputs(previousInputs, history, sendOne, owner.gone);
     } finally {
       setBusy(false);
     }
@@ -200,7 +157,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
       let history: Turn[] = opening ? [{ role: 'assistant', text: opening, start: true }] : [];
       setTurns(history);
       for (const input of set.inputs) {
-        if (!alive.current) {
+        if (owner.gone()) {
           status = 'stopped';
           break;
         }
@@ -330,7 +287,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
               }}
             />
             {busy ? (
-              <button onClick={() => abort.current?.abort()}>{t('test.stop')}</button>
+              <button onClick={owner.stop}>{t('test.stop')}</button>
             ) : (
               <button className="primary" onClick={send}>
                 {t('chat.send')}
