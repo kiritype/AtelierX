@@ -1971,5 +1971,10 @@
   "install.tool_system": "{name}: this PC's own (runs)",
   "install.tool_app": "{name}: the app's portable copy (runs)",
   "install.tool_missing": "{name}: missing — {version} (about {mb} MB) is downloaded into the app folder when needed",
-  "install.tools_coming": "Downloaded along with this install: {list}"
+  "install.tools_coming": "Downloaded along with this install: {list}",
+  "lib.code": "Deployment code",
+  "lib.code_hint": "Used in the path when uploading to a deployment target (e.g. 001). Left empty, the upload marks it as missing. / \\ : * ? \" < > | cannot be used.",
+  "lib.code_same": "Also uses this code: {names}. If the paths end up the same, the upload reports a clash.",
+  "server.image.code_text": "The deployment code must be text.",
+  "server.image.code_invalid": "The deployment code \"{code}\" cannot be part of a path. Leave out / \\ : * ? \" < > |."
 }
