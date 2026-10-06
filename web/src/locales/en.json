@@ -1955,5 +1955,8 @@
   "activity.queue_counts": "{running} running · {queued} queued",
   "activity.paused": "paused",
   "activity.open": "Open",
-  "tabs.close_unsaved": "There are unsaved changes in: {names}\nThey will be lost. Close anyway?"
+  "tabs.close_unsaved": "There are unsaved changes in: {names}\nThey will be lost. Close anyway?",
+  "help.bug_report": "Report a bug",
+  "help.feature_request": "Suggest a feature",
+  "help.questions": "Ask a question"
 }

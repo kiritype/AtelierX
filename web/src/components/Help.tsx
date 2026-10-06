@@ -15,7 +15,7 @@ type About = {
   commit: string | null;
   copyright: string;
   license: string;
-  links: { repository: string; manual: string; releases: string };
+  links: { repository: string; manual: string; releases: string; bug_report: string; feature_request: string; questions: string };
   notices: boolean;
   offline_manual: boolean;
   desktop: boolean;
@@ -59,6 +59,15 @@ export function useHelp() {
     { label: t('help.check_update'), run: () => setDialog('update') },
     { label: t('help.releases'), run: () => open(about.data?.links.releases ?? 'https://github.com/kiritype/AtelierX/releases') },
     null,
+    // Opened in Discussions; nothing is sent from the app.
+    ...(about.data
+      ? [
+          { label: t('help.bug_report'), run: () => open(about.data!.links.bug_report) },
+          { label: t('help.feature_request'), run: () => open(about.data!.links.feature_request) },
+          { label: t('help.questions'), run: () => open(about.data!.links.questions) },
+          null,
+        ]
+      : []),
     { label: t('help.about'), run: () => setDialog('about') },
   ];
   const close = () => setDialog(null);

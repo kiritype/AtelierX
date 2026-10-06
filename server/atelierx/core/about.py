@@ -18,6 +18,10 @@ LINKS = {
     'repository': f'https://github.com/{REPO}',
     'manual': 'https://atelierx.cftm.net/',
     'releases': f'https://github.com/{REPO}/releases',
+    # Reports, requests and questions are taken in Discussions (categories by slug); issues are the task list.
+    'bug_report': f'https://github.com/{REPO}/discussions/new?category=%EC%98%A4%EB%A5%98-%EC%A0%9C%EB%B3%B4',
+    'feature_request': f'https://github.com/{REPO}/discussions/new?category=%EA%B8%B0%EB%8A%A5-%EC%A0%9C%EC%95%88',
+    'questions': f'https://github.com/{REPO}/discussions/new?category=%EC%A7%88%EB%AC%B8-%EB%AC%B8%EC%9D%98',
 }
 COPYRIGHT = '© 2026 kiritype'
 LATEST_URL = f'https://api.github.com/repos/{REPO}/releases/latest'
