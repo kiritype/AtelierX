@@ -5,9 +5,10 @@ import { t, tm } from '../../i18n';
 import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
 import GenSettings, { type GenerationSettings } from './GenSettings';
+import { byGroup, targetNames, type Target } from '../../lib/fragments';
 
-type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets';
-const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets'];
+type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets' | 'targets';
+const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets', 'targets'];
 type Item = {
   id: string;
   name: string;
@@ -21,10 +22,11 @@ type Item = {
   target?: 'positive' | 'negative';
   default?: boolean;
   slot?: string;
-  model_family?: string;
+  group?: string;
+  targets?: string[];
 };
 type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings; common: string[]; styles: string[] };
-type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[] };
+type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[]; targets: Target[] };
 
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
 export default function ImageLibrary({ workId }: { workId: string }) {
@@ -38,7 +40,7 @@ export default function ImageLibrary({ workId }: { workId: string }) {
           </div>
         ))}
       </div>
-      {kind === 'presets' ? <Presets workId={workId} /> : <Items key={kind} workId={workId} kind={kind} />}
+      {kind === 'presets' ? <Presets workId={workId} /> : kind === 'targets' ? <Targets /> : <Items key={kind} workId={workId} kind={kind} />}
     </div>
   );
 }
@@ -48,7 +50,7 @@ function useFail() {
   return (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
 }
 
-function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'> }) {
+function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets' | 'targets'> }) {
   const qc = useQueryClient();
   const fail = useFail();
   const key = ['image-lib', kind, workId];
@@ -62,7 +64,9 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<(Item & { scope: 'global' | 'work' }) | null>(null);
   const [filter, setFilter] = useState('');
-  const list = Object.values(items.data ?? {}).filter((i) => !filter || `${i.id} ${i.name}`.toLowerCase().includes(filter.toLowerCase()));
+  const list = Object.values(items.data ?? {}).filter((i) => !filter || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
+  const groups = [...new Set(Object.values(items.data ?? {}).map((i) => i.group ?? '').filter(Boolean))];
+  const targets = rules.data?.targets ?? [];
 
   useEffect(() => {
     const item = selected ? items.data?.[selected] : null;
@@ -105,12 +109,18 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
           <input className="grow" placeholder={t('lib.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />
           <button onClick={create}>+</button>
         </div>
-        {list.map((item) => (
-          <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => setSelected(item.id)}>
-            <span className="grow">
-              {item.name} <span className="faint mono">{item.id}</span>
-            </span>
-            <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
+        {byGroup(list).map(({ group, items: grouped }) => (
+          <div key={group || '-'}>
+            {(group || groups.length > 0) && <div className="lib-group-title">{group || t('lib.no_group')}</div>}
+            {grouped.map((item) => (
+              <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => setSelected(item.id)}>
+                <span className="grow">
+                  {item.name} <span className="faint mono">{item.id}</span>
+                  {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
+                </span>
+                <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
+              </div>
+            ))}
           </div>
         ))}
         {list.length === 0 && <div className="empty">{t('lib.empty')}</div>}
@@ -216,14 +226,32 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
               </label>
             )}
             <label className="col" style={{ gap: 2 }}>
-              <span className="muted">{t('lib.family')}</span>
-              <select value={draft.model_family ?? ''} onChange={(e) => setDraft({ ...draft, model_family: e.target.value || undefined })}>
-                <option value="">{t('lib.family_any')}</option>
-                <option value="anima">Anima</option>
-                <option value="sdxl">SDXL·IL</option>
-                <option value="shared">{t('lib.family_shared')}</option>
-              </select>
+              <span className="muted">{t('lib.group')}</span>
+              <input list={`lib-groups-${kind}`} value={draft.group ?? ''} placeholder={t('lib.group_hint')} onChange={(e) => setDraft({ ...draft, group: e.target.value })} />
+              <datalist id={`lib-groups-${kind}`}>
+                {groups.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
             </label>
+            <div className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.targets')}</span>
+              <div className="row" style={{ flexWrap: 'wrap' }}>
+                {targets.map((target) => (
+                  <label key={target.id} className="row" style={{ gap: 4 }}>
+                    <input
+                      type="checkbox"
+                      checked={(draft.targets ?? []).includes(target.id)}
+                      onChange={(e) =>
+                        setDraft({ ...draft, targets: e.target.checked ? [...(draft.targets ?? []), target.id] : (draft.targets ?? []).filter((x) => x !== target.id) })
+                      }
+                    />
+                    {target.name}
+                  </label>
+                ))}
+              </div>
+              <span className="faint small">{t('lib.targets_all')}</span>
+            </div>
             <div className="row">
               <button className="primary" onClick={save}>
                 {t('common.save')}
@@ -346,5 +374,47 @@ function Presets({ workId }: { workId: string }) {
         )}
       </div>
     </>
+  );
+}
+
+// Image menu → Prompt library → Targets (#80): the model families and image services fragments are written for.
+function Targets() {
+  const qc = useQueryClient();
+  const fail = useFail();
+  const rules = useQuery<Rules>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
+  const [list, setList] = useState<Target[] | null>(null);
+  useEffect(() => setList(rules.data?.targets ?? null), [rules.data]);
+  if (!list) return null;
+  const changed = JSON.stringify(list) !== JSON.stringify(rules.data?.targets);
+
+  async function save() {
+    try {
+      qc.setQueryData(['image-lib-rules'], await put('/api/image/library/rules/targets', { targets: list }));
+      qc.invalidateQueries({ queryKey: ['image-lib'] });
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  return (
+    <div className="image-lib-edit pad col" style={{ gridColumn: 'span 2', maxWidth: 560 }}>
+      <p className="faint">{t('lib.targets_about')}</p>
+      {list.map((target, n) => (
+        <div key={n} className="row">
+          <input className="mono" style={{ width: 120 }} placeholder={t('lib.target_id')} value={target.id} onChange={(e) => setList(list.map((x, i) => (i === n ? { ...x, id: e.target.value } : x)))} />
+          <input className="grow" placeholder={t('lib.target_name')} value={target.name} onChange={(e) => setList(list.map((x, i) => (i === n ? { ...x, name: e.target.value } : x)))} />
+          <button className="ghost" title={t('common.delete')} disabled={list.length <= 1} onClick={() => setList(list.filter((_, i) => i !== n))}>
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="row">
+        <button onClick={() => setList([...list, { id: '', name: '' }])}>{t('lib.target_add')}</button>
+        <span className="grow" />
+        <button className="primary" disabled={!changed} onClick={save}>
+          {t('common.save')}
+        </button>
+      </div>
+    </div>
   );
 }

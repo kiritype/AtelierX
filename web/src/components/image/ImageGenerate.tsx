@@ -2,12 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
+import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
-type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean };
+type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
 type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings; common: string[]; styles: string[] };
 type Composed = {
   character_id: string;
@@ -70,6 +71,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
   const [preview, setPreview] = useState<Composed[] | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [showOthers, setShowOthers] = useState(false);
   const [scopeLoaded, setScopeLoaded] = useState(false);
   const [handed, setHanded] = useState<Target[] | null>(() => takeHanded());
   useEffect(() => {
@@ -121,6 +123,11 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
 
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
+  const target = settings.family;
+  const notApplied = (item: Fragment) => (fits(item, target) ? null : <span className="warn-text small"> ({t('gen.not_applied')})</span>);
+  const styleView = visibleFor(Object.values(styles.data ?? {}), target, styleIds, showOthers);
+  const commonView = visibleFor(Object.values(commons.data ?? {}), target, chosenCommons, showOthers);
+  const hiddenCount = styleView.hidden + commonView.hidden;
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
@@ -201,34 +208,48 @@ export default function ImageGenerate({ workId, openQueue, openItem, characterId
             {Object.values(compositions.data ?? {}).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+                {fits(c, target) ? '' : ` (${t('gen.not_applied')})`}
               </option>
             ))}
           </select>
         </label>
         <div className="col" style={{ gap: 2 }}>
           <span className="muted">{t('lib.kind.styles')}</span>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            {Object.values(styles.data ?? {}).map((s) => (
-              <label key={s.id} className="row" style={{ gap: 4 }}>
-                <input type="checkbox" checked={styleIds.includes(s.id)} onChange={(e) => setStyleIds(toggle(styleIds, s.id, e.target.checked))} />
-                {s.name}
-              </label>
-            ))}
-            {Object.keys(styles.data ?? {}).length === 0 && <span className="faint">{t('gen.none_in_library')}</span>}
-          </div>
+          {byGroup(styleView.shown).map(({ group, items }) => (
+            <div key={group || '-'} className="row" style={{ flexWrap: 'wrap' }}>
+              {group && <span className="faint small lib-group-inline">{group}</span>}
+              {items.map((s) => (
+                <label key={s.id} className="row" style={{ gap: 4 }}>
+                  <input type="checkbox" checked={styleIds.includes(s.id)} onChange={(e) => setStyleIds(toggle(styleIds, s.id, e.target.checked))} />
+                  {s.name}
+                  {notApplied(s)}
+                </label>
+              ))}
+            </div>
+          ))}
+          {Object.keys(styles.data ?? {}).length === 0 && <span className="faint">{t('gen.none_in_library')}</span>}
         </div>
         <div className="col" style={{ gap: 2 }}>
           <span className="muted">{t('lib.kind.common')}</span>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            {Object.values(commons.data ?? {}).map((c) => (
-              <label key={c.id} className="row" style={{ gap: 4 }}>
-                <input type="checkbox" checked={chosenCommons.includes(c.id)} onChange={(e) => setCommonIds(toggle(chosenCommons, c.id, e.target.checked))} />
-                {c.name}
-                {c.target === 'negative' && <span className="faint">(−)</span>}
-              </label>
-            ))}
-          </div>
+          {byGroup(commonView.shown).map(({ group, items }) => (
+            <div key={group || '-'} className="row" style={{ flexWrap: 'wrap' }}>
+              {group && <span className="faint small lib-group-inline">{group}</span>}
+              {items.map((c) => (
+                <label key={c.id} className="row" style={{ gap: 4 }}>
+                  <input type="checkbox" checked={chosenCommons.includes(c.id)} onChange={(e) => setCommonIds(toggle(chosenCommons, c.id, e.target.checked))} />
+                  {c.name}
+                  {c.target === 'negative' && <span className="faint">(−)</span>}
+                  {notApplied(c)}
+                </label>
+              ))}
+            </div>
+          ))}
         </div>
+        {(hiddenCount > 0 || showOthers) && (
+          <button className="ghost small" style={{ alignSelf: 'flex-start' }} onClick={() => setShowOthers(!showOthers)}>
+            {showOthers ? t('gen.hide_other_targets') : t('gen.other_targets', { n: hiddenCount })}
+          </button>
+        )}
       </div>
       <div className="image-gen-run pad col">
         <div className="row">
