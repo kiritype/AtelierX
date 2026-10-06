@@ -1,31 +1,46 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { get, put } from '../api';
-import { t } from '../i18n';
+import { ApiError, get, put } from '../api';
+import { t, tm } from '../i18n';
+import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
 
 type Term = { use: string; avoid: string[]; note: string };
 
 export default function GlossaryTab({ workId }: { workId: string }) {
   const qc = useQueryClient();
-  const query = useQuery<{ terms: Term[] }>({ queryKey: ['glossary', workId], queryFn: () => get(`/api/works/${workId}/glossary`) });
+  const toast = useToast();
+  const query = useQuery<{ terms: Term[]; revision: string }>({ queryKey: ['glossary', workId], queryFn: () => get(`/api/works/${workId}/glossary`) });
   const [terms, setTerms] = useState<Term[] | null>(null);
   const dirty = useRef(false);
+  // The revision the next save starts from: a change made elsewhere since is not overwritten (#90).
+  const revision = useRef<string | null>(null);
 
   useEffect(() => {
-    if (query.data && !dirty.current) setTerms(query.data.terms);
+    if (query.data && !dirty.current) {
+      setTerms(query.data.terms);
+      revision.current = query.data.revision;
+    }
   }, [query.data]);
 
   useEffect(() => {
     if (!terms || !dirty.current) return;
     const timer = setTimeout(async () => {
       // Rows without a term to use are kept on screen but not saved yet.
-      await put(`/api/works/${workId}/glossary`, { terms });
-      dirty.current = false;
-      qc.invalidateQueries({ queryKey: ['check', workId] });
+      try {
+        const saved = await put<{ revision: string }>(`/api/works/${workId}/glossary`, { terms, base_revision: revision.current });
+        revision.current = saved.revision;
+        dirty.current = false;
+        qc.invalidateQueries({ queryKey: ['check', workId] });
+      } catch (err) {
+        dirty.current = false;
+        const stale = err instanceof ApiError && err.status === 409;
+        toast({ text: stale ? t('save.reloaded') : err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+        if (stale) qc.invalidateQueries({ queryKey: ['glossary', workId] });
+      }
     }, 600);
     return () => clearTimeout(timer);
-  }, [terms, workId, qc]);
+  }, [terms, workId, qc, toast]);
 
   if (!terms) return null;
   const change = (next: Term[]) => {

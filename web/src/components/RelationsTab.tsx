@@ -30,6 +30,7 @@ type Doc = {
   facts: Fact[];
   layout: Record<string, { x: number; y: number }>;
   view: Person[];
+  revision?: string;
 };
 
 export default function RelationsTab({ workId, openItem }: { workId: string; openItem: (path: string) => void }) {
@@ -59,13 +60,22 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
   useEffect(() => {
     if (!doc || !dirty.current) return;
     const timer = setTimeout(async () => {
-      const saved = await put(`/api/works/${workId}/relations`, doc);
-      dirty.current = false;
-      qc.setQueryData(['relations', workId], saved);
-      qc.invalidateQueries({ queryKey: ['check', workId] });
+      try {
+        // The doc carries the revision it was loaded with; a change made elsewhere since is not overwritten (#90).
+        const saved = await put<Doc>(`/api/works/${workId}/relations`, doc);
+        dirty.current = false;
+        qc.setQueryData(['relations', workId], saved);
+        setDoc((current) => (current ? { ...current, revision: saved.revision } : current));
+        qc.invalidateQueries({ queryKey: ['check', workId] });
+      } catch (err) {
+        dirty.current = false;
+        const stale = err instanceof ApiError && err.status === 409;
+        toast({ text: stale ? t('save.reloaded') : err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+        if (stale) qc.invalidateQueries({ queryKey: ['relations', workId] });
+      }
     }, 600);
     return () => clearTimeout(timer);
-  }, [doc, workId, qc]);
+  }, [doc, workId, qc, toast]);
 
   if (!doc) return null;
   const change = (next: Partial<Doc>) => {

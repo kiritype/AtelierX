@@ -1,5 +1,6 @@
 """Relation map and glossary (data-model: 관계도, 용어집). Reference data only; never exported or sent to the chat."""
 
+from . import revisions
 from .fsutil import read_json, write_json
 from .i18n import Msg
 
@@ -36,6 +37,11 @@ class Relations:
         write_json(self.path, clean)
         return self.view()
 
+    def update(self, data):
+        """Save from the relation map tab: refused when the map changed since the tab loaded it (``base_revision``)."""
+        revisions.check(data.get('base_revision', data.get('revision')), revisions.of(self.load()))
+        return self.save(data)
+
     def view(self):
         """Stored data plus the people the editor shows: {{user}}, every character item, then extra people."""
         doc = self.load()
@@ -56,7 +62,7 @@ class Relations:
         for extra in doc['people']:
             if extra.get('id') not in known:
                 people.append({**extra, 'name': extra.get('name') or extra['id'], 'source': 'extra'})
-        return {**doc, 'view': people}
+        return {**doc, 'view': people, 'revision': revisions.of(doc)}
 
     def issues(self):
         doc = self.load()
@@ -87,6 +93,16 @@ class Glossary:
     def load(self):
         doc = read_json(self.path) if self.path.is_file() else {}
         return {'schema_version': 1, 'terms': doc.get('terms', [])}
+
+    def view(self):
+        doc = self.load()
+        return {**doc, 'revision': revisions.of(doc)}
+
+    def update(self, data):
+        """Save from the glossary tab: refused when the glossary changed since the tab loaded it."""
+        revisions.check(data.get('base_revision', data.get('revision')), revisions.of(self.load()))
+        self.save(data)
+        return self.view()
 
     def save(self, doc):
         terms = []
