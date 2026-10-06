@@ -42,11 +42,11 @@ AtelierX는 아래 프로그램과 모델을 **함께 배포하지 않습니다.
 
 ## 보조 도구
 
-PC에 이미 있으면 그것을 쓰고, 없으면 설정 → 설치 → **보조 도구**가 앱 폴더 `bin/`에 휴대용으로 받습니다.
+PC에 이미 있으면 그것을 쓰고, 없으면 설정 → 설치 → **보조 도구**가 앱 폴더 `bin/`에 휴대용으로 받습니다. 확장 노드·학습 도구를 설치할 때 없으면 그때 함께 받습니다(설치 화면에 미리 표시). 받는 판은 아래로 고정돼 있고, 크기와 sha256을 확인합니다. Git은 확장 노드와 학습 도구 설치에만 쓰며, 작품 편집·기록 등 나머지 기능은 Git 없이 동작합니다.
 
 | 이름 | 판 | 라이선스 | 어디에 쓰나 |
 |---|---|---|---|
-| [uv](https://github.com/astral-sh/uv) | 최신 릴리스 | MIT 또는 Apache-2.0 | 학습 도구의 Python 환경 |
-| [Git for Windows](https://github.com/git-for-windows/git) (MinGit) | 최신 릴리스 | GPL-2.0 | 확장 노드·학습 도구 받기 |
+| [uv](https://github.com/astral-sh/uv) | `0.12.23` | MIT 또는 Apache-2.0 | 학습 도구의 Python 환경 |
+| [Git for Windows](https://github.com/git-for-windows/git) (MinGit) | `2.56.0.2` | GPL-2.0 | 확장 노드·학습 도구 받기 |
 
 앱 자체에 들어 있는 라이브러리의 라이선스는 앱 폴더의 `THIRD_PARTY_NOTICES.md`와 **도움말 → AtelierX 정보 → 제3자 라이선스**에서 볼 수 있습니다.
