@@ -312,3 +312,30 @@ def test_model_downloads_check_hashes_and_fill_training_settings(unlocked, tmp_p
     assert run['status'] == 'failed' and not (tmp_path / 'models' / 'ultralytics_bbox' / 'bad.pt').exists()
     assert not list((tmp_path / 'models' / 'ultralytics_bbox').glob('*.part'))
     assert c.post('/api/image/installs/nope').status_code == 400
+
+
+def test_tools_download_at_their_pinned_version_and_say_why_a_download_failed(tmp_path, monkeypatch):
+    import urllib.error
+
+    installs = make_installs(tmp_path)
+    installs.run = {'log': []}
+    monkeypatch.setattr(installs_module.shutil, 'which', lambda _name: None)
+    asked = []
+
+    def download(url, target, **kwargs):
+        asked.append((url, kwargs))
+        raise urllib.error.URLError('offline')
+
+    monkeypatch.setattr(installs, '_download', download)
+    with pytest.raises(RuntimeError, match='Could not reach GitHub to download Git'):
+        installs._install_tools({'items': ['git']})
+    url, kwargs = asked[0]
+    pinned = installs_module.TOOLS['git']
+    assert url == pinned['url'] and kwargs == {'size': pinned['size'], 'sha256': pinned['sha256']}
+
+    def refused(url, target, **kwargs):
+        raise urllib.error.HTTPError(url, 403, 'rate limited', {}, None)
+
+    monkeypatch.setattr(installs, '_download', refused)
+    with pytest.raises(RuntimeError, match=r'HTTP 403'):
+        installs._install_tools({'items': ['uv']})

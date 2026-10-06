@@ -12,13 +12,13 @@ person presses the section's button.
 """
 
 import hashlib
-import json
 import logging
 import os
 import shutil
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -38,8 +38,22 @@ LOG_LINES = 600
 NODES_CHECK_TTL = 60
 TOOL_CHECK_TTL = 30.0
 TOOL_CHECK_TIMEOUT = 4.0
-UV_URL = 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip'
-GIT_RELEASES = 'https://api.github.com/repos/git-for-windows/git/releases/latest'
+# Helper tools at a fixed version, checked by size and sha256 like the models (decision 0019). Raise them on purpose,
+# with the external components page of the manual.
+TOOLS = {
+    'uv': {
+        'version': '0.12.23',
+        'url': 'https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-pc-windows-msvc.zip',
+        'size': 18043715,
+        'sha256': '75d05de6762778c31ee183398de7dd15093fad0ed90b1f236d8205ea5ec00c90',
+    },
+    'git': {
+        'version': '2.56.0.2',
+        'url': 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip',
+        'size': 39806486,
+        'sha256': 'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be',
+    },
+}
 TRAINER = {
     'repo': 'sorryhyun/anima_lora',
     'commit': '69ff96299e895636de39c69263ca63b5d4864917',
@@ -309,7 +323,15 @@ class Installs:
             run = dict(self.run, log=list(self.run['log'])) if self.run else None
         return {
             'run': run,
-            'tools': {'uv': self.uv(), 'git': self.git(), 'bin': str(self.bin)},
+            'tools': {
+                'uv': self.uv(),
+                'git': self.git(),
+                'bin': str(self.bin),
+                # What a missing tool would download, shown before an install that needs it.
+                'downloads': {
+                    name: {'version': t['version'], 'size': t['size']} for name, t in TOOLS.items()
+                },
+            },
             'nodes': nodes,
             'models': self._models(),
             'trainer': self._trainer(),
@@ -371,25 +393,14 @@ class Installs:
         wanted = body.get('items') or ['uv', 'git']
         self.bin.mkdir(parents=True, exist_ok=True)
         if 'uv' in wanted and not self.uv():
-            self._say('uv: download')
-            archive = self.bin / 'uv.zip'
-            self._download(UV_URL, archive)
+            archive = self._fetch_tool('uv', self.bin / 'uv.zip')
             with zipfile.ZipFile(archive) as z:
                 for name in z.namelist():
                     if Path(name).name in ('uv.exe', 'uvx.exe'):
                         (self.bin / Path(name).name).write_bytes(z.read(name))
             archive.unlink(missing_ok=True)
         if 'git' in wanted and not self.git():
-            self._say('Git (MinGit): find the latest release')
-            request = urllib.request.Request(GIT_RELEASES, headers=USER_AGENT)
-            with urllib.request.urlopen(request, timeout=30) as response:
-                release = json.load(response)
-            asset = next(
-                a for a in release['assets']
-                if a['name'].startswith('MinGit-') and a['name'].endswith('-64-bit.zip') and 'busybox' not in a['name']
-            )  # fmt: skip
-            archive = self.bin / asset['name']
-            self._download(asset['browser_download_url'], archive, size=asset.get('size'))
+            archive = self._fetch_tool('git', self.bin / f'MinGit-{TOOLS["git"]["version"]}-64-bit.zip')
             with zipfile.ZipFile(archive) as z:
                 z.extractall(self.bin / 'git')
             archive.unlink(missing_ok=True)
@@ -406,6 +417,32 @@ class Installs:
             )
         self._say(f'uv: {self.uv()}')
         self._say(f'git: {self.git()}')
+
+    def _fetch_tool(self, name, archive):
+        """Download a helper tool at its fixed version; a failed download says which tool and why."""
+        tool = TOOLS[name]
+        label = 'Git (MinGit)' if name == 'git' else name
+        self._say(f'{label} {tool["version"]}: download')
+        try:
+            self._download(tool['url'], archive, size=tool['size'], sha256=tool['sha256'])
+        except urllib.error.HTTPError as error:
+            raise RuntimeError(
+                Msg(
+                    'server.installs.tool_http',
+                    'GitHub refused the {name} download (HTTP {status}). Wait a while and retry.',
+                    name=label,
+                    status=error.code,
+                )
+            ) from error
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            raise RuntimeError(
+                Msg(
+                    'server.installs.tool_offline',
+                    'Could not reach GitHub to download {name}. Check the network and retry.',
+                    name=label,
+                )
+            ) from error
+        return archive
 
     def _need_tools(self, *names):
         missing = [n for n in names if not getattr(self, n)()]
