@@ -17,15 +17,16 @@ from starlette.responses import FileResponse, JSONResponse, Response, StreamingR
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from ..core import about, authoring, chat, checks, exporter, guidelines, llm_tasks, personas, rename, review
+from ..core import about, authoring, chat, checks, exporter, guidelines, personas, rename, review
+from ..core import draft_apply as draft_apply_module
 from ..core.auth import COOKIE, Sessions
 from ..core.bootstrap import ensure_layout
-from ..core.drafts import Drafts, mock_compress
+from ..core.drafts import Drafts
 from ..core.events import Events
 from ..core.fsutil import read_json, sha256_text, write_json
 from ..core.i18n import AppError, Msg, wire
 from ..core.jobs import Jobs
-from ..core.jsx import Props, call_text
+from ..core.jsx import Props
 from ..core.llm import LlmGate, Providers
 from ..core.packages import Packages
 from ..core.presets import Presets
@@ -35,6 +36,7 @@ from ..core.snapshots import Snapshots
 from ..core.test_sets import TestSets
 from ..core.updater import Updater
 from ..core.vault import Vault
+from ..core.work_jobs import WorkJobs
 from ..core.works import KIND_PREFIX, WorkStore
 from ..image import designs as image_designs
 from ..image.runtime import ImageRuntime
@@ -58,6 +60,7 @@ class State:
         self.jobs = Jobs(self.events)
         self.llm = Providers(paths, self.vault)
         self.image = ImageRuntime(paths, self.works, self.llm)
+        self.work_jobs = WorkJobs(paths, self.llm, self.presets, self.events, self.jobs)
         self.llm.gate = LlmGate(
             self.image.gpu, lambda: (self.settings.load().get('jobs') or {}).get('api_concurrency', 2)
         )
@@ -388,12 +391,6 @@ async def providers_probe(request):
     return ok(await st(request).llm.probe(request.path_params['pid']))
 
 
-def mocked(s, task, override=None):
-    """Whether this task's connection is the built-in mock (tests, offline checks)."""
-    provider, _, _ = s.llm.resolve(task, override)
-    return provider.get('type') == 'mock'
-
-
 def work_guideline(s, work, name):
     return guidelines.find(work, s.paths, s.presets.effective(work.doc())['linked'], name)
 
@@ -668,32 +665,7 @@ async def export_preview(request):
 
 
 async def export_run(request):
-    data = await body(request)
-    work = work_of(request)
-    s = st(request)
-    blocked = exporter.blocked_target(data.get('target'), s.paths.root, work.folder)
-    if blocked:
-        raise AppError(blocked, 400)
-    clash = exporter.name_clash(exporter.plan(work)[0])
-    if clash:
-        raise AppError(
-            Msg(
-                'server.export.name_clash',
-                '{path} has the reserved export name. Rename it first.',
-                path=clash,
-            ),
-            409,
-        )
-    if data.get('snapshot'):
-        Snapshots(work).create('export', data.get('release') or '내보내기', force=True)
-
-    async def runner(progress):
-        await progress(30)
-        return await asyncio.to_thread(
-            exporter.export, work, data['target'], data.get('overwrite', False), s.paths.root
-        )
-
-    return ok(s.jobs.submit('export', f'{work.name} 내보내기', runner, work_id=work.id))
+    return ok(st(request).work_jobs.export(work_of(request), await body(request)))
 
 
 # --- drafts, compression, image prompts (mock until 2·5단계) -----------------------------------------------------
@@ -714,69 +686,10 @@ async def draft_composition(request):
 
 
 async def draft_apply(request):
-    data = await body(request)
     work = work_of(request)
-    drafts = Drafts(work)
-    doc = drafts.get(request.path_params['did'])
-    if doc['kind'] == 'text_edit':
+    if Drafts(work).get(request.path_params['did'])['kind'] == 'text_edit':
         return await editor_routes.apply_edit(request)
-    if doc['kind'] == 'content_review':
-        raise AppError(Msg('server.editor.review_read_only', 'Review drafts are read-only.'))
-    if doc['kind'] == 'image_prompt':
-        if doc.get('status') != 'pending':
-            raise AppError(Msg('server.drafts.not_pending', 'This draft has already been handled.'), 409)
-        cid = doc['target']['id']
-        design_path = image_designs.character_design_path(work, cid)
-        current = read_json(design_path)
-        expected = doc['target'].get('base_design_revision')
-        if image_designs.revision(current) != expected:
-            raise AppError(
-                Msg(
-                    'server.image.design.stale',
-                    'The character design changed after this conversion draft was created.',
-                ),
-                409,
-            )
-        submitted = data.get('design', doc['candidates'][0]['design'])
-        image_designs.validate(submitted)
-        merged = image_designs.reconcile_conversion(current, submitted)
-        Snapshots(work).create('before_llm', 'LLM 결과 채택 전', force=True)
-        write_json(design_path, merged)
-        doc['applied_design'] = merged
-        drafts.save(request.path_params['did'], doc)
-        drafts.set_status(request.path_params['did'], 'applied')
-        return ok({'path': design_path.relative_to(work.folder).as_posix(), 'design': merged})
-    Snapshots(work).create('before_llm', 'LLM 결과 채택 전', force=True)
-    if doc['kind'] == 'relations':
-        result = review.apply_relation_rows(
-            work, data.get('rows', []), doc['candidates'][0].get('people', [])
-        )
-        drafts.set_status(request.path_params['did'], 'applied')
-        return ok(result)
-    if doc['kind'] == 'jsx_prompt':
-        result = review.insert_text(
-            work,
-            data.get('text') or doc['candidates'][0]['text'],
-            path=data.get('path'),
-            new_path=data.get('new_path'),
-            position=data.get('position', 'end'),
-            heading=data.get('heading'),
-        )
-        drafts.set_status(request.path_params['did'], 'applied')
-        return ok(result)
-    if doc['kind'] == 'authoring':
-        result = authoring.create_files(work, data.get('files', []), data.get('relations', []))
-        drafts.set_status(request.path_params['did'], 'applied')
-        return ok(result)
-    return ok(
-        drafts.apply_text(
-            request.path_params['did'],
-            data['text'],
-            data.get('mode', 'overwrite'),
-            data.get('new_name'),
-            data.get('enable', 'new'),
-        )
-    )
+    return ok(draft_apply_module.apply(work, request.path_params['did'], await body(request)))
 
 
 async def draft_discard(request):
@@ -809,105 +722,11 @@ def item_by_id(work, item_id, kind=None):
 
 
 async def relations_extract(request):
-    data = await body(request)
-    work = work_of(request)
-    st(request).llm.require_consent(work, 'consistency', data.get('llm'))
-    s = st(request)
-
-    async def runner(progress):
-        items = [
-            i for i in work.index_with_bodies() if i['meta'].get('enabled', True) and i['kind'] != 'note'
-        ]
-        characters = [i for i in items if i['kind'] == 'character']
-        model = None
-        if mocked(s, 'consistency', data.get('llm')):
-            await asyncio.sleep(0.4)
-            first = characters[0]['name'] if characters else '인물'
-            result = {
-                'relations': [{'from': first, 'to': '{{user}}', 'kind': '(모의) 관계', 'calls': ''}],
-                'facts': [],
-            }
-        else:
-            await progress(10)
-            doc = Relations(work).load()
-            existing = [f'{r["from"]} → {r["to"]}: {r.get("kind", "")}' for r in doc['relations']]
-            others = [i for i in items if i['kind'] in ('main', 'lorebook')]
-            messages = llm_tasks.relations_messages(characters, others, existing)
-            result, answer = await llm_tasks.ask_json(
-                s.llm, 'consistency', messages, work.id, llm_tasks.relations_ok, override=data.get('llm')
-            )
-            model = {'provider': answer['provider'], 'name': answer['model']}
-        draft = Drafts(work).create(
-            'relations', {'scope': 'work'}, {}, [review.relation_rows(work, result)], model=model
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    return ok(s.jobs.submit('relations', f'관계 찾기 · {work.name}', runner, work_id=work.id))
+    return ok(st(request).work_jobs.relations(work_of(request), await body(request)))
 
 
 async def consistency_run(request):
-    data = await body(request)
-    work = work_of(request)
-    st(request).llm.require_consent(work, 'consistency', data.get('llm'))
-    s = st(request)
-    bundles = review.consistency_bundles(work, data.get('scope') or None)
-
-    async def runner(progress):
-        issues, model = [], None
-        if mocked(s, 'consistency', data.get('llm')):
-            await asyncio.sleep(0.4)
-            for bundle in bundles[:1]:
-                head = bundle['items'][0]
-                quote = next(
-                    (line for line in head['body'].splitlines() if line.strip() and not line.startswith('#')),
-                    '',
-                )
-                issues.append(
-                    {
-                        'type': 'ambiguous',
-                        'items': [head['id']],
-                        'quote': quote.strip(),
-                        'quote_item': head['id'],
-                        'explain': '(모의) 검사 흐름을 보여 주는 예시 문제입니다.',
-                        'suggest': None,
-                    }
-                )
-        else:
-            guideline = work_guideline(s, work, 'consistency.md')
-            glossary = review.glossary_lines(work)
-            for n, bundle in enumerate(bundles):
-                await progress(int(100 * n / max(1, len(bundles))) + 2)
-                messages = llm_tasks.consistency_messages(
-                    bundle['person'],
-                    bundle['items'],
-                    bundle['relations'],
-                    bundle['facts'],
-                    glossary,
-                    guideline,
-                )
-                result, answer = await llm_tasks.ask_json(
-                    s.llm,
-                    'consistency',
-                    messages,
-                    work.id,
-                    llm_tasks.consistency_ok,
-                    override=data.get('llm'),
-                )
-                issues.extend(result['issues'])
-                model = {'provider': answer['provider'], 'name': answer['model']}
-        draft = Drafts(work).create(
-            'consistency',
-            {'scope': data.get('scope') or 'work'},
-            {'people': [b['person'] for b in bundles]},
-            [{'issues': review.normalize_issues(work, issues)}],
-            model=model,
-            guidelines=['consistency.md'],
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    return ok(s.jobs.submit('consistency', f'모순 검사 · {work.name}', runner, work_id=work.id))
+    return ok(st(request).work_jobs.consistency(work_of(request), await body(request)))
 
 
 async def draft_issue(request):
@@ -928,49 +747,9 @@ async def draft_issue(request):
 
 
 async def jsx_prompt_text(request):
-    data = await body(request)
     work = work_of(request)
-    st(request).llm.require_consent(work, 'jsx_prompt', data.get('llm'))
-    s = st(request)
     item = item_by_id(work, request.path_params['jid'], 'jsx')
-    props = data.get('props') or {}
-    rule = review.response_rule(s.presets.effective(work.doc()))
-
-    async def runner(progress):
-        model = None
-        if mocked(s, 'jsx_prompt', data.get('llm')):
-            await asyncio.sleep(0.4)
-            text = (
-                f'## {item["name"]}\n응답 맨 끝에 아래 형식으로 {item["name"]}을(를) 한 번 출력한다.\n'
-                f'{call_text(item["name"], props, rule) or "<" + item["name"] + " />"}\n(모의 문구)'
-            )
-        else:
-            await progress(10)
-            messages = llm_tasks.jsx_prompt_messages(
-                item['name'],
-                item['body'],
-                props,
-                work_guideline(s, work, 'jsx.md'),
-                work_guideline(s, work, 'platform.md'),
-                data.get('feedback', ''),
-            )
-            result, answer = await llm_tasks.ask_json(
-                s.llm, 'jsx_prompt', messages, work.id, llm_tasks.jsx_prompt_ok, override=data.get('llm')
-            )
-            text = result['text'].strip()
-            model = {'provider': answer['provider'], 'name': answer['model']}
-        draft = Drafts(work).create(
-            'jsx_prompt',
-            {'id': item['meta'].get('id'), 'path': item['path'], 'name': item['name']},
-            {'props': props, 'feedback': data.get('feedback', '')},
-            [{'round': 1, 'text': text, 'elements': review.elements(text, item['name'], rule)}],
-            model=model,
-            guidelines=['platform.md', 'jsx.md'],
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    return ok(s.jobs.submit('jsx_prompt', f'JSX 문구 · {item["name"]}', runner, work_id=work.id))
+    return ok(st(request).work_jobs.jsx_prompt(work, item, await body(request)))
 
 
 async def jsx_usages(request):
@@ -1007,104 +786,11 @@ async def authoring_questions(request):
 async def authoring_run(request):
     data = await body(request)
     work = work_of(request)
-    st(request).llm.require_consent(work, 'authoring', data.get('llm'))
-    s = st(request)
-    scale = _authoring_scale(work, data.get('scale'))
-    answers = data.get('answers', [])
-
-    async def runner(progress):
-        model = None
-        if mocked(s, 'authoring', data.get('llm')):
-            for value in (25, 60, 90):
-                await asyncio.sleep(0.4)
-                await progress(value)
-            skeleton = authoring.mock_skeleton(work, scale, answers)
-        else:
-            await progress(10)
-            messages = llm_tasks.authoring_messages(
-                answers,
-                work_guideline(s, work, f'authoring/{scale}.md'),
-                work_guideline(s, work, 'platform.md'),
-                list(work.section_titles().values()),
-                scale,
-            )
-            result, answer = await llm_tasks.ask_json(
-                s.llm, 'authoring', messages, work.id, llm_tasks.authoring_ok, override=data.get('llm')
-            )
-            skeleton = llm_tasks.authoring_skeleton(result, work)
-            model = {'provider': answer['provider'], 'name': answer['model']}
-        draft = Drafts(work).create(
-            'authoring',
-            {'scope': 'work', 'scale': scale},
-            {'answers': answers},
-            [skeleton],
-            model=model,
-            guidelines=[f'authoring/{scale}.md', 'platform.md'],
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    return ok(s.jobs.submit('authoring', f'뼈대 작성 · {work.name}', runner, work_id=work.id))
+    return ok(st(request).work_jobs.authoring(work, data, _authoring_scale(work, data.get('scale'))))
 
 
 async def compress(request):
-    data = await body(request)
-    work = work_of(request)
-    st(request).llm.require_consent(work, 'compression', data.get('llm'))
-    s = st(request)
-    item = work.get_item(data['path'])
-
-    rounds = max(1, min(4, int(data.get('candidates', 2))))
-    locked = [int(n) for n in data.get('locked', [])]
-    target = data.get('target_size')
-    if target is not None and (isinstance(target, bool) or not isinstance(target, int) or target <= 0):
-        raise AppError(
-            Msg('server.editor.bad_target', 'Target size must be a positive number of bytes.'), 400
-        )
-    instruction = str(data.get('instructions') or '').strip()
-
-    async def runner(progress):
-        model = None
-        if mocked(s, 'compression', data.get('llm')):
-            for value in (20, 50, 80):
-                await asyncio.sleep(0.4)
-                await progress(value)
-            blocks, candidates = mock_compress(item['body'], rounds)
-        else:
-            blocks, messages = llm_tasks.compression_messages(
-                item['body'],
-                '\n\n'.join(filter(None, [work_guideline(s, work, 'compression.md'), instruction])),
-                work_guideline(s, work, 'platform.md'),
-                data.get('target_size'),
-                locked,
-            )
-            candidates = []
-            for n in range(rounds):
-                await progress(int(100 * n / rounds) + 5)
-                result, answer = await llm_tasks.ask_json(
-                    s.llm,
-                    'compression',
-                    llm_tasks.compression_round(messages, n),
-                    work.id,
-                    llm_tasks.compression_ok,
-                    override=data.get('llm'),
-                )
-                candidates.append(llm_tasks.compression_candidate(result, blocks, locked))
-                model = {'provider': answer['provider'], 'name': answer['model']}
-        draft = Drafts(work).create(
-            'compression',
-            {'id': item['meta'].get('id'), 'path': item['path'], 'base_hash': item['hash']},
-            {'target_size': data.get('target_size'), 'keep': locked, 'feedback': []},
-            candidates,
-            model=model,
-            guidelines=['platform.md', 'compression.md'],
-            blocks=blocks,
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    gpu = s.llm.on_gpu('compression', data.get('llm'))
-    return ok(s.jobs.submit('compression', f'압축 · {item["name"]}', runner, gpu=gpu, work_id=work.id))
+    return ok(st(request).work_jobs.compression(work_of(request), await body(request)))
 
 
 async def image_design(request):
@@ -1152,115 +838,7 @@ async def image_design_update(request):
 
 async def image_convert(request):
     work = work_of(request)
-    s = st(request)
-    cid = request.path_params['cid']
-    item = next((i for i in work.index() if i['kind'] == 'character' and i['meta'].get('id') == cid), None)
-    if item is None:
-        raise AppError(Msg('server.image.no_character', 'Character {id} was not found.', id=cid), 404)
-    body_text = work.get_item(item['path'])['body']
-    design_path = image_designs.character_design_path(work, cid)
-    old = read_json(design_path)
-    base_design_revision = image_designs.revision(old)
-    old = old or {}
-    data = await body(request)
-    s.llm.require_consent(work, 'image_prompt', data.get('llm'))
-
-    async def runner(progress):
-        appearance = work.section_text(body_text, 'appearance') or ''
-        outfit_all = work.section_text(body_text, 'outfit') or ''
-        headings = [line[4:].strip() for line in outfit_all.splitlines() if line.startswith('### ')] or [
-            '기본'
-        ]
-        texts = [work.section_text(body_text, 'outfit', h if h != '기본' else None) or '' for h in headings]
-        model = None
-        if mocked(s, 'image_prompt', data.get('llm')):
-            await asyncio.sleep(0.6)
-            await progress(60)
-            result = {
-                'appearance': {'prompt': ['1girl', 'solo', '(모의 태그)'], 'negative': []},
-                'outfits': [{'name': h, 'slots': {'top': ['(모의 태그)']}, 'negative': []} for h in headings],
-            }
-        else:
-            await progress(10)
-            compose = (
-                read_json(work.app / 'image' / 'compose.json')
-                or read_json(s.paths.data / 'image' / 'compose.json')
-                or {}
-            )
-            slots = compose.get('slots') or [{'id': 'full', 'name': '전체'}, {'id': 'top', 'name': '상의'}]
-            messages = llm_tasks.image_messages(
-                appearance,
-                list(zip(headings, texts, strict=True)),
-                slots,
-                work_guideline(s, work, 'image-prompt.md'),
-            )
-            result, answer = await llm_tasks.ask_json(
-                s.llm, 'image_prompt', messages, work.id, llm_tasks.image_ok, override=data.get('llm')
-            )
-            model = {'provider': answer['provider'], 'name': answer['model']}
-            allowed = {slot['id'] for slot in slots}
-            for outfit in result['outfits']:
-                outfit['slots'] = {k: v for k, v in (outfit.get('slots') or {}).items() if k in allowed}
-        outfits_by_name = {
-            str(o.get('name', '')).strip(): o for o in result['outfits'] if isinstance(o, dict)
-        }
-        design = {
-            'schema_version': 1,
-            'trigger': old.get('trigger') or f'{work.id.lower()}_{cid.lower()}',
-            'appearance': {
-                'prompt': llm_tasks.tags(result['appearance'].get('prompt')),
-                'negative': llm_tasks.tags(result['appearance'].get('negative')),
-                'source': {'section': 'appearance', 'hash': sha256_text(appearance)},
-            },
-            'outfits': {},
-            'default_outfit': None,
-        }
-        for n, (heading, text) in enumerate(zip(headings, texts, strict=True), 1):
-            key = f'o{n:02d}'
-            got = outfits_by_name.get(heading) or (
-                result['outfits'][n - 1] if n <= len(result['outfits']) else {}
-            )
-            design['outfits'][key] = {
-                'name': heading,
-                'slots': {
-                    k: {'prompt': llm_tasks.tags(v)}
-                    for k, v in (got.get('slots') or {}).items()
-                    if llm_tasks.tags(v)
-                },
-                'negative': llm_tasks.tags(got.get('negative')),
-                'source': {
-                    'section': 'outfit',
-                    'heading': heading if heading != '기본' else None,
-                    'hash': sha256_text(text),
-                },
-            }
-        design['default_outfit'] = next(iter(design['outfits']), None)
-        design = image_designs.reconcile_conversion(old, design)
-        draft = Drafts(work).create(
-            'image_prompt',
-            {
-                'id': cid,
-                'path': item['path'],
-                'base_hash': item['hash'],
-                'base_design_revision': base_design_revision,
-            },
-            {'parts': 'all', 'previous_design': old},
-            [{'round': 1, 'design': design}],
-            model=model,
-            guidelines=['image-prompt.md'],
-        )
-        s.events.publish('draft', {'work': work.id, 'id': draft['id']})
-        return {'draft': draft['id']}
-
-    return ok(
-        s.jobs.submit(
-            'image_prompt',
-            f'이미지 프롬프트 · {item["name"]}',
-            runner,
-            gpu=s.llm.on_gpu('image_prompt', data.get('llm')),
-            work_id=work.id,
-        )
-    )
+    return ok(st(request).work_jobs.image_prompt(work, request.path_params['cid'], await body(request)))
 
 
 # --- JSX example props -----------------------------------------------------------------------------------------
@@ -1297,15 +875,15 @@ async def relations_get(request):
 
 
 async def relations_put(request):
-    return ok(Relations(work_of(request)).save(await body(request)))
+    return ok(Relations(work_of(request)).update(await body(request)))
 
 
 async def glossary_get(request):
-    return ok(Glossary(work_of(request)).load())
+    return ok(Glossary(work_of(request)).view())
 
 
 async def glossary_put(request):
-    return ok(Glossary(work_of(request)).save(await body(request)))
+    return ok(Glossary(work_of(request)).update(await body(request)))
 
 
 # --- chat test (mock reply until 3단계) ----------------------------------------------------------------------------

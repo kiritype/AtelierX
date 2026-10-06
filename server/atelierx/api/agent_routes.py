@@ -1,14 +1,10 @@
 """Agent panel API (11-agent): modes, conversations, streaming answers, proposals → review, and the global guidelines."""
 
-import asyncio
-import json
-
 from starlette.responses import JSONResponse, StreamingResponse
 
-from ..core import agent, guidelines
+from ..core import agent, agent_turns, guidelines
 from ..core.drafts import Drafts
-from ..core.fsutil import sha256_text
-from ..core.i18n import AppError, Msg, wire
+from ..core.i18n import AppError, Msg
 from ..core.snapshots import Snapshots
 
 
@@ -73,178 +69,24 @@ async def session_delete(request):
 
 
 def _prepare(request, data):
-    s, work = _state(request), _work(request)
-    sessions = agent.Sessions(work)
-    session = sessions.read(request.path_params['sid'])
-    effective, linked = _linked(s, work)
-    provider, model, _ = s.llm.resolve('agent', data.get('llm'))
-    attachments = [a for a in data.get('attachments') or [] if isinstance(a, dict) and a.get('path')]
-    for attachment in attachments:
-        work.resolve(attachment['path'])  # an attachment never reaches outside the work
-    messages, summary = agent.build(
-        work,
-        s.paths,
-        effective,
-        linked,
-        session,
-        str(data.get('message') or ''),
-        attachments,
-        agent.context_budget(provider, model, s.llm.doc().get('context_cap')),
-    )
-    return (
-        s,
-        work,
-        sessions,
-        session,
-        messages,
-        summary,
-        attachments,
-        {'provider': provider['id'], 'name': model},
-    )
+    s = _state(request)
+    return agent_turns.prepare(_work(request), s.paths, s.llm, s.presets, request.path_params['sid'], data)
 
 
 async def preview(request):
-    data = await _body(request)
-    *_, summary, _, _ = _prepare(request, data)
-    return _ok(summary)
+    return _ok(_prepare(request, await _body(request))['summary'])
 
 
 async def send(request):
     data = await _body(request)
-    message = str(data.get('message') or '').strip()
-    if not message:
-        raise AppError(Msg('server.agent.empty', 'Write a message first.'), 400)
-    s, work, sessions, session, messages, summary, attachments, model = _prepare(request, data)
-    s.llm.require_consent(work, 'agent', data.get('llm'))
-    sid = request.path_params['sid']
-    sessions.append(sid, {'type': 'user', 'text': message, 'attachments': attachments})
-    if not session['title']:
-        sessions.append(sid, {'type': 'meta', 'title': message.splitlines()[0][:40]})
-    turn = len(session['turns']) + 2  # the user turn just written is len + 1
-
-    async def stream():
-        parts, finish, error, saved = [], None, None, False
-
-        def save():
-            text = ''.join(parts)
-            found = agent.proposals(work, text, summary.get('seen'))
-            event = {
-                'type': 'assistant',
-                'text': text,
-                'model': model,
-                'finish_reason': finish,
-                'context': summary,
-                'proposals': [agent.public(p) for p in found],
-            }
-            if error:
-                event['error'] = error
-            sessions.append(sid, event)
-            return event
-
-        yield f'event: context\ndata: {json.dumps({**summary, "turn": turn}, ensure_ascii=False)}\n\n'
-        try:
-            async for event in s.llm.stream('agent', messages, work_id=work.id, override=data.get('llm')):
-                if event['type'] == 'thinking':
-                    yield f'event: thinking\ndata: {event["chars"]}\n\n'
-                elif event['type'] == 'waiting':
-                    yield f'event: waiting\ndata: {json.dumps(wire(event["holder"]), ensure_ascii=False)}\n\n'
-                elif event['type'] == 'text':
-                    parts.append(event['text'])
-                    yield f'event: delta\ndata: {json.dumps(event["text"], ensure_ascii=False)}\n\n'
-                elif event['type'] == 'done':
-                    finish = event.get('finish_reason')
-        except AppError as exc:
-            error = exc.msg.as_dict()
-            yield f'event: error\ndata: {json.dumps(error, ensure_ascii=False)}\n\n'
-        except (asyncio.CancelledError, GeneratorExit):
-            finish = 'stopped'  # the user pressed stop; keep what came so far
-            save()
-            saved = True
-            raise
-        finally:
-            if not saved:
-                saved_event = save()
-                saved = True
-                done = {'turn': turn, 'finish_reason': finish, 'proposals': saved_event['proposals']}
-                yield f'event: end\ndata: {json.dumps(done, ensure_ascii=False)}\n\n'
-
-    return StreamingResponse(stream(), media_type='text/event-stream')
+    s, sid = _state(request), request.path_params['sid']
+    events = agent_turns.start(_work(request), s.llm, sid, data, _prepare(request, data))
+    return StreamingResponse(events, media_type='text/event-stream')
 
 
 async def proposal_review(request):
-    """Turn one proposal of an answer into a draft (kind ``agent_file``) for the review tab."""
-    work = _work(request)
-    sessions = agent.Sessions(work)
-    sid = request.path_params['sid']
-    session = sessions.read(sid)
-    turn_no, n = int(request.path_params['turn']), int(request.path_params['n'])
-    turn = next((t for t in session['turns'] if t['turn'] == turn_no and t['role'] == 'assistant'), None)
-    if turn is None:
-        raise AppError(Msg('server.agent.no_proposal', 'This proposal does not exist.'), 404)
-    stored = next((p for p in turn.get('proposals', []) if p['n'] == n), None)
-    drafts = Drafts(work)
-    if stored and stored.get('draft_id'):
-        try:
-            if drafts.get(stored['draft_id'])['status'] == 'pending':
-                return _ok({'draft_id': stored['draft_id']})
-        except AppError:
-            pass
-    proposal = next(
-        (
-            p
-            for p in agent.proposals(work, turn.get('text') or '', (turn.get('context') or {}).get('seen'))
-            if p['n'] == n
-        ),
-        None,
-    )
-    if proposal is None:
-        raise AppError(Msg('server.agent.no_proposal', 'This proposal does not exist.'), 404)
-    if proposal['rejected']:
-        raise AppError(
-            Msg('server.agent.rejected', 'This proposal names a path that cannot be written.'), 400
-        )
-    if proposal['truncated']:
-        raise AppError(
-            Msg('server.agent.truncated', 'This proposal was cut off. Ask the agent to continue.'), 400
-        )
-    if 'deleted_since' in proposal['warnings']:
-        raise AppError(
-            Msg(
-                'server.agent.deleted',
-                'The file was deleted or moved after the request. Ask again if it should come back.',
-            ),
-            409,
-        )
-    # The draft keeps the file as the model saw it (or, for older answers, as it was when the answer came); any edit
-    # since then is caught here and again when adopting.
-    base_hash = stored.get('base_hash') if stored else proposal['base_hash']
-    current = (
-        sha256_text(work.resolve(proposal['path']).read_text(encoding='utf-8'))
-        if not proposal['new']
-        else None
-    )
-    if not proposal['new'] and base_hash != current:
-        raise AppError(
-            Msg('server.agent.stale', 'The file changed after this answer. Ask again for a fresh proposal.'),
-            409,
-        )
-    head, _ = agent._head(proposal['text'], '.' + proposal['path'].rsplit('.', 1)[-1])
-    draft = drafts.create(
-        'agent_file',
-        {'path': proposal['path'], 'id': head.get('id'), 'base_hash': base_hash, 'new': proposal['new']},
-        {
-            'session': sid,
-            'turn': turn_no,
-            'n': n,
-            'warnings': proposal['warnings'],
-            # The file as the answer saw it; the review compares against it and adoption checks it is unchanged.
-            'original': '' if proposal['new'] else work.resolve(proposal['path']).read_text(encoding='utf-8'),
-        },
-        [{'text': proposal['text']}],
-        model=turn.get('model'),
-    )
-    sessions.append(sid, {'type': 'proposal', 'turn': turn_no, 'n': n, 'draft_id': draft['id']})
-    return _ok({'draft_id': draft['id']})
+    p = request.path_params
+    return _ok(agent_turns.review_proposal(_work(request), p['sid'], int(p['turn']), int(p['n'])))
 
 
 async def draft_apply(request):
