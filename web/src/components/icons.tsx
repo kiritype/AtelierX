@@ -1,5 +1,6 @@
 // One icon set (Lucide, ISC license) with one stroke width, so light and dark themes look alike.
 import {
+  ArrowLeft,
   BookA,
   BookOpen,
   Braces,
@@ -24,6 +25,7 @@ import {
   Network,
   PanelRight,
   Pin,
+  Play,
   Rocket,
   ScrollText,
   Search,
@@ -48,6 +50,8 @@ export const ICONS = {
   trash: Trash2,
   aux: PanelRight,
   jobs: Hourglass,
+  test: Play,
+  back: ArrowLeft,
   settings: Settings,
   lock: Lock,
   edit: Pencil,

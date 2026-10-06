@@ -265,7 +265,7 @@
   "works.trash": "Trash",
   "export.name_clash": "{path} has the reserved export name. Rename it before exporting.",
   "test.open": "Test",
-  "test.back": "← Back to work",
+  "test.back": "Back to work",
   "test.title": "Test",
   "test.replay": "Resend inputs ({n})",
   "test.replay_hint": "Send your messages from the last conversation again, in order. Only in a new conversation.",
@@ -1966,5 +1966,6 @@
   "tools.notice.nodes.body": "Install the image server nodes in Settings → Install, then restart ComfyUI.",
   "tools.notice.nodes.action": "Open Settings → Install",
   "tools.notice.recheck": "Check again",
-  "tools.notice.detail": "The detailer node is not installed, so the detailer is not in the list."
+  "tools.notice.detail": "The detailer node is not installed, so the detailer is not in the list.",
+  "help.key.test": "Open / close the test screen"
 }

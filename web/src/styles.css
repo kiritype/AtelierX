@@ -353,6 +353,9 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 
 /* Menu bar */
 .menubar { display: flex; align-items: center; gap: 0; margin-left: 4px; }
+.topbar-sep { width: 1px; height: 18px; background: var(--border); margin: 0 8px 0 4px; flex-shrink: 0; }
+.test-button { border: 1px solid var(--accent); background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.test-button.primary { color: #fff; }
 .menu-root { position: relative; }
 .menu-title { border: 0; background: transparent; padding: 4px 10px; border-radius: var(--radius); }
 .menu-title:hover, .menu-title.on { background: var(--hover); }
