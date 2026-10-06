@@ -134,7 +134,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !running && close()}>
-      <div className="dialog col" style={{ width: 'min(1100px, 94vw)', maxHeight: '90vh', overflow: 'auto' }}>
+      <div className="dialog col" style={{ width: 'min(1100px, 94vw)', maxWidth: 'none', maxHeight: '90vh', overflow: 'auto' }}>
         <h3>{t('deploy.upload_title')}</h3>
         <p className="faint small">{t('deploy.upload_about')}</p>
         {!work ? (
