@@ -5,6 +5,7 @@ import { t, tm } from '../i18n';
 import type { Tab, TreeEntry } from '../types';
 import { useToast } from './Toasts';
 import AuthoringDialog from './AuthoringDialog';
+import ImportDialog, { type ImportFile } from './ImportDialog';
 import RenameDialog from './RenameDialog';
 import { ContextMenu, type MenuItem } from './ui';
 import { Icon, KindIcon } from './icons';
@@ -34,6 +35,19 @@ export default function FileTree({
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [authoring, setAuthoring] = useState(false);
   const [renameText, setRenameText] = useState<string | null>(null);
+  // Bringing files in (#115): from the menu's file picker or dropped from the system, into a folder of the tree.
+  const [importing, setImporting] = useState<{ folder: string; files: ImportFile[] } | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const pickFolder = useRef('');
+  async function startImport(folder: string, list: File[]) {
+    const wanted = list.filter((f) => /\.(md|jsx)$/i.test(f.name));
+    if (!wanted.length) {
+      toast({ text: t('import.no_files'), tone: 'error' });
+      return;
+    }
+    const files = await Promise.all(wanted.map(async (f) => ({ name: f.name, path: f.webkitRelativePath || f.name, text: await f.text() })));
+    setImporting({ folder, files });
+  }
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['tree', workId] });
@@ -79,9 +93,12 @@ export default function FileTree({
     }
   }
 
-  async function drop(target: TreeEntry | null, source: string) {
+  async function drop(target: TreeEntry | null, source: string, dropped?: FileList) {
     setDragOver(null);
     const folder = target ? (target.type === 'folder' ? target.path : parentOf(target.path)) : '';
+    // Files from the system, not a tree entry being moved.
+    if (!source && dropped?.length) return startImport(folder, [...dropped]);
+    if (!source) return;
     const name = source.split('/').pop()!;
     const to = join(folder, name);
     if (to === source || to.startsWith(`${source}/`)) return;
@@ -99,6 +116,7 @@ export default function FileTree({
     return [
       { label: t('tree.new_file'), run: () => setPending({ parent: folder, type: 'file' }) },
       { label: t('tree.new_folder'), run: () => setPending({ parent: folder, type: 'folder' }) },
+      { label: t('import.menu'), run: () => ((pickFolder.current = folder), picker.current?.click()) },
       ...(entry
         ? [
             null,
@@ -147,7 +165,7 @@ export default function FileTree({
           onDrop={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            drop(entry, e.dataTransfer.getData('text/x-atelierx-path'));
+            drop(entry, e.dataTransfer.getData('text/x-atelierx-path'), e.dataTransfer.files);
           }}
           onClick={() => {
             if (isFolder) setCollapsed((c) => ({ ...c, [entry.path]: !c[entry.path] }));
@@ -189,7 +207,7 @@ export default function FileTree({
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
-        drop(null, e.dataTransfer.getData('text/x-atelierx-path'));
+        drop(null, e.dataTransfer.getData('text/x-atelierx-path'), e.dataTransfer.files);
       }}
     >
       <div className="side-head">
@@ -216,6 +234,31 @@ export default function FileTree({
       {renameText !== null && <RenameDialog workId={workId} initial={renameText} renamePath={renamePath} onClose={() => setRenameText(null)} />}
       {authoring && <AuthoringDialog workId={workId} onClose={() => setAuthoring(false)} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuFor(menu.entry)} onClose={() => setMenu(null)} />}
+      <input
+        ref={picker}
+        type="file"
+        accept=".md,.jsx"
+        multiple
+        hidden
+        onChange={(e) => {
+          const list = [...(e.target.files ?? [])];
+          e.target.value = '';
+          if (list.length) startImport(pickFolder.current, list);
+        }}
+      />
+      {importing && (
+        <ImportDialog
+          workId={workId}
+          folder={importing.folder}
+          files={importing.files}
+          onClose={() => setImporting(null)}
+          onDone={(created) => {
+            setImporting(null);
+            refresh();
+            if (created[0]) open({ type: 'item', path: created[0] });
+          }}
+        />
+      )}
     </div>
   );
 }

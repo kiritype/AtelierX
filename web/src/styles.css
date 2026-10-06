@@ -685,3 +685,10 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .chip.warn { background: var(--warning-bg); color: var(--warning); }
 .deploy-rows td { vertical-align: middle; }
 .deploy-rows .chip { white-space: nowrap; }
+.import-rows { min-width: 980px; }
+.import-rows th { white-space: nowrap; }
+.import-rows td { vertical-align: top; }
+.import-rows td.file { min-width: 200px; overflow-wrap: anywhere; }
+.import-rows td.keys { min-width: 200px; }
+.import-rows tr.needs { background: var(--warning-bg); }
+.import-rows select.needs { border-color: var(--warning); }
