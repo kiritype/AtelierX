@@ -3,7 +3,8 @@
 One request makes one image: POST /ai/generate-image with a persistent API token. The answer is the image itself
 (a ZIP with the PNG, or base64 JSON when asked for), so a job is done when ``submit`` returns. The model picks the
 version (V4.5, V5 …); V4 and later models also need the prompt as ``v4_prompt`` / ``v4_negative_prompt``.
-The account's Anlas comes from GET /user/subscription.
+The account's Anlas comes from GET /user/subscription, on the image host too: the older api.novelai.net refuses
+third-party tools with "update to the image URL" (#99).
 """
 
 import base64
@@ -16,7 +17,6 @@ from ...core.i18n import Msg
 from .common import InternetService, choice, number, whole
 
 IMAGE_URL = os.environ.get('ATELIERX_NOVELAI_IMAGE_URL', 'https://image.novelai.net')
-API_URL = os.environ.get('ATELIERX_NOVELAI_API_URL', 'https://api.novelai.net')
 
 MODELS = [
     {'id': 'nai-diffusion-4-5-full', 'name': 'V4.5 Full'},
@@ -134,7 +134,9 @@ class NovelAIService(InternetService):
         """Tier and Anlas left, for the generate screen; None when it cannot be read."""
         key = self.key()
         with self.client() as client:
-            response = client.get(f'{API_URL}/user/subscription', headers={'Authorization': f'Bearer {key}'})
+            response = client.get(
+                f'{IMAGE_URL}/user/subscription', headers={'Authorization': f'Bearer {key}'}
+            )
         if response.status_code != 200:
             raise RuntimeError(self.refused(response))
         doc = response.json()
