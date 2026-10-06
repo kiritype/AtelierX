@@ -5,14 +5,15 @@ import { t, tm } from '../i18n';
 import { KeyField } from './LlmSettings';
 import { useToast } from './Toasts';
 import { useReportDirty } from './settingsDirty';
+import { pixaiVersionId, type PixAILora } from '../lib/pixai';
 
-export type ImageService = { id: string; name: string; key: string | null; interval: number; supported: boolean; connected: boolean };
+export type ImageService = { id: string; name: string; key: string | null; interval: number; supported: boolean; connected: boolean; loras?: PixAILora[] };
 export type ImageServices = { max_images_per_run: number; services: ImageService[] };
-type Form = { max_images_per_run: number; services: Record<string, { key: string | null; interval: number }> };
+type Form = { max_images_per_run: number; services: Record<string, { key: string | null; interval: number; loras?: PixAILora[] }> };
 
 const formOf = (doc: ImageServices): Form => ({
   max_images_per_run: doc.max_images_per_run,
-  services: Object.fromEntries(doc.services.map((s) => [s.id, { key: s.key, interval: s.interval }])),
+  services: Object.fromEntries(doc.services.map((s) => [s.id, { key: s.key, interval: s.interval, ...(s.loras ? { loras: s.loras } : {}) }])),
 });
 
 // The vault entry a service's new key goes into: `image-<id>`, or `image-<id>-2` … when that name holds another key.
@@ -113,6 +114,7 @@ export default function ImageServiceSettings() {
               />
               <span className="faint small">{t('image_services.interval_hint')}</span>
             </div>
+            {entry.loras && <LoraList loras={entry.loras} onChange={(loras) => setService(service.id, { loras })} />}
           </div>
         );
       })}
@@ -122,5 +124,52 @@ export default function ImageServiceSettings() {
         </button>
       </div>
     </section>
+  );
+}
+
+// PixAI LoRAs (#43): PixAI's API cannot list them, so each is added from its Model Market address.
+function LoraList({ loras, onChange }: { loras: PixAILora[]; onChange: (loras: PixAILora[]) => void }) {
+  const [address, setAddress] = useState('');
+  const [name, setName] = useState('');
+  const id = pixaiVersionId(address);
+  const add = () => {
+    if (!id || loras.some((l) => l.id === id)) return;
+    onChange([...loras, { id, name: name.trim() || id, weight: 1, trigger_words: '' }]);
+    setAddress('');
+    setName('');
+  };
+  const edit = (n: number, change: Partial<PixAILora>) => onChange(loras.map((l, i) => (i === n ? { ...l, ...change } : l)));
+  return (
+    <div className="col" style={{ gap: 4 }}>
+      <span className="muted">{t('pixai.lora_list')}</span>
+      {loras.map((lora, n) => (
+        <div key={lora.id} className="row" style={{ flexWrap: 'wrap' }}>
+          <input style={{ width: 140 }} value={lora.name} aria-label={t('pixai.lora_name')} onChange={(e) => edit(n, { name: e.target.value })} />
+          <code className="small faint">{lora.id}</code>
+          <input
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            style={{ width: 64 }}
+            aria-label={t('pixai.lora_weight')}
+            value={lora.weight}
+            onChange={(e) => edit(n, { weight: Math.min(1, Math.max(0, Number(e.target.value) || 0)) })}
+          />
+          <input className="grow" placeholder={t('pixai.trigger_words')} value={lora.trigger_words} onChange={(e) => edit(n, { trigger_words: e.target.value })} />
+          <button className="ghost" title={t('common.delete')} onClick={() => onChange(loras.filter((_, i) => i !== n))}>
+            ×
+          </button>
+        </div>
+      ))}
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <input className="grow" style={{ minWidth: 240 }} placeholder={t('pixai.lora_address')} value={address} onChange={(e) => setAddress(e.target.value)} />
+        <input style={{ width: 140 }} placeholder={t('pixai.lora_name')} value={name} onChange={(e) => setName(e.target.value)} />
+        <button disabled={!id} onClick={add}>
+          {t('pixai.lora_add')}
+        </button>
+      </div>
+      {address.trim() && !id && <span className="warn-text small">{t('pixai.lora_address_bad')}</span>}
+    </div>
   );
 }

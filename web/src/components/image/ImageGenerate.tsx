@@ -5,10 +5,11 @@ import { t, tm } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
 import type { ImageServices } from '../ImageServiceSettings';
 import NovelAISettings from './NovelAISettings';
+import PixAISettings from './PixAISettings';
 import { SERVICE_NAMES, lastService, lastServiceSettings, rememberService, rememberServiceSettings, type ServicePanelProps } from './serviceSettings';
 
 // Each internet service's settings panel (#42 NovelAI, #43 PixAI).
-const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = { novelai: NovelAISettings };
+const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = { novelai: NovelAISettings, pixai: PixAISettings };
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
