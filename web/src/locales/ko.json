@@ -2097,5 +2097,10 @@
   "install.tool_system": "{name}: 이 PC에 설치된 것을 씀(실행 확인됨)",
   "install.tool_app": "{name}: 앱 폴더의 휴대용(실행 확인됨)",
   "install.tool_missing": "{name}: 없음 — 필요할 때 {version}(약 {mb}MB)을 앱 폴더에 받습니다",
-  "install.tools_coming": "설치할 때 함께 받습니다: {list}"
+  "install.tools_coming": "설치할 때 함께 받습니다: {list}",
+  "lib.code": "배포 코드",
+  "lib.code_hint": "배포 대상에 올릴 때 경로에 쓰는 코드(예: 001). 비워 두면 올릴 때 코드 없음으로 표시됩니다. / \\ : * ? \" < > | 는 쓸 수 없습니다.",
+  "lib.code_same": "같은 코드를 쓰는 항목: {names}. 같은 경로가 되면 올릴 때 충돌로 알려 줍니다.",
+  "server.image.code_text": "배포 코드는 글자로 적어야 합니다.",
+  "server.image.code_invalid": "배포 코드 \"{code}\"는 경로에 쓸 수 없습니다. / \\ : * ? \" < > | 를 빼 주세요."
 }

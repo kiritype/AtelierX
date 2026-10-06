@@ -18,6 +18,7 @@ type Item = {
   scope?: 'global' | 'work';
   overrides?: boolean;
   rating?: string;
+  code?: string;
   composition?: string;
   suggest_slots?: string[];
   target?: 'positive' | 'negative';
@@ -75,6 +76,13 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
   }, [selected, items.data]);
   // The item being edited differs from what is stored (a new one always does) until it is saved.
   const stored = draft ? items.data?.[draft.id] : undefined;
+  // Deployment codes may repeat (decision 0023); the editor names the other expressions with the same code.
+  const sameCode =
+    kind === 'expressions' && draft?.code?.trim()
+      ? Object.values(items.data ?? {})
+          .filter((i) => i.id !== draft.id && (i.code ?? '').trim() === draft.code!.trim())
+          .map((i) => `${i.name} (${i.id})`)
+      : [];
   useUnsaved(`library-${kind}`, !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft)));
 
   async function save() {
@@ -120,6 +128,7 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
               <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => setSelected(item.id)}>
                 <span className="grow">
                   {item.name} <span className="faint mono">{item.id}</span>
+                  {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
                   {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
                 </span>
                 <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
@@ -156,6 +165,14 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
               <label className="col" style={{ gap: 2 }}>
                 <span className="muted">{t('lib.negative')}</span>
                 <TagInput values={draft.negative ?? []} onChange={(negative) => setDraft({ ...draft, negative })} />
+              </label>
+            )}
+            {kind === 'expressions' && (
+              <label className="col" style={{ gap: 2 }}>
+                <span className="muted">{t('lib.code')}</span>
+                <input className="mono" style={{ width: 160 }} value={draft.code ?? ''} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
+                <span className="faint small">{t('lib.code_hint')}</span>
+                {sameCode.length > 0 && <span className="warn-text small">{t('lib.code_same', { names: sameCode.join(', ') })}</span>}
               </label>
             )}
             {kind === 'expressions' && (
