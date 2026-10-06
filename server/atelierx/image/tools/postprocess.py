@@ -320,8 +320,10 @@ class PostprocessMixin:
         try:
             info = self.comfy.request('/object_info')
         except Exception as error:
+            # `reason` tells the screen what to offer: connect ComfyUI (offline) or install the nodes (nodes).
             return {
                 'available': False,
+                'reason': 'offline',
                 'error': Msg(
                     'server.postprocess.cannot_connect_to_comfyui',
                     'Cannot connect to ComfyUI: {error}',
@@ -332,6 +334,7 @@ class PostprocessMixin:
         if prefix is None:
             return {
                 'available': False,
+                'reason': 'nodes',
                 'error': Msg(
                     'server.postprocess.nodes_missing',
                     'The post-processing nodes are not in ComfyUI. Install them in Settings → Install → nodes, '

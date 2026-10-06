@@ -88,6 +88,19 @@ class TaggerMixin:
         exclude = self.tag_excludes()
         try:
             info = self.comfy.request('/object_info/' + NODE.replace('|', '%7C'))
+        except Exception as error:
+            # `reason` tells the screen what to offer: connect ComfyUI (offline) or install the nodes (nodes).
+            return {
+                'available': False,
+                'reason': 'offline',
+                'error': Msg(
+                    'server.postprocess.cannot_connect_to_comfyui',
+                    'Cannot connect to ComfyUI: {error}',
+                    error=message_of(error),
+                ),
+                'exclude': exclude,
+            }
+        try:
             spec = info[NODE]['input']['required']
             return {
                 'available': True,
@@ -98,6 +111,7 @@ class TaggerMixin:
         except Exception as error:
             return {
                 'available': False,
+                'reason': 'nodes',
                 'error': Msg(
                     'server.tagger.wd14_tagger_node_not_found',
                     'WD14 tagger node not found: {error}',
