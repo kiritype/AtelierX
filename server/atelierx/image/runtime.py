@@ -17,6 +17,7 @@ from .lora.trainer import LoraTrainer
 from .models import FAMILY_LABELS, ModelProfiles
 from .review_rounds import ReviewRounds
 from .reviews import ReviewStore
+from .service_config import ServiceConfig
 from .services import ComfyService
 from .tags import TagLookup
 from .tools.convert import ConvertTasks
@@ -40,8 +41,10 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.comfy = Comfy(DEFAULT_URL)
         # Where queued jobs are made, by the job's ``service``.
         self.services = {service.id: service for service in (ComfyService(self),)}
+        self.service_config = ServiceConfig(paths, llm.vault)
         self.models = ModelProfiles(paths)
-        self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.jobs)
+        # Only jobs on this PC's GPU count for the GPU broker; an internet service's job does not hold it.
+        self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.select(self.on_gpu))
         self.control = ComfyControl(self)
         self.tags = TagLookup(paths)
         self.gallery = Gallery(paths)
@@ -105,6 +108,14 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             catalog['families'] = self.models.classify(catalog)
         catalog['family_labels'] = FAMILY_LABELS
         return catalog
+
+    # --- image services on the internet (#41) ---------------------------------------------------------------------
+    def image_services(self):
+        return self.service_config.public({i for i, s in self.services.items() if i != 'comfyui'})
+
+    def save_image_services(self, doc):
+        self.service_config.save(doc)
+        return self.image_services()
 
     # --- review hooks of the generation worker ----------------------------------------------------------------------
     def review_wanted(self):
