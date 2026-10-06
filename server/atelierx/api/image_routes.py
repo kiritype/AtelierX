@@ -19,7 +19,12 @@ def _runtime(request):
 
 async def _body(request):
     raw = await request.body()
-    return json.loads(raw) if raw else {}
+    try:
+        return json.loads(raw) if raw else {}
+    except ValueError as exc:  # not JSON, or not UTF-8: the request's fault, not a server error
+        raise AppError(
+            Msg('server.request.invalid_json', 'The request body is not valid JSON.'), 400
+        ) from exc
 
 
 def _as_msg(error):
@@ -81,6 +86,15 @@ async def gpu_reserve(request):
 async def gpu_release(request):
     runtime = _runtime(request)
     return await call(runtime.gpu.release_reservation, await _body(request))
+
+
+async def image_services_get(request):
+    return await call(_runtime(request).image_services)
+
+
+async def image_services_put(request):
+    runtime = _runtime(request)
+    return await call(runtime.save_image_services, await _body(request))
 
 
 async def settings_get(request):
@@ -404,6 +418,8 @@ def routes():
         Route(f'{p}/gpu', gpu_status),
         Route(f'{p}/gpu/reserve', gpu_reserve, methods=['POST']),
         Route(f'{p}/gpu/release', gpu_release, methods=['POST']),
+        Route(f'{p}/services', image_services_get),
+        Route(f'{p}/services', image_services_put, methods=['PUT']),
         Route(f'{p}/settings/{{section}}', settings_get),
         Route(f'{p}/settings/{{section}}', settings_put, methods=['PUT']),
         Route(f'{p}/tags/complete', tags_complete),

@@ -385,7 +385,7 @@ class ReviewRounds:
                 or not self.settings['enabled']
                 or not rt.gpu.generation_allowed()
                 or rt.queue.any_queued()
-                or rt.queue.any_active()
+                or rt.queue.any_active(rt.on_gpu)
             ):
                 return False
             ready = [r for r in self.rounds if r['status'] == 'pending_review']

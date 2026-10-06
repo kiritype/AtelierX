@@ -264,7 +264,7 @@ class LoraTrainer:
                 continue
             # Checked and taken under the queue's lock, so no job starts in between.
             with self.rt.queue.lock:
-                if not self.rt.queue.any_active() and gpu.acquire(
+                if not self.rt.queue.any_active(self.rt.on_gpu) and gpu.acquire(
                     'training', 'preparing', run['output_name']
                 ):
                     return

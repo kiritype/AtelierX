@@ -30,6 +30,10 @@ class GenerationService:
     def busy_too_long(self):
         return Msg('server.worker.service_busy', 'Waited 30 minutes for the image service.')
 
+    def validate_settings(self, settings):
+        """The settings a job keeps, checked and completed with defaults; ValueError for the user's mistake."""
+        return settings
+
     def submit(self, job):
         """Send the job. Returns what was sent: ``{'id': <the service's id for it>, 'record': <request to keep>}``."""
         raise NotImplementedError

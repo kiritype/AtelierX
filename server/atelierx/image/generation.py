@@ -59,7 +59,34 @@ class GenerationMixin:
         return self.queue.public(self.gpu.status())
 
     # --- composing and queueing ------------------------------------------------------------------------------------
+    def _service(self, body):
+        ident = body.get('service') or DEFAULT_SERVICE
+        service = self.services.get(ident)
+        if service is None:
+            raise ValueError(
+                Msg(
+                    'server.worker.unknown_service',
+                    'This job needs an image service that is not set up: {service}',
+                    service=ident,
+                )
+            )
+        return service
+
     def _settings(self, body):
+        service = self._service(body)
+        if service.id != DEFAULT_SERVICE:
+            # An internet service has its own settings; prompts are composed for it (library targets, #80).
+            settings = {**(body.get('settings') or {}), 'family': service.id}
+            options = {
+                'family': service.id,
+                'common_ids': body.get('common_ids'),
+                'style_ids': body.get('style_ids') or [],
+                'composition_id': body.get('composition_id'),
+                'outfit_slots': body.get('outfit_slots'),
+                'overrides': body.get('overrides') or {},
+                'trigger': False,  # a trigger word only means something to a local LoRA
+            }
+            return settings, options, None
         preset = None
         if body.get('preset_id'):
             preset = next((p for p in library.presets(self.paths) if p['id'] == body['preset_id']), None)
@@ -104,11 +131,27 @@ class GenerationMixin:
             )
         if len(targets) * count > MAX_REQUEST:
             raise ValueError(Msg('server.queue.up_to_3_000_images_per', 'Up to 3,000 images per request.'))
-        catalog = self.comfy.catalog()
-        if not catalog['connected']:
-            raise ValueError(catalog['error'])
+        service = self._service(body)
         raw_settings, options, preset = self._settings(body)
-        settings = validate_settings(raw_settings, catalog)
+        if service.id == DEFAULT_SERVICE:
+            catalog = self.comfy.catalog()
+            if not catalog['connected']:
+                raise ValueError(catalog['error'])
+            settings = validate_settings(raw_settings, catalog)
+        else:
+            catalog = None
+            limit = self.service_config.limit()
+            if limit and len(targets) * count > limit:
+                raise ValueError(
+                    Msg(
+                        'server.image.services.over_limit',
+                        '{n} images is over the limit of {limit} per run for internet image services. '
+                        'Queue fewer, or raise the limit in Settings → Image.',
+                        n=len(targets) * count,
+                        limit=limit,
+                    )
+                )
+            settings = service.validate_settings(raw_settings)
         composer = Composer(self.paths, work)
         if len(targets) > 1:
             # Per-target edits would land on the wrong images when several are queued at once.
@@ -117,7 +160,12 @@ class GenerationMixin:
         prepared = []
         for target in targets:
             snap = composer.compose(target, options)
-            loras = self.auto_loras(work, snap['character_id'], snap['outfit_id'], settings['family'])
+            # Local LoRAs only exist for the local image server.
+            loras = (
+                self.auto_loras(work, snap['character_id'], snap['outfit_id'], settings['family'])
+                if catalog is not None
+                else []
+            )
             for _ in range(count):
                 seed = secrets.randbits(32) if settings.get('seed', -1) == -1 else settings['seed']
                 actual = {**settings, 'seed': seed}
@@ -136,7 +184,13 @@ class GenerationMixin:
                             )
                         )
                 snapshot = copy.deepcopy(
-                    {**snap, 'work_id': work.id, 'settings': actual, 'batch_id': batch_id}
+                    {
+                        **snap,
+                        'work_id': work.id,
+                        'service': service.id,
+                        'settings': actual,
+                        'batch_id': batch_id,
+                    }
                 )
                 if preset:
                     snapshot['generation_preset'] = {
@@ -148,7 +202,7 @@ class GenerationMixin:
                         'id': uuid.uuid4().hex,
                         'status': 'queued',
                         'created_at': now(),
-                        'service': DEFAULT_SERVICE,
+                        'service': service.id,
                         'work_id': work.id,
                         'character_id': snap['character_id'],
                         'outfit_id': snap['outfit_id'],
@@ -267,17 +321,23 @@ class GenerationMixin:
         return self.output_url(path)
 
     # --- worker ------------------------------------------------------------------------------------------------------
+    def on_gpu(self, job):
+        service = self.services.get(job.get('service') or DEFAULT_SERVICE)
+        return service is None or service.local_gpu
+
     def worker(self):
         while not self.stop.wait(0.5):
             with self.lock:
-                pending = self.queue.any_queued()
-                free = not self.paused and self.gpu.generation_allowed()
-            # Another program on the GPU holds new jobs back; the reason is shown in the UI.
-            if pending and free and self.gpu.admit('generation'):
+                upcoming = self.next_generation_job()
+                local = upcoming is not None and self.on_gpu(upcoming)
+                free = not self.paused and (not local or self.gpu.generation_allowed())
+            # Another program on the GPU holds new local jobs back; the reason is shown in the UI.
+            if upcoming is not None and local and free and self.gpu.admit('generation'):
                 continue
             with self.lock:
-                free = not self.paused and self.gpu.generation_allowed()
-                job = self.next_generation_job() if free else None
+                job = self.next_generation_job() if not self.paused else None
+                if job is not None and self.on_gpu(job) and not self.gpu.generation_allowed():
+                    job = None
                 if job is not None:
                     self.queue.update(
                         job,

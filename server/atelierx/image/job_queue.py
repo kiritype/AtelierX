@@ -103,10 +103,10 @@ class JobQueue:
         with self.lock:
             return any(j['status'] == 'queued' for j in self.jobs)
 
-    def any_active(self):
-        """A job is on its way through a service (the GPU must not be handed to training)."""
+    def any_active(self, test=None):
+        """A job (of those ``test`` accepts) is on its way through a service."""
         with self.lock:
-            return any(j['status'] in ACTIVE for j in self.jobs)
+            return any(j['status'] in ACTIVE and (test is None or test(j)) for j in self.jobs)
 
     def public(self, gpu_status):
         with self.lock:
