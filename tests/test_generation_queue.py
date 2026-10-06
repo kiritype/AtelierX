@@ -8,6 +8,7 @@ import io
 
 from PIL import Image
 
+from atelierx.image.services import GenerationService
 from test_image import FakeComfy
 
 TARGET = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
@@ -181,7 +182,7 @@ def test_clearing_finished_jobs_and_cancelling_the_waiting_ones(unlocked):
     assert runtime.remove_finished()['removed'] == 3 and runtime.jobs == []
 
 
-class PaintService:
+class PaintService(GenerationService):
     """An image service that is not ComfyUI: no GPU turn, answers on the second check."""
 
     id = 'paint'

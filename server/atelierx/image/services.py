@@ -13,12 +13,23 @@ from ..core.i18n import Msg
 from .workflow import build_workflow
 
 
+class ResultPending(RuntimeError):
+    """The service has (or is making) the image but it could not be fetched. Asking about ``task_id`` again needs no new
+    request, so a retry continues with it."""
+
+    def __init__(self, msg, task_id):
+        super().__init__(msg)
+        self.task_id = task_id
+
+
 class GenerationService:
     """What the worker needs from a service. ``id`` is the job's ``service`` value."""
 
     id = ''
     # Runs on this PC's GPU: the worker takes the GPU broker's turn first and LoRA training waits for it.
     local_gpu = False
+    # Whether a sent job can be asked about again later (after a restart or a failed download) by its id.
+    resumable = False
     # Whether an image that arrives after a cancel is saved (a request to a paid service cannot be called back).
     keep_on_cancel = False
     # How long the worker waits for a free service and for one result.

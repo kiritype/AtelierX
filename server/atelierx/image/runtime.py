@@ -11,6 +11,7 @@ from .generation import GenerationMixin
 from .gpu import GpuBroker
 from .installs import Installs
 from .internet.novelai import NovelAIService
+from .internet.pixai import PixAIService
 from .job_queue import JobQueue
 from .lab import LabMixin
 from .lora import models as lora_models
@@ -44,7 +45,11 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.service_config = ServiceConfig(paths, llm.vault)
         self.services = {
             service.id: service
-            for service in (ComfyService(self), NovelAIService(self.service_config, self.stop))
+            for service in (
+                ComfyService(self),
+                NovelAIService(self.service_config, self.stop),
+                PixAIService(self.service_config, self.stop),
+            )
         }
         self.models = ModelProfiles(paths)
         # Only jobs on this PC's GPU count for the GPU broker; an internet service's job does not hold it.
@@ -60,8 +65,24 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.trainer = LoraTrainer(self)
         self.installs = Installs(self)
         self.load_queue()
+        self._resume_sent_jobs()
         self.rounds = ReviewRounds(self)
         self.reviews.listeners.append(self.rounds.human_changed)
+
+    def _resume_sent_jobs(self):
+        """Jobs a restart cut off after their request went to a service that keeps results (PixAI) wait again for that
+        result instead of being marked interrupted: asking again would pay twice."""
+        with self.queue.editing() as jobs:
+            for job in jobs:
+                service = self.services.get(job.get('service') or 'comfyui')
+                if job['status'] == 'interrupted' and job.get('prompt_id') and service and service.resumable:
+                    job.update(
+                        status='queued',
+                        resume=job['prompt_id'],
+                        progress=Msg(
+                            'server.worker.resuming', 'Getting the result of the request already sent'
+                        ),
+                    )
 
     def _adjust_export_plan(self, plan, filters):
         """Apply each work's completeness board to the deployment export's missing list (#45)."""
