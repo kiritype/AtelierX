@@ -1,6 +1,6 @@
 # AtelierX
 
-[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://atelierx.cftm.net/)
+[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://atelierx.cftm.net/) · [오류 제보·제안·질문](https://github.com/kiritype/AtelierX/discussions)
 
 한국어 | [English](README.en.md)
 
@@ -46,6 +46,11 @@ Ollama Cloud 연결 점검은 모델 목록과 합성 응답·스트리밍을 �
 | [docs/](docs/README.md) | 설계 문서: 개요, 데이터 구조, 구조, 플랫폼 프리셋, 기능별 설계, 결정 기록 |
 | [defaults/](defaults/README.md) | 앱이 처음 실행될 때 복사해 주는 기본 가이드라인과 이미지 라이브러리 |
 | [samples/](samples/README.md) | 앱에 함께 들어가는 샘플 작품 세 개 |
+
+## 제보와 문의
+
+오류 제보, 기능 제안, 질문은 [Discussions](https://github.com/kiritype/AtelierX/discussions)에 남겨 주세요(앱의 **도움말** 메뉴에서도 열 수 있습니다). Issues는 확인된 작업 목록으로 씁니다.
+보안 취약점은 [보안 정책](SECURITY.md)에 따라 비공개로 제보해 주세요.
 
 ## 라이선스
 

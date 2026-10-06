@@ -1,6 +1,6 @@
 # AtelierX
 
-[Download for Windows](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://atelierx.cftm.net/)
+[Download for Windows](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://atelierx.cftm.net/) · [Bug reports, ideas and questions](https://github.com/kiritype/AtelierX/discussions)
 
 [한국어](README.md) | English
 
@@ -60,6 +60,11 @@ in Settings → Install and does not redistribute them. Versions, licenses and s
 ## Contributing
 
 See [CONTRIBUTING.en.md](CONTRIBUTING.en.md).
+
+## Feedback
+
+Bug reports, feature requests and questions go to [Discussions](https://github.com/kiritype/AtelierX/discussions) (also reachable from the app's **Help** menu).
+Issues are the maintainers' task list. Report security vulnerabilities privately as described in the [security policy](SECURITY.md).
 
 ## License
 

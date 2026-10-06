@@ -35,6 +35,15 @@
 
 재설치나 데이터 복사를 하기 전에 오류 메시지와 로그를 복사해 두면 문제 확인에 도움이 됩니다.
 
+## 오류 제보와 문의
+
+오류 제보, 기능 제안, 질문은 GitHub [Discussions](https://github.com/kiritype/AtelierX/discussions)에서 받습니다. 앱의 **도움말** 메뉴 → **오류 제보**·**기능 제안**·**질문·문의**를 누르면 해당 글쓰기 화면이 열립니다.
+
+- 오류 제보에는 앱 버전(**도움말 → AtelierX 정보**), 재현 절차, `state/logs/desktop.log`에서 문제가 난 시각 근처를 함께 적어 주세요.
+- API 키, 비밀번호, 개인 작품 내용은 지우고 올려 주세요.
+- 확인된 내용은 작업 목록(Issues)으로 옮겨 진행하고, 원래 글에 진행 상황을 알려 드립니다.
+- 보안 취약점은 공개 게시판에 쓰지 말고 [비공개 취약점 제보](https://github.com/kiritype/AtelierX/security/advisories/new)로 알려 주세요.
+
 ## 다음 단계
 
 [검증 범위와 출시 상태](release-status.md)에서 아직 확인되지 않은 환경을 살펴보세요.
