@@ -672,3 +672,4 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .service-switch button.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
 .service-switch button:disabled { color: var(--text-3); }
 .service-badge { font-size: 11px; padding: 0 6px; border-radius: 3px; background: var(--panel-2); color: var(--text-2); }
+.gallery-badges .badge.service { width: auto; padding: 0 4px; font-size: 10px; }

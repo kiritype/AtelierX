@@ -1,10 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { type ComponentType, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
 import type { ImageServices } from '../ImageServiceSettings';
-import { SERVICE_NAMES, SERVICE_PANELS, lastService, lastServiceSettings, rememberService, rememberServiceSettings } from './serviceSettings';
+import NovelAISettings from './NovelAISettings';
+import { SERVICE_NAMES, lastService, lastServiceSettings, rememberService, rememberServiceSettings, type ServicePanelProps } from './serviceSettings';
+
+// Each internet service's settings panel (#42 NovelAI, #43 PixAI).
+const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = { novelai: NovelAISettings };
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
@@ -107,7 +111,9 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
     setScopeLoaded(true);
   }, [characterId, outfitId, designs.data, scopeLoaded]);
 
-  const commonDefault = useMemo(() => Object.values(commons.data ?? {}).filter((c) => c.default !== false).map((c) => c.id), [commons.data]);
+  const target = internet ? service : settings.family;
+  // Common prompts on by default, of those written for this target (#80): switching service changes the defaults.
+  const commonDefault = useMemo(() => Object.values(commons.data ?? {}).filter((c) => c.default !== false && fits(c, target)).map((c) => c.id), [commons.data, target]);
   const chosenCommons = commonIds ?? commonDefault;
   const targets = useMemo(
     () =>
@@ -141,7 +147,6 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
 
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
-  const target = internet ? service : settings.family;
   const notApplied = (item: Fragment) => (fits(item, target) ? null : <span className="warn-text small"> ({t('gen.not_applied')})</span>);
   const styleView = visibleFor(Object.values(styles.data ?? {}), target, styleIds, showOthers);
   const commonView = visibleFor(Object.values(commons.data ?? {}), target, chosenCommons, showOthers);
@@ -346,11 +351,19 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
               if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
               setBusy(true);
               try {
-                const result = await post(`/api/works/${workId}/image/jobs`, {
+                const request = {
                   ...options(),
                   count,
                   ...(reviewSettings.data?.enabled ? { llm: reviewLlm } : {}),
-                });
+                };
+                let result;
+                try {
+                  result = await post(`/api/works/${workId}/image/jobs`, request);
+                } catch (err) {
+                  // The same request went to a paid service a moment ago (#42): ask before sending it again.
+                  if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat') || !confirm(tm(err.msg))) throw err;
+                  result = await post(`/api/works/${workId}/image/jobs`, { ...request, repeat_ok: true });
+                }
                 toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
                 setHanded(null); // the board's combinations are queued now; queuing them again would double them
               } catch (err) {
