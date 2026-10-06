@@ -116,7 +116,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
 
   const open = useCallback((tab: Tab) => {
     const key = tabKey(tab);
-    setTabs((list) => (list.some((x) => tabKey(x) === key) ? list : [...list, tab]));
+    // An open tab takes the new request too (a settings tab asked for another section).
+    setTabs((list) => (list.some((x) => tabKey(x) === key) ? list.map((x) => (tabKey(x) === key ? { ...x, ...tab } : x)) : [...list, tab]));
     setActive(key);
     setTesting(false);
   }, []);
@@ -503,7 +504,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                       />
                     )}
                     {tab.type === 'work-settings' && <WorkSettings workId={workId} info={info.data!} />}
-                      {tab.type === 'settings' && <AppSettings />}
+                      {tab.type === 'settings' && <AppSettings request={tab.section ? { section: tab.section, at: tab.at ?? 0 } : undefined} />}
                     {tab.type === 'review' && <ReviewTab workId={workId} draftId={tab.draft} onDone={() => close(key)} openItem={(path) => open({ type: 'item', path })} />}
                     {tab.type === 'compare' && <CompareTab workId={workId} snapshot={tab.snapshot} />}
                     {tab.type === 'relations' && <RelationsTab workId={workId} openItem={(path) => open({ type: 'item', path })} />}
@@ -517,7 +518,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                         openView={(view) => open({ type: 'image', view, characterId: tab.characterId, outfitId: tab.outfitId })}
                         openImage={(view, characterId, outfitId) => open({ type: 'image', view, characterId, outfitId })}
                         openItem={(path) => open({ type: 'item', path })}
-                        openSettings={() => open({ type: 'settings' })}
+                        openSettings={(section) => open({ type: 'settings', section, at: Date.now() })}
                       />
                     )}
                   </ErrorBoundary>

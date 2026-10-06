@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
 import ImageSettings from './ImageSettings';
@@ -14,7 +14,7 @@ import { SettingsPackages } from './Packages';
 type Section = 'general' | 'presets' | 'llm' | 'vault' | 'guidelines' | 'image' | 'install' | 'packages' | 'about';
 const SECTIONS: Section[] = ['general', 'presets', 'llm', 'vault', 'guidelines', 'image', 'install', 'packages', 'about'];
 
-export default function AppSettings() {
+export default function AppSettings({ request }: { request?: { section: string; at: number } }) {
   const [section, setSection] = useState<Section>('general');
   // A section stays mounted once opened, so moving to another one and back keeps what was typed but not yet saved.
   const [visited, setVisited] = useState<Set<Section>>(() => new Set(['general']));
@@ -22,6 +22,11 @@ export default function AppSettings() {
     setSection(key);
     setVisited((all) => (all.has(key) ? all : new Set([...all, key])));
   };
+  // Another screen asked for a section (image tools -> Install); `at` repeats the request after the user moved away.
+  useEffect(() => {
+    if (request && (SECTIONS as string[]).includes(request.section)) selectSection(request.section as Section);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.section, request?.at]);
   const panes: Record<Section, ReactNode> = {
     general: <General />,
     presets: <Presets />,

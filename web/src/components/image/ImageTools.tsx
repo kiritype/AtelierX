@@ -36,6 +36,9 @@ type Analysis = {
   error?: string;
 };
 type Tab = 'prompt' | 'convert' | 'tag' | 'post' | 'censor' | 'alpha' | 'inpaint';
+// What the server says about a ComfyUI tool: usable, or why not (ComfyUI not reachable, or nodes missing).
+type ToolInfo = { available: boolean; reason?: 'offline' | 'nodes'; error?: unknown };
+type OpenSettings = (section?: 'image' | 'install') => void;
 type MaskKind = 'censor' | 'alpha' | 'inpaint';
 
 const TABS: Tab[] = ['prompt', 'convert', 'tag', 'post', 'censor', 'alpha', 'inpaint'];
@@ -47,6 +50,8 @@ const MASK: Record<MaskKind, { field: 'mask' | 'alpha_mask' | 'inpaint_mask'; co
 const CENSOR_LABELS = ['nipples', 'pussy', 'penis', 'anus', 'testicles', 'x-ray', 'cross-section'];
 const SOURCE_LABELS: Record<string, string> = { atelierx: 'tools.source.atelierx', parameters: 'tools.source.parameters', comfyui: 'tools.source.comfyui' };
 const ACCEPT = '.png,.webp,.jpg,.jpeg,.zip';
+// Tabs that run in ComfyUI. WebP conversion and prompt formats work without it.
+const COMFY_TABS: Tab[] = ['tag', 'post', 'censor', 'alpha', 'inpaint'];
 
 // Translation with positional values ({0}, {1} …).
 const tp = (key: string, ...values: unknown[]) => t(key, Object.fromEntries(values.map((v, i) => [String(i), v])));
@@ -68,9 +73,30 @@ function Num({ value, onChange, ...attrs }: { value: number; onChange: (v: numbe
   return <input type="number" style={{ width: 96 }} value={value} onChange={(e) => onChange(Number(e.target.value))} {...attrs} />;
 }
 
+// Shown instead of a tool's form when ComfyUI or its nodes are missing: why, and where to fix it.
+function ComfyNotice({ info, openSettings, recheck }: { info: ToolInfo; openSettings?: OpenSettings; recheck: () => void }) {
+  const reason = info.reason === 'nodes' ? 'nodes' : 'offline';
+  return (
+    <div className="col tools-notice">
+      <strong>{t(`tools.notice.${reason}.title`)}</strong>
+      <span>{t(`tools.notice.${reason}.body`)}</span>
+      {/* The connection error says what failed; for missing nodes the title says it all. */}
+      {reason === 'offline' && info.error != null && <span className="faint small">{msg(info.error)}</span>}
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+        {openSettings && (
+          <button className="primary" onClick={() => openSettings(reason === 'nodes' ? 'install' : 'image')}>
+            {t(`tools.notice.${reason}.action`)}
+          </button>
+        )}
+        <button onClick={recheck}>{t('tools.notice.recheck')}</button>
+      </div>
+    </div>
+  );
+}
+
 // Image menu → Image tools: a workspace of uploaded and gallery images, their metadata and tags, WebP conversion,
 // post-processing (upscale, detailer), censor, background removal, inpaint and prompt-format conversion.
-export default function ImageTools({ openLab }: { openLab: () => void }) {
+export default function ImageTools({ openLab, openSettings }: { openLab: () => void; openSettings?: OpenSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
@@ -78,6 +104,16 @@ export default function ImageTools({ openLab }: { openLab: () => void }) {
   const tagger = useQuery<any>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
   const postInfo = useQuery<any>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
   const list = items.data?.items ?? [];
+  // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
+  const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
+  const blocked = (key: Tab) => {
+    const info = infoOf(key);
+    return !!info && !info.available;
+  };
+  const recheck = () => {
+    qc.invalidateQueries({ queryKey: ['tool-tagger'] });
+    qc.invalidateQueries({ queryKey: ['tool-post'] });
+  };
 
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [currentId, setCurrentId] = useState('');
@@ -217,7 +253,7 @@ export default function ImageTools({ openLab }: { openLab: () => void }) {
             <PromptConverter handoff={handoff} openLab={openLab} />
           ) : !current ? (
             <div className="faint">{t('tools.choose_an_image')}</div>
-          ) : tab === 'censor' || tab === 'alpha' || tab === 'inpaint' ? (
+          ) : (tab === 'censor' || tab === 'alpha' || tab === 'inpaint') && !blocked(tab) ? (
             <MaskPane key={`${tab}:${current.id}:${current[MASK[tab].field]?.updated_at ?? ''}`} item={current} kind={tab} editor={editor} onChange={rerender} onSaved={reload} />
           ) : (
             <Detail
@@ -234,16 +270,22 @@ export default function ImageTools({ openLab }: { openLab: () => void }) {
         <aside className="tools-panel pad col">
           <div className="tools-tabs">
             {TABS.map((key) => (
-              <button key={key} className={tab === key ? 'on' : ''} onClick={() => switchTab(key)}>
+              <button
+                key={key}
+                className={`${tab === key ? 'on' : ''} ${blocked(key) ? 'unavailable' : ''}`}
+                title={blocked(key) ? t(`tools.notice.${infoOf(key)?.reason === 'nodes' ? 'nodes' : 'offline'}.title`) : undefined}
+                onClick={() => switchTab(key)}
+              >
                 {t(`tools.tab.${key}`)}
               </button>
             ))}
           </div>
-          {tab !== 'prompt' && <div className="faint small">{tp('tools.selected', chosenIds.length)}</div>}
+          {tab !== 'prompt' && !blocked(tab) && <div className="faint small">{tp('tools.selected', chosenIds.length)}</div>}
+          {blocked(tab) && <ComfyNotice info={infoOf(tab)!} openSettings={openSettings} recheck={recheck} />}
           {tab === 'convert' && <ConvertForm ids={chosenIds} fail={fail} />}
-          {tab === 'tag' && <TagForm ids={chosenIds} list={list} info={tagger.data} fail={fail} onExcludes={() => qc.invalidateQueries({ queryKey: ['tool-tagger'] })} />}
-          {tab === 'post' && <PostForm ids={chosenIds} info={postInfo.data} fail={fail} />}
-          {(tab === 'censor' || tab === 'alpha' || tab === 'inpaint') && (
+          {tab === 'tag' && !blocked(tab) && <TagForm ids={chosenIds} list={list} info={tagger.data} fail={fail} onExcludes={() => qc.invalidateQueries({ queryKey: ['tool-tagger'] })} />}
+          {tab === 'post' && !blocked(tab) && <PostForm ids={chosenIds} info={postInfo.data} fail={fail} openSettings={openSettings} />}
+          {(tab === 'censor' || tab === 'alpha' || tab === 'inpaint') && !blocked(tab) && (
             <MaskForm
               kind={tab}
               item={current}
@@ -670,7 +712,7 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
   );
 }
 
-function PostForm({ ids, info, fail }: { ids: string[]; info: any; fail: (e: unknown) => void }) {
+function PostForm({ ids, info, fail, openSettings }: { ids: string[]; info: any; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [op, setOp] = useState('upscale');
@@ -691,6 +733,16 @@ function PostForm({ ids, info, fail }: { ids: string[]; info: any; fail: (e: unk
           ))}
         </select>
       </Field>
+      {!info.ops.detail && (
+        <div className="row faint small" style={{ flexWrap: 'wrap', gap: 6 }}>
+          <span>{t('tools.notice.detail')}</span>
+          {openSettings && (
+            <button className="ghost small" onClick={() => openSettings('install')}>
+              {t('tools.notice.nodes.action')}
+            </button>
+          )}
+        </div>
+      )}
       {op === 'detail' ? (
         <>
           <Field label={t('tools.areas_to_redraw')} hint={t('tools.detail_order')}>

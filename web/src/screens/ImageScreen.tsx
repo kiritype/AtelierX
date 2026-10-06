@@ -25,7 +25,7 @@ export default function ImageScreen({
   openView: (view: ImageView) => void;
   openImage: (view: ImageView, characterId?: string, outfitId?: string) => void;
   openItem: (path: string) => void;
-  openSettings?: () => void;
+  openSettings?: (section?: 'image' | 'install') => void;
   characterId?: string;
   outfitId?: string;
 }) {
@@ -36,7 +36,7 @@ export default function ImageScreen({
   if (view === 'queue') return <ImageQueue />;
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
   if (view === 'lab') return <ImageLab workId={workId} />;
-  if (view === 'tools') return <ImageTools openLab={() => openView('lab')} />;
+  if (view === 'tools') return <ImageTools openLab={() => openView('lab')} openSettings={openSettings} />;
   if (view === 'lora') return <ImageLora workId={workId} initialCharacterId={characterId} initialOutfitId={outfitId} openLab={() => openView('lab')} />;
   return (
     <div className="pad col" style={{ maxWidth: 720 }}>
