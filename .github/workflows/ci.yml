@@ -23,6 +23,23 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+      # Only documentation changed (docs/, README, CONTRIBUTING, SECURITY): skip the app's tests and build and check the
+      # offline manual instead. The check is still called `test`, so the branch rules stay as they are.
+      - name: What changed
+        id: changes
+        run: |
+          $base = ''
+          if ('${{ github.event_name }}' -eq 'pull_request') { $base = 'origin/${{ github.base_ref }}' }
+          elseif ('${{ github.event_name }}' -eq 'push' -and '${{ github.event.before }}' -notmatch '^0*$') { $base = '${{ github.event.before }}' }
+          $docs = $false
+          if ($base) {
+            $files = @(git diff --name-only "$base...HEAD")
+            $other = @($files | Where-Object { $_ -notmatch '^(docs/|README(\.en)?\.md$|CONTRIBUTING(\.en)?\.md$|SECURITY\.md$)' })
+            $docs = $files.Count -gt 0 -and $other.Count -eq 0
+          }
+          Write-Output "Documentation only: $docs"
+          "docs_only=$($docs.ToString().ToLower())" >> $env:GITHUB_OUTPUT
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -32,17 +49,24 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install test dependencies
+        if: steps.changes.outputs.docs_only != 'true'
         run: python -m pip install -e . pytest
       - name: Install frontend dependencies
         working-directory: web
         run: npm ci
+      - name: Offline manual links
+        if: steps.changes.outputs.docs_only == 'true'
+        run: python tools/build_manual.py dist/manual-check
       - name: Backend tests
+        if: steps.changes.outputs.docs_only != 'true'
         run: python -m pytest -q -p no:cacheprovider
       - name: Frontend tests
+        if: steps.changes.outputs.docs_only != 'true'
         working-directory: web
         run: node node_modules/vitest/vitest.mjs run
       # Pull requests into dev must catch type and build errors before staging packages the app.
       - name: Frontend type check and build
+        if: steps.changes.outputs.docs_only != 'true'
         working-directory: web
         run: |
           node node_modules/typescript/bin/tsc -b
