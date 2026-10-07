@@ -23,9 +23,32 @@
    - 저장은 앱 쪽(`data/image/model-info.json`)에만 한다. 모델 폴더에는 아무것도 쓰지 않는다.
 6. 학습한 LoRA(`atelierx\…`, [결정 0025](../decisions/0025-lora-folder-link.md))는 출처가 "학습"이다.
 
-### 받기·찾기
+### 받기
 
-받기(주소나 ID, 이어 받기, 직접 받은 파일 넣기)와 찾기(Civitai 검색)는 이 문서에 이어서 적는다.
+1. 모델 화면 → **받기** 탭. Civitai API 키가 없으면 위에 안내가 보인다(키는 설정 → 이미지 → 모델 받기, 금고에 저장).
+2. Civitai 모델 페이지 주소, 다운로드 주소(`/api/download/models/<판>`) 또는 모델 번호를 붙여 넣고 **읽기**.
+   모델 이름·종류·작성자·NSFW 여부·라이선스와 판 목록(기반 모델, 트리거 단어, 파일·크기·종류)이 보인다. 주소에 판이 있으면 그 판을 고른다.
+3. 파일의 **받기**를 누르면 받기 목록에 들어간다. 넣을 곳은 그 종류의 이미지 생성 서버 폴더(공유 모델 폴더 우선) 아래 계열 폴더
+   (`anima/`, `sdxl/`)다. **하위 폴더**로 바꿀 수 있다. Anima 기반 "Checkpoint"는 디퓨전 모델 폴더로 간다.
+4. 받기는 한 번에 하나씩 한다.
+   - 받기 전에 남은 디스크 공간을 확인한다(필요한 크기 + 512 MB).
+   - `<파일>.part`로 받고, 끊기면 **이어 받기**로 남은 부분만 받는다(HTTP Range). 앱을 다시 켜면 받던 것은 "멈춤"이 된다.
+   - 끝나면 Civitai가 준 SHA256과 비교하고, 맞으면 이름을 바꾼다. 틀리면 지우고 실패로 남긴다.
+   - 키가 필요한 파일인데 키가 없으면(401·403, 또는 로그인 페이지가 오면) 그렇게 알린다.
+   - 받은 파일의 Civitai 정보는 해시와 함께 모델 정보에 저장한다(출처 "Civitai", 트리거 단어 등).
+5. 목록에서 취소·이어 받기·목록에서 지우기(받은 파일은 남음)를 한다.
+
+### 직접 받은 파일 넣기
+
+키가 없거나 브라우저로 받았을 때. 받기 탭 아래 **직접 받은 파일 넣기**를 펼친다.
+
+1. 다운로드 폴더(바꿀 수 있음)의 모델 파일(`.safetensors`, `.ckpt`, `.pt` …)이 보인다.
+2. **확인**: 해시를 계산해 Civitai에서 찾고, 종류·계열을 제안한다.
+3. 종류·하위 폴더를 고르고 **옮기기**. 찾은 Civitai 정보는 모델 정보에 저장한다.
+
+### 찾기
+
+Civitai 검색(검색어·종류·기반 모델·정렬, NSFW 포함 체크)은 이 문서에 이어서 적는다.
 
 ## 데이터
 
@@ -34,6 +57,8 @@
 | `data/image/model-info.json` | 읽기·쓰기 | [모델 정보](../data-model.md#모델-정보-dataimagemodel-infojson) |
 | 모델 옆 `<파일>.cm-info.json`, `<파일>.preview.*` | 읽기 | Stability Matrix |
 | `config/image/models.json` | 읽기·쓰기 | 공유 모델 폴더, 직접 지정한 계열 |
+| `config/image/downloads.json` | 읽기·쓰기 | Civitai 키의 금고 항목(`secret:…`), 찾기의 NSFW 기본값 |
+| `state/model-downloads.json` | 읽기·쓰기 | 받기 목록(상태, 받은 크기, 오류). 최근 200개 |
 
 ## 규칙
 
@@ -49,3 +74,8 @@
 | `POST /api/image/models/lookup` | `{kind, name}` → 해시 계산 + Civitai 조회 후 그 항목 |
 | `GET /api/image/models/preview?kind=&name=` | Stability Matrix 미리보기 그림 |
 | `PUT /api/image/models/family` | 계열 직접 지정 `{kind, name, family}` |
+| `POST /api/image/models/read` | `{address}` → 모델·판·파일·라이선스 |
+| `GET·POST /api/image/models/downloads` | 받기 목록 / 넣기 `{model, version, file, subfolder?}` |
+| `POST /api/image/models/downloads/{id}/{cancel·resume·remove}` | 받기 항목 다루기 |
+| `GET /api/image/models/downloaded?folder=` | 폴더의 모델 파일 |
+| `POST /api/image/models/downloaded/inspect·place` | 해시·Civitai 확인 / 옮기기 `{path, kind, subfolder, sha256?, info?}` |

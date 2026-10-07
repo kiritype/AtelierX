@@ -277,6 +277,20 @@ class ModelLibrary:
             atomic_json(self.path, store)
         return self.describe(kind, name)
 
+    def remember(self, path, digest, info):
+        """Keep what is known about a file the app just placed (a download, a file put in by the person)."""
+        stat = Path(path).stat()
+        with self.lock:
+            store = self._store()
+            store['files'][str(path).lower()] = {
+                'size': stat.st_size,
+                'mtime': stat.st_mtime_ns,
+                'sha256': digest,
+            }
+            store['info'][digest] = {**info, 'sha256': digest}
+            atomic_json(self.path, store)
+        self._folders = (0.0, None)
+
     def base_model(self, path):
         """The Civitai base model the app looked up for a file, for the family order (or None)."""
         store = self._store()

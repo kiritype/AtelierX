@@ -244,6 +244,41 @@ async def models_preview(request):
     return FileResponse(path, headers={'Cache-Control': 'max-age=3600'})
 
 
+def _downloads(request):
+    return _runtime(request).model_downloads
+
+
+async def models_read(request):
+    data = await _body(request)
+    return await call(_downloads(request).read, str(data.get('address', '')))
+
+
+async def models_downloads(request):
+    return await call(_downloads(request).public)
+
+
+async def models_download_add(request):
+    return await call(_downloads(request).add, await _body(request))
+
+
+async def models_download_act(request):
+    p = request.path_params
+    return await call(_downloads(request).act, p['jid'], p['action'])
+
+
+async def models_downloaded(request):
+    return await call(_downloads(request).candidates, request.query_params.get('folder', ''))
+
+
+async def models_inspect(request):
+    data = await _body(request)
+    return await call(_downloads(request).inspect, str(data.get('path', '')))
+
+
+async def models_place(request):
+    return await call(_downloads(request).place, await _body(request))
+
+
 async def presets_export(request):
     runtime = _runtime(request)
     ids = [i for i in request.query_params.get('ids', '').split(',') if i]
@@ -527,6 +562,13 @@ def routes():
         Route(f'{p}/models/list', models_list),
         Route(f'{p}/models/lookup', models_lookup, methods=['POST']),
         Route(f'{p}/models/preview', models_preview),
+        Route(f'{p}/models/read', models_read, methods=['POST']),
+        Route(f'{p}/models/downloads', models_downloads),
+        Route(f'{p}/models/downloads', models_download_add, methods=['POST']),
+        Route(f'{p}/models/downloads/{{jid}}/{{action}}', models_download_act, methods=['POST']),
+        Route(f'{p}/models/downloaded', models_downloaded),
+        Route(f'{p}/models/downloaded/inspect', models_inspect, methods=['POST']),
+        Route(f'{p}/models/downloaded/place', models_place, methods=['POST']),
         Route(f'{p}/gpu', gpu_status),
         Route(f'{p}/gpu/reserve', gpu_reserve, methods=['POST']),
         Route(f'{p}/gpu/release', gpu_release, methods=['POST']),
