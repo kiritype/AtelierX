@@ -18,7 +18,7 @@ from urllib.parse import quote
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
-from . import library
+from . import extensions, library, node_install
 from .compose import Composer
 from .services import ResultPending
 from .util import atomic_json, code, now, replace_file
@@ -105,6 +105,24 @@ class GenerationMixin:
             'trigger': body.get('trigger'),
         }
         return settings, options, preset
+
+    def check_nodes(self, body):
+        """What the settings need that ComfyUI lacks (#178), with the node pack that provides it when known.
+
+        The generate screen asks before queueing: install, generate without it (``missing: skip``), or cancel.
+        """
+        if self._service(body).id != DEFAULT_SERVICE:
+            return {'missing': []}
+        raw_settings, _, _ = self._settings(body)
+        catalog = self.comfy.catalog()
+        if not catalog['connected']:
+            raise ValueError(catalog['error'])
+        try:
+            validate_settings({**raw_settings, 'missing': 'ask'}, catalog)
+        except extensions.MissingNodes as missing:
+            packs = extensions.known_packs(node_install.manifest(self.paths.defaults.parent))
+            return {'missing': [{**item, 'pack': packs.get(item['name'])} for item in missing.missing]}
+        return {'missing': []}
 
     def preview(self, work, body):
         """Composed prompts for the targets without queueing (the generate screen's preview)."""

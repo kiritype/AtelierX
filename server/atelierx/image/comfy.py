@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from ..core.i18n import Msg, message_of
+from . import extensions
 
 
 class Comfy:
@@ -106,6 +107,8 @@ class Comfy:
                     'upscale': 'AtelierXUpscale' in info,
                     'detailer': 'AtelierXImpactDetailerPipeline' in info,
                 },
+                # Custom nodes usable as model patches (#178).
+                'patch_nodes': extensions.patch_nodes(info),
             }
             # Checkpoint and diffusion-model directories are distinct ComfyUI catalogs.
             # Keep qualified checkpoint IDs so equal filenames cannot select the wrong file.
@@ -164,5 +167,6 @@ class Comfy:
                 clip_types=[],
                 upscale_models=[],
                 nodes={'upscale': False, 'detailer': False},
+                patch_nodes={},
                 defaults={},
             )
