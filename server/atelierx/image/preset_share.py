@@ -24,6 +24,11 @@ MANIFEST = 'atelierx-presets.json'
 KIND = 'atelierx-style-presets'
 MAX_ZIP = 64 * 1024**2
 MAX_PRESETS = 500
+# What a package may hold once unpacked: a small list, small preset files, previews of at most 16 MB, 256 MB in all.
+MAX_MANIFEST = 2 * 1024**2
+MAX_PRESET_FILE = 1024**2
+MAX_PREVIEW = 16 * 1024**2
+MAX_UNPACKED = 256 * 1024**2
 PENDING_SECONDS = 1800
 
 
@@ -104,6 +109,33 @@ def _bad():
     return ValueError(Msg('server.presets.share.bad', 'This file is not an AtelierX style preset package.'))
 
 
+def _read(archive, name, limit, budget):
+    """One member, refused when it unpacks to more than ``limit`` or past the package's remaining ``budget``
+    (a list of one int). The size the ZIP claims is not trusted: reading stops one byte past the limit."""
+    info = archive.getinfo(name)
+    if info.file_size > limit or info.file_size > budget[0]:
+        raise ValueError(
+            Msg(
+                'server.presets.share.too_big_inside', 'A file in the package is too large: {name}', name=name
+            )
+        )
+    with archive.open(info) as member:
+        data = member.read(min(limit, budget[0]) + 1)
+    if len(data) > min(limit, budget[0]):
+        raise ValueError(
+            Msg(
+                'server.presets.share.too_big_inside', 'A file in the package is too large: {name}', name=name
+            )
+        )
+    budget[0] -= len(data)
+    return data
+
+
+def _key(ident):
+    # Preset ids are file names, and Windows file names ignore case: "Ink" and "ink" are the same preset.
+    return ident.casefold()
+
+
 class PresetImports:
     """Packages read but not applied yet, kept in memory for a while under a token."""
 
@@ -114,10 +146,15 @@ class PresetImports:
     def preview(self, raw, catalog):
         if len(raw) > MAX_ZIP:
             raise ValueError(Msg('server.presets.share.too_big', 'The package is larger than 64 MB.'))
+        budget = [MAX_UNPACKED]
         try:
             archive = zipfile.ZipFile(io.BytesIO(raw))
-            manifest = json.loads(archive.read(MANIFEST))
-        except (zipfile.BadZipFile, KeyError, ValueError) as error:
+            manifest = json.loads(_read(archive, MANIFEST, MAX_MANIFEST, budget))
+        except (zipfile.BadZipFile, KeyError) as error:
+            raise _bad() from error
+        except ValueError as error:
+            if error.args and getattr(error.args[0], 'key', '') == 'server.presets.share.too_big_inside':
+                raise
             raise _bad() from error
         if (
             not isinstance(manifest, dict)
@@ -125,7 +162,7 @@ class PresetImports:
             or not isinstance(manifest.get('presets'), list)
         ):
             raise _bad()
-        here = {p['id'] for p in library.presets(self.paths)}
+        here = {_key(p['id']) for p in library.presets(self.paths)}
         have = {
             kind: {
                 PureWindowsPath(str(n).removeprefix('checkpoint::')).name.lower()
@@ -142,17 +179,21 @@ class PresetImports:
         items, docs = [], {}
         for entry in manifest['presets'][:MAX_PRESETS]:
             ident = str((entry or {}).get('id', ''))
-            if not library.ITEM_ID.match(ident):
+            if not library.ITEM_ID.match(ident) or any(_key(ident) == _key(seen) for seen in docs):
                 continue
             try:
-                doc = json.loads(archive.read(f'presets/{ident}.json'))
-            except (KeyError, ValueError):
+                doc = json.loads(_read(archive, f'presets/{ident}.json', MAX_PRESET_FILE, budget))
+            except KeyError:
+                continue
+            except ValueError as error:
+                if error.args and getattr(error.args[0], 'key', '') == 'server.presets.share.too_big_inside':
+                    raise
                 continue
             if not isinstance(doc, dict):
                 continue
             preview = None
             try:
-                preview = archive.read(f'presets/{ident}.webp')
+                preview = _read(archive, f'presets/{ident}.webp', MAX_PREVIEW, budget)
             except KeyError:
                 pass
             docs[ident] = (library.preset_doc(doc, ident), preview, doc.get('preview'))
@@ -171,7 +212,7 @@ class PresetImports:
                     'name': docs[ident][0]['name'],
                     'service': docs[ident][0]['service'],
                     'family': docs[ident][0]['family'],
-                    'exists': ident in here,
+                    'exists': _key(ident) in here,
                     'preview': preview is not None,
                     'missing': missing,
                 }
@@ -191,7 +232,7 @@ class PresetImports:
 
     def apply(self, token, choices):
         """``choices``: ``{id: 'add' | 'replace' | 'skip' | {'as': new id}}``. Returns the ids written."""
-        pending = self.pending.pop(token, None)
+        pending = self.pending.get(token)
         if pending is None:
             raise ValueError(
                 Msg(
@@ -199,23 +240,36 @@ class PresetImports:
                     'The package was read too long ago. Choose the file again.',
                 )
             )
-        here = {p['id'] for p in library.presets(self.paths)}
-        written = []
+        # Everything is checked before anything is written; on a refusal the package stays for another try.
+        stored_ids = {_key(p['id']): p['id'] for p in library.presets(self.paths)}
+        plan, claimed = [], set()
         for ident, (doc, preview, preview_meta) in pending['docs'].items():
             choice = (choices or {}).get(ident, 'add')
             target = ident
             if isinstance(choice, dict):
                 target = str(choice.get('as', ''))
-                if not library.ITEM_ID.match(target) or target in here:
+                if not library.ITEM_ID.match(target) or _key(target) in stored_ids or _key(target) in claimed:
                     raise ValueError(
                         Msg('server.presets.share.bad_id', 'The id {id} is taken or not usable.', id=target)
                     )
-            elif choice == 'skip' or (choice == 'add' and ident in here):
+            elif choice == 'skip' or (choice == 'add' and _key(ident) in stored_ids):
                 continue
-            elif choice not in ('add', 'replace'):
+            elif choice == 'replace':
+                # Replace the preset that is here under its own spelling of the id.
+                target = stored_ids.get(_key(ident), ident)
+            elif choice != 'add':
                 raise ValueError(
                     Msg('server.presets.share.bad_choice', 'Choose add, replace or skip for each preset.')
                 )
+            if _key(target) in claimed:
+                raise ValueError(
+                    Msg('server.presets.share.bad_id', 'The id {id} is taken or not usable.', id=target)
+                )
+            claimed.add(_key(target))
+            plan.append((target, doc, preview, preview_meta))
+        self.pending.pop(token, None)
+        written = []
+        for target, doc, preview, preview_meta in plan:
             folder = Path(self.paths.data) / 'image' / 'presets'
             folder.mkdir(parents=True, exist_ok=True)
             # The preview comes along with its record, so it is stale here exactly when it would be there.
@@ -230,6 +284,5 @@ class PresetImports:
                 preview_path.write_bytes(preview)
             else:
                 preview_path.unlink(missing_ok=True)
-            here.add(target)
             written.append(target)
         return {'written': written, 'presets': library.presets(self.paths)}
