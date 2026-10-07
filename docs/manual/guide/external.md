@@ -18,7 +18,16 @@ AtelierX는 아래 프로그램과 모델을 **함께 배포하지 않습니다.
 | [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | 1.1.0 (`9d9f4be`) | MIT | 배경 제거 |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | 8.28.3 (`429d015`) | GPL-3.0 | 디테일러 |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | 1.3.5 (`50c7b71`) | AGPL-3.0 | 디테일러, 감지 |
+| [Skimmed_CFG](https://github.com/Extraltodeus/Skimmed_CFG) | 1.0.0 (`d830058`) | Apache-2.0 | 그림체 레시피의 모델 패치(CFG 스키밍) |
+| [ComfyUI-Spectrum-KSampler](https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler) | 2.9.3 (`1925664`) | MIT | 그림체 레시피의 모델 패치(Spectrum, CFG 패치). 이 팩의 샘플러 노드는 쓰지 않음 |
 | `atelierx_nodes` | 앱과 같은 판 | MIT | 배경·감지·업스케일·디테일러 보조. 앱에 들어 있는 노드 묶음을 복사합니다 |
+
+앱이 설치하지 않는 노드 팩도 직접 설치했다면 생성에 쓸 수 있습니다. 라이선스가 분명하지 않거나 제한이 있어 설치 목록에 넣지 않은 것들입니다.
+
+| 이름 | 라이선스 | 어디에 쓰나 |
+|---|---|---|
+| [RES4LYF](https://github.com/ClownsharkBatwing/RES4LYF) | 자체 라이선스(상업 서비스 제공 금지, OSI 아님) | `res_3m` 등 샘플러, `beta57` 등 스케줄러. `beta57`은 없어도 앱이 기본 노드로 만듦 |
+| ComfyUI-DCW | 라이선스 파일 없음 | 모델 패치 `DCWModelPatch` |
 
 ## 모델
 
