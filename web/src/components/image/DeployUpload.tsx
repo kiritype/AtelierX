@@ -98,6 +98,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
     ratings,
     paths: Object.fromEntries(Object.entries(paths).filter(([, v]) => v.trim())),
   });
+  const noRatings = ratings !== null && ratings.length === 0;
 
   async function preview() {
     setBusy(true);
@@ -198,9 +199,10 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
               {chosen && /\.r2\.dev(\/|$)/i.test(chosen.public_url) && <span className="warn-text">{t('deploy.r2dev')}</span>}
             </div>
             <div className="row">
-              <button className="primary" disabled={busy || running || !target} onClick={preview}>
+              <button className="primary" disabled={busy || running || !target || noRatings} onClick={preview}>
                 {plan ? t('deploy.preview_again') : t('deploy.preview')}
               </button>
+              {noRatings && <span className="warn-text small">{t('deploy.no_ratings')}</span>}
               {plan && (
                 <span className="faint small">
                   {STATUSES.filter((s) => plan.counts[s]).map((s) => `${t(`deploy.status.${s}`)} ${plan.counts[s]}`).join(' · ')}
@@ -316,7 +318,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
           <button disabled={running} onClick={close}>
             {t('common.close')}
           </button>
-          <button className="primary" disabled={busy || running || !plan || sendable === 0} onClick={() => upload()}>
+          <button className="primary" disabled={busy || running || !plan || sendable === 0 || noRatings} onClick={() => upload()}>
             {t('deploy.upload_n', { n: sendable })}
           </button>
         </div>

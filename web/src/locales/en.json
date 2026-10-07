@@ -2009,6 +2009,7 @@
   "deploy.keep_for_work_hint": "Use this target and path format for this work next time.",
   "deploy.kept_for_work": "Saved this work's deployment target and path format.",
   "deploy.ratings": "Ratings to upload",
+  "deploy.no_ratings": "Choose at least one rating to upload.",
   "deploy.preview": "Preview",
   "deploy.preview_again": "Preview again",
   "deploy.status.new": "New",

@@ -2152,6 +2152,7 @@
   "deploy.keep_for_work_hint": "이 작품에서 고른 배포 대상과 경로 형식을 다음에도 씁니다.",
   "deploy.kept_for_work": "이 작품의 배포 대상과 경로 형식을 저장했습니다.",
   "deploy.ratings": "올릴 등급",
+  "deploy.no_ratings": "올릴 등급을 하나 이상 고르세요.",
   "deploy.preview": "미리보기",
   "deploy.preview_again": "다시 미리보기",
   "deploy.status.new": "새 파일",

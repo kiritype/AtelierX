@@ -99,8 +99,9 @@ class DeployUploads:
         for key in ('character', 'outfit'):
             if body.get(key):
                 filters[key] = str(body[key])
+        # Left out or null: every rating. A list, even an empty one, is the choice (empty: nothing to upload).
         ratings = body.get('ratings')
-        ratings = set(ratings) if isinstance(ratings, list) and ratings else None
+        ratings = set(ratings) if isinstance(ratings, list) else None
         overrides = body.get('paths') if isinstance(body.get('paths'), dict) else {}
 
         export = self.rt.reviews.plan_export(filters)
@@ -119,7 +120,7 @@ class DeployUploads:
         rows = []
         for source in sorted(export.get('manifest') or {}):
             item = by_path.get(source)
-            if item is None or (ratings and item.get('rating') not in ratings):
+            if item is None or (ratings is not None and item.get('rating') not in ratings):
                 continue
             expression = expressions.get(item['expression_id']) or {}
             values = {
