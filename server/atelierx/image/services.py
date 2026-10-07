@@ -10,7 +10,8 @@ import json
 from urllib.parse import quote, urlencode
 
 from ..core.i18n import Msg
-from .workflow import build_workflow
+from . import extensions
+from .workflow import build_workflow, defaults
 
 
 class ResultPending(RuntimeError):
@@ -94,7 +95,20 @@ class ComfyService(GenerationService):
         if kind == 'post':
             return self.rt.post_graph(job)
         snap = job['snapshot']
-        return build_workflow(snap['settings'], snap['positive'], snap['negative'], job['seed'])
+        settings = snap['settings']
+        if settings.get('patches') or settings.get('fallback'):
+            # Queued work does not stop to ask (#178): what ComfyUI no longer has is left out and noted.
+            catalog = self.comfy.catalog()
+            if catalog.get('connected'):
+                settings = extensions.apply(
+                    {**settings, 'missing': 'skip'},
+                    catalog,
+                    lambda key: list(catalog.get(key) or []),
+                    defaults(catalog),
+                )
+                if settings.get('skipped'):
+                    snap['settings'] = settings
+        return build_workflow(settings, snap['positive'], snap['negative'], job['seed'])
 
     def submit(self, job):
         graph = self.graph(job)
