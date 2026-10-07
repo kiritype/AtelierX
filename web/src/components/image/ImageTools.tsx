@@ -8,6 +8,7 @@ import { MODEL_WORDS, splitTags } from '../../lib/tags';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import PromptConverter, { type PromptHandoff } from './PromptConverter';
+import type { PostInfo, TaggerInfo, ToolInfo, ToolMethods } from '../../imageTypes';
 
 type Mark = { source: string; updated_at: string };
 export type ToolItem = {
@@ -38,7 +39,6 @@ type Analysis = {
 };
 type Tab = ToolTab;
 // What the server says about a ComfyUI tool: usable, or why not (ComfyUI not reachable, or nodes missing).
-type ToolInfo = { available: boolean; reason?: 'offline' | 'nodes'; error?: unknown };
 type OpenSettings = (section?: 'image' | 'install') => void;
 type MaskKind = 'censor' | 'alpha' | 'inpaint';
 
@@ -109,9 +109,9 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
   const items = useQuery<{ items: ToolItem[] }>({ queryKey: ['tool-items'], queryFn: () => get('/api/image/tools/items'), refetchInterval: 3000 });
-  const tagger = useQuery<any>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
-  const postInfo = useQuery<any>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
-  const methods = useQuery<{ methods: Method[]; features: Record<string, string[]> }>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
+  const tagger = useQuery<TaggerInfo>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
+  const postInfo = useQuery<PostInfo>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
+  const methods = useQuery<ToolMethods>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
   const list = items.data?.items ?? [];
   // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
   const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
@@ -693,7 +693,7 @@ function ConvertForm({ ids, fail }: { ids: string[]; fail: (e: unknown) => void 
   );
 }
 
-function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: ToolItem[]; info: any; fail: (e: unknown) => void; onExcludes: () => void }) {
+function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: ToolItem[]; info?: TaggerInfo; fail: (e: unknown) => void; onExcludes: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState({ model: '', threshold: 0.35, character_threshold: 0.85 });
@@ -768,7 +768,7 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
   );
 }
 
-function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info: any; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
+function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info?: PostInfo; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [op, setOp] = useState('upscale');
@@ -776,7 +776,7 @@ function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; in
   const [detail, setDetail] = useState({ face: true, eye: true, mouth: false, hand: true, denoise: 0.4, steps: 20 });
   if (!info) return <div className="faint">{t('tools.checking_nodes')}</div>;
   if (!info.available) return <div className="error-text">{msgText(info.error)}</div>;
-  const ops = Object.entries(info.ops as Record<string, any>).filter(([key]) => !['detect', 'alpha', 'inpaint'].includes(key));
+  const ops = Object.entries(info.ops).filter(([key]) => !['detect', 'alpha', 'inpaint'].includes(key));
   const model = upscale.model || info.upscale_models[0] || '';
   return (
     <div className="col">
@@ -872,7 +872,7 @@ function MaskForm({
   item?: ToolItem;
   list: ToolItem[];
   ids: string[];
-  info: any;
+  info?: PostInfo;
   method: Method;
   analysis?: Analysis;
   editor: React.MutableRefObject<MaskEditor | null>;
