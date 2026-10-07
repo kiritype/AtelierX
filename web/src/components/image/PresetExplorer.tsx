@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, del, get, post, put } from '../../api';
 import { t, tm } from '../../i18n';
 import { PRESET_ID } from '../../lib/presetFromRecord';
@@ -8,6 +8,7 @@ import Explorer, { type Facet } from '../explorer/Explorer';
 import { useToast } from '../Toasts';
 import { useUnsaved } from '../Unsaved';
 import PresetEditor, { blankPreset, editable, opened, presetTarget, type Preset } from './PresetEditor';
+import PresetImport, { readPackage, type ImportLook } from './PresetImport';
 
 // Image menu → Style presets (#169): every preset with its one preview, filtered by service, model family, tags, model
 // and LoRA; edit one beside the grid, compare up to four, or send one to the generate screen.
@@ -48,6 +49,9 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
   }, [presets.data, waiting]);
 
   const [draft, setDraft] = useState<Preset | null>(null);
+  // Sharing (#169): a package being looked at before it comes in.
+  const [importing, setImporting] = useState<ImportLook | null>(null);
+  const packageInput = useRef<HTMLInputElement>(null);
   const storedPreset = draft ? presets.data?.find((p) => p.id === draft.id) : undefined;
   const dirty = !!draft && (!storedPreset || JSON.stringify(editable(opened(storedPreset))) !== JSON.stringify(editable(draft)));
   useUnsaved('style-presets', dirty);
@@ -243,8 +247,32 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
       selected={draft?.id ?? null}
       onSelect={select}
       empty={t('presets.empty')}
-      toolbar={
+      toolbar={(checked) => (
         <>
+          <a
+            className={`button${all.length ? '' : ' disabled'}`}
+            href={all.length ? `/api/image/presets/export${checked.length ? `?ids=${checked.map((p) => p.id).join(',')}` : ''}` : undefined}
+            title={t('presets.share.export_hint')}
+          >
+            {checked.length ? t('presets.share.export_checked', { n: checked.length }) : t('presets.share.export_all')}
+          </a>
+          <button onClick={() => packageInput.current?.click()}>{t('presets.share.import')}</button>
+          <input
+            ref={packageInput}
+            type="file"
+            accept=".zip"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              try {
+                setImporting(await readPackage(file));
+              } catch (err) {
+                fail(err);
+              }
+            }}
+          />
           <label className="row small" style={{ gap: 4 }} title={t('presets.seed_hint')}>
             <span className="muted">{t('presets.seed')}</span>
             <input type="number" style={{ width: 110 }} value={seed} onChange={(e) => setSeed(e.target.value)} onBlur={saveSeed} onKeyDown={(e) => e.key === 'Enter' && saveSeed()} />
@@ -262,8 +290,19 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
           >
             {t('presets.new')}
           </button>
+          {importing && (
+            <PresetImport
+              look={importing}
+              onClose={() => setImporting(null)}
+              onDone={(written, list) => {
+                qc.setQueryData(['image-presets'], list);
+                setImporting(null);
+                toast({ text: t('presets.share.imported', { n: written.length }) });
+              }}
+            />
+          )}
         </>
-      }
+      )}
     />
   );
 }

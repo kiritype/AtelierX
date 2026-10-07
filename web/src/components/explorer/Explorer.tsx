@@ -29,7 +29,8 @@ export default function Explorer<T>({
   compare: (items: T[]) => ReactNode;
   selected: string | null;
   onSelect: (id: string) => void;
-  toolbar?: ReactNode;
+  // Actions on the right of the bar; a function gets the checked items (export the checked ones …).
+  toolbar?: ReactNode | ((checked: T[]) => ReactNode);
   empty?: ReactNode;
   maxCompare?: number;
 }) {
@@ -73,7 +74,7 @@ export default function Explorer<T>({
         <button disabled={checkedItems.length < 2} className={comparing ? 'on' : ''} onClick={() => setComparing(!comparing)} title={t('explorer.compare_hint', { n: maxCompare })}>
           {t('explorer.compare', { n: checkedItems.length })}
         </button>
-        {toolbar}
+        {typeof toolbar === 'function' ? toolbar(checkedItems) : toolbar}
       </div>
       {comparing && checkedItems.length >= 2 ? (
         <div className="explorer-compare">
