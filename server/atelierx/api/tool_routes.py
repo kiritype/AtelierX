@@ -8,6 +8,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg
+from ..image.tools import processors
 from .image_routes import _as_msg, _body, _runtime, call
 
 MAX_UPLOAD_BYTES = 1024**3
@@ -45,6 +46,11 @@ async def tagger_info(request):
 
 async def postprocess_info(request):
     return await call(_runtime(request).postprocess_info)
+
+
+async def methods(request):
+    """The ways each tool feature can run (this PC, an internet service); the screen greys out the rest."""
+    return await call(lambda: {'methods': list(processors.METHODS), 'features': processors.features()})
 
 
 async def upload(request):
@@ -138,6 +144,7 @@ def routes():
         Route(f'{p}/analyze', analyze),
         Route(f'{p}/tagger', tagger_info),
         Route(f'{p}/postprocess', postprocess_info),
+        Route(f'{p}/methods', methods),
         Route(f'{p}/upload', upload, methods=['POST']),
         Route(f'{p}/mask', mask_get),
         Route(f'{p}/mask', mask_put, methods=['PUT']),

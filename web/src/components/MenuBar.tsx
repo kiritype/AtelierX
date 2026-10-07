@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Icon } from './icons';
 
-export type MenuEntry = { label: string; shortcut?: string; run: () => void; disabled?: boolean } | null;
+// null draws a line; a heading names the group of items below it (not clickable).
+export type MenuAction = { label: string; shortcut?: string; run: () => void; disabled?: boolean };
+export type MenuEntry = MenuAction | { heading: string } | null;
 export type Menu = { label: string; items: MenuEntry[] };
 
 // Closes an open menu on a click outside `root` or on Escape.
@@ -25,6 +27,10 @@ function MenuItems({ items, done }: { items: MenuEntry[]; done: () => void }) {
       {items.map((item, i) =>
         item === null ? (
           <div key={i} className="menu-sep" />
+        ) : 'heading' in item ? (
+          <div key={i} className="menu-heading" role="presentation">
+            {item.heading}
+          </div>
         ) : (
           <button
             key={i}

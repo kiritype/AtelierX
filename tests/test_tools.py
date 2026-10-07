@@ -195,3 +195,35 @@ def test_tool_info_says_why_it_cannot_run(unlocked):
     info = c.get('/api/image/tools/postprocess').json()
     # The fake has no detailer node: the tools work, the detailer is left out.
     assert info['available'] is True and 'detail' not in info['ops']
+
+
+def test_tools_list_the_methods_each_feature_runs_with(unlocked):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = ToolComfy()
+    runtime.set_paused(True)
+    listed = c.get('/api/image/tools/methods').json()
+    assert listed['methods'] == ['local', 'novelai']
+    assert listed['features'] == {
+        'tag': ['local'],
+        'alpha': ['local'],
+        'detect': ['local'],
+        'upscale': ['local'],
+        'detail': ['local'],
+        'inpaint': ['local'],
+    }
+    (item,) = upload(c, 'a.png', png())['added']
+    refused = c.post(
+        '/api/image/tools/postprocess',
+        json={'ids': [item['id']], 'op': 'upscale', 'method': 'novelai', 'options': {'scale': 2}},
+    )
+    assert refused.status_code == 400
+    assert refused.json()['error']['key'] == 'server.tools.method_unsupported'
+    queued = c.post(
+        '/api/image/tools/postprocess', json={'ids': [item['id']], 'op': 'upscale', 'options': {'scale': 2}}
+    ).json()['jobs']
+    assert queued[0]['post_method'] == 'local'
+    # Inpaint reads a saved mask: without one it is refused before anything is queued.
+    before = len(runtime.jobs)
+    unmasked = c.post('/api/image/tools/postprocess', json={'ids': [item['id']], 'op': 'inpaint'})
+    assert unmasked.status_code == 400 and len(runtime.jobs) == before

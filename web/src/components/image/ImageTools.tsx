@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ApiError, get, post, put } from '../../api';
 import { t, tm } from '../../i18n';
 import { createMaskEditor, type MaskEditor } from '../../lib/maskEditor';
+import { TAB_FEATURES, TAB_GROUPS, pickMethod, tabMethods, type Method, type ToolTab } from '../../lib/toolMethods';
 import { MODEL_WORDS, splitTags } from '../../lib/tags';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
@@ -35,13 +36,12 @@ type Analysis = {
   exif: Record<string, string>;
   error?: string;
 };
-type Tab = 'prompt' | 'convert' | 'tag' | 'post' | 'censor' | 'alpha' | 'inpaint';
+type Tab = ToolTab;
 // What the server says about a ComfyUI tool: usable, or why not (ComfyUI not reachable, or nodes missing).
 type ToolInfo = { available: boolean; reason?: 'offline' | 'nodes'; error?: unknown };
 type OpenSettings = (section?: 'image' | 'install') => void;
 type MaskKind = 'censor' | 'alpha' | 'inpaint';
 
-const TABS: Tab[] = ['prompt', 'convert', 'tag', 'post', 'censor', 'alpha', 'inpaint'];
 const MASK: Record<MaskKind, { field: 'mask' | 'alpha_mask' | 'inpaint_mask'; color: [number, number, number]; preview: boolean }> = {
   censor: { field: 'mask', color: [255, 40, 60], preview: false },
   alpha: { field: 'alpha_mask', color: [40, 120, 255], preview: true },
@@ -51,7 +51,16 @@ const CENSOR_LABELS = ['nipples', 'pussy', 'penis', 'anus', 'testicles', 'x-ray'
 const SOURCE_LABELS: Record<string, string> = { atelierx: 'tools.source.atelierx', parameters: 'tools.source.parameters', comfyui: 'tools.source.comfyui' };
 const ACCEPT = '.png,.webp,.jpg,.jpeg,.zip';
 // Tabs that run in ComfyUI. WebP conversion and prompt formats work without it.
+const METHOD_KEY = 'atelierx.tools.method';
 const COMFY_TABS: Tab[] = ['tag', 'post', 'censor', 'alpha', 'inpaint'];
+
+function readMethods(): Partial<Record<Tab, Method>> {
+  try {
+    return JSON.parse(localStorage.getItem(METHOD_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
 
 // Translation with positional values ({0}, {1} …).
 const tp = (key: string, ...values: unknown[]) => t(key, Object.fromEntries(values.map((v, i) => [String(i), v])));
@@ -103,6 +112,7 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
   const items = useQuery<{ items: ToolItem[] }>({ queryKey: ['tool-items'], queryFn: () => get('/api/image/tools/items'), refetchInterval: 3000 });
   const tagger = useQuery<any>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
   const postInfo = useQuery<any>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
+  const methods = useQuery<{ methods: Method[]; features: Record<string, string[]> }>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
   const list = items.data?.items ?? [];
   // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
   const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
@@ -118,6 +128,22 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [currentId, setCurrentId] = useState('');
   const [tab, setTab] = useState<Tab>('convert');
+  // Where the tab's work runs (#151): this PC or an internet service; each tab keeps its last choice.
+  const [remembered, setRemembered] = useState(readMethods);
+  const method = pickMethod(tab, methods.data?.features, remembered);
+  const chooseMethod = (next: Method) => {
+    if (!tabMethods(tab, methods.data?.features).includes(next)) {
+      toast({ text: t('tools.run_on.local_only') });
+      return;
+    }
+    const saved = { ...remembered, [tab]: next };
+    setRemembered(saved);
+    try {
+      localStorage.setItem(METHOD_KEY, JSON.stringify(saved));
+    } catch {
+      /* not remembered, still chosen */
+    }
+  };
   const [uploadStatus, setUploadStatus] = useState('');
   const [dragging, setDragging] = useState(false);
   const [handoff, setHandoff] = useState<PromptHandoff | null>(null);
@@ -269,22 +295,52 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
 
         <aside className="tools-panel pad col">
           <div className="tools-tabs">
-            {TABS.map((key) => (
-              <button
-                key={key}
-                className={`${tab === key ? 'on' : ''} ${blocked(key) ? 'unavailable' : ''}`}
-                title={blocked(key) ? t(`tools.notice.${infoOf(key)?.reason === 'nodes' ? 'nodes' : 'offline'}.title`) : undefined}
-                onClick={() => switchTab(key)}
-              >
-                {t(`tools.tab.${key}`)}
-              </button>
+            {TAB_GROUPS.map((group) => (
+              <div key={group.id} className="tools-tab-group" role="group" aria-label={t(`tools.group.${group.id}`)}>
+                <span className="faint small">{t(`tools.group.${group.id}`)}</span>
+                <div className="tools-tab-row">
+                  {group.tabs.map((key) => (
+                    <button
+                      key={key}
+                      className={`${tab === key ? 'on' : ''} ${blocked(key) ? 'unavailable' : ''}`}
+                      title={blocked(key) ? t(`tools.notice.${infoOf(key)?.reason === 'nodes' ? 'nodes' : 'offline'}.title`) : undefined}
+                      onClick={() => switchTab(key)}
+                    >
+                      {t(`tools.tab.${key}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
+          {TAB_FEATURES[tab] && (
+            <div className="row tools-method">
+              <span className="muted small">{t('tools.run_on')}</span>
+              <div className="service-switch" role="radiogroup" aria-label={t('tools.run_on')}>
+                {(methods.data?.methods ?? ['local']).map((m) => {
+                  const supported = tabMethods(tab, methods.data?.features).includes(m);
+                  return (
+                    <button
+                      key={m}
+                      role="radio"
+                      aria-checked={method === m}
+                      aria-disabled={!supported}
+                      className={`${method === m ? 'on' : ''} ${supported ? '' : 'unavailable'}`}
+                      title={supported ? undefined : t('tools.run_on.local_only')}
+                      onClick={() => chooseMethod(m)}
+                    >
+                      {t(`tools.run_on.${m}`)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {tab !== 'prompt' && !blocked(tab) && <div className="faint small">{tp('tools.selected', chosenIds.length)}</div>}
           {blocked(tab) && <ComfyNotice info={infoOf(tab)!} openSettings={openSettings} recheck={recheck} />}
           {tab === 'convert' && <ConvertForm ids={chosenIds} fail={fail} />}
           {tab === 'tag' && !blocked(tab) && <TagForm ids={chosenIds} list={list} info={tagger.data} fail={fail} onExcludes={() => qc.invalidateQueries({ queryKey: ['tool-tagger'] })} />}
-          {tab === 'post' && !blocked(tab) && <PostForm ids={chosenIds} info={postInfo.data} fail={fail} openSettings={openSettings} />}
+          {tab === 'post' && !blocked(tab) && <PostForm ids={chosenIds} info={postInfo.data} method={method} fail={fail} openSettings={openSettings} />}
           {(tab === 'censor' || tab === 'alpha' || tab === 'inpaint') && !blocked(tab) && (
             <MaskForm
               kind={tab}
@@ -292,6 +348,7 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
               list={list}
               ids={chosenIds}
               info={postInfo.data}
+              method={method}
               analysis={analysis.data}
               editor={editor}
               fail={fail}
@@ -712,7 +769,7 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
   );
 }
 
-function PostForm({ ids, info, fail, openSettings }: { ids: string[]; info: any; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
+function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info: any; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [op, setOp] = useState('upscale');
@@ -783,7 +840,7 @@ function PostForm({ ids, info, fail, openSettings }: { ids: string[]; info: any;
         disabled={!ids.length}
         onClick={async () => {
           try {
-            const result = await post('/api/image/tools/postprocess', { ids, op, options: op === 'detail' ? detail : { ...upscale, model } });
+            const result = await post('/api/image/tools/postprocess', { ids, op, method, options: op === 'detail' ? detail : { ...upscale, model } });
             toast({ text: tp('tools.queued_post', result.jobs.length) });
             qc.invalidateQueries({ queryKey: ['image-queue'] });
           } catch (err) {
@@ -805,6 +862,7 @@ function MaskForm({
   list,
   ids,
   info,
+  method,
   analysis,
   editor,
   fail,
@@ -816,6 +874,7 @@ function MaskForm({
   list: ToolItem[];
   ids: string[];
   info: any;
+  method: Method;
   analysis?: Analysis;
   editor: React.MutableRefObject<MaskEditor | null>;
   fail: (e: unknown) => void;
@@ -854,7 +913,7 @@ function MaskForm({
   const queue = async (op: string, options: any, targetIds: string[], done: string) => {
     try {
       await flush();
-      const result = await post('/api/image/tools/postprocess', { ids: targetIds, op, options });
+      const result = await post('/api/image/tools/postprocess', { ids: targetIds, op, method, options });
       toast({ text: tp(done, result.jobs.length) });
       qc.invalidateQueries({ queryKey: ['image-queue'] });
     } catch (err) {
