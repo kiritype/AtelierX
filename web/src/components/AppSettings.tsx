@@ -8,6 +8,7 @@ import InstallSettings from './InstallSettings';
 import LlmSettings from './LlmSettings';
 import GuidelineSettings from './GuidelineSettings';
 import { AboutContent, useHelp } from './Help';
+import type { MenuAction } from './MenuBar';
 import { useToast } from './Toasts';
 import { useUnsaved } from './Unsaved';
 import { SettingsPackages } from './Packages';
@@ -319,8 +320,8 @@ function About() {
       {about.data ? <AboutContent about={about.data} /> : <strong>AtelierX {__APP_VERSION__}</strong>}
       <span className="faint">{t('settings.about_stage')}</span>
       <div className="row wrap">
-        {help.entries.filter((e) => e !== null).map((e) => (
-          <button key={e!.label} onClick={e!.run}>{e!.label}</button>
+        {help.entries.filter((e): e is MenuAction => !!e && 'run' in e).map((e) => (
+          <button key={e.label} onClick={e.run}>{e.label}</button>
         ))}
       </div>
       {help.element}

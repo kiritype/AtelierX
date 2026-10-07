@@ -365,6 +365,7 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .menu-drop button { display: flex; gap: 16px; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 14px; border-radius: 0; }
 .menu-drop button:hover:not(:disabled) { background: var(--hover); }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
+.menu-heading { padding: 4px 14px 2px; font-size: 11px; color: var(--text-3); }
 .dot-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--text-3); }
 .dot-status.ok { background: var(--success); }
 .dot-status.off { background: var(--danger); }
@@ -524,7 +525,12 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .tools-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
 .tools-caption { gap: 3px; padding: 2px 4px; font-size: 11px; background: var(--panel); }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.tools-tabs { display: flex; flex-wrap: wrap; gap: 3px; }
+.tools-tabs { display: flex; flex-direction: column; gap: 6px; }
+.tools-tab-group { display: flex; flex-direction: column; gap: 2px; }
+.tools-tab-row { display: flex; flex-wrap: wrap; gap: 3px; }
+.tools-method { gap: 8px; flex-wrap: wrap; }
+.tools-method .service-switch button { font-size: 12px; padding: 3px 10px; }
+.service-switch button.unavailable { color: var(--text-3); }
 .tools-tabs button { font-size: 12px; padding: 3px 8px; }
 .tools-tabs button.on { background: var(--selected); font-weight: 600; }
 .tools-tabs button.unavailable { opacity: .5; }
