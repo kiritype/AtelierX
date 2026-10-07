@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import GenerationInfo, { type Generation } from './GenerationInfo';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, get, post, put } from '../../api';
 import { t, tm, msgText } from '../../i18n';
@@ -35,6 +36,7 @@ type Analysis = {
   has_workflow: boolean;
   text_keys: string[];
   exif: Record<string, string>;
+  generation?: Generation;
   error?: string;
 };
 type Tab = ToolTab;
@@ -379,7 +381,12 @@ function Detail({
   const toast = useToast();
   const [view, setView] = useState<'side' | 'slider'>('side');
   const [slider, setSlider] = useState(50);
-  const found = analysis?.prompt;
+  const read = analysis?.prompt;
+  // Positive and negative swapped by the person: some tools save them under each other's label (#169).
+  const [swapped, setSwapped] = useState(false);
+  useEffect(() => setSwapped(false), [item.id]);
+  const found = read && swapped ? { ...read, positive: read.negative, negative: read.positive } : read;
+  const generation = analysis?.item?.id === item.id ? analysis.generation : undefined;
   const tags = item.tags ? item.tags.tags.filter((tag) => !excluded.has(norm(tag))) : null;
   const copy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -456,37 +463,14 @@ function Detail({
               </>
             )}
           </div>
-          {found?.positive && (
-            <>
+          {generation ? (
+            <GenerationInfo g={generation} swapped={swapped} onSwap={() => setSwapped(!swapped)} />
+          ) : (
+            found?.positive && (
               <div className="prompt-box mono small" onClick={() => copy(found.positive)} title={t('gallery.click_copy')}>
                 {found.positive}
               </div>
-              {found.negative && (
-                <div className="prompt-box mono small faint" onClick={() => copy(found.negative)}>
-                  − {found.negative}
-                </div>
-              )}
-              <dl className="kv small">
-                {Object.entries(found.settings ?? {})
-                  .filter(([, v]) => typeof v !== 'object')
-                  .map(([k, v]) => (
-                    <div key={k} className="row">
-                      <dt>{k}</dt>
-                      <dd className="mono">{String(v)}</dd>
-                    </div>
-                  ))}
-              </dl>
-            </>
-          )}
-          {(analysis.comfy?.models ?? []).length > 0 && (
-            <>
-              <div className="section-title">{t('tools.models_used')}</div>
-              {analysis.comfy!.models.map((m, i) => (
-                <div key={i} className="mono small">
-                  {Object.values(m).join(': ')}
-                </div>
-              ))}
-            </>
+            )
           )}
           <div className="faint small">
             {[

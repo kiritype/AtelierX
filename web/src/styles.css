@@ -724,3 +724,9 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .preset-detail-img { width: 100%; border-radius: 6px; }
 .preset-compare { display: grid; gap: 12px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Generation table of an image (#169). */
+.gen-table { width: 100%; border-collapse: collapse; }
+.gen-table th { text-align: left; color: var(--text-3); font-weight: normal; width: 92px; vertical-align: top; padding: 2px 6px 2px 0; }
+.gen-table td { padding: 2px 6px 2px 0; vertical-align: top; word-break: break-all; }
+.gen-table td.mono { cursor: copy; }

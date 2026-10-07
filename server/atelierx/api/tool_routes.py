@@ -37,7 +37,14 @@ async def items(request):
 
 async def analyze(request):
     runtime = _runtime(request)
-    return await call(runtime.tools.analyze, request.query_params.get('id', ''))
+
+    def run():
+        result = runtime.tools.analyze(request.query_params.get('id', ''))
+        if result.get('generation'):
+            runtime.check_generation(result['generation'])
+        return result
+
+    return await call(run)
 
 
 async def tagger_info(request):
