@@ -21,6 +21,7 @@ from .lab import LabMixin
 from .lora import models as lora_models
 from .lora import store as lora_store
 from .lora.trainer import LoraTrainer
+from .model_info import ModelLibrary
 from .models import FAMILY_LABELS, ModelProfiles
 from .preset_share import PresetImports
 from .review_rounds import ReviewRounds
@@ -62,6 +63,9 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             )
         }
         self.models = ModelProfiles(paths)
+        self.model_library = ModelLibrary(paths, self.models, lambda: self.installs.model_folders())
+        self.models.looked_up = self.model_library.base_model
+        self.models.find = self.model_library.locate_for_family
         # Only jobs on this PC's GPU count for the GPU broker; an internet service's job does not hold it.
         self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.select(self.on_gpu))
         self.control = ComfyControl(self)
@@ -116,6 +120,13 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             self.stop.clear()
             self._thread = threading.Thread(target=self.worker, name='image-worker', daemon=True)
             self._thread.start()
+
+    def model_items(self):
+        """My models (#161): every file the image server offers, its family, source and Civitai information."""
+        catalog = self.comfy.catalog()
+        if not catalog.get('connected'):
+            raise ValueError(catalog['error'])
+        return {'items': self.model_library.items(catalog)}
 
     def check_generation(self, generation):
         """Compare an image's generation settings with this PC's image server (#169): files present, names lacking."""

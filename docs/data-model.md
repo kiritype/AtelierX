@@ -1016,6 +1016,25 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 자동 적용은 (대상, 의상, 계열)마다 하나다. 하나를 켜면 같은 대상의 다른 항목은 꺼진다.
 - 쓰는(`enabled`) 항목이 하나라도 있으면 생성 때 이미지 디자인의 트리거 단어가 프롬프트에 들어간다.
 
+### 모델 정보 (`data/image/model-info.json`)
+
+모델 화면([26](features/26-models.md))이 Civitai에서 조회한 정보. 파일이 아니라 해시로 기억해, 이름을 바꾸거나 옮겨도 정보가 남는다.
+
+```json
+{
+  "schema_version": 1,
+  "files": {"c:\…\lora\anima\ink.safetensors": {"size": 138663776, "mtime": 1790000000000000000, "sha256": "…"}},
+  "info": {"<sha256>": {"source": "civitai", "model_id": 2718862, "version_id": 3055236, "model_name": "…",
+                        "version_name": "v1_Anima", "base_model": "Anima", "trained_words": ["v0q1d"], "author": "…",
+                        "nsfw": false, "license": {"allowCommercialUse": ["Image"], "allowDerivatives": false},
+                        "from": "lookup"}}
+}
+```
+
+- `files`: 파일 경로(소문자)마다 크기·수정 시각·SHA256. 크기나 수정 시각이 바뀌면 다시 계산한다.
+- `info`: 해시마다 Civitai 정보. Civitai에 없으면 `{"source": "unknown", "not_found": true}`.
+- 모델 폴더의 Stability Matrix `<파일>.cm-info.json`은 읽기만 하고, 조회한 정보가 있으면 그쪽을 쓴다.
+
 ### 큰 파일
 
 생성 이미지·학습 로그 같은 큰 파일은 데이터 루트(`data/`) 밖의 **출력 루트**(`output/`)에, LoRA 파일은 **LoRA 폴더**(기본 `output/loras/`,
