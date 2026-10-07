@@ -115,6 +115,7 @@ ZIP으로 내보내거나 데이터셋([22](22-datasets.md))의 재료로 쓴다
 | `config/image/review.json` | 읽기·쓰기 | 자동 검수 설정(켜기, 재생성 횟수, 지침, 모델 내리기 명령) |
 | `state/image/review_rounds.json` | 읽기·쓰기 | 자동 검수 묶음 |
 | `state/image/thumbnails/` | 읽기·쓰기 | 썸네일 |
+| `state/image/hashes.json` | 읽기·쓰기 | 이미지 해시 캐시(지워도 다시 만듦) |
 | 출력 루트 `.trash/` | 읽기·쓰기 | 지운 이미지와 기록, `index.json`(원래 경로·지운 때) |
 
 ## 규칙
