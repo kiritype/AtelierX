@@ -22,7 +22,7 @@ from . import library
 from .compose import Composer
 from .services import ResultPending
 from .util import atomic_json, code, now, replace_file
-from .workflow import build_ui_workflow, validate_settings
+from .workflow import build_ui_workflow, pipeline_stages, validate_settings
 
 log = logging.getLogger(__name__)
 
@@ -433,7 +433,7 @@ class GenerationMixin:
             kind = job.get('kind')
             sent = {'id': resume, 'record': service.request_body(job)} if resume else service.submit(job)
             working = (
-                Msg('server.worker.generating', 'Generating')
+                self._generating(job)
                 if kind in (None, 'lab')
                 else Msg('server.worker.processing', 'Processing')
             )
@@ -480,6 +480,18 @@ class GenerationMixin:
                 )
                 self.paused = True
                 self.persist()
+
+    @staticmethod
+    def _generating(job):
+        """'Generating', naming the steps after it when the job has them (#168)."""
+        stages = pipeline_stages((job.get('snapshot') or {}).get('settings'))
+        if stages == ['generate']:
+            return Msg('server.worker.generating', 'Generating')
+        if stages == ['generate', 'upscale']:
+            return Msg('server.worker.generating_upscale', 'Generating → upscale')
+        if stages == ['generate', 'detailer']:
+            return Msg('server.worker.generating_detailer', 'Generating → detailer')
+        return Msg('server.worker.generating_upscale_detailer', 'Generating → upscale → detailer')
 
     def _finish(self, job, result, sent):
         done = Msg('server.worker.done', 'Done')

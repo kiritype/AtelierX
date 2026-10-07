@@ -803,7 +803,12 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "positive": "…", "negative": "…",
   "settings": {"family": "anima", "model": "…", "steps": 32, "cfg": 5, "sampler": "er_sde",
                "scheduler": "simple", "width": 1536, "height": 1536, "seed": 471458691,
-               "loras": [{"name": "W001_C001_R002-e30.safetensors", "strength": 0.8}]},
+               "loras": [{"name": "W001_C001_R002-e30.safetensors", "strength_model": 0.8, "strength_clip": 0.8},
+                         {"name": "boldline.safetensors", "strength_model": -0.25, "strength_clip": -0.25, "enabled": false}],
+               "shift": 4.0,
+               "upscale": {"model": "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors", "scale": 1.5, "steps": 12,
+                           "denoise": 0.3, "cfg": 4.0},
+               "detailer": {"stages": {"face": 0.35, "hand": 0.4}, "steps": 20}},
   "generation_preset": {"id": "default", "name": "기본"},
   "seed": 471458691,
   "image_size": [1536, 1536],
@@ -813,6 +818,15 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 ```
 
 - 같은 이미지를 다시 만들 수 있는 정보를 모두 남긴다. 갤러리의 "새 시드로 다시 생성"은 이 기록에서 시드만 바꿔 대기열에 넣는다.
+- 생성 설정의 뒷단계(#168, 생성 프리셋의 `settings`도 같은 형식, 모두 선택):
+  - `loras[].enabled`: `false`면 목록에 남기되 그래프에서 뺀다(켜진 것은 쓰지 않음).
+  - `shift`: Anima 모델의 ModelSamplingAuraFlow 값(0.5~20). 없거나 `null`이면 넣지 않는다. SDXL은 쓰지 않는다.
+  - `upscale`: 1차 생성 뒤 업스케일 모델로 키워 `scale`(1~4)에 맞추고, 같은 모델·프롬프트·시드로 `steps`·`denoise`(0.05~1)만큼
+    다시 그린다. `cfg`가 없으면 1차 CFG. `null`이면 하지 않는다.
+  - `detailer`: `stages`의 부위(`face`·`eye`·`mouth`·`hand`)를 부위별 denoise(0.05~1)로 얼굴 → 눈 → 입 → 손 순서로 다시 그린다.
+    `null`이거나 부위가 없으면 하지 않는다.
+  - 순서는 LoRA → shift → 1차 생성 → 업스케일 → 디테일러이고, 모두 이미지 생성 서버의 작업 하나다. 이미지 도구의 디테일러·인페인트는
+    기록의 1차 생성 부분만 다시 쓴다.
 - PNG에도 같은 정보를 넣는다: `prompt`(서버용 그래프), `workflow`(편집기용 그래프), `atelierx`(이 기록에서 `workflow`를 뺀 것).
 - 기록이 없거나 깨진 이미지도 갤러리에는 보인다(다시 생성만 안 됨).
 - `service`: 이미지를 만든 생성 서비스(`comfyui`, `novelai`, `pixai`). 없으면 `comfyui`. 인터넷 서비스의 `settings`는 그 서비스의

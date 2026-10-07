@@ -22,7 +22,7 @@ from ...core.i18n import Msg, message_of
 from ..comments import strip_text
 from ..gallery import is_asset
 from ..util import atomic_json, now, replace_file
-from ..workflow import build_workflow, validate_settings
+from ..workflow import DETAIL_STAGES, build_workflow, detailer_node, upscale_node, validate_settings
 from . import censor, processors
 
 PREFIXES = ('AtelierX',)
@@ -38,14 +38,6 @@ OPS = {
     'detail': Msg('server.postprocess.detailer_experimental', 'Detailer (experimental)'),
     'inpaint': Msg('server.postprocess.inpaint', 'Inpaint'),
 }
-DETAIL_STAGES = ('face', 'eye', 'mouth', 'hand')
-DETECTORS = {
-    'face': 'bbox/face_yolov8m.pt',
-    'eye': 'segm/PitEyeDetailer-v2-seg.pt',
-    'mouth': 'bbox/face_yolov8m.pt',
-    'hand': 'bbox/hand_yolov8s.pt',
-}
-SAM_MODEL = 'sam_vit_b_01ec64.pth'
 
 
 def _number(options, key, default, low, high, kind=float):
@@ -194,10 +186,16 @@ def crop_region(box, image_size, padding, target_area):
     return (x0, y0, x1, y1), size
 
 
+def _first_pass(source):
+    """The image's own graph without the later steps (#168): the tools redraw on top of the image itself."""
+    settings = {**source['settings'], 'upscale': None, 'detailer': None}
+    return build_workflow(settings, source['positive'], source['negative'], source['seed'])
+
+
 def detail_graph(image_name, options, source, prefix):
     """The image's own loaders, LoRAs and prompts feeding the Impact detailer pipeline."""
     settings, seed = source['settings'], source['seed']
-    built = build_workflow(settings, source['positive'], source['negative'], seed)
+    built = _first_pass(source)
     sampler_id = next(k for k, n in built.items() if n['class_type'] == 'KSampler')
     sampler = built[sampler_id]['inputs']
     decode = next(n for n in built.values() if n['class_type'] == 'VAEDecode')
@@ -206,26 +204,25 @@ def detail_graph(image_name, options, source, prefix):
     drop |= {k for k, n in built.items() if n['class_type'] in ('VAEDecode', 'SaveImage', 'PreviewImage')}
     nodes = {k: v for k, v in built.items() if k not in drop}
     nodes['image'] = {'class_type': 'LoadImage', 'inputs': {'image': image_name}}
-    nodes['detail'] = {
-        'class_type': f'{prefix}ImpactDetailerPipeline',
-        'inputs': {
-            'image': ['image', 0],
-            'model': sampler['model'],
-            'clip': clip,
-            'vae': decode['inputs']['vae'],
-            'positive': sampler['positive'],
-            'negative': sampler['negative'],
-            **{f'{stage}_enabled': options[stage] for stage in DETAIL_STAGES},
-            **{f'{stage}_detector_model': DETECTORS[stage] for stage in DETAIL_STAGES},
-            'sam_model': SAM_MODEL,
-            'seed': seed,
-            'steps': options['steps'],
-            'cfg': settings['cfg'],
-            'sampler_name': settings['sampler'],
-            'scheduler': settings['scheduler'],
-            'denoise': options['denoise'],
-        },
+    refs = {
+        'model': sampler['model'],
+        'clip': clip,
+        'vae': decode['inputs']['vae'],
+        'positive': sampler['positive'],
+        'negative': sampler['negative'],
     }
+    nodes['detail'] = detailer_node(
+        ['image', 0],
+        refs,
+        {stage: options[stage] for stage in DETAIL_STAGES},
+        seed=seed,
+        steps=options['steps'],
+        cfg=settings['cfg'],
+        sampler=settings['sampler'],
+        scheduler=settings['scheduler'],
+        denoise=options['denoise'],
+        prefix=prefix,
+    )
     nodes['output'] = {'class_type': 'PreviewImage', 'inputs': {'images': ['detail', 0]}}
     return nodes
 
@@ -236,8 +233,7 @@ def inpaint_graph(image_name, mask_name, options, source):
     The image is encoded and only the masked latent is noised; afterwards the original
     pixels are put back outside the mask, so unpainted areas stay exactly as they were.
     """
-    settings, seed = source['settings'], source['seed']
-    built = build_workflow(settings, source['positive'], source['negative'], seed)
+    built = _first_pass(source)
     sampler_id = next(k for k, n in built.items() if n['class_type'] == 'KSampler')
     sampler = built[sampler_id]['inputs']
     decode_id = next(k for k, n in built.items() if n['class_type'] == 'VAEDecode')
@@ -333,14 +329,7 @@ def _detect_nodes(options, prefix):
 
 def _upscale_nodes(options, prefix):
     def build(nodes, image):
-        nodes['2'] = {
-            'class_type': f'{prefix}Upscale',
-            'inputs': {
-                'image': image,
-                'upscale_model': options['model'],
-                'scale': options['scale'],
-            },
-        }
+        nodes['2'] = upscale_node(image, options['model'], options['scale'], prefix)
         return ['2', 0]
 
     return build

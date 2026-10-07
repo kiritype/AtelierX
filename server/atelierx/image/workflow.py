@@ -24,6 +24,17 @@ DEFAULTS: dict[str, Any] = {
     'loras': [],
 }
 
+# The app's ComfyUI node pack (comfy_nodes/atelierx_nodes) and the detailer's detectors, shared with the image tools.
+NODE_PREFIX = 'AtelierX'
+DETAIL_STAGES = ('face', 'eye', 'mouth', 'hand')
+DETECTORS = {
+    'face': 'bbox/face_yolov8m.pt',
+    'eye': 'segm/PitEyeDetailer-v2-seg.pt',
+    'mouth': 'bbox/face_yolov8m.pt',
+    'hand': 'bbox/hand_yolov8s.pt',
+}
+SAM_MODEL = 'sam_vit_b_01ec64.pth'
+
 _CATALOG_KEYS = {
     'model': 'models',
     'text_encoder': 'text_encoders',
@@ -200,11 +211,127 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
         strength_clip = _finite_number(item.get('strength_clip', 1.0), f'loras[{index}].strength_clip')
         if not -10 <= strength_model <= 10 or not -10 <= strength_clip <= 10:
             raise ValueError(f'loras[{index}] strengths must be between -10 and 10')
-        normalized_loras.append(
-            {'name': name, 'strength_model': strength_model, 'strength_clip': strength_clip}
-        )
+        entry = {'name': name, 'strength_model': strength_model, 'strength_clip': strength_clip}
+        # Off: kept in the list, left out of the graph (#168). Only written when off, so older records read the same.
+        if item.get('enabled') is False:
+            entry['enabled'] = False
+        normalized_loras.append(entry)
     result['loras'] = normalized_loras
+
+    # Model sampling shift (#168), for Anima's flow models; SDXL has none.
+    shift = result.get('shift')
+    if shift in (None, '') or family == 'sdxl':
+        result['shift'] = None
+    else:
+        result['shift'] = _finite_number(shift, 'shift')
+        if not 0.5 <= result['shift'] <= 20:
+            raise ValueError('shift must be between 0.5 and 20')
+    result['upscale'] = _upscale_settings(result.get('upscale'), catalog)
+    result['detailer'] = _detailer_settings(result.get('detailer'), catalog)
     return result
+
+
+def _missing_nodes(catalog, part):
+    # A catalog that does not say (tests, older callers) is taken as having the nodes.
+    return (catalog.get('nodes') or {}).get(part) is False
+
+
+def _upscale_settings(value, catalog):
+    """After the first pass: enlarge with an upscale model to ``scale``, then redraw lightly (#168). None: off."""
+    # None or false: off. An object (even empty) is on, with defaults for what it leaves out.
+    if value is None or value is False:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError('upscale must be an object')
+    if _missing_nodes(catalog, 'upscale'):
+        raise ValueError(
+            Msg(
+                'server.workflow.upscale_nodes',
+                'The upscale node is not in ComfyUI. Install the nodes in Settings → Install, then restart ComfyUI.',
+            )
+        )
+    models = _choice_names(catalog.get('upscale_models'))
+    model = _resolve(value.get('model') or (models[0] if models else ''), models)
+    if not isinstance(model, str) or not model or (models and model not in models):
+        raise ValueError(Msg('server.workflow.upscale_model', 'Choose an installed upscale model.'))
+    out = {'model': model}
+    for key, low, high, default, kind in (
+        ('scale', 1, 4, 1.5, float),
+        ('steps', 1, 100, 12, int),
+        ('denoise', 0.05, 1, 0.3, float),
+    ):
+        raw = value.get(key, default)
+        number = _integer(raw, f'upscale.{key}') if kind is int else _finite_number(raw, f'upscale.{key}')
+        if not low <= number <= high:
+            raise ValueError(f'upscale.{key} must be between {low} and {high}')
+        out[key] = number
+    # Left out: the first pass's CFG.
+    if value.get('cfg') not in (None, ''):
+        out['cfg'] = _finite_number(value['cfg'], 'upscale.cfg')
+        if not 0 <= out['cfg'] <= 30:
+            raise ValueError('upscale.cfg must be between 0 and 30')
+    return out
+
+
+def _detailer_settings(value, catalog):
+    """Redraw the chosen parts, each with its own denoise, in face → eye → mouth → hand order. None: off."""
+    if not value:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError('detailer must be an object')
+    stages = value.get('stages') or {}
+    if not isinstance(stages, dict):
+        raise ValueError('detailer.stages must be an object')
+    chosen = {}
+    for stage in DETAIL_STAGES:
+        if stages.get(stage) is None:
+            continue
+        denoise = _finite_number(stages[stage], f'detailer.stages.{stage}')
+        if not 0.05 <= denoise <= 1:
+            raise ValueError(f'detailer.stages.{stage} must be between 0.05 and 1')
+        chosen[stage] = denoise
+    if not chosen:
+        return None
+    if _missing_nodes(catalog, 'detailer'):
+        raise ValueError(
+            Msg(
+                'server.workflow.detailer_nodes',
+                'The detailer nodes are not in ComfyUI. Install them in Settings → Install, then restart ComfyUI.',
+            )
+        )
+    steps = _integer(value.get('steps', 20), 'detailer.steps')
+    if not 1 <= steps <= 60:
+        raise ValueError('detailer.steps must be between 1 and 60')
+    return {'stages': chosen, 'steps': steps}
+
+
+def upscale_node(image, model, scale, prefix=NODE_PREFIX):
+    """The node pack's upscaler: an upscale model, then a resize to ``scale`` of the input."""
+    return {
+        'class_type': f'{prefix}Upscale',
+        'inputs': {'image': image, 'upscale_model': model, 'scale': scale},
+    }
+
+
+def detailer_node(image, refs, enabled, *, seed, steps, cfg, sampler, scheduler, denoise, prefix=NODE_PREFIX):
+    """The Impact detailer pipeline over ``image`` with the given parts on. ``refs``: model, clip, vae, positive,
+    negative of the graph that made the image."""
+    return {
+        'class_type': f'{prefix}ImpactDetailerPipeline',
+        'inputs': {
+            'image': image,
+            **refs,
+            **{f'{stage}_enabled': bool(enabled.get(stage)) for stage in DETAIL_STAGES},
+            **{f'{stage}_detector_model': DETECTORS[stage] for stage in DETAIL_STAGES},
+            'sam_model': SAM_MODEL,
+            'seed': seed,
+            'steps': steps,
+            'cfg': cfg,
+            'sampler_name': sampler,
+            'scheduler': scheduler,
+            'denoise': denoise,
+        },
+    }
 
 
 def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed: int) -> dict[str, Any]:
@@ -269,6 +396,8 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
             lora = {'name': lora}
         if not isinstance(lora, dict) or not isinstance(lora.get('name'), str):
             raise ValueError('each LoRA must include a name')
+        if lora.get('enabled') is False:
+            continue
         node_id = str(next_id)
         graph[node_id] = {
             'class_type': 'LoraLoader',
@@ -281,6 +410,13 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
             },
         }
         model_ref, clip_ref = [node_id, 0], [node_id, 1]
+        next_id += 1
+    if settings.get('shift') is not None and settings.get('family') != 'sdxl':
+        graph[str(next_id)] = {
+            'class_type': 'ModelSamplingAuraFlow',
+            'inputs': {'model': model_ref, 'shift': settings['shift']},
+        }
+        model_ref = [str(next_id), 0]
         next_id += 1
     positive_id, negative_id, latent_id, sampler_id, decode_id, _preview_id = (
         str(next_id + n) for n in range(6)
@@ -316,8 +452,75 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         'class_type': 'VAEDecode',
         'inputs': {'samples': [sampler_id, 0], 'vae': vae_ref},
     }
-    graph['output'] = {'class_type': 'PreviewImage', 'inputs': {'images': [decode_id, 0]}}
+    image_ref = [decode_id, 0]
+    free = next_id + 6
+
+    def add(node):
+        nonlocal free
+        graph[str(free)] = node
+        free += 1
+        return [str(free - 1), 0]
+
+    upscale = settings.get('upscale')
+    if upscale:
+        # Enlarge, then redraw lightly at the new size with the same model, prompts and seed (#168).
+        enlarged = add(upscale_node(image_ref, upscale['model'], upscale['scale']))
+        latent = add({'class_type': 'VAEEncode', 'inputs': {'pixels': enlarged, 'vae': vae_ref}})
+        redrawn = add(
+            {
+                'class_type': 'KSampler',
+                'inputs': {
+                    'model': model_ref,
+                    'positive': [positive_id, 0],
+                    'negative': [negative_id, 0],
+                    'latent_image': latent,
+                    'seed': actual_seed,
+                    'steps': upscale['steps'],
+                    'cfg': upscale.get('cfg', settings['cfg']),
+                    'sampler_name': settings['sampler'],
+                    'scheduler': settings['scheduler'],
+                    'denoise': upscale['denoise'],
+                },
+            }
+        )
+        image_ref = add({'class_type': 'VAEDecode', 'inputs': {'samples': redrawn, 'vae': vae_ref}})
+    detailer = settings.get('detailer')
+    if detailer:
+        refs = {
+            'model': model_ref,
+            'clip': clip_ref,
+            'vae': vae_ref,
+            'positive': [positive_id, 0],
+            'negative': [negative_id, 0],
+        }
+        # One pass per part so each keeps its own denoise; the order is the pipeline's own.
+        for stage in DETAIL_STAGES:
+            if stage in detailer['stages']:
+                image_ref = add(
+                    detailer_node(
+                        image_ref,
+                        refs,
+                        {stage: True},
+                        seed=actual_seed,
+                        steps=detailer['steps'],
+                        cfg=settings['cfg'],
+                        sampler=settings['sampler'],
+                        scheduler=settings['scheduler'],
+                        denoise=detailer['stages'][stage],
+                    )
+                )
+    graph['output'] = {'class_type': 'PreviewImage', 'inputs': {'images': image_ref}}
     return graph
+
+
+def pipeline_stages(settings):
+    """The steps one generation goes through, for the job panel: generate, then upscale and detailer if on."""
+    stages = ['generate']
+    if (settings or {}).get('upscale'):
+        stages.append('upscale')
+    if (settings or {}).get('detailer'):
+        stages.append('detailer')
+    return stages
 
 
 def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, seed: int) -> dict[str, Any]:
@@ -384,6 +587,22 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
         ),
         'VAEDecode': ([('samples', 'LATENT'), ('vae', 'VAE')], [('IMAGE', 'IMAGE')], []),
         'PreviewImage': ([('images', 'IMAGE')], [], []),
+        # The steps after generation (#168).
+        'ModelSamplingAuraFlow': ([('model', 'MODEL')], [('MODEL', 'MODEL')], []),
+        'AtelierXUpscale': ([('image', 'IMAGE')], [('IMAGE', 'IMAGE')], []),
+        'VAEEncode': ([('pixels', 'IMAGE'), ('vae', 'VAE')], [('LATENT', 'LATENT')], []),
+        'AtelierXImpactDetailerPipeline': (
+            [
+                ('image', 'IMAGE'),
+                ('model', 'MODEL'),
+                ('clip', 'CLIP'),
+                ('vae', 'VAE'),
+                ('positive', 'CONDITIONING'),
+                ('negative', 'CONDITIONING'),
+            ],
+            [('IMAGE', 'IMAGE')],
+            [],
+        ),
     }
     positions = {
         'CheckpointLoaderSimple': (40, 100),
@@ -399,23 +618,48 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
     }
     prompt_node_positions = [(650, 80), (650, 410)]
     prompt_node_index = 0
+    # Nodes after the first pass go to the right of it, in order, and the preview after them.
+    seen: set[str] = set()
+    extra = 0
 
     for key, api_node in prompt.items():
         node_id = api_to_ui[key]
         node_type = api_node['class_type']
         input_defs, output_defs, widget_values = specs[node_type]
+        values = api_node['inputs']
         if node_type == 'CLIPTextEncode':
-            widget_values = [api_node['inputs']['text']]
+            widget_values = [values['text']]
         elif node_type == 'KSampler':
-            widget_values[0] = seed
+            widget_values = [
+                values['seed'],
+                'fixed',
+                values['steps'],
+                values['cfg'],
+                values['sampler_name'],
+                values['scheduler'],
+                values['denoise'],
+            ]
+        elif node_type == 'ModelSamplingAuraFlow':
+            widget_values = [values['shift']]
+        elif node_type in ('AtelierXUpscale', 'AtelierXImpactDetailerPipeline'):
+            # Widget values in the order the node lists its settings.
+            widget_values = [v for v in values.values() if not (isinstance(v, list) and len(v) == 2)]
         elif node_type == 'LoraLoader':
             values = api_node['inputs']
             widget_values = [values['lora_name'], values['strength_model'], values['strength_clip']]
         if node_type == 'CLIPTextEncode':
             x, y = prompt_node_positions[prompt_node_index]
             prompt_node_index += 1
+        elif node_type == 'ModelSamplingAuraFlow':
+            x, y = 340, 40
+        elif node_type == 'PreviewImage' and extra:
+            x, y = 1650 + 300 * extra, 370
+        elif node_type not in positions or (node_type in ('KSampler', 'VAEDecode') and node_type in seen):
+            x, y = 1650 + 300 * extra, 370
+            extra += 1
         else:
             x, y = positions[node_type]
+        seen.add(node_type)
         if node_type == 'LoraLoader':
             # Stack LoRAs vertically while keeping all other node IDs and positions fixed.
             lora_ordinal = sum(

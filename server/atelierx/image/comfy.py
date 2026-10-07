@@ -84,8 +84,12 @@ class Comfy:
             info = self.request('/object_info')
 
             def values(node, field):
-                item = info.get(node, {}).get('input', {}).get('required', {}).get(field, [[]])[0]
-                return item if isinstance(item, list) else []
+                spec = info.get(node, {}).get('input', {}).get('required', {}).get(field, [[]])
+                item = spec[0]
+                # Newer ComfyUI: ("COMBO", {"options": [...]}).
+                if isinstance(item, str) and len(spec) > 1 and isinstance(spec[1], dict):
+                    item = spec[1].get('options', [])
+                return list(item) if isinstance(item, list) else []
 
             result = {
                 'connected': True,
@@ -96,6 +100,12 @@ class Comfy:
                 'samplers': values('KSampler', 'sampler_name'),
                 'schedulers': values('KSampler', 'scheduler'),
                 'clip_types': values('CLIPLoader', 'type'),
+                'upscale_models': values('UpscaleModelLoader', 'model_name'),
+                # What the steps after generation need (#168): the app's node pack and its Impact detailer.
+                'nodes': {
+                    'upscale': 'AtelierXUpscale' in info,
+                    'detailer': 'AtelierXImpactDetailerPipeline' in info,
+                },
             }
             # Checkpoint and diffusion-model directories are distinct ComfyUI catalogs.
             # Keep qualified checkpoint IDs so equal filenames cannot select the wrong file.
@@ -152,5 +162,7 @@ class Comfy:
                 samplers=[],
                 schedulers=[],
                 clip_types=[],
+                upscale_models=[],
+                nodes={'upscale': False, 'detailer': False},
                 defaults={},
             )

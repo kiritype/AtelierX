@@ -366,6 +366,8 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .menu-drop button { display: flex; gap: 16px; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 14px; border-radius: 0; }
 .menu-drop button:hover:not(:disabled) { background: var(--hover); }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
+/* A step after the first pass in the generation settings (#168). */
+.gen-stage { gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
 .menu-heading { padding: 4px 14px 2px; font-size: 11px; color: var(--text-3); }
 .dot-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--text-3); }
 .dot-status.ok { background: var(--success); }
