@@ -600,7 +600,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 인물/한서윤.md  (id: C001, kind: character)
   ▼ 이미지 프롬프트 변환 (섹션 키 + 본문 해시를 source로 남김) → 임시 항목에서 검토·채택
 .atelierx/image/characters/C001/design.json
-  ▼ 생성 (의상 × 표정 × 생성 프리셋)
+  ▼ 생성 (의상 × 표정 × 그림체 프리셋)
 <출력 루트>/W001/C001/images/…  (이미지마다 생성 기록 .json) + <출력 루트>/reviews.json (검수)
   ▼ 검수 통과 이미지 선택
 .atelierx/image/characters/C001/datasets/D001.json
@@ -711,10 +711,9 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 | `compose.json` | 조합 규칙 (전역만) | `order`(조합 순서), `slots`(의상 부위와 순서), `ratings`(표정 등급과 순서), `targets`(사용 대상 목록) |
 | `expressions.json` | 표정 | `name`, `code`(배포 코드, 선택), `rating`, `prompt`, `negative`, `composition`(어울리는 구도 id) |
 | `compositions.json` | 구도·배경 | `name`, `prompt`(프레이밍·배경 태그), `negative`, `suggest_slots`(이 구도에서 보이는 의상 부위, 비면 전부), `hide_outfit`(선택, `true`면 의상 칸과 의상 negative를 넣지 않음) |
-| `styles.json` | 화풍 | `name`, `prompt` |
 | `common.json` | 공통 프롬프트 | `name`, `target`(`positive`·`negative`), `prompt` |
 | `outfits.json` | 공용 의상 부위 | `name`, `slot`, `prompt`, `negative` |
-| `presets/<id>.json` | 생성 프리셋 (전역만) | 모델 이름, 샘플러, 스텝, CFG, 크기, 기본 LoRA, 쓸 공통·화풍 id, 워크플로 틀 이름 |
+| `presets/<id>.json` | 그림체 프리셋 (전역만) | 서비스·모델 계열, 생성 설정, artist 태그, 태그, 기본 공통 id. [아래](#그림체-프리셋) |
 | `workflows/<이름>.json` | 워크플로 틀 (전역만) | 이미지 생성 서버의 워크플로. 자리표시(프롬프트, negative, 시드, 크기, 모델, LoRA 목록)를 앱이 채운다. 모델 계열마다 하나 |
 
 ```json
@@ -734,7 +733,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 | `group` | 묶음 이름(최대 40자). 라이브러리와 생성 화면에서 같은 묶음끼리 모아 보인다. 없으면 "묶음 없음". |
 | `targets` | 이 항목을 쓰는 대상 id 목록(`compose.json`의 `targets`). 여러 개 고를 수 있고, 없거나 비면 모든 대상에 쓴다. |
 
-- 생성할 때 대상은 생성 설정의 모델 계열(`anima`, `sdxl`)이나 이미지 서비스(`novelai`, `pixai`)다. 대상에 맞지 않는 공통·화풍·구도
+- 생성할 때 대상은 생성 설정의 모델 계열(`anima`, `sdxl`)이나 이미지 서비스(`novelai`, `pixai`)다. 대상에 맞지 않는 공통·구도
   항목은 프롬프트에서 빠지고 미리보기 경고에 이름이 나온다. 표정은 빠지지 않고 경고만 한다.
 - 이전 형식의 `model_family`(`anima`·`sdxl`·`shared`)는 읽을 때 `targets`로 바꿔 본다(`anima` → `["anima"]`, `sdxl` → `["sdxl"]`,
   `shared` → 모든 대상). 항목을 저장하면 `targets`로 쓴다.
@@ -761,7 +760,35 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 - 모델·LoRA는 **파일 이름**으로 적는다. 실제 경로는 `config/settings.json`의 모델·LoRA 폴더 설정에서 찾는다(데이터 루트에
   절대 경로를 넣지 않음).
-- "생성 프리셋"은 이미지 생성 설정 묶음이고, [플랫폼 프리셋](#플랫폼-프리셋)과는 다른 것이다.
+- "그림체 프리셋"은 이미지 생성 설정과 artist 태그의 묶음이고, [플랫폼 프리셋](#플랫폼-프리셋)과는 다른 것이다.
+
+#### 그림체 프리셋
+
+위치: `data/image/presets/<id>.json` (전역만, [결정 0026](decisions/0026-style-presets.md))
+
+```json
+{
+  "schema_version": 2,
+  "name": "먹선 Anima",
+  "service": "comfyui",
+  "family": "anima",
+  "tags": ["선화", "흑백"],
+  "settings": {"model": "…", "sampler": "er_sde", "scheduler": "simple", "steps": 32, "cfg": 5,
+               "width": 1536, "height": 1536, "loras": []},
+  "artist": {"positive": "(@ink artist:1.2), @sketchy, year 2025", "negative": "@bad artist"},
+  "common": ["quality"]
+}
+```
+
+- `service`: `comfyui`·`novelai`·`pixai`. 그 서비스의 생성 화면에서만 고를 수 있다.
+- `family`: ComfyUI면 `anima`·`sdxl`, 인터넷 서비스면 서비스 id와 같다.
+- `settings`: 그 서비스의 생성 설정(ComfyUI는 [생성 기록](#생성-기록)의 `settings`와 같은 형식, 시드 제외). 비어 있으면 생성 화면의 값을
+  쓴다. 샘플러·스케줄러는 이미지 생성 서버의 기본 목록에서만 고른다.
+- `artist`: 그림체를 정하는 작가·앞머리 태그(positive)와 피할 작가(negative). 글 그대로이고, 서비스의 문법(NovelAI 가중치 등)을 따른다.
+  `#` 주석은 생성 요청에서 빠진다. 조합 순서의 `artist` 자리에 들어간다.
+- `tags`: 사용자 태그(최대 20개, 각 40자). `common`: 기본으로 켤 공통 프롬프트 id(비면 "기본으로 켬" 항목).
+- 이전 형식(schema 1, 서비스·artist 없음, `styles` 화풍 id 목록)은 앱을 켤 때 옮긴다: 고른 화풍의 프롬프트가 `artist`가 되고, 쓰이지 않은
+  화풍(`styles.json`, 작품 범위 포함)은 각각 프리셋이 된다. 옛 `styles.json`은 `styles.migrated.json`으로 남긴다.
 - 앱은 최소한의 기본 항목(표정·구도 몇 가지, 조합 규칙)을 `app/` 안에 갖고 있다가 데이터 루트를 처음 만들 때 전역 라이브러리로
   복사한다.
 
@@ -797,7 +824,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "expression_id": "smile", "expression_name": "미소", "rating": "general",
   "composition_id": "upper_front", "composition_name": "상반신 정면", "outfit_slots": ["top", "full"], "outfit_hidden": false,
   "service": "comfyui",
-  "common_ids": ["quality"], "style_ids": [], "trigger": "w001_c001", "model_family": "anima",
+  "common_ids": ["quality"], "artist": {"positive": "…", "negative": "…"}, "trigger": "w001_c001", "model_family": "anima",
   "parts": {"common": "…", "style": "", "composition": "…", "trigger": "", "appearance": "…",
             "expression": "…", "outfit": "…", "negative": "…"},
   "positive": "…", "negative": "…",
@@ -818,7 +845,8 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 ```
 
 - 같은 이미지를 다시 만들 수 있는 정보를 모두 남긴다. 갤러리의 "새 시드로 다시 생성"은 이 기록에서 시드만 바꿔 대기열에 넣는다.
-- 생성 설정의 뒷단계(#168, 생성 프리셋의 `settings`도 같은 형식, 모두 선택):
+- `artist`: 그때 쓴 artist 태그. 이전 기록은 `style_ids`(화풍 id)와 `parts.style`을 가진다.
+- 생성 설정의 뒷단계(#168, 그림체 프리셋의 `settings`도 같은 형식, 모두 선택):
   - `loras[].enabled`: `false`면 목록에 남기되 그래프에서 뺀다(켜진 것은 쓰지 않음).
   - `shift`: Anima 모델의 ModelSamplingAuraFlow 값(0.5~20). 없거나 `null`이면 넣지 않는다. SDXL은 쓰지 않는다.
   - `upscale`: 1차 생성 뒤 업스케일 모델로 키워 `scale`(1~4)에 맞추고, 같은 모델·프롬프트·시드로 `steps`·`denoise`(0.05~1)만큼

@@ -33,7 +33,7 @@ image generation, review, post-processing and LoRA training live in the same pro
 
 **Character images**
 - Preview and generate character × outfit × expression combinations in bulk, composed from a prompt library
-  (expressions, compositions, styles, common prompts).
+  (expressions, compositions, common prompts) and style presets (model, settings and artist tags).
 - Generation services: ComfyUI on this PC, or the online services NovelAI and PixAI (your own account and API key;
   billed by each service).
 - Review in the gallery (pass, fail, adopt) and find missing combinations on the completion board.
