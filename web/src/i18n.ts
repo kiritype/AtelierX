@@ -20,7 +20,7 @@ export function t(key: string, values?: Record<string, unknown>): string {
   return text;
 }
 
-type ServerMsg = { key: string; text: string; values?: Record<string, unknown> };
+export type ServerMsg = { key: string; text: string; values?: Record<string, unknown> };
 const isMsg = (value: unknown): value is ServerMsg =>
   !!value && typeof value === 'object' && typeof (value as ServerMsg).key === 'string' && typeof (value as ServerMsg).text === 'string';
 
@@ -30,5 +30,8 @@ export function tm(msg: ServerMsg): string {
   const values = msg.values && Object.fromEntries(Object.entries(msg.values).map(([name, value]) => [name, isMsg(value) ? tm(value) : value]));
   return t(msg.key, values);
 }
+
+// A server message translated, or any other value as text (an error string, a number, nothing).
+export const msgText = (value: unknown): string => (isMsg(value) ? tm(value) : String(value ?? ''));
 
 export const getLanguage = () => currentLanguage;

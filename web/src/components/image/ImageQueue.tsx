@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, get, post } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, msgText, type ServerMsg } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 import { finished } from '../../lib/lifecycle';
@@ -21,15 +21,14 @@ type Job = {
   title?: string;
   post_op?: string;
   tool_name?: string;
-  progress?: any;
-  error?: any;
+  progress?: ServerMsg | string | null;
+  error?: ServerMsg | string | null;
   image_url?: string;
   created_at: string;
   finished_at?: string;
 };
-type Queue = { paused: boolean; jobs: Job[]; gpu: { holder: string | null; label: any; state_label: any; waiting: any } };
+type Queue = { paused: boolean; jobs: Job[]; gpu: { holder: string | null; label: ServerMsg | string; state_label: ServerMsg | string | null; waiting: { reason: ServerMsg | string } | null } };
 
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 const ORDER: Record<string, number> = { running: 0, cancelling: 0, queued: 1, failed: 2, interrupted: 2, cancelled: 3, done: 4 };
 
 // Image menu → Generation queue: order, pause, retry, cancel; finished images show as thumbnails.
@@ -73,9 +72,9 @@ export default function ImageQueue() {
         <button onClick={() => act('/api/image/queue/clear-finished')}>{t('queue.clear_finished')}</button>
       </div>
       <div className="faint">
-        GPU: {msg(data.gpu.label)}
-        {data.gpu.state_label ? ` · ${msg(data.gpu.state_label)}` : ''}
-        {data.gpu.waiting ? ` · ${msg(data.gpu.waiting.reason)}` : ''}
+        GPU: {msgText(data.gpu.label)}
+        {data.gpu.state_label ? ` · ${msgText(data.gpu.state_label)}` : ''}
+        {data.gpu.waiting ? ` · ${msgText(data.gpu.waiting.reason)}` : ''}
       </div>
       <div className="seg" style={{ alignSelf: 'flex-start' }}>
         {(['all', 'active', 'done'] as const).map((s) => (
@@ -110,10 +109,10 @@ export default function ImageQueue() {
               </div>
               <div className="faint">
                 {t(`queue.status.${job.status}`)}
-                {job.progress && ['running', 'cancelling'].includes(job.status) ? ` · ${msg(job.progress)}` : ''}
+                {job.progress && ['running', 'cancelling'].includes(job.status) ? ` · ${msgText(job.progress)}` : ''}
                 {job.seed != null ? ` · seed ${job.seed}` : ''}
               </div>
-              {job.error && <div className="error-text">{msg(job.error)}</div>}
+              {job.error && <div className="error-text">{msgText(job.error)}</div>}
             </div>
             <div className="row">
               {['queued', 'running'].includes(job.status) && <button onClick={() => act(`/api/image/jobs/${job.id}/cancel`)}>{t('common.cancel')}</button>}

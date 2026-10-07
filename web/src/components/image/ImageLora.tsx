@@ -1,12 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, del, get, post, put } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
 import { useCatalog } from './GenSettings';
 import { compareLorasInLab } from './ImageLab';
 import { unfinished } from '../../lib/lifecycle';
 import { useUnsaved } from '../Unsaved';
+import type { TrainingStatus } from '../../imageTypes';
 
 type Design = { id: string; name: string; has_design: boolean; trigger?: string; outfits: { id: string; name: string }[] };
 type Candidate = { path: string; outfit_id: string; expression_id: string; expression_name: string; human_status: string; adopted: boolean; thumbnail_url: string };
@@ -42,7 +43,6 @@ type Model = {
 };
 type Overview = { datasets: Dataset[]; runs: Run[]; models: Model[]; busy: boolean };
 
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 
 // Image menu → LoRA: per character, a dataset of adopted images with captions, training runs, and the LoRAs it uses.
 export default function ImageLora({ workId, openLab, initialCharacterId, initialOutfitId }: { workId: string; openLab?: () => void; initialCharacterId?: string; initialOutfitId?: string }) {
@@ -300,7 +300,7 @@ function DatasetTab({ base, design, datasets, initialOutfitId }: { base: string;
 
 function TrainTab({ base, data, openLab }: { base: string; data: Overview; openLab?: () => void }) {
   const act = useAct();
-  const status = useQuery<any>({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
+  const status = useQuery<TrainingStatus>({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
   const [form, setForm] = useState({ dataset_id: data.datasets[0]?.id ?? '', method: 'atelierx_tlora', base: '', epochs: 40, save_every: 10, learning_rate: '1e-4' });
   const [logFor, setLogFor] = useState('');
   const log = useQuery<{ text: string }>({ queryKey: ['lora-log', base, logFor], queryFn: () => get(`${base}/runs/${logFor}/log`), enabled: !!logFor, refetchInterval: 3000 });
@@ -354,7 +354,7 @@ function TrainTab({ base, data, openLab }: { base: string; data: Overview; openL
           <select value={baseId} onChange={(e) => setForm({ ...form, base: e.target.value })}>
             {(s?.bases ?? []).map((b: any) => (
               <option key={b.id} value={b.id}>
-                {msg(b.label)}
+                {msgText(b.label)}
               </option>
             ))}
           </select>
@@ -441,7 +441,7 @@ function RunCard({ base, run, act, openLab, dataset, showLog, logOpen, log }: { 
           </span>
         </div>
       )}
-      {run.error && <div className="error-text small">{msg(run.error)}</div>}
+      {run.error && <div className="error-text small">{msgText(run.error)}</div>}
       {run.outputs.length > 0 && (
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <span className="muted small">{t('lora.outputs')}</span>

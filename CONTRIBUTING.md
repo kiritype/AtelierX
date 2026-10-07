@@ -56,6 +56,9 @@ cd web && npm test && npm run typecheck && npm run build
 - **저장 충돌**: 여러 화면이 고치는 JSON은 리비전으로 저장하고, 오래된 내용으로 저장하면 409(`server.save.stale`)로
   거절합니다(`core/revisions.py`).
 - **저장하지 않은 변경**: 편집 화면은 `useUnsaved`로 등록해 탭 닫기·나가기·잠금 때 확인을 받습니다.
+- **API**: 서버 경로는 영역별 `server/atelierx/api/*_routes.py`의 `routes()`에 두고 `app.py`가 모읍니다. 공용 도우미는
+  `api/common.py`(`ok`, `body`, `st`, `work_of`). 새로 만들거나 고치는 API는 화면 쪽 응답 타입을 정의합니다(`web/src/types.ts`,
+  이미지는 `web/src/imageTypes.ts`). `any`로 받지 않습니다. 서버의 형식 검사는 지금처럼 `clean_*` 같은 함수로 합니다.
 - **데이터 형식**: 형식은 [docs/data-model.md](docs/data-model.md) 한 곳에서만 정의합니다. 형식을 바꾸면 이 문서와
   `schema_version`을 함께 고치고, 이전 형식을 읽는 변환을 넣습니다.
 - **설명서**: 화면 문구나 동작이 바뀌면 `docs/manual/`도 함께 고칩니다. 캡처는 가상 데이터로 찍고, 개인 작품이나 키가

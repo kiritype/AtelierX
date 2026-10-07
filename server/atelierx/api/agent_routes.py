@@ -1,6 +1,7 @@
 """Agent panel API (11-agent): modes, conversations, streaming answers, proposals → review, and the global guidelines."""
 
 from starlette.responses import JSONResponse, StreamingResponse
+from starlette.routing import Route
 
 from ..core import agent, agent_turns, guidelines
 from ..core.drafts import Drafts
@@ -127,3 +128,27 @@ async def guideline_put(request):
 
 async def guideline_delete(request):
     return _ok(guidelines.delete_global(_state(request).paths, request.query_params.get('name')))
+
+
+def routes():
+    w = '/api/works/{wid}'
+    return [
+        Route('/api/guidelines', guidelines_list),
+        Route('/api/guidelines/file', guideline_get),
+        Route('/api/guidelines/file', guideline_put, methods=['PUT']),
+        Route('/api/guidelines/file', guideline_delete, methods=['DELETE']),
+        Route(f'{w}/agent/modes', modes),
+        Route(f'{w}/agent/sessions', sessions_list),
+        Route(f'{w}/agent/sessions', sessions_create, methods=['POST']),
+        Route(f'{w}/agent/sessions/{{sid}}', session_get),
+        Route(f'{w}/agent/sessions/{{sid}}', session_patch, methods=['PATCH']),
+        Route(f'{w}/agent/sessions/{{sid}}', session_delete, methods=['DELETE']),
+        Route(f'{w}/agent/sessions/{{sid}}/preview', preview, methods=['POST']),
+        Route(f'{w}/agent/sessions/{{sid}}/send', send, methods=['POST']),
+        Route(
+            f'{w}/agent/sessions/{{sid}}/proposals/{{turn:int}}/{{n:int}}/review',
+            proposal_review,
+            methods=['POST'],
+        ),
+        Route(f'{w}/agent-drafts/{{did}}/apply', draft_apply, methods=['POST']),
+    ]

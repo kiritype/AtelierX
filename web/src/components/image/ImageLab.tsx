@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import LabImport from './LabImport';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
 
@@ -25,7 +25,6 @@ const DRAFT_KEY = 'atelierx-lab-draft';
 const HANDOFF_KEY = 'atelierx-lab-handoff';
 const SWEEPS = ['cfg', 'steps', 'sampler', 'scheduler', 'clip_skip', 'lora_strength', 'lora_file', 'artist'] as const;
 const MAX_JOBS = 48;
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 
 function readStore(store: Storage, key: string) {
   try {
@@ -196,7 +195,7 @@ export default function ImageLab({ workId }: { workId?: string }) {
   const side = (cell: Cell): Side => ({
     url: cell.image_url!,
     path: cell.path,
-    label: cell.lab_variant ? `${msg(cell.lab_variant) || t('lab.baseline')} · ${t('lab.seed_n', { seed: cell.seed })}` : t('lab.seed_n', { seed: cell.seed }),
+    label: cell.lab_variant ? `${msgText(cell.lab_variant) || t('lab.baseline')} · ${t('lab.seed_n', { seed: cell.seed })}` : t('lab.seed_n', { seed: cell.seed }),
   });
 
   return (
@@ -388,7 +387,7 @@ export default function ImageLab({ workId }: { workId?: string }) {
                 const any = run.cells.find((c) => c.column === column);
                 return (
                   <div key={column} className="lab-head">
-                    {run.columns > 1 ? msg(any?.lab_variant) || t('lab.baseline') : ''}
+                    {run.columns > 1 ? msgText(any?.lab_variant) || t('lab.baseline') : ''}
                   </div>
                 );
               })}
@@ -408,7 +407,7 @@ export default function ImageLab({ workId }: { workId?: string }) {
                         {cell.image_url ? (
                           <img src={cell.image_url} alt="" loading="lazy" onClick={() => setResult(side(cell))} />
                         ) : (
-                          <div className="lab-empty small" title={msg(cell.error)}>
+                          <div className="lab-empty small" title={msgText(cell.error)}>
                             {t(`queue.status.${cell.status}`)}
                           </div>
                         )}

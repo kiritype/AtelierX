@@ -6,6 +6,7 @@ import { useToast } from './Toasts';
 import { useUnsaved } from './Unsaved';
 import ImageServiceSettings from './ImageServiceSettings';
 import { unfinished } from '../lib/lifecycle';
+import type { Training, TrainingStatus } from '../imageTypes';
 
 type Connection = {
   status: {
@@ -426,7 +427,6 @@ function ReviewSection() {
   );
 }
 
-type Training = { trainer_dir: string; trainer_python: string; lora_dir: string; bases: Record<string, { dit: string; text_encoder: string; vae: string }> };
 type InstallStatus = {
   run: { section: string; status: string; log: string[]; error?: any; started_at?: string } | null;
   models?: { groups?: { id: string; license?: { name: string; url: string }; items: { size?: number; installed?: string | null }[] }[] };
@@ -437,7 +437,7 @@ function TrainingSection() {
   const qc = useQueryClient();
   const toast = useToast();
   const fail = useFail();
-  const status = useQuery<any>({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
+  const status = useQuery<TrainingStatus>({ queryKey: ['training-status'], queryFn: () => get('/api/image/training/status') });
   const installs = useQuery<InstallStatus>({
     queryKey: ['installs'],
     queryFn: () => get('/api/image/installs'),

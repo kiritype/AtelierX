@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { del, get, patch, post } from '../api';
 import { t } from '../i18n';
-import type { ImageView, Tab, TreeEntry, WorkInfo } from '../types';
+import type { DraftSummary, ImageView, SearchHit, SnapshotSummary, Tab, TrashBundle, TreeEntry, WorkInfo } from '../types';
 import FileTree from './FileTree';
 import RenameDialog from './RenameDialog';
 import { useToast } from './Toasts';
@@ -48,7 +48,7 @@ function SearchPanel({ workId, open, renamePath }: Props) {
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [submitted, setSubmitted] = useState('');
-  const hits = useQuery({
+  const hits = useQuery<SearchHit[]>({
     queryKey: ['search', workId, submitted],
     queryFn: () => get(`/api/works/${workId}/search?q=${encodeURIComponent(submitted)}`),
     enabled: !!submitted,
@@ -72,10 +72,10 @@ function SearchPanel({ workId, open, renamePath }: Props) {
           onKeyDown={(e) => e.key === 'Enter' && setSubmitted(query.trim())}
         />
       </div>
-      {(hits.data ?? []).map((hit: any) => (
+      {(hits.data ?? []).map((hit) => (
         <div key={hit.path} style={{ padding: '4px 8px', cursor: 'pointer' }} onClick={() => open({ type: 'item', path: hit.path })}>
           <strong>{hit.name}</strong> <span className="faint">{hit.path}</span>
-          {hit.lines.map(([n, line]: [number, string]) => (
+          {hit.lines.map(([n, line]) => (
             <div key={n} className="faint mono" style={{ fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {n}: {line}
             </div>
@@ -136,12 +136,12 @@ function ImagePanel({ workId, open }: Props) {
 }
 
 function DraftsPanel({ workId, open }: Props) {
-  const drafts = useQuery({ queryKey: ['drafts-all', workId], queryFn: () => get(`/api/works/${workId}/drafts`) });
+  const drafts = useQuery<DraftSummary[]>({ queryKey: ['drafts-all', workId], queryFn: () => get(`/api/works/${workId}/drafts`) });
   return (
     <>
       <div className="side-head">{t('panel.drafts')}</div>
       {(drafts.data ?? []).length === 0 && <div className="empty">{t('drafts.empty')}</div>}
-      {(drafts.data ?? []).map((d: any) => (
+      {(drafts.data ?? []).map((d) => (
         <div key={d.id} className="list-row" style={{ cursor: 'pointer' }} onClick={() => open({ type: 'review', draft: d.id })}>
           <span className="grow">
             {t(`draft.kind.${d.kind}`)} · {d.target.path?.split('/').pop()}
@@ -157,9 +157,9 @@ function DraftsPanel({ workId, open }: Props) {
 function HistoryPanel({ workId, open }: Props) {
   const qc = useQueryClient();
   const toast = useToast();
-  const snaps = useQuery({ queryKey: ['snapshots', workId], queryFn: () => get(`/api/works/${workId}/snapshots`) });
+  const snaps = useQuery<SnapshotSummary[]>({ queryKey: ['snapshots', workId], queryFn: () => get(`/api/works/${workId}/snapshots`) });
   const [filter, setFilter] = useState('all');
-  const list = (snaps.data ?? []).filter((s: any) => filter === 'all' || (filter === 'manual' ? s.reason === 'manual' : !!s.release));
+  const list = (snaps.data ?? []).filter((s) => filter === 'all' || (filter === 'manual' ? s.reason === 'manual' : !!s.release));
   return (
     <>
       <div className="side-head">
@@ -184,7 +184,7 @@ function HistoryPanel({ workId, open }: Props) {
         </select>
       </div>
       {list.length === 0 && <div className="empty">{t('history.empty')}</div>}
-      {list.map((s: any) => (
+      {list.map((s) => (
         <div key={s.id} className="list-row" style={{ cursor: 'pointer', alignItems: 'flex-start' }} onClick={() => open({ type: 'compare', snapshot: s.id, label: s.label || undefined })}>
           <span className="grow">
             {s.created_at?.slice(5, 16).replace('T', ' ')} · {t(`reason.${s.reason}`)}
@@ -213,7 +213,7 @@ function HistoryPanel({ workId, open }: Props) {
 
 function TrashPanel({ workId }: Props) {
   const qc = useQueryClient();
-  const trash = useQuery({ queryKey: ['work-trash', workId], queryFn: () => get(`/api/works/${workId}/trash`) });
+  const trash = useQuery<TrashBundle[]>({ queryKey: ['work-trash', workId], queryFn: () => get(`/api/works/${workId}/trash`) });
   const reload = () => {
     qc.invalidateQueries({ queryKey: ['work-trash', workId] });
     qc.invalidateQueries({ queryKey: ['tree', workId] });
@@ -236,7 +236,7 @@ function TrashPanel({ workId }: Props) {
         )}
       </div>
       {(trash.data ?? []).length === 0 && <div className="empty">{t('trash.empty')}</div>}
-      {(trash.data ?? []).map((entry: any) => (
+      {(trash.data ?? []).map((entry) => (
         <div key={entry.id} className="list-row" style={{ alignItems: 'flex-start' }}>
           <span className="grow">
             {entry.paths.map((p: string) => (

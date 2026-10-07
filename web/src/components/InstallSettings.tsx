@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { ApiError, get, post } from '../api';
-import { getLanguage, t, tm } from '../i18n';
+import { getLanguage, t, tm, msgText } from '../i18n';
 import { useToast } from './Toasts';
 import { unfinished } from '../lib/lifecycle';
 
@@ -36,7 +36,6 @@ type Status = {
   };
 };
 
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 const gb = (bytes: number) => (bytes >= 2 ** 30 ? `${(bytes / 2 ** 30).toFixed(1)}GB` : `${Math.max(1, Math.round(bytes / 2 ** 20))}MB`);
 const readiness = {
   ko: {
@@ -251,7 +250,7 @@ export default function InstallSettings() {
               </button>
             )}
           </div>
-          {s.run.error && <div className="error-text small">{msg(s.run.error)}</div>}
+          {s.run.error && <div className="error-text small">{msgText(s.run.error)}</div>}
           <pre ref={logRef} className="lora-log mono small">
             {s.run.log.join('\n') || '…'}
           </pre>

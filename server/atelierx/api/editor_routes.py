@@ -1,6 +1,7 @@
 """API actions for editor content review, consistency review and Markdown formatting."""
 
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from ..core.drafts import Drafts
 from ..core.i18n import AppError, Msg
@@ -49,3 +50,11 @@ async def apply_edit(request):
     saved = work.save_item(target['path'], {}, candidate['text'], target['base_hash'])
     drafts.set_status(draft_id, 'applied')
     return _ok({'path': saved['path'], 'hash': saved['hash']})
+
+
+def routes():
+    w = '/api/works/{wid}'
+    return [
+        Route(f'{w}/editor/{{action}}', run_action, methods=['POST']),
+        Route(f'{w}/editor-drafts/{{did}}/apply', apply_edit, methods=['POST']),
+    ]

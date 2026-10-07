@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, get, post, put } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, msgText } from '../../i18n';
 import { createMaskEditor, type MaskEditor } from '../../lib/maskEditor';
 import { TAB_FEATURES, TAB_GROUPS, pickMethod, tabMethods, type Method, type ToolTab } from '../../lib/toolMethods';
 import { MODEL_WORDS, splitTags } from '../../lib/tags';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import PromptConverter, { type PromptHandoff } from './PromptConverter';
+import type { PostInfo, TaggerInfo, ToolInfo, ToolMethods } from '../../imageTypes';
 
 type Mark = { source: string; updated_at: string };
 export type ToolItem = {
@@ -38,7 +39,6 @@ type Analysis = {
 };
 type Tab = ToolTab;
 // What the server says about a ComfyUI tool: usable, or why not (ComfyUI not reachable, or nodes missing).
-type ToolInfo = { available: boolean; reason?: 'offline' | 'nodes'; error?: unknown };
 type OpenSettings = (section?: 'image' | 'install') => void;
 type MaskKind = 'censor' | 'alpha' | 'inpaint';
 
@@ -64,7 +64,6 @@ function readMethods(): Partial<Record<Tab, Method>> {
 
 // Translation with positional values ({0}, {1} …).
 const tp = (key: string, ...values: unknown[]) => t(key, Object.fromEntries(values.map((v, i) => [String(i), v])));
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 const size = (n: number) => (n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 const norm = (tag: string) => tag.toLowerCase().replace(/_/g, ' ').replace(/^@/, '').trim();
 
@@ -90,7 +89,7 @@ function ComfyNotice({ info, openSettings, recheck }: { info: ToolInfo; openSett
       <strong>{t(`tools.notice.${reason}.title`)}</strong>
       <span>{t(`tools.notice.${reason}.body`)}</span>
       {/* The connection error says what failed; for missing nodes the title says it all. */}
-      {reason === 'offline' && info.error != null && <span className="faint small">{msg(info.error)}</span>}
+      {reason === 'offline' && info.error != null && <span className="faint small">{msgText(info.error)}</span>}
       <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
         {openSettings && (
           <button className="primary" onClick={() => openSettings(reason === 'nodes' ? 'install' : 'image')}>
@@ -110,9 +109,9 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
   const items = useQuery<{ items: ToolItem[] }>({ queryKey: ['tool-items'], queryFn: () => get('/api/image/tools/items'), refetchInterval: 3000 });
-  const tagger = useQuery<any>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
-  const postInfo = useQuery<any>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
-  const methods = useQuery<{ methods: Method[]; features: Record<string, string[]> }>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
+  const tagger = useQuery<TaggerInfo>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
+  const postInfo = useQuery<PostInfo>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
+  const methods = useQuery<ToolMethods>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
   const list = items.data?.items ?? [];
   // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
   const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
@@ -199,9 +198,9 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
           credentials: 'same-origin',
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(msg(data.error) || t('tools.upload_failed'));
+        if (!response.ok) throw new Error(msgText(data.error) || t('tools.upload_failed'));
         added += data.added.length;
-        for (const skip of data.skipped ?? []) problems.push(`${skip.name}: ${msg(skip.error)}`);
+        for (const skip of data.skipped ?? []) problems.push(`${skip.name}: ${msgText(skip.error)}`);
       } catch (error) {
         problems.push(`${file.name}: ${error instanceof Error ? error.message : error}`);
       }
@@ -600,7 +599,7 @@ function MaskPane({
         const response = await fetch(`/api/image/tools/mask?id=${item.id}&kind=${kind}`, { method: 'PUT', body: blob, credentials: 'same-origin' });
         if (!response.ok) {
           const data = await response.json().catch(() => null);
-          throw new Error(msg(data?.error) || String(response.status));
+          throw new Error(msgText(data?.error) || String(response.status));
         }
         onSaved();
       },
@@ -684,7 +683,7 @@ function ConvertForm({ ids, fail }: { ids: string[]; fail: (e: unknown) => void 
           )}
           {data.errors.map((e: any) => (
             <div key={e.item_id} className="error-text small">
-              {e.name}: {msg(e.error)}
+              {e.name}: {msgText(e.error)}
             </div>
           ))}
           {data.status !== 'running' && data.results.length > 0 && <a href={`/api/image/tools/convert/zip?id=${data.id}`}>{tp('tools.download_zip', data.results.length)}</a>}
@@ -694,13 +693,13 @@ function ConvertForm({ ids, fail }: { ids: string[]; fail: (e: unknown) => void 
   );
 }
 
-function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: ToolItem[]; info: any; fail: (e: unknown) => void; onExcludes: () => void }) {
+function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: ToolItem[]; info?: TaggerInfo; fail: (e: unknown) => void; onExcludes: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState({ model: '', threshold: 0.35, character_threshold: 0.85 });
   const [exclude, setExclude] = useState<string | null>(null);
   if (!info) return <div className="faint">{t('tools.reading_tagger')}</div>;
-  if (!info.available) return <div className="error-text">{msg(info.error)}</div>;
+  if (!info.available) return <div className="error-text">{msgText(info.error)}</div>;
   const model = form.model || info.defaults.model;
   const tagged = list.filter((i) => ids.includes(i.id) && i.tags);
   return (
@@ -769,15 +768,15 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
   );
 }
 
-function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info: any; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
+function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info?: PostInfo; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [op, setOp] = useState('upscale');
   const [upscale, setUpscale] = useState({ model: '', scale: 2 });
   const [detail, setDetail] = useState({ face: true, eye: true, mouth: false, hand: true, denoise: 0.4, steps: 20 });
   if (!info) return <div className="faint">{t('tools.checking_nodes')}</div>;
-  if (!info.available) return <div className="error-text">{msg(info.error)}</div>;
-  const ops = Object.entries(info.ops as Record<string, any>).filter(([key]) => !['detect', 'alpha', 'inpaint'].includes(key));
+  if (!info.available) return <div className="error-text">{msgText(info.error)}</div>;
+  const ops = Object.entries(info.ops).filter(([key]) => !['detect', 'alpha', 'inpaint'].includes(key));
   const model = upscale.model || info.upscale_models[0] || '';
   return (
     <div className="col">
@@ -785,7 +784,7 @@ function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; in
         <select value={op} onChange={(e) => setOp(e.target.value)}>
           {ops.map(([key, label]) => (
             <option key={key} value={key}>
-              {msg(label)}
+              {msgText(label)}
             </option>
           ))}
         </select>
@@ -873,7 +872,7 @@ function MaskForm({
   item?: ToolItem;
   list: ToolItem[];
   ids: string[];
-  info: any;
+  info?: PostInfo;
   method: Method;
   analysis?: Analysis;
   editor: React.MutableRefObject<MaskEditor | null>;
@@ -1010,7 +1009,7 @@ function MaskForm({
         >
           {tp('tools.detect_selected', ids.length)}
         </button>
-        {unavailable && info && <span className="error-text small">{msg(info.error)}</span>}
+        {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}
         <span className="faint small">{t('tools.paint_instead')}</span>
         {step2}
         <div className="section-title">{t('tools.step.apply')}</div>
@@ -1070,7 +1069,7 @@ function MaskForm({
         >
           {tp('tools.split_selected', ids.length)}
         </button>
-        {unavailable && info && <span className="error-text small">{msg(info.error)}</span>}
+        {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}
         {step2}
         <div className="section-title">{t('tools.step.apply')}</div>
         {shape(alpha, setAlpha)}
@@ -1131,7 +1130,7 @@ function MaskForm({
         {t('tools.inpaint_this')}
       </button>
       {item && analysis && !recorded && <span className="error-text small">{t('tools.inpaint_needs_record')}</span>}
-      {unavailable && info && <span className="error-text small">{msg(info.error)}</span>}
+      {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}
       <span className="faint small">{t('tools.inpaint_about')}</span>
       <span className="faint small">{t('tools.where_saved')}</span>
     </div>

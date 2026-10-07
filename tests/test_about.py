@@ -8,7 +8,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from atelierx import __version__
-from atelierx.api import app as app_module
+from atelierx.api import about_routes
 from atelierx.api.app import build_app
 from atelierx.core import about
 from atelierx.core.i18n import AppError
@@ -83,7 +83,7 @@ def test_only_the_desktop_window_opens_the_app_in_a_browser(unlocked, paths, mon
     assert unlocked.post('/api/open-in-browser', json={}).status_code == 400
 
     opened = []
-    monkeypatch.setattr(app_module.webbrowser, 'open', opened.append)
+    monkeypatch.setattr(about_routes.webbrowser, 'open', opened.append)
     with TestClient(
         build_app(paths, kdf=FAST_KDF, desktop=True), base_url='http://127.0.0.1:8765'
     ) as desktop:
