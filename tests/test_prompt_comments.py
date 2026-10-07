@@ -21,7 +21,7 @@ def test_notes_stay_out_of_the_composed_prompt(unlocked):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     c.put(
-        '/api/image/library/styles/noted',
+        '/api/image/library/common/noted',
         json={
             'scope': 'work',
             'work': wid,
@@ -32,15 +32,15 @@ def test_notes_stay_out_of_the_composed_prompt(unlocked):
         },
     )
     target = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
-    body = {'targets': [target], 'style_ids': ['noted'], 'settings': {'family': 'anima'}}
+    body = {'targets': [target], 'common_ids': ['noted'], 'settings': {'family': 'anima'}}
     composed = c.post(f'/api/works/{wid}/image/compose', json=body).json()[0]
     assert 'soft light' in composed['positive'] and 'film grain' in composed['positive']
     assert '#' not in composed['positive'] and 'maybe' not in composed['positive']
     edited = c.post(
         f'/api/works/{wid}/image/compose',
-        json={**body, 'overrides': {'style': 'soft light, # off for now\nrim light'}},
+        json={**body, 'overrides': {'artist': 'soft light, # off for now\nrim light'}},
     ).json()[0]
-    assert edited['parts']['style'] == 'soft light\nrim light'
+    assert edited['parts']['artist'] == 'soft light\nrim light'
     # The note stays in the library item.
-    saved = c.get('/api/image/library/styles', params={'work': wid}).json()
+    saved = c.get('/api/image/library/common', params={'work': wid}).json()
     assert '# from the reference sheet' in json.dumps(saved, ensure_ascii=False)

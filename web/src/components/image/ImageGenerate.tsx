@@ -16,7 +16,9 @@ import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSett
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
-type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings; common: string[]; styles: string[] };
+// A style preset (#169): settings and artist tags for one service (and, on ComfyUI, one model family).
+export type Artist = { positive: string; negative: string };
+type Preset = { id: string; name: string; service: string; family: string; tags: string[]; settings: GenerationSettings & Record<string, unknown>; common: string[]; artist: Artist };
 type Composed = {
   character_id: string;
   outfit_name: string;
@@ -28,7 +30,7 @@ type Composed = {
   negative: string;
   warnings: any[];
 };
-const PARTS = ['common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative'];
+const PARTS = ['common', 'artist', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative'];
 
 // Image menu → Generate: characters × outfits × expressions with the library, a preset and generation settings.
 export type Target = { character_id: string; outfit_id: string; expression_id: string };
@@ -62,7 +64,6 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const lib = (kind: string) => ({ queryKey: ['image-lib', kind, workId], queryFn: () => get<Record<string, LibItem>>(`/api/image/library/${kind}?work=${workId}`) });
   const expressions = useQuery(lib('expressions'));
   const compositions = useQuery(lib('compositions'));
-  const styles = useQuery(lib('styles'));
   const commons = useQuery(lib('common'));
   const rules = useQuery<{ ratings: { id: string; name: string }[] }>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
@@ -71,7 +72,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const [chars, setChars] = useState<Record<string, string[]>>({});
   const [exprs, setExprs] = useState<string[]>([]);
   const [composition, setComposition] = useState('');
-  const [styleIds, setStyleIds] = useState<string[]>([]);
+  const [artist, setArtist] = useState<Artist>({ positive: '', negative: '' });
   const [commonIds, setCommonIds] = useState<string[] | null>(null);
   const [presetId, setPresetId] = useState('');
   const [settings, setSettings] = useState<GenerationSettings>({ family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 });
@@ -84,6 +85,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const chooseService = (id: string) => {
     setServiceState(id);
     rememberService(workId, id);
+    // A style preset is made for one service.
+    if (presets.data?.find((p) => p.id === presetId)?.service !== id) setPresetId('');
   };
   const changeServiceSettings = (value: Record<string, unknown>) => {
     const next = { ...serviceSettings, [service]: value };
@@ -130,30 +133,32 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const options = () => ({
     targets,
     service,
-    style_ids: styleIds,
+    artist,
     common_ids: chosenCommons,
     composition_id: composition || undefined,
-    ...(internet ? { settings: serviceSettings[service] ?? {} } : { preset_id: presetId || undefined, settings }),
+    preset_id: presetId || undefined,
+    settings: internet ? (serviceSettings[service] ?? {}) : settings,
     overrides: single ? overrides : {},
   });
 
-  useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings, handed, service, serviceSettings]);
+  useEffect(() => setPreview(null), [chars, exprs, composition, artist, commonIds, settings, handed, service, serviceSettings]);
 
   function applyPreset(id: string) {
     setPresetId(id);
     const preset = presets.data?.find((p) => p.id === id);
     if (!preset) return;
-    setSettings({ ...preset.settings, family: preset.family, seed: preset.settings.seed ?? -1 });
+    if (preset.service === 'comfyui') setSettings({ ...preset.settings, family: preset.family as 'anima' | 'sdxl', seed: preset.settings.seed ?? -1 });
+    else changeServiceSettings({ ...(serviceSettings[service] ?? {}), ...preset.settings });
     if (preset.common.length) setCommonIds(preset.common);
-    setStyleIds(preset.styles);
+    setArtist(preset.artist);
   }
+  const servicePresets = (presets.data ?? []).filter((p) => p.service === service);
 
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
   const notApplied = (item: Fragment) => (fits(item, target) ? null : <span className="warn-text small"> ({t('gen.not_applied')})</span>);
-  const styleView = visibleFor(Object.values(styles.data ?? {}), target, styleIds, showOthers);
   const commonView = visibleFor(Object.values(commons.data ?? {}), target, chosenCommons, showOthers);
-  const hiddenCount = styleView.hidden + commonView.hidden;
+  const hiddenCount = commonView.hidden;
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
@@ -239,22 +244,14 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             ))}
           </select>
         </label>
-        <div className="col" style={{ gap: 2 }}>
-          <span className="muted">{t('lib.kind.styles')}</span>
-          {byGroup(styleView.shown).map(({ group, items }) => (
-            <div key={group || '-'} className="row" style={{ flexWrap: 'wrap' }}>
-              {group && <span className="faint small lib-group-inline">{group}</span>}
-              {items.map((s) => (
-                <label key={s.id} className="row" style={{ gap: 4 }}>
-                  <input type="checkbox" checked={styleIds.includes(s.id)} onChange={(e) => setStyleIds(toggle(styleIds, s.id, e.target.checked))} />
-                  {s.name}
-                  {notApplied(s)}
-                </label>
-              ))}
-            </div>
-          ))}
-          {Object.keys(styles.data ?? {}).length === 0 && <span className="faint">{t('gen.none_in_library')}</span>}
-        </div>
+        <label className="col" style={{ gap: 2 }}>
+          <span className="muted">{t('gen.artist')}</span>
+          <textarea rows={2} value={artist.positive} placeholder={t('gen.artist_hint')} onChange={(e) => setArtist({ ...artist, positive: e.target.value })} />
+        </label>
+        <label className="col" style={{ gap: 2 }}>
+          <span className="muted">{t('gen.artist_negative')}</span>
+          <textarea rows={1} value={artist.negative} onChange={(e) => setArtist({ ...artist, negative: e.target.value })} />
+        </label>
         <div className="col" style={{ gap: 2 }}>
           <span className="muted">{t('lib.kind.common')}</span>
           {byGroup(commonView.shown).map(({ group, items }) => (
@@ -305,24 +302,22 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             {openSettings && <button className="ghost small" onClick={openSettings}>{t('gen.open_settings')}</button>}
           </div>
         )}
-        {!internet && (
-          <>
-            <div className="row">
-              <label className="col" style={{ gap: 2 }}>
-                <span className="muted">{t('gen.preset')}</span>
-                <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
-                  <option value="">{t('gen.no_preset')}</option>
-                  {(presets.data ?? []).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <GenSettings value={settings} onChange={setSettings} />
-          </>
-        )}
+        <div className="row">
+          <label className="col" style={{ gap: 2 }}>
+            <span className="muted">{t('gen.preset')}</span>
+            <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
+              <option value="">{t('gen.no_preset')}</option>
+              {servicePresets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.service === 'comfyui' ? ` · ${p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}` : ''}
+                  {p.tags.length ? ` · ${p.tags.join(', ')}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {!internet && <GenSettings value={settings} onChange={setSettings} />}
         {internet && (ServicePanel ? <ServicePanel value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}

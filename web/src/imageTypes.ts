@@ -58,7 +58,8 @@ export type GenerationRecord = {
   generation_preset?: { name?: string } | null;
   settings?: GenerationSettings;
   common_ids?: string[] | null;
-  style_ids?: string[] | null;
+  style_ids?: string[] | null; // before #169
+  artist?: { positive?: string; negative?: string } | null;
   [key: string]: unknown;
 };
 

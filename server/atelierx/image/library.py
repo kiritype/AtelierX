@@ -1,5 +1,5 @@
-"""Image prompt library (data-model: 라이브러리): expressions, compositions, styles, common prompts, shared outfit
-parts and generation presets. Items live globally (data/image/) and per work (.atelierx/image/); a work item
+"""Image prompt library (data-model: 라이브러리): expressions, compositions, common prompts, shared outfit parts
+and style presets. Items live globally (data/image/) and per work (.atelierx/image/); a work item
 with the same id overrides the global one.
 """
 
@@ -8,7 +8,7 @@ import re
 from ..core.i18n import Msg
 from .util import atomic_json, read_json
 
-KINDS = ('expressions', 'compositions', 'styles', 'common', 'outfits')
+KINDS = ('expressions', 'compositions', 'common', 'outfits')
 SCOPES = ('global', 'work')
 ITEM_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 MAX_TAGS = 300
@@ -121,8 +121,12 @@ def items(paths, work, kind):
 def compose_rules(paths):
     rules = read_json(paths.data / 'image' / 'compose.json', {}) or {}
     return {
-        'order': rules.get('order')
-        or ['common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit'],
+        # 'style' was the style fragments' place before #169; artist tags of the style preset take it.
+        'order': [
+            'artist' if key == 'style' else key
+            for key in rules.get('order')
+            or ['common', 'artist', 'composition', 'trigger', 'appearance', 'expression', 'outfit']
+        ],
         'slots': rules.get('slots') or [{'id': 'full', 'name': 'full'}],
         'ratings': rules.get('ratings') or [{'id': 'general', 'name': 'general'}],
         'targets': _clean_targets(rules.get('targets')) or DEFAULT_TARGETS,
@@ -237,9 +241,48 @@ def delete_item(paths, work, kind, scope, ident):
     return items(paths, work, kind)
 
 
-# --- generation presets (global): family, model and sampler settings, default common/style picks -----------------
+# --- style presets (global, #169, decision 0026): service, model family, generation settings, artist tags ---------
+SERVICES = ('comfyui', 'novelai', 'pixai')
+FAMILIES = ('anima', 'sdxl')
+MAX_PRESET_TAGS = 20
+MAX_ARTIST = 30000
+
+
 def _presets_dir(paths):
     return paths.data / 'image' / 'presets'
+
+
+def _text(value, limit):
+    if isinstance(value, list):
+        value = ', '.join(str(v) for v in value if v)
+    return str(value or '')[:limit]
+
+
+def preset_doc(preset, ident):
+    """A style preset as stored (schema 2). Reads presets from before #169 too: they had no service, tags or artist."""
+    service = preset.get('service') if preset.get('service') in SERVICES else 'comfyui'
+    family = service
+    if service == 'comfyui':
+        family = preset.get('family') if preset.get('family') in FAMILIES else 'anima'
+    tags = []
+    for tag in preset.get('tags') or []:
+        tag = str(tag).strip()[:MAX_GROUP]
+        if tag and tag not in tags:
+            tags.append(tag)
+    artist = preset.get('artist') if isinstance(preset.get('artist'), dict) else {}
+    return {
+        'schema_version': 2,
+        'name': str(preset.get('name') or ident)[:200],
+        'service': service,
+        'family': family,
+        'tags': tags[:MAX_PRESET_TAGS],
+        'settings': preset.get('settings') if isinstance(preset.get('settings'), dict) else {},
+        'artist': {
+            'positive': _text(artist.get('positive'), MAX_ARTIST),
+            'negative': _text(artist.get('negative'), MAX_ARTIST),
+        },
+        'common': [str(x) for x in preset.get('common') or []],
+    }
 
 
 def presets(paths):
@@ -248,7 +291,7 @@ def presets(paths):
     if folder.is_dir():
         for path in sorted(folder.glob('*.json')):
             doc = read_json(path, {}) or {}
-            out.append({**doc, 'id': path.stem})
+            out.append({**preset_doc(doc, path.stem), 'id': path.stem})
     return out
 
 
@@ -257,17 +300,82 @@ def save_preset(paths, ident, preset):
         raise ValueError(Msg('server.image.library.item_id', "Use letters, digits, '_' and '-' for the id."))
     if not isinstance(preset, dict):
         raise ValueError(Msg('server.image.library.item_object', 'The item must be an object.'))
-    settings = preset.get('settings') if isinstance(preset.get('settings'), dict) else {}
-    doc = {
-        'schema_version': 1,
-        'name': str(preset.get('name') or ident)[:200],
-        'family': preset.get('family') if preset.get('family') in ('anima', 'sdxl') else 'anima',
-        'settings': settings,
-        'common': [str(x) for x in preset.get('common') or []],
-        'styles': [str(x) for x in preset.get('styles') or []],
-    }
-    atomic_json(_presets_dir(paths) / f'{ident}.json', doc)
+    atomic_json(_presets_dir(paths) / f'{ident}.json', preset_doc(preset, ident))
     return presets(paths)
+
+
+def _style_artist(items, ids):
+    """The artist tags of style fragments (before #169), joined in order."""
+    chosen = [items[i] for i in ids if isinstance(items.get(i), dict)]
+    return {
+        'positive': ', '.join(_text(item.get('prompt'), MAX_ARTIST) for item in chosen if item.get('prompt')),
+        'negative': ', '.join(
+            _text(item.get('negative'), MAX_ARTIST) for item in chosen if item.get('negative')
+        ),
+    }
+
+
+def _preset_from_style(ident, item, known):
+    targets = targets_of(item, known)
+    if not targets or 'anima' in targets:
+        service, family = 'comfyui', 'anima'
+    elif 'sdxl' in targets:
+        service, family = 'comfyui', 'sdxl'
+    else:
+        service = family = targets[0] if targets[0] in SERVICES else 'comfyui'
+    return preset_doc(
+        {
+            'name': item.get('name') or ident,
+            'service': service,
+            'family': family,
+            'tags': [item['group']] if item.get('group') else [],
+            'artist': _style_artist({ident: item}, [ident]),
+        },
+        ident,
+    )
+
+
+def migrate_styles(paths):
+    """Fold the style fragments into the style presets, once (#169).
+
+    A preset's style picks become its artist tags. Each style no preset used becomes a preset of its own (settings
+    empty: the generate screen's). Work styles become global presets named after the work. The old files are kept as
+    ``styles.migrated.json``.
+    """
+    folder = _presets_dir(paths)
+    known = {t['id'] for t in compose_rules(paths)['targets']}
+    sources = []
+    global_file = paths.data / 'image' / 'styles.json'
+    if global_file.is_file():
+        sources.append(('', global_file))
+    if paths.works.is_dir():
+        for work_file in sorted(paths.works.glob('*/.atelierx/image/styles.json')):
+            work_id = (read_json(work_file.parents[1] / 'work.json', {}) or {}).get('id') or 'work'
+            sources.append((f'{work_id}_', work_file))
+    stored = (
+        {path.stem: read_json(path, {}) or {} for path in folder.glob('*.json')} if folder.is_dir() else {}
+    )
+    if not sources and not any('styles' in doc for doc in stored.values()):
+        return
+    global_items = (read_json(global_file, {}) or {}).get('items') or {} if global_file.is_file() else {}
+    used = set()
+    for ident, doc in stored.items():
+        if 'styles' in doc:
+            ids = [str(x) for x in doc.get('styles') or []]
+            used.update(ids)
+            artist = _style_artist(global_items, ids)
+            atomic_json(folder / f'{ident}.json', preset_doc({**doc, 'artist': artist}, ident))
+    taken = set(stored)
+    for prefix, source in sources:
+        for style_id, item in ((read_json(source, {}) or {}).get('items') or {}).items():
+            if not isinstance(item, dict) or (not prefix and style_id in used):
+                continue
+            ident = f'{prefix}{style_id}'
+            while ident in taken or not ITEM_ID.match(ident):
+                ident = re.sub(r'[^A-Za-z0-9_-]', '_', ident)[:56] + '_style'
+            taken.add(ident)
+            atomic_json(folder / f'{ident}.json', _preset_from_style(ident, item, known))
+        source.replace(source.with_name('styles.migrated.json'))
 
 
 def delete_preset(paths, ident):

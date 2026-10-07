@@ -17,7 +17,7 @@ type Cell = {
   error?: any;
 };
 type Run = { id: string; created_at: string; sweep?: string; source?: string; source_url?: string; rows: number; columns: number; cells: Cell[] };
-type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings };
+type Preset = { id: string; name: string; service: string; family: 'anima' | 'sdxl'; settings: GenerationSettings };
 type Draft = { positive: string; negative: string; settings: GenerationSettings; source?: string | null; compareFiles?: string[] };
 type Side = { url: string; label: string; path?: string };
 
@@ -184,7 +184,9 @@ export default function ImageLab({ workId }: { workId?: string }) {
     const id = prompt(t('lab.preset_id'));
     if (!id) return;
     try {
-      await put(`/api/image/presets/${encodeURIComponent(id)}`, { name: id, family: draft.settings.family ?? 'anima', settings: { ...draft.settings, seed: -1 } });
+      // Saving over a style preset keeps its artist tags, tags and common picks (#169).
+      const existing = presets.data?.find((p) => p.id === id);
+      await put(`/api/image/presets/${encodeURIComponent(id)}`, { ...existing, name: existing?.name ?? id, service: 'comfyui', family: draft.settings.family ?? 'anima', settings: { ...draft.settings, seed: -1 } });
       qc.invalidateQueries({ queryKey: ['image-presets'] });
       toast({ text: t('lab.preset_saved', { id }) });
     } catch (err) {
@@ -240,7 +242,9 @@ export default function ImageLab({ workId }: { workId?: string }) {
               }}
             >
               <option value="">{t('lab.load_preset')}</option>
-              {(presets.data ?? []).map((p) => (
+              {(presets.data ?? [])
+                .filter((p) => p.service === 'comfyui')
+                .map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
