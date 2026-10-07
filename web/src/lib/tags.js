@@ -41,6 +41,13 @@ export function splitPrompt(text) {
   return out;
 }
 
+/** ``text`` with ``[start, end)`` (the selection, or the caret when equal) replaced by ``pasted``. */
+export function pasteInto(text, start, end, pasted) {
+  const from = Math.max(0, Math.min(start, text.length));
+  const to = Math.max(from, Math.min(end, text.length));
+  return text.slice(0, from) + pasted + text.slice(to);
+}
+
 /** True while a bracket is left open (escaped brackets aside): typing a comma there does not end the entry. */
 export function bracketOpen(text) {
   let depth = 0;

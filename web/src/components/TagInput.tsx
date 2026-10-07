@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { get } from '../api';
-import { bracketOpen, splitPrompt } from '../lib/tags';
+import { bracketOpen, pasteInto, splitPrompt } from '../lib/tags';
 
 type Suggestion = { tag: string; category: string; count: number; alias?: string };
 
@@ -73,10 +73,12 @@ export default function TagInput({
             }}
             onPaste={(e) => {
               // A one-line input turns pasted line breaks into spaces; take the clipboard text as it is.
+              // What is pasted replaces the selection (or goes in at the caret), as a plain paste would.
               const pasted = e.clipboardData.getData('text');
               if (!/[,\n]/.test(pasted)) return;
               e.preventDefault();
-              add(text + pasted);
+              const { selectionStart, selectionEnd } = e.currentTarget;
+              add(pasteInto(text, selectionStart ?? text.length, selectionEnd ?? text.length, pasted));
             }}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;

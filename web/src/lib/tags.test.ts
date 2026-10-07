@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { bracketOpen, splitPrompt } from './tags';
+import { bracketOpen, pasteInto, splitPrompt } from './tags';
+
+describe('pasteInto', () => {
+  it('replaces the selection', () => {
+    expect(splitPrompt(pasteInto('old tag', 0, 7, 'new one, new two'))).toEqual(['new one', 'new two']);
+  });
+
+  it('goes in at the caret', () => {
+    expect(pasteInto('ab', 1, 1, 'X, Y')).toBe('aX, Yb');
+    expect(pasteInto('ab', 2, 2, ', c')).toBe('ab, c');
+  });
+
+  it('keeps out-of-range positions inside the text', () => {
+    expect(pasteInto('ab', 5, 9, 'c')).toBe('abc');
+  });
+});
 
 describe('splitPrompt', () => {
   it('splits at line breaks as well as commas', () => {
