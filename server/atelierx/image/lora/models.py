@@ -7,6 +7,7 @@ An entry is an epoch of one of the character's training runs, or a LoRA file the
 
 import math
 import re
+from pathlib import PureWindowsPath
 
 from ...core.i18n import Msg
 from ..util import read_json
@@ -105,6 +106,24 @@ def remove(work, character_id, ident):
     doc['models'] = [m for m in doc['models'] if m['id'] != ident]
     store.write(store.models_file(work, character_id), doc)
     return doc
+
+
+def rename_file(works, old, new):
+    """Point every character LoRA entry for the file ``old`` (by file name) at ``new``. Returns how many changed."""
+    changed = 0
+    for work in works:
+        for path in (work.app / 'image' / 'characters').glob('*/lora/models.json'):
+            doc = read_json(path) or {}
+            entries = doc.get('models') or []
+            hit = False
+            for entry in entries:
+                if PureWindowsPath(str(entry.get('file') or '')).name == old:
+                    entry['file'] = new
+                    hit = True
+                    changed += 1
+            if hit:
+                store.write(path, {**doc, 'models': entries})
+    return changed
 
 
 def auto_loras(work, character_id, outfit_id, family):

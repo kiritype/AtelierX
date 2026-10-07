@@ -4,7 +4,8 @@ from pathlib import PureWindowsPath
 
 from starlette.routing import Route
 
-from ..image.lora import datasets, models, setup
+from ..image import settings as image_settings
+from ..image.lora import datasets, link, models, setup
 from .image_routes import _body, _runtime, call
 
 
@@ -94,10 +95,48 @@ async def training_status(request):
     return await call(setup.status, _runtime(request).paths)
 
 
+def _link_args(runtime):
+    return (
+        runtime.paths,
+        image_settings.get(runtime.paths, 'training'),
+        runtime.installs.model_folders(),
+        image_settings.get(runtime.paths, 'models').get('models_dir'),
+    )
+
+
+async def lora_link_status(request):
+    runtime = _runtime(request)
+    return await call(lambda: link.status(*_link_args(runtime)))
+
+
+async def lora_link_connect(request):
+    runtime = _runtime(request)
+    return await call(lambda: link.connect(*_link_args(runtime)))
+
+
+async def lora_link_move(request):
+    """Move the LoRAs of an older ComfyUI LoRA folder setting into the app, then link it (#160)."""
+    runtime = _runtime(request)
+
+    def move():
+        values = image_settings.get(runtime.paths, 'training')
+        works = runtime.works.all()
+        moved = link.move_into_app(
+            runtime.paths, values, lambda old, new: models.rename_file(works, old, new)
+        )
+        image_settings.save(runtime.paths, 'training', {'lora_dir': ''})
+        return {'moved': moved, 'link': link.connect(*_link_args(runtime))}
+
+    return await call(move)
+
+
 def routes():
     p = '/api/works/{wid}/image/lora/{cid}'
     return [
         Route('/api/image/training/status', training_status),
+        Route('/api/image/training/lora-link', lora_link_status),
+        Route('/api/image/training/lora-link', lora_link_connect, methods=['POST']),
+        Route('/api/image/training/lora-link/move', lora_link_move, methods=['POST']),
         Route(p, overview),
         Route(f'{p}/candidates', candidates),
         Route(f'{p}/datasets', dataset_save, methods=['POST']),

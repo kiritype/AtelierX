@@ -21,7 +21,7 @@ from ...core.i18n import Msg, message_of
 from ...core.lifecycle import UNFINISHED
 from ...core.proc import NO_WINDOW, stop_tree
 from ..util import code, now
-from . import models, setup, store
+from . import link, models, setup, store
 
 log = logging.getLogger(__name__)
 
@@ -177,13 +177,8 @@ class LoraTrainer:
             raise ValueError(Msg('server.trainer.the_dataset_has_no_images', 'The dataset has no images.'))
         params = self._params(body.get('params'))
         values, bases = setup.prepare(self.rt.paths)
-        if not values.get('lora_dir') or not Path(values['lora_dir']).is_dir():
-            raise ValueError(
-                Msg(
-                    'server.trainer.set_the_lora_output_folder_in',
-                    'Set the LoRA output folder in Settings → Image → LoRA training.',
-                )
-            )
+        # The app's LoRA folder (#160): output/loras/ unless the settings name another; made when missing.
+        link.app_folder(self.rt.paths, values)
         if params['base'] not in bases:
             raise ValueError(
                 Msg('server.trainer.choose_a_base_model_from_the', 'Choose a base model from the list.')
@@ -416,7 +411,7 @@ class LoraTrainer:
         found.append((int(run['settings']['epochs']), final))
         outputs = []
         for epoch, source in sorted(set(found)):
-            destination = Path(values['lora_dir']) / f'{name}-e{epoch:02d}.safetensors'
+            destination = link.app_folder(self.rt.paths, values) / f'{name}-e{epoch:02d}.safetensors'
             shutil.copy2(source, destination)
             outputs.append(
                 {
