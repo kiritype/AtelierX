@@ -8,7 +8,7 @@
     {
       "text": "사용 설명서",
       "folder": "guide",
-      "pages": ["getting-started", "works", "editing", "relations", "history", "ai-tools", "agent", "guidelines", "chat-test", "connections", "settings", "image-setup", "image-services", "character-images", "image-library", "generation", "gallery-export", "image-tools", "deployment", "lora", "platforms", "maintenance", "external", "release-status"]
+      "pages": ["getting-started", "works", "editing", "relations", "history", "ai-tools", "agent", "guidelines", "chat-test", "connections", "settings", "image-setup", "image-services", "character-images", "image-library", "style-presets", "generation", "gallery-export", "image-tools", "deployment", "lora", "platforms", "maintenance", "external", "release-status"]
     },
     {
       "text": "버전",
