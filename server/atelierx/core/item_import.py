@@ -150,7 +150,9 @@ def plan(work, folder, files, choices=None):
         if row['head'] == 'broken':
             row['broken'] = choice.get('broken') if choice.get('broken') in ('skip', 'note') else None
             if row['broken'] == 'note':
+                # The whole text is kept as a note, which is a .md file whatever the source was (#166).
                 kind = 'note'
+                row['suffix'] = suffix = '.md'
         if kind and (suffix == '.jsx') != (kind == 'jsx'):
             row['kind_error'] = 'suffix'
         row['kind'] = kind
