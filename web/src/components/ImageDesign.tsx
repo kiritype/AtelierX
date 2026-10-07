@@ -6,7 +6,7 @@ import type { WorkInfo, ImageView } from '../types';
 import { useToast } from './Toasts';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import { useUnsaved } from './Unsaved';
-import { splitPrompt } from '../lib/tags';
+import { isNote, splitPrompt } from '../lib/tags';
 
 type Prompt = { prompt?: string[]; negative?: string[]; ref?: string; [key: string]: any };
 type Outfit = { name: string; slots?: Record<string, Prompt>; negative?: string[]; [key: string]: any };
@@ -114,4 +114,4 @@ function TagField({ label, value, onChange }: { label: string; value: string; on
   const [text, setText] = useState(value);
   return <label className="col" style={{ flex: 1, minWidth: 180 }}>{label}<textarea rows={2} value={text} onChange={(e) => { setText(e.target.value); onChange(e.target.value); }} placeholder={t('image.design.tags_hint')} /></label>;
 }
-function Tags({ values }: { values: string[] }) { return <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>{values.map((v, i) => <span key={i} className="chip">{v}</span>)}</div>; }
+function Tags({ values }: { values: string[] }) { return <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>{values.map((v, i) => <span key={i} className={isNote(v) ? 'chip note' : 'chip'} title={isNote(v) ? t('tags.note_hint') : undefined}>{v}</span>)}</div>; }

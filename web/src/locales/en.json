@@ -2089,5 +2089,6 @@
   "import.blocked": "{n} files need a kind, an ID or a choice for a broken head",
   "import.apply": "Bring in {n}",
   "import.done": "Brought in {n} files. See the check panel for the results.",
-  "server.llm.http_hint.payment": "Payment or a plan is required: the account's usage limit is reached or this model needs a paid plan. Check the service's usage and billing page, or choose another model for this task in Settings → LLM."
+  "server.llm.http_hint.payment": "Payment or a plan is required: the account's usage limit is reached or this model needs a paid plan. Check the service's usage and billing page, or choose another model for this task in Settings → LLM.",
+  "tags.note_hint": "Note: not sent with the prompt. Write a tag that starts with # as \\#."
 }

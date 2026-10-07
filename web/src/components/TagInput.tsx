@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { get } from '../api';
-import { bracketOpen, pasteInto, splitPrompt } from '../lib/tags';
+import { t } from '../i18n';
+import { bracketOpen, isNote, pasteInto, splitPrompt } from '../lib/tags';
 
 type Suggestion = { tag: string; category: string; count: number; alias?: string };
 
@@ -51,7 +52,7 @@ export default function TagInput({
   return (
     <div className={`chips-input tag-input${disabled ? ' disabled' : ''}`} onClick={() => input.current?.focus()}>
       {values.map((tag, n) => (
-        <span key={`${tag}-${n}`} className="chip">
+        <span key={`${tag}-${n}`} className={isNote(tag) ? 'chip note' : 'chip'} title={isNote(tag) ? t('tags.note_hint') : undefined}>
           {tag}
           {!disabled && (
             <button className="x" onClick={() => onChange(values.filter((_, i) => i !== n))}>
@@ -68,7 +69,7 @@ export default function TagInput({
             placeholder={values.length ? '' : placeholder}
             onChange={(e) => {
               // A comma ends the tag unless a bracket is still open (typing "(upper body, straight-on:1.4)").
-              if (e.target.value.includes(',') && !bracketOpen(e.target.value)) add(e.target.value);
+              if (e.target.value.includes(',') && !bracketOpen(e.target.value) && !isNote(e.target.value)) add(e.target.value);
               else setText(e.target.value);
             }}
             onPaste={(e) => {

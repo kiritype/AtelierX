@@ -93,6 +93,7 @@ h1, h2, h3 { font-weight: 600; margin: 0; }
   display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px;
   background: var(--panel-2); border: 1px solid var(--border); font-size: 12px;
 }
+.chip.note { background: transparent; border-style: dashed; color: var(--text-3); font-style: italic; }
 .chip.accent { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
 .chip button { border: 0; background: transparent; padding: 0 2px; line-height: 1; }
 .badge { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--warning-bg); color: var(--warning); }
