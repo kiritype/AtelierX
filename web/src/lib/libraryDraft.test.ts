@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { followSelection } from './libraryDraft';
+import { afterSave, followSelection } from './libraryDraft';
+
+describe('afterSave', () => {
+  const sent = { id: 'my02', prompt: ['sent'] };
+  const saved = { id: 'my02', prompt: ['sent'], scope: 'global' };
+
+  it('takes the stored version when nothing changed while saving', () => {
+    expect(afterSave(sent, sent, saved)).toBe(saved);
+  });
+
+  it('keeps an edit made while the save was on its way', () => {
+    const typed = { id: 'my02', prompt: ['sent', 'typed later'] };
+    expect(afterSave(typed, sent, saved)).toBe(typed);
+  });
+
+  it('keeps another item opened while saving', () => {
+    const other = { id: 'my01', prompt: ['other'] };
+    expect(afterSave(other, sent, saved)).toBe(other);
+  });
+});
 
 describe('followSelection', () => {
   const stored = { id: 'my02', prompt: ['stored'] };

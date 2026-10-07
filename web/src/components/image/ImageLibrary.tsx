@@ -7,7 +7,7 @@ import { useToast } from '../Toasts';
 import GenSettings, { type GenerationSettings } from './GenSettings';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
-import { followSelection } from '../../lib/libraryDraft';
+import { afterSave, followSelection } from '../../lib/libraryDraft';
 
 type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets', 'targets'];
@@ -116,7 +116,9 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
 
   async function save() {
     if (!draft) return;
-    const { id, scope, ...item } = draft;
+    const sent = draft;
+    const sentSelection = selected;
+    const { id, scope, ...item } = sent;
     if (movingToGlobal && stored?.overrides && !confirm(t('lib.replace_global_confirm', { id }))) return;
     try {
       const result = await put<Record<string, Item>>(`/api/image/library/${kind}/${id}`, {
@@ -127,8 +129,9 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
       });
       qc.setQueryData(key, result);
       const saved = result[id];
-      setSelected(id);
-      setDraft(saved ? { ...saved, scope: saved.scope ?? 'global' } : null);
+      // Typing on, or opening another item, while the save was on its way wins over the answer.
+      setSelected((current) => (current === sentSelection ? id : current));
+      setDraft((current) => afterSave(current, sent, saved ? { ...saved, scope: saved.scope ?? 'global' } : null));
     } catch (err) {
       fail(err);
     }
