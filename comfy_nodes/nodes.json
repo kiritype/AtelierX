@@ -40,6 +40,27 @@
       "license": "AGPL-3.0",
       "features": ["detailer", "detect"],
       "note": "Installs ultralytics (AGPL-3.0), which censor detection and the person mask also use."
+    },
+    {
+      "id": "skimmed-cfg",
+      "folder": "Skimmed_CFG",
+      "repo": "https://github.com/Extraltodeus/Skimmed_CFG",
+      "version": "1.0.0",
+      "commit": "d83005832ac42783adfd6f4ae96f6ef6406d1a74",
+      "license": "Apache-2.0",
+      "features": ["patch"],
+      "provides": ["CFG_Skimming_Single_Scale_Pre_CFG", "ConstantSkimPreCFG", "DifferenceCFG_PreCFG", "SkimFlipPreCFG", "SkimReplacePreCFG", "SkimmedCFG_LinInterp_CFG_PreCFG", "SkimmedCFG_LinInterp_DualScales_CFG_PreCFG"]
+    },
+    {
+      "id": "spectrum",
+      "folder": "comfyui-spectrum-ksampler",
+      "repo": "https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler",
+      "version": "2.9.3",
+      "commit": "192566487d0d9cdbd892e464eedd53c4efa972c2",
+      "license": "MIT",
+      "features": ["patch"],
+      "provides": ["DiTSpectrumPatch", "DiTSpectrumPatchAdvanced", "DiTCFGFSGPatch"],
+      "note": "Only its model patch nodes are used; its own samplers replace KSampler and are not supported (decision 0026)."
     }
   ],
   "known": [
@@ -64,6 +85,7 @@
     "alpha": "Background removal (isnet-anime)",
     "detect": "Censor area detection and person mask",
     "upscale": "Upscale with a model",
-    "detailer": "Detailer (face, eyes, mouth, hands)"
+    "detailer": "Detailer (face, eyes, mouth, hands)",
+    "patch": "Model patches for style recipes (Skimmed CFG, Spectrum)"
   }
 }

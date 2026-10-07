@@ -58,7 +58,14 @@ at the tested commits listed in `comfy_nodes/nodes.json`, into the user's ComfyU
 | [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | MIT | Background removal (rembg) |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | GPL-3.0 | Detailer pipeline |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | AGPL-3.0 | Detectors; installs [ultralytics](https://github.com/ultralytics/ultralytics) (AGPL-3.0) |
+| [Skimmed_CFG](https://github.com/Extraltodeus/Skimmed_CFG) | Apache-2.0 | Model patch nodes (CFG skimming) for style recipes |
+| [ComfyUI-Spectrum-KSampler](https://github.com/sorryhyun/ComfyUI-Spectrum-KSampler) | MIT | Model patch nodes (Spectrum, CFG patch) for style recipes |
 | [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools) | MIT (with Apache-2.0 parts) | LoRA training; installed with `tools/install_trainer.py` into its own Python environment |
+
+Some style recipes use node packs the app does not install because their license is unclear or restricted; they are used
+only when the user installed them, and the generate screen shows their source and license (`known` in
+`comfy_nodes/nodes.json`): [RES4LYF](https://github.com/ClownsharkBatwing/RES4LYF) (its own license, which forbids offering it
+as a commercial service) and ComfyUI-DCW (no license file).
 
 The app's own node pack (`comfy_nodes/atelierx_nodes`) is MIT like the rest of AtelierX. It runs inside
 ComfyUI and calls the packs above there; it does not include their code.
