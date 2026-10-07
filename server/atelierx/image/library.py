@@ -203,14 +203,24 @@ def clean_item(kind, item, rules):
     return out
 
 
-def save_item(paths, work, kind, scope, ident, item):
+def save_item(paths, work, kind, scope, ident, item, from_scope=None):
+    """Write an item to `scope`. With `from_scope` (where the item was loaded from) set to the other scope, the item
+    moves: it is written to `scope` and taken out of `from_scope`, so it is not left behind in both (#147)."""
     _check_kind(kind)
     if not ITEM_ID.match(ident or ''):
         raise ValueError(Msg('server.image.library.item_id', "Use letters, digits, '_' and '-' for the id."))
+    if from_scope is not None and from_scope not in SCOPES:
+        raise ValueError(Msg('server.image.library.unknown_scope', 'Choose global or work.'))
     path = _file(paths, work, kind, scope)
     doc = read_json(path, {}) or {'schema_version': 1, 'items': {}}
     doc.setdefault('items', {})[ident] = clean_item(kind, item, compose_rules(paths))
     atomic_json(path, doc)
+    if from_scope and from_scope != scope:
+        old_path = _file(paths, work, kind, from_scope)
+        old = read_json(old_path, {}) or {}
+        if ident in (old.get('items') or {}):
+            del old['items'][ident]
+            atomic_json(old_path, old)
     return items(paths, work, kind)
 
 
