@@ -5,12 +5,16 @@ import { t, tm } from '../../i18n';
 import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
 import GenSettings, { type GenerationSettings } from './GenSettings';
+import NovelAISettings from './NovelAISettings';
+import PixAISettings from './PixAISettings';
+import { SERVICE_NAMES } from './serviceSettings';
+import { ChipsInput } from '../ui';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import { afterSave, followSelection } from '../../lib/libraryDraft';
 
-type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets' | 'targets';
-const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets', 'targets'];
+type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'presets' | 'targets';
+const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'presets', 'targets'];
 type Item = {
   id: string;
   name: string;
@@ -29,7 +33,18 @@ type Item = {
   group?: string;
   targets?: string[];
 };
-type Preset = { id: string; name: string; family: 'anima' | 'sdxl'; settings: GenerationSettings; common: string[]; styles: string[] };
+// A style preset (#169): one service (and on ComfyUI one model family), its settings and the artist tags.
+type Preset = {
+  id: string;
+  name: string;
+  service: string;
+  family: string;
+  tags: string[];
+  settings: GenerationSettings & Record<string, unknown>;
+  common: string[];
+  artist: { positive: string; negative: string };
+};
+const PRESET_SERVICES = ['comfyui', 'novelai', 'pixai'];
 type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[]; targets: Target[] };
 
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
@@ -357,16 +372,20 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   );
 }
 
+const presetTarget = (p: Preset) => (p.service === 'comfyui' ? (p.family === 'sdxl' ? 'SDXL·IL' : 'Anima') : (SERVICE_NAMES[p.service] ?? p.service));
+
+// ComfyUI presets carry their family in the settings too, as the generation settings form expects.
+const opened = (p: Preset): Preset => (p.service === 'comfyui' ? { ...p, settings: { ...p.settings, family: p.family as 'anima' | 'sdxl' } } : p);
+
 function Presets({ workId, onDirty }: { workId: string; onDirty: (dirty: boolean) => void }) {
   const qc = useQueryClient();
   const fail = useFail();
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const commons = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
-  const styles = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'styles', workId], queryFn: () => get(`/api/image/library/styles?work=${workId}`) });
   const [draft, setDraft] = useState<Preset | null>(null);
   const storedPreset = draft ? presets.data?.find((p) => p.id === draft.id) : undefined;
   const dirty =
-    !!draft && (!storedPreset || JSON.stringify({ ...storedPreset, settings: { ...storedPreset.settings, family: storedPreset.family } }) !== JSON.stringify(draft));
+    !!draft && (!storedPreset || JSON.stringify(opened(storedPreset)) !== JSON.stringify(draft));
   useUnsaved('library-presets', dirty);
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   // Opening another preset or a new one drops unsaved changes only when confirmed (#167).
@@ -391,16 +410,16 @@ function Presets({ workId, onDirty }: { workId: string; onDirty: (dirty: boolean
                 alert(t('lib.id_taken', { id: ident }));
                 return;
               }
-              setDraft({ id: ident, name: ident, family: 'anima', settings: { family: 'anima' }, common: [], styles: [] });
+              setDraft({ id: ident, name: ident, service: 'comfyui', family: 'anima', tags: [], settings: { family: 'anima' }, common: [], artist: { positive: '', negative: '' } });
             }}
           >
             +
           </button>
         </div>
         {(presets.data ?? []).map((p) => (
-          <div key={p.id} className={`list-row${draft?.id === p.id ? ' sel' : ''}`} onClick={() => replaceDraft({ ...p, settings: { ...p.settings, family: p.family } })}>
+          <div key={p.id} className={`list-row${draft?.id === p.id ? ' sel' : ''}`} onClick={() => replaceDraft(opened(p))}>
             <span className="grow">{p.name}</span>
-            <span className="chip">{p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}</span>
+            <span className="chip">{presetTarget(p)}</span>
           </div>
         ))}
       </div>
@@ -414,7 +433,39 @@ function Presets({ workId, onDirty }: { workId: string; onDirty: (dirty: boolean
               <span className="muted">{t('lib.name')}</span>
               <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </label>
-            <GenSettings value={draft.settings} onChange={(settings) => setDraft({ ...draft, settings, family: settings.family ?? 'anima' })} />
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('gen.service')}</span>
+              <div className="seg">
+                {PRESET_SERVICES.map((s) => (
+                  <button
+                    key={s}
+                    className={draft.service === s ? 'on' : ''}
+                    onClick={() => setDraft({ ...draft, service: s, family: s === 'comfyui' ? 'anima' : s, settings: s === 'comfyui' ? { family: 'anima' } : {} })}
+                  >
+                    {SERVICE_NAMES[s] ?? s}
+                  </button>
+                ))}
+              </div>
+            </label>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('lib.preset_tags')}</span>
+              <ChipsInput values={draft.tags} onChange={(tags) => setDraft({ ...draft, tags })} placeholder={t('lib.preset_tags_hint')} />
+            </label>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('gen.artist')}</span>
+              <textarea rows={3} value={draft.artist.positive} placeholder={t('gen.artist_hint')} onChange={(e) => setDraft({ ...draft, artist: { ...draft.artist, positive: e.target.value } })} />
+            </label>
+            <label className="col" style={{ gap: 2 }}>
+              <span className="muted">{t('gen.artist_negative')}</span>
+              <textarea rows={2} value={draft.artist.negative} onChange={(e) => setDraft({ ...draft, artist: { ...draft.artist, negative: e.target.value } })} />
+            </label>
+            {draft.service === 'comfyui' ? (
+              <GenSettings value={draft.settings} onChange={(settings) => setDraft({ ...draft, settings, family: settings.family ?? 'anima' })} />
+            ) : draft.service === 'novelai' ? (
+              <NovelAISettings value={draft.settings} onChange={(settings) => setDraft({ ...draft, settings })} />
+            ) : (
+              <PixAISettings value={draft.settings} onChange={(settings) => setDraft({ ...draft, settings })} />
+            )}
             <div className="col" style={{ gap: 2 }}>
               <span className="muted">{t('lib.kind.common')}</span>
               <div className="row" style={{ flexWrap: 'wrap' }}>
@@ -426,17 +477,6 @@ function Presets({ workId, onDirty }: { workId: string; onDirty: (dirty: boolean
                 ))}
               </div>
               <span className="faint">{t('lib.preset_common_note')}</span>
-            </div>
-            <div className="col" style={{ gap: 2 }}>
-              <span className="muted">{t('lib.kind.styles')}</span>
-              <div className="row" style={{ flexWrap: 'wrap' }}>
-                {Object.values(styles.data ?? {}).map((s) => (
-                  <label key={s.id} className="row" style={{ gap: 4 }}>
-                    <input type="checkbox" checked={draft.styles.includes(s.id)} onChange={(e) => setDraft({ ...draft, styles: toggle(draft.styles, s.id, e.target.checked) })} />
-                    {s.name}
-                  </label>
-                ))}
-              </div>
             </div>
             <div className="row">
               <button

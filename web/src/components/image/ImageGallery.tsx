@@ -696,7 +696,7 @@ function SavePreset({ record }: { record: GenerationRecord }) {
   const draft = presetFromRecord(record);
   const s = draft.settings as GenerationSettings;
   const rows: [string, unknown][] = [
-    ['gen.family', draft.family],
+    ['gen.service', draft.service === 'comfyui' ? draft.family : draft.service],
     ['gen.model', s.model],
     ['gen.sampler', [s.sampler, s.scheduler].filter(Boolean).join(' · ')],
     ['gen.steps', s.steps],
@@ -704,7 +704,7 @@ function SavePreset({ record }: { record: GenerationRecord }) {
     ['gallery.size', s.width && s.height ? `${s.width} × ${s.height}` : undefined],
     ['gen.loras', (s.loras ?? []).map((l: LoraRef) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
     ['gallery.preset_common', draft.common.join(', ')],
-    ['gallery.preset_styles', draft.styles.join(', ')],
+    ['gen.artist', draft.artist.positive],
   ];
   const valid = PRESET_ID.test(id);
   async function save() {
@@ -712,10 +712,11 @@ function SavePreset({ record }: { record: GenerationRecord }) {
     try {
       await put(`/api/image/presets/${encodeURIComponent(id)}`, {
         name: name.trim() || id,
+        service: draft.service,
         family: draft.family,
         settings: draft.settings,
         common: draft.common,
-        styles: draft.styles,
+        artist: draft.artist,
       });
       qc.invalidateQueries({ queryKey: ['image-presets'] });
       toast({ text: t('gallery.preset_saved', { name: name.trim() || id }) });
