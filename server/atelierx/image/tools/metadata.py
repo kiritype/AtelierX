@@ -12,6 +12,8 @@ import re
 
 from PIL import ExifTags, Image
 
+from . import gen_info
+
 TEXT_LIMIT = 200_000
 # ComfyUI writes WebP metadata as EXIF Model = "prompt:{...}" and Make = "workflow:{...}".
 EXIF_MAKE, EXIF_MODEL, EXIF_USER_COMMENT = 0x010F, 0x0110, 0x9286
@@ -162,4 +164,6 @@ def describe(path, sidecar=None):
         'exif': {k: v for k, v in exif.items() if k not in ('Make', 'Model', 'UserComment')},
         'has_workflow': 'workflow' in text,
         'studio': studio if isinstance(studio, dict) else None,
+        # The generation table (#169): the tool that made it and its settings, read by rules.
+        'generation': gen_info.analyze(text, exif, studio, (info['width'], info['height'])),
     }

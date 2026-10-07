@@ -1,6 +1,7 @@
 """The image module's long-lived state: image generation server connection, model families, GPU broker, queue."""
 
 import threading
+import time
 
 from ..core.i18n import AppError, Msg
 from ..core.lifecycle import CANCELLING, QUEUED, RUNNING, UNFINISHED
@@ -37,6 +38,8 @@ DEFAULT_URL = 'http://127.0.0.1:8188'
 
 
 class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
+    _file_index = (0.0, None)
+
     def __init__(self, paths, works, llm):
         self.paths, self.works, self.llm = paths, works, llm
         self.stop = threading.Event()
@@ -111,6 +114,20 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             self.stop.clear()
             self._thread = threading.Thread(target=self.worker, name='image-worker', daemon=True)
             self._thread.start()
+
+    def check_generation(self, generation):
+        """Compare an image's generation settings with this PC's image server (#169): files present, names lacking."""
+        from .tools import gen_info
+
+        catalog = self.comfy.catalog()
+        if not catalog.get('connected'):
+            return generation
+        stamp, index = self._file_index
+        # The model folders' hash records are read at most once a minute.
+        if index is None or time.monotonic() - stamp > 60:
+            index = gen_info.file_index(self.installs.model_folders())
+            self._file_index = (time.monotonic(), index)
+        return gen_info.enrich(generation, catalog, index)
 
     def shutdown(self):
         self.stop.set()
