@@ -69,6 +69,15 @@
 - 대기열의 진행 문구에 단계 구성("생성 중 → 업스케일 → 디테일러")을 보여 준다. 이미지 생성 서버의 결과는 HTTP로 확인하므로
   단계별 시간은 따로 재지 않는다.
 
+### 그림체 프리셋 화면 (#169)
+
+- 이미지 메뉴 → "그림체 프리셋": 미리보기 카드 격자, 찾기(이름·artist 태그·태그), 거르기(서비스·계열, 태그, 모델, LoRA),
+  2~4개 나란히 보기, 오른쪽 편집 칸(저장·미리보기 만들기·생성 화면에 적용·복제·삭제). 틀은 모델 화면(#161)과 같은
+  `components/explorer/Explorer`.
+- 미리보기: 프리셋마다 한 장, 같은 프롬프트(`1girl, solo, safe`)와 같은 시드. 생성·비교 대기열로 만들고, 끝나면 프리셋 옆에
+  WebP로 둔다. 설정이 바뀌면 "오래됨". "없거나 오래된 미리보기 만들기"로 한꺼번에 넣는다. 지금은 ComfyUI 프리셋만.
+- "생성 화면에 적용"은 생성 화면을 열고 그 프리셋을 고른다(서비스가 다르면 서비스도 바꿈).
+
 ### 예외 흐름
 
 - **서버 연결 안 됨**: 작업을 대기 상태로 두고 "이미지 생성 서버에 연결할 수 없어요"를 띄운다. 연결되면 이어서 실행한다.
@@ -124,6 +133,11 @@
 | `POST /api/image/connection/test` | 이미지 생성 서버 연결 시험, 모델 목록 |
 | `POST /api/works/{id}/image/generate/preview` | 생성 요청 미리보기(합계, 조합 예) |
 | `POST /api/works/{id}/image/generate` | 생성 요청 → 작업 |
+| `GET /api/image/presets` | 그림체 프리셋 목록(`preview_url`, `preview_stale` 포함) |
+| `PUT·DELETE /api/image/presets/{id}` | 저장, 지우기(미리보기 함께) |
+| `POST /api/image/presets/{id}/preview` | 미리보기 한 장을 대기열에 |
+| `GET /api/image/presets/{id}/preview.webp` | 미리보기 그림 |
+| `GET·PUT /api/image/settings/presets` | 미리보기 시드 `{preview_seed}` |
 | `POST /api/works/{id}/image/regenerate` | 이미지 하나 다시 `{image, seed: "new" | "same", overrides?}` |
 | `POST /api/image/lab` | 생성·비교 실행 `{positive, negative, settings, count, sweep?: {key, values, lora_index?}, source?}` |
 | `GET /api/image/lab/runs` | 최근 실행(격자 칸: 행·열·시드·값·상태·이미지) |

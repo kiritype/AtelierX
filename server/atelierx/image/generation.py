@@ -391,6 +391,13 @@ class GenerationMixin:
         image.save(temp, format='PNG', pnginfo=info, compress_level=6)
         atomic_json(path.with_suffix('.json'), metadata)
         replace_file(temp, path)
+        preview = job.get('preset_preview')
+        if preview:
+            # A style preset's preview (#169): the lab image stays; a WebP copy goes next to the preset.
+            try:
+                library.store_preview(self.paths, preview['id'], path, preview['seed'], preview['hash'])
+            except (OSError, ValueError):
+                log.exception('Could not keep the preview of style preset %s', preview.get('id'))
         return self.output_url(path)
 
     # --- worker ------------------------------------------------------------------------------------------------------

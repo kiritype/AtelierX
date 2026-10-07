@@ -3,6 +3,7 @@
 import json
 
 from atelierx.image import library
+from test_image import FakeComfy
 
 
 def _write(path, doc):
@@ -138,3 +139,54 @@ def test_a_preset_gives_its_artist_tags_and_only_to_its_service(unlocked):
     assert (
         refused.status_code == 400 and refused.json()['error']['key'] == 'server.image.queue.preset_service'
     )
+
+
+def test_a_preview_is_made_once_kept_as_webp_and_marked_stale_when_the_preset_changes(unlocked):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    preset = {
+        'name': '먹선',
+        'service': 'comfyui',
+        'family': 'anima',
+        'settings': {'model': 'anima\\m.safetensors', 'steps': 20},
+        'artist': {'positive': '@ink artist', 'negative': '@bad artist'},
+        'common': ['quality'],
+    }
+    c.put('/api/image/presets/ink', json=preset)
+    queued = c.post('/api/image/presets/ink/preview').json()
+    assert queued['count'] == 1 and queued['seeds'] == [1234567]
+    (job,) = runtime.jobs
+    # The fixed subject, rated safe, after the preset's common prompts and artist tags.
+    positive = job['snapshot']['positive']
+    assert positive.startswith('masterpiece') and positive.endswith('@ink artist, 1girl, solo, safe')
+    assert '@bad artist' in job['snapshot']['negative'] and 'nsfw' in job['snapshot']['negative']
+    job['status'] = 'running'
+    runtime.run_job(job)
+    assert job['status'] == 'done', job.get('error')
+
+    (listed,) = c.get('/api/image/presets').json()
+    assert listed['preview_stale'] is False and listed['preview']['seed'] == 1234567
+    image = c.get(listed['preview_url'])
+    assert image.status_code == 200 and image.content[:4] == b'RIFF'
+
+    # Changing what the picture depends on, or the shared seed, makes it stale; the name does not.
+    c.put('/api/image/presets/ink', json={**listed, 'name': '먹선 2'})
+    assert c.get('/api/image/presets').json()[0]['preview_stale'] is False
+    c.put('/api/image/presets/ink', json={**listed, 'artist': {'positive': '@other'}})
+    assert c.get('/api/image/presets').json()[0]['preview_stale'] is True
+    c.put('/api/image/presets/ink', json=listed)
+    c.put('/api/image/settings/presets', json={'preview_seed': 42})
+    assert c.get('/api/image/presets').json()[0]['preview_stale'] is True
+
+    c.delete('/api/image/presets/ink')
+    assert c.get(listed['preview_url']).status_code == 404
+
+
+def test_previews_are_made_with_comfyui_only(unlocked):
+    c = unlocked
+    c.put('/api/image/presets/nai', json={'name': 'nai', 'service': 'novelai'})
+    refused = c.post('/api/image/presets/nai/preview')
+    assert refused.status_code == 400
+    assert refused.json()['error']['key'] == 'server.image.presets.preview_comfy_only'
