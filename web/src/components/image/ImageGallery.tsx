@@ -2,12 +2,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
 import { PRESET_ID, presetFromRecord } from '../../lib/presetFromRecord';
-import { t, tm } from '../../i18n';
+import { t, tm, msgText } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import { DeploymentExport } from './DeploymentExport';
 import { DeployUpload } from './DeployUpload';
+import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
 
 export type GalleryItem = {
   path: string;
@@ -36,6 +37,8 @@ export type GalleryItem = {
   auto_reason: string;
   adopted: boolean;
 };
+type GalleryDetail = GalleryItem & { record: GenerationRecord | null; history: ReviewHistoryEntry[]; adopted_path: string | null };
+
 type Page = {
   results: GalleryItem[];
   total: number;
@@ -77,7 +80,6 @@ type Scope = {
   folder?: string;
 };
 
-const msg = (value: any) => (value && typeof value === 'object' ? tm(value) : String(value ?? ''));
 const HUMAN_MARK: Record<string, string> = {
   pass: '✓',
   fail: '✗',
@@ -206,7 +208,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
         items: paths,
       });
       toast({
-        text: t('gallery.regenerated', { n: result.count }) + (result.warning ? ` ${msg(result.warning)}` : ''),
+        text: t('gallery.regenerated', { n: result.count }) + (result.warning ? ` ${msgText(result.warning)}` : ''),
       });
       qc.invalidateQueries({ queryKey: ['image-queue'] });
     } catch (err) {
@@ -486,7 +488,7 @@ function Detail({
   remove: (paths: string[]) => void;
 }) {
   const toast = useToast();
-  const detail = useQuery<any>({
+  const detail = useQuery<GalleryDetail>({
     queryKey: ['gallery-detail', item.path],
     queryFn: () => get(`/api/image/gallery/detail?path=${q(item.path)}`),
   });
@@ -556,7 +558,7 @@ function Detail({
             {record && (
               <button
                 onClick={() => {
-                  sendToLab({ positive: record.positive ?? '', negative: record.negative ?? '', settings: { ...record.settings, seed: -1 }, source: item.path });
+                  sendToLab({ positive: record.positive ?? '', negative: record.negative ?? '', settings: { ...record.settings, seed: -1 } as Parameters<typeof sendToLab>[0]['settings'], source: item.path });
                   openLab();
                 }}
               >
@@ -582,7 +584,7 @@ function Detail({
               <strong>
                 {t('gallery.vlm_verdict')}: {t(`gallery.auto.${data.auto_status}`)}
               </strong>
-              <div>{msg(data.auto_reason)}</div>
+              <div>{msgText(data.auto_reason)}</div>
               <div className="faint small">{t('gallery.vlm_note')}</div>
             </div>
           )}
@@ -617,15 +619,16 @@ function Detail({
           {record && (
             <>
               <div className="section-title">{t('gallery.prompts')}</div>
-              <div className="prompt-box mono small" onClick={() => copy(record.positive)} title={t('gallery.click_copy')}>
+              <div className="prompt-box mono small" onClick={() => copy(record.positive ?? '')} title={t('gallery.click_copy')}>
                 {record.positive}
               </div>
-              <div className="prompt-box mono small faint" onClick={() => copy(record.negative)} title={t('gallery.click_copy')}>
+              <div className="prompt-box mono small faint" onClick={() => copy(record.negative ?? '')} title={t('gallery.click_copy')}>
                 − {record.negative}
               </div>
               <div className="section-title">{t('gallery.settings')}</div>
               <dl className="kv small">
-                {[
+                {(
+                  [
                   ['gen.model', settings.model],
                   ['gen.family', settings.family],
                   ['gen.sampler', [settings.sampler, settings.scheduler].filter(Boolean).join(' · ')],
@@ -633,10 +636,11 @@ function Detail({
                   ['CFG', settings.cfg],
                   ['gen.seed', record.seed],
                   ['gallery.size', record.image_size?.join(' × ')],
-                  ['gen.loras', (settings.loras ?? []).map((l: any) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
+                  ['gen.loras', (settings.loras ?? []).map((l: LoraRef) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
                   ['gen.preset', record.generation_preset?.name],
                   ['gallery.created', new Date(record.created_at ?? item.created_at).toLocaleString()],
-                ]
+                  ] as [string, unknown][]
+                )
                   .filter(([, v]) => v !== undefined && v !== null && v !== '')
                   .map(([k, v]) => (
                     <div key={k} className="row">
@@ -656,10 +660,10 @@ function Detail({
           {(detail.data?.history ?? []).length > 0 && (
             <>
               <div className="section-title">{t('gallery.history')}</div>
-              {detail.data.history
+              {(detail.data?.history ?? [])
                 .slice()
                 .reverse()
-                .map((h: any, i: number) => (
+                .map((h: ReviewHistoryEntry, i: number) => (
                   <div key={i} className="faint small">
                     {new Date(h.at).toLocaleString()} · {h.source === 'auto' ? 'AI ' : ''}
                     {h.source === 'auto' ? t(`gallery.auto.${h.from}`) : t(`gallery.human.${h.from}`)} →{' '}
@@ -675,7 +679,7 @@ function Detail({
 }
 
 // Save this image's reusable settings as a generation preset (#52). The panel lists what goes in before saving.
-function SavePreset({ record }: { record: any }) {
+function SavePreset({ record }: { record: GenerationRecord }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -690,7 +694,7 @@ function SavePreset({ record }: { record: any }) {
     );
   }
   const draft = presetFromRecord(record);
-  const s = draft.settings as Record<string, any>;
+  const s = draft.settings as GenerationSettings;
   const rows: [string, unknown][] = [
     ['gen.family', draft.family],
     ['gen.model', s.model],
@@ -698,7 +702,7 @@ function SavePreset({ record }: { record: any }) {
     ['gen.steps', s.steps],
     ['CFG', s.cfg],
     ['gallery.size', s.width && s.height ? `${s.width} × ${s.height}` : undefined],
-    ['gen.loras', (s.loras ?? []).map((l: any) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
+    ['gen.loras', (s.loras ?? []).map((l: LoraRef) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
     ['gallery.preset_common', draft.common.join(', ')],
     ['gallery.preset_styles', draft.styles.join(', ')],
   ];
@@ -800,7 +804,7 @@ function RoundsPanel({
                   max: r.max_auto_regenerations,
                 })}
               </span>
-              {(r.error || last) && <div className="faint small">{msg(r.error ?? last?.evidence)}</div>}
+              {(r.error || last) && <div className="faint small">{msgText(r.error ?? last?.evidence)}</div>}
             </span>
             {['needs_attention', 'limit_reached'].includes(r.status) && last && (
               <button className="ghost" onClick={() => act('/api/image/review/rounds/retry', { ids: [r.id] })}>

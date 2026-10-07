@@ -4,7 +4,7 @@ import { ApiError, del, get, patch, post } from '../api';
 import { useToast } from '../components/Toasts';
 import { ChipsInput, ContextMenu, Dialog, formatBytes, type MenuItem } from '../components/ui';
 import { t, tm } from '../i18n';
-import type { WorkCard } from '../types';
+import type { PlatformPresetSummary, SampleSummary, TrashBundle, WorkCard, WorkList } from '../types';
 import { AppMark } from '../components/AppMark';
 import { Icon } from '../components/icons';
 import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/Help';
@@ -14,7 +14,7 @@ import { PackageExportDialog, PackageImportDialog } from '../components/Packages
 export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const works = useQuery({ queryKey: ['works'], queryFn: () => get('/api/works') });
+  const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
   const help = useHelp();
   const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
   useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
@@ -232,14 +232,14 @@ function NewWorkDialog({
   onCreated: (id: string) => void;
 }) {
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
-  const presets = useQuery({ queryKey: ['platforms'], queryFn: () => get('/api/platforms') });
+  const presets = useQuery<PlatformPresetSummary[]>({ queryKey: ['platforms'], queryFn: () => get('/api/platforms') });
   const [name, setName] = useState('');
   const [id, setId] = useState('');
   const [tags, setTags] = useState<string[] | null>(null);
   const [scale, setScale] = useState('single');
   const [language, setLanguage] = useState('ko');
   const [error, setError] = useState('');
-  const presetIds = new Set((presets.data ?? []).map((p: any) => p.id));
+  const presetIds = new Set((presets.data ?? []).map((p) => p.id));
   const defaultTag = settings.data?.default_platform_preset;
   const shownTags = tags ?? (defaultTag ? [defaultTag] : []);
 
@@ -303,12 +303,12 @@ function NewWorkDialog({
 }
 
 function SamplesDialog({ onClose, onInstalled }: { onClose: () => void; onInstalled: (id: string) => void }) {
-  const samples = useQuery({ queryKey: ['samples'], queryFn: () => get('/api/samples') });
+  const samples = useQuery<SampleSummary[]>({ queryKey: ['samples'], queryFn: () => get('/api/samples') });
   const [error, setError] = useState('');
   return (
     <Dialog title={t('works.samples')} onClose={onClose}>
       <p className="muted">{t('works.samples_note')}</p>
-      {(samples.data ?? []).map((sample: any) => (
+      {(samples.data ?? []).map((sample) => (
         <div key={sample.name} className="list-row">
           <span className="grow">
             <strong>{sample.name}</strong> <span className="faint">{t(`scale.${sample.scale}`)}</span>
@@ -335,7 +335,7 @@ function SamplesDialog({ onClose, onInstalled }: { onClose: () => void; onInstal
 
 function WorksTrashDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
   const qc = useQueryClient();
-  const trash = useQuery({ queryKey: ['data-trash'], queryFn: () => get('/api/trash') });
+  const trash = useQuery<TrashBundle[]>({ queryKey: ['data-trash'], queryFn: () => get('/api/trash') });
   const reload = () => {
     qc.invalidateQueries({ queryKey: ['data-trash'] });
     onChanged();
@@ -343,7 +343,7 @@ function WorksTrashDialog({ onClose, onChanged }: { onClose: () => void; onChang
   return (
     <Dialog title={t('works.trash')} onClose={onClose}>
       {(trash.data ?? []).length === 0 && <div className="empty">{t('trash.empty')}</div>}
-      {(trash.data ?? []).map((entry: any) => (
+      {(trash.data ?? []).map((entry) => (
         <div key={entry.id} className="list-row">
           <span className="grow">
             {entry.paths.join(', ')} <span className="faint">{entry.deleted_at?.slice(0, 16)}</span>
