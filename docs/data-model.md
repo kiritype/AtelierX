@@ -791,6 +791,10 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   `hash`는 서비스·계열·설정(시드 제외)·artist 태그·공통 id·미리보기 시드에서 나오고, 지금 값과 다르면 "오래됨"이다.
   미리보기 시드는 `config/image/presets.json`의 `preview_seed`(기본 1234567). 프롬프트는 공통 + artist 태그 + `1girl, solo, safe`,
   negative에 노출 제외 태그가 붙는다.
+- 공유 꾸러미(ZIP): `atelierx-presets.json`(`{kind: "atelierx-style-presets", schema_version: 1, app_version, presets: [{id, name,
+  service, family, preview, resources: [{kind: model·text_encoder·vae·lora·upscale_model, name, sha256?, civitai?}]}]}`),
+  `presets/<id>.json`, `presets/<id>.webp`(있으면). 모델·LoRA 파일은 넣지 않는다. 가져오기는 먼저 읽어 보여 주고(30분 동안 유효한
+  토큰), 프리셋마다 넣기·덮어쓰기·다른 id·건너뛰기를 고른 뒤 쓴다. 미리보기는 그 기록(`preview`)과 함께 옮긴다.
 - 이전 형식(schema 1, 서비스·artist 없음, `styles` 화풍 id 목록)은 앱을 켤 때 옮긴다: 고른 화풍의 프롬프트가 `artist`가 되고, 쓰이지 않은
   화풍(`styles.json`, 작품 범위 포함)은 각각 프리셋이 된다. 옛 `styles.json`은 `styles.migrated.json`으로 남긴다.
 - 앱은 최소한의 기본 항목(표정·구도 몇 가지, 조합 규칙)을 `app/` 안에 갖고 있다가 데이터 루트를 처음 만들 때 전역 라이브러리로

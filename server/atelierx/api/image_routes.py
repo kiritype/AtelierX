@@ -223,6 +223,30 @@ async def preset_preview_file(request):
     return FileResponse(library.preview_file(runtime.paths, ident), headers={'Cache-Control': 'no-cache'})
 
 
+async def presets_export(request):
+    runtime = _runtime(request)
+    ids = [i for i in request.query_params.get('ids', '').split(',') if i]
+    try:
+        raw, name = await run_in_threadpool(runtime.export_presets, ids)
+    except ValueError as error:
+        raise AppError(_as_msg(error), 400) from error
+    return Response(
+        raw, media_type='application/zip', headers={'Content-Disposition': f'attachment; filename="{name}"'}
+    )
+
+
+async def presets_import_preview(request):
+    runtime = _runtime(request)
+    raw = await request.body()
+    return await call(runtime.preview_preset_import, raw)
+
+
+async def presets_import(request):
+    runtime = _runtime(request)
+    body = await _body(request)
+    return await call(runtime.preset_imports.apply, str(body.get('token', '')), body.get('choices') or {})
+
+
 async def preset_delete(request):
     runtime = _runtime(request)
     return await call(library.delete_preset, runtime.paths, request.path_params['ident'])
@@ -501,6 +525,10 @@ def routes():
         Route(f'{p}/library/{{kind}}/{{ident}}', library_put, methods=['PUT']),
         Route(f'{p}/library/{{kind}}/{{ident}}', library_delete, methods=['DELETE']),
         Route(f'{p}/presets', presets_get),
+        # Sharing (#169) before the per-preset routes, so "export" and "import" are not read as ids.
+        Route(f'{p}/presets/export', presets_export),
+        Route(f'{p}/presets/import/preview', presets_import_preview, methods=['POST']),
+        Route(f'{p}/presets/import', presets_import, methods=['POST']),
         Route(f'{p}/presets/{{ident}}', preset_put, methods=['PUT']),
         Route(f'{p}/presets/{{ident}}', preset_delete, methods=['DELETE']),
         Route(f'{p}/presets/{{ident}}/preview', preset_preview, methods=['POST']),

@@ -5,7 +5,7 @@ import time
 
 from ..core.i18n import AppError, Msg
 from ..core.lifecycle import CANCELLING, QUEUED, RUNNING, UNFINISHED
-from . import board, comfy_locate
+from . import board, comfy_locate, preset_share
 from .comfy import Comfy
 from .control import ComfyControl
 from .deploy.targets import DeployTargets
@@ -22,6 +22,7 @@ from .lora import models as lora_models
 from .lora import store as lora_store
 from .lora.trainer import LoraTrainer
 from .models import FAMILY_LABELS, ModelProfiles
+from .preset_share import PresetImports
 from .review_rounds import ReviewRounds
 from .reviews import ReviewStore
 from .service_config import ServiceConfig
@@ -70,6 +71,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.deploy = DeployUploads(self)
         self.reviews.adjust_plan = self._adjust_export_plan
         self.tools = ToolWorkspace(paths, self.gallery)
+        self.preset_imports = PresetImports(paths)
         self.convert = ConvertTasks(paths, self.tools, self.gallery)
         self.trash = OutputTrash(paths, self.gallery, self.tools)
         self.trainer = LoraTrainer(self)
@@ -122,12 +124,23 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         catalog = self.comfy.catalog()
         if not catalog.get('connected'):
             return generation
+        return gen_info.enrich(generation, catalog, self.file_index())
+
+    def file_index(self):
+        """Hashes and Civitai ids of the model files (Stability Matrix's records), read at most once a minute."""
+        from .tools import gen_info
+
         stamp, index = self._file_index
-        # The model folders' hash records are read at most once a minute.
         if index is None or time.monotonic() - stamp > 60:
             index = gen_info.file_index(self.installs.model_folders())
             self._file_index = (time.monotonic(), index)
-        return gen_info.enrich(generation, catalog, index)
+        return index
+
+    def export_presets(self, ids):
+        return preset_share.export(self.paths, ids, self.file_index())
+
+    def preview_preset_import(self, raw):
+        return self.preset_imports.preview(raw, self.comfy.catalog())
 
     def shutdown(self):
         self.stop.set()
