@@ -21,6 +21,8 @@ type Composed = {
   character_id: string;
   outfit_name: string;
   expression_name: string;
+  composition_name?: string | null;
+  outfit_hidden?: boolean;
   parts: Record<string, string>;
   positive: string;
   negative: string;
@@ -385,6 +387,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
                   <strong>
                     {p.character_id} · {p.outfit_name} · {p.expression_name}
                   </strong>
+                  {p.outfit_hidden && <span className="chip small">{t('gen.outfit_hidden', { name: p.composition_name ?? '' })}</span>}
                 </div>
                 {p.warnings.map((w, i) => (
                   <div key={i} className="warn-text">

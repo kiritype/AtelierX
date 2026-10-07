@@ -22,6 +22,7 @@ type Item = {
   code?: string;
   composition?: string;
   suggest_slots?: string[];
+  hide_outfit?: boolean;
   target?: 'positive' | 'negative';
   default?: boolean;
   slot?: string;
@@ -175,6 +176,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                 <span className="grow">
                   {item.name} <span className="faint mono">{item.id}</span>
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
+                  {kind === 'compositions' && item.hide_outfit && <span className="chip small" title={t('lib.hide_outfit_hint')}>{t('lib.hide_outfit')}</span>}
                   {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
                 </span>
                 <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
@@ -251,11 +253,17 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
             {kind === 'compositions' && (
               <div className="col" style={{ gap: 2 }}>
                 <span className="muted">{t('lib.suggest_slots')}</span>
+                <label className="row" style={{ gap: 4 }} title={t('lib.hide_outfit_hint')}>
+                  <input type="checkbox" checked={!!draft.hide_outfit} onChange={(e) => setDraft({ ...draft, hide_outfit: e.target.checked })} />
+                  {t('lib.hide_outfit')}
+                </label>
+                {draft.hide_outfit && <span className="faint small">{t('lib.hide_outfit_hint')}</span>}
                 <div className="row" style={{ flexWrap: 'wrap' }}>
                   {rules.data?.slots.map((slot) => (
                     <label key={slot.id} className="row" style={{ gap: 4 }}>
                       <input
                         type="checkbox"
+                        disabled={!!draft.hide_outfit}
                         checked={(draft.suggest_slots ?? []).includes(slot.id)}
                         onChange={(e) =>
                           setDraft({
