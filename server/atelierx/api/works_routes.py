@@ -34,7 +34,7 @@ async def works_patch(request):
         k: v
         for k, v in data.items()
         if k
-        in ('tags', 'scale', 'language', 'overrides', 'character_sections', 'char', 'order', 'llm_consent')
+        in ('tags', 'scale', 'language', 'overrides', 'char', 'order', 'llm_consent')
     }
     if fields:
         work.update_doc(fields)
@@ -86,7 +86,6 @@ async def work_get(request):
             'name': work.name,
             'doc': doc,
             'effective': s.presets.effective(doc),
-            'sections': work.section_titles(),
             'presets': s.presets.list(),
         }
     )

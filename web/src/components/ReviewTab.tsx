@@ -6,6 +6,8 @@ import { ConsistencyReview, JsxPromptReview, RelationsReview } from './SupportRe
 import { useToast } from './Toasts';
 import EditorTaskReview from './EditorTaskReview';
 import AgentFileReview from './AgentFileReview';
+import { Sources } from './ImageDesign';
+import { picked } from '../lib/designSource';
 
 const utf8 = (text: string) => new TextEncoder().encode(text).length;
 
@@ -176,12 +178,17 @@ function CompressionReview({ workId, draft, onDone }: { workId: string; draft: a
 }
 
 function ImagePromptReview({ workId, draft, onDone }: { workId: string; draft: any; onDone: () => void }) {
+  // A range conversion (#150) changes one part: the one it names is taken, the rest stay as they are.
   const toast = useToast();
   const finish = useFinish(workId, onDone);
   const proposed = draft.candidates[0].design;
   const previous = draft.request?.previous_design;
-  const [useAppearance, setUseAppearance] = useState(!previous?.appearance || !!previous.appearance.source);
-  const [keepOutfits, setKeepOutfits] = useState<string[]>(() => Object.keys(proposed.outfits).filter((id) => previous?.outfits?.[id] && !previous.outfits[id].source));
+  const focus: string | null = draft.request?.focus ?? null;
+  const [useAppearance, setUseAppearance] = useState(focus === 'appearance' || !picked(previous?.appearance));
+  const [keepOutfits, setKeepOutfits] = useState<string[]>(() =>
+    Object.keys(proposed.outfits).filter((id) => focus !== `outfit:${id}` && previous?.outfits?.[id] && picked(previous.outfits[id])),
+  );
+  const shows = (key: string) => !focus || focus === key;
   const design = draft.status === 'applied' && draft.applied_design ? draft.applied_design : {
     ...proposed,
     appearance: useAppearance ? proposed.appearance : previous?.appearance ?? proposed.appearance,
@@ -220,19 +227,25 @@ function ImagePromptReview({ workId, draft, onDone }: { workId: string; draft: a
         )}
       </div>
       {previous && <p className="faint">{t('image.design.review_selection')}</p>}
-      <div className="section-title">{t('image.appearance')}</div>
-      {pending && previous?.appearance && <label><input type="checkbox" checked={useAppearance} onChange={(e) => setUseAppearance(e.target.checked)} /> {t('image.design.use_converted')}</label>}
-      <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
-        {(design.appearance?.prompt ?? []).map((tag: string, i: number) => (
-          <span key={i} className="chip">
-            {tag}
-          </span>
-        ))}
-      </div>
-      {Object.entries(design.outfits).map(([key, outfit]: [string, any]) => (
+      {shows('appearance') && (
+        <>
+          <div className="section-title">{t('image.appearance')}</div>
+          {pending && previous?.appearance && <label><input type="checkbox" checked={useAppearance} onChange={(e) => setUseAppearance(e.target.checked)} /> {t('image.design.use_converted')}</label>}
+          <div className="row" style={{ flexWrap: 'wrap', gap: 4 }}>
+            {(design.appearance?.prompt ?? []).map((tag: string, i: number) => (
+              <span key={i} className="chip">
+                {tag}
+              </span>
+            ))}
+          </div>
+          <Sources source={design.appearance?.source} />
+        </>
+      )}
+      {Object.entries(design.outfits).filter(([key]) => shows(`outfit:${key}`)).map(([key, outfit]: [string, any]) => (
         <div key={key}>
           <div className="section-title">
-            {t('image.outfit')} {key} · {outfit.name}
+            {t('image.outfit')} {key} · {outfit.name}{' '}
+            {pending && <span className="chip small">{previous?.outfits?.[key] ? t('image.review.update') : t('image.review.new')}</span>}
           </div>
           {pending && previous?.outfits?.[key] && <label><input type="checkbox" checked={!keepOutfits.includes(key)} onChange={(e) => setKeepOutfits((ids) => e.target.checked ? ids.filter((id) => id !== key) : [...ids, key])} /> {t('image.design.use_converted')}</label>}
           {Object.entries(outfit.slots).map(([slot, value]: [string, any]) => (
@@ -247,6 +260,7 @@ function ImagePromptReview({ workId, draft, onDone }: { workId: string; draft: a
               ))}
             </div>
           ))}
+          <Sources source={outfit.source} />
         </div>
       ))}
       <p className="faint">{draft.model?.provider === 'mock' ? t('review.mock_note') : t('review.model', { name: draft.model?.name })}</p>

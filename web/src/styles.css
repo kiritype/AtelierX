@@ -198,6 +198,10 @@ h1, h2, h3 { font-weight: 600; margin: 0; }
   border-radius: var(--radius); padding: 4px; min-width: 160px; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
 .ctx button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 4px 8px; }
 .ctx button:hover { background: var(--hover); }
+.ctx button { display: flex; gap: 16px; align-items: center; }
+.ctx button.open { background: var(--hover); }
+.ctx button:disabled { opacity: .5; }
+.ctx-hint { color: var(--text-3); font-size: 11px; }
 
 /* item editor */
 .inner-tabs { display: flex; align-items: center; gap: 4px; padding: 4px 12px 0; border-bottom: 1px solid var(--border); }

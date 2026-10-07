@@ -5,7 +5,9 @@ import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@code
 import { Annotation, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n';
+import { ContextMenu, type MenuItem } from './ui';
 
 const external = Annotation.define<boolean>();
 
@@ -53,6 +55,7 @@ export default function CodeEditor({
   onChange,
   onSave,
   onAttach,
+  menu,
 }: {
   value: string;
   language: 'markdown' | 'jsx';
@@ -60,11 +63,53 @@ export default function CodeEditor({
   onSave?: () => void;
   // Ctrl+L: the selected lines (1-based, inclusive) and text, for the agent panel.
   onAttach?: (selection: { from: number; to: number; text: string }) => void;
+  // More entries for the right-click menu (and Alt+P), for the selected text (#150).
+  menu?: (selection: { text: string }) => MenuItem[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const handlers = useRef({ onChange, onSave, onAttach });
-  handlers.current = { onChange, onSave, onAttach };
+  const handlers = useRef({ onChange, onSave, onAttach, menu });
+  handlers.current = { onChange, onSave, onAttach, menu };
+  const [opened, setOpened] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  function selection(editor: EditorView) {
+    const range = editor.state.selection.main;
+    const first = editor.state.doc.lineAt(range.from);
+    const last = editor.state.doc.lineAt(range.empty ? range.to : Math.max(range.from, range.to - 1));
+    const text = range.empty ? first.text : editor.state.sliceDoc(range.from, range.to);
+    return { from: first.number, to: last.number, text, selected: editor.state.sliceDoc(range.from, range.to) };
+  }
+  function attach(editor: EditorView) {
+    if (!handlers.current.onAttach) return false;
+    const { from, to, text } = selection(editor);
+    handlers.current.onAttach({ from, to, text });
+    return true;
+  }
+  function openMenu(x: number, y: number) {
+    const editor = view.current;
+    if (!editor) return false;
+    setOpened({ x, y, text: selection(editor).selected });
+    return true;
+  }
+  function menuItems(text: string): MenuItem[] {
+    const editor = view.current!;
+    const range = editor.state.selection.main;
+    const items: MenuItem[] = [
+      {
+        label: t('editor.menu.cut'),
+        hint: 'Ctrl+X',
+        disabled: range.empty,
+        run: () => {
+          void navigator.clipboard.writeText(text);
+          editor.dispatch({ changes: { from: range.from, to: range.to, insert: '' } });
+        },
+      },
+      { label: t('editor.menu.copy'), hint: 'Ctrl+C', disabled: range.empty, run: () => void navigator.clipboard.writeText(text) },
+    ];
+    if (handlers.current.onAttach) items.push({ label: t('editor.menu.attach'), hint: 'Ctrl+L', run: () => attach(editor) });
+    const more = handlers.current.menu?.({ text }) ?? [];
+    return more.length ? [...items, null, ...more] : items;
+  }
 
   useEffect(() => {
     const state = EditorState.create({
@@ -74,16 +119,14 @@ export default function CodeEditor({
         history(),
         keymap.of([
           { key: 'Mod-s', run: () => (handlers.current.onSave?.(), true) },
+          { key: 'Mod-l', run: (editor) => attach(editor) },
           {
-            key: 'Mod-l',
+            // The same menu as a right click, at the cursor.
+            key: 'Alt-p',
             run: (editor) => {
-              if (!handlers.current.onAttach) return false;
-              const range = editor.state.selection.main;
-              const first = editor.state.doc.lineAt(range.from);
-              const last = editor.state.doc.lineAt(range.empty ? range.to : Math.max(range.from, range.to - 1));
-              const text = range.empty ? first.text : editor.state.sliceDoc(range.from, range.to);
-              handlers.current.onAttach({ from: first.number, to: last.number, text });
-              return true;
+              if (!handlers.current.menu) return false;
+              const at = editor.coordsAtPos(editor.state.selection.main.head);
+              return openMenu(at?.left ?? 100, (at?.bottom ?? 100) + 2);
             },
           },
           ...defaultKeymap,
@@ -117,5 +160,28 @@ export default function CodeEditor({
     }
   }, [value]);
 
-  return <div className="cm-host" ref={host} />;
+  return (
+    <>
+      <div
+        className="cm-host"
+        ref={host}
+        onContextMenu={(e) => {
+          if (!handlers.current.menu && !handlers.current.onAttach) return;
+          e.preventDefault();
+          openMenu(e.clientX, e.clientY);
+        }}
+      />
+      {opened && (
+        <ContextMenu
+          x={opened.x}
+          y={opened.y}
+          items={menuItems(opened.text)}
+          onClose={() => {
+            setOpened(null);
+            view.current?.focus();
+          }}
+        />
+      )}
+    </>
+  );
 }

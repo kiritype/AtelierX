@@ -21,7 +21,6 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
   const [scale, setScale] = useState(doc.scale);
   const [language, setLanguage] = useState(doc.language);
   const [char, setChar] = useState(doc.char ?? '');
-  const [sections, setSections] = useState<Record<string, string>>(doc.character_sections ?? {});
   const presetIds = new Set(info.presets.map((p) => p.id));
   const providers = useQuery<any>({ queryKey: ['providers'], queryFn: () => get('/api/providers') });
 
@@ -77,27 +76,6 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
       </label>
       <div>
         <button className="primary" onClick={() => save({ tags, scale, language, char: char || null })}>
-          {t('common.save')}
-        </button>
-      </div>
-
-      <div className="section-title">{t('work_settings.sections')}</div>
-      <table className="plain">
-        <tbody>
-          {Object.entries(info.sections).map(([key, title]) => (
-            <tr key={key}>
-              <td className="mono faint">{key}</td>
-              <td>
-                <input value={sections[key] ?? ''} placeholder={title} onChange={(e) => setSections({ ...sections, [key]: e.target.value })} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div>
-        <button
-          onClick={() => save({ character_sections: Object.fromEntries(Object.entries(sections).filter(([, v]) => v)) })}
-        >
           {t('common.save')}
         </button>
       </div>

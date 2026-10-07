@@ -32,7 +32,9 @@ def apply(work, did, data):
                 ),
                 409,
             )
-        submitted = data.get('design', doc['candidates'][0]['design'])
+        submitted = data.get('design') or image_designs.default_choice(
+            doc['request'].get('previous_design'), doc['candidates'][0]['design'], doc['request'].get('focus')
+        )
         image_designs.validate(submitted)
         merged = image_designs.reconcile_conversion(current, submitted)
         Snapshots(work).create('before_llm', 'LLM 결과 채택 전', force=True)

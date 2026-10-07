@@ -197,17 +197,6 @@ def run(work, effective):
                     Msg('check.josa_after_ref', 'A particle follows {{user}} or {{char}} directly.'),
                 )
             )
-        if item['kind'] == 'character':
-            titles = work.section_titles()
-            for key in ('appearance', 'outfit'):
-                if work.section_text(item['body'], key) is None:
-                    issues.append(
-                        _issue(
-                            'info',
-                            item['path'],
-                            Msg('check.no_section', 'No "{t}" section.', t=titles.get(key, key)),
-                        )
-                    )
     bodies = [i['body'] for i in enabled if i['kind'] in ('main', 'start', 'lorebook', 'character')]
     for item in enabled:
         if item['kind'] == 'jsx':

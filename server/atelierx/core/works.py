@@ -528,6 +528,8 @@ class Work:
                 shutil.rmtree(target)
 
     # --- sections (characters) ---------------------------------------------------------------------------------
+    # Image conversion no longer reads sections (#150). The titles still guide the authoring assistant, and designs
+    # converted before #150 name a section as their source, so their state is read with section_text.
     def section_titles(self):
         doc = self.doc()
         titles = dict(SECTION_DEFAULTS.get(doc.get('language', 'ko'), SECTION_DEFAULTS['en']))
@@ -611,7 +613,6 @@ class WorkStore:
             'scale': scale,
             'language': language,
             'overrides': {},
-            'character_sections': {},
             'char': None,
             'llm_consent': [],
             'order': {},

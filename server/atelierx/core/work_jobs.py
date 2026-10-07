@@ -5,11 +5,12 @@ a draft for the review tab. The API only reads the request and returns the job. 
 """
 
 import asyncio
+from copy import deepcopy
 
 from ..image import designs as image_designs
 from . import authoring, editor_tasks, exporter, guidelines, llm_tasks, review
 from .drafts import Drafts, mock_compress
-from .fsutil import read_json, sha256_text
+from .fsutil import read_json
 from .i18n import AppError, Msg
 from .jsx import call_text
 from .relations import Relations
@@ -303,7 +304,12 @@ class WorkJobs:
         return self.jobs.submit('compression', f'압축 · {item["name"]}', runner, gpu=gpu, work_id=work.id)
 
     def image_prompt(self, work, cid, data):
-        """A character's appearance and outfits as image tags: an image_prompt draft."""
+        """A character's appearance and outfits as image tags: an image_prompt draft (#150).
+
+        Without ``range`` the whole text is converted (A): the answer quotes the sentences each part comes from.
+        With ``range`` ({text, part: appearance | outfit, outfit?: id, name?: new outfit name, add?: bool}) only the
+        chosen text is converted into that one part (E).
+        """
         item = next(
             (i for i in work.index() if i['kind'] == 'character' and i['meta'].get('id') == cid), None
         )
@@ -314,86 +320,141 @@ class WorkJobs:
         old = read_json(design_path)
         base_design_revision = image_designs.revision(old)
         old = old or {}
+        chosen = _image_range(data.get('range'), old, body_text)
         self.llm.require_consent(work, 'image_prompt', data.get('llm'))
+        compose = (
+            read_json(work.app / 'image' / 'compose.json')
+            or read_json(self.paths.data / 'image' / 'compose.json')
+            or {}
+        )
+        slots = compose.get('slots') or [{'id': 'full', 'name': '전체'}, {'id': 'top', 'name': '상의'}]
+        allowed = {slot['id'] for slot in slots}
+        existing = [str(o.get('name') or k) for k, o in (old.get('outfits') or {}).items()]
 
-        async def runner(progress):
-            appearance = work.section_text(body_text, 'appearance') or ''
-            outfit_all = work.section_text(body_text, 'outfit') or ''
-            headings = [line[4:].strip() for line in outfit_all.splitlines() if line.startswith('### ')] or [
-                '기본'
-            ]
-            texts = [
-                work.section_text(body_text, 'outfit', h if h != '기본' else None) or '' for h in headings
-            ]
+        def outfit_slots(got):
+            return {
+                k: {'prompt': llm_tasks.tags(v)}
+                for k, v in (got.get('slots') or {}).items()
+                if k in allowed and llm_tasks.tags(v)
+            }
+
+        def evidence(got):
+            # Only sentences that really are in the text count as its source.
+            quoted = [str(q) for q in got.get('evidence') or [] if isinstance(q, str)]
+            return [q for q in dict.fromkeys(quoted) if image_designs.found_in(body_text, q)]
+
+        async def whole(progress):
             model = None
             if self.mocked('image_prompt', data.get('llm')):
                 await asyncio.sleep(0.6)
                 await progress(60)
+                lines = [
+                    line.strip() for line in body_text.splitlines() if line.strip() and not line.startswith('#')
+                ]
+                quote = lines[:1]
                 result = {
-                    'appearance': {'prompt': ['1girl', 'solo', '(모의 태그)'], 'negative': []},
+                    'appearance': {'prompt': ['1girl', 'solo', '(모의 태그)'], 'negative': [], 'evidence': quote},
                     'outfits': [
-                        {'name': h, 'slots': {'top': ['(모의 태그)']}, 'negative': []} for h in headings
+                        {'name': name, 'slots': {'top': ['(모의 태그)']}, 'negative': [], 'evidence': quote}
+                        for name in existing or ['기본']
                     ],
                 }
             else:
                 await progress(10)
-                compose = (
-                    read_json(work.app / 'image' / 'compose.json')
-                    or read_json(self.paths.data / 'image' / 'compose.json')
-                    or {}
-                )
-                slots = compose.get('slots') or [
-                    {'id': 'full', 'name': '전체'},
-                    {'id': 'top', 'name': '상의'},
-                ]
                 messages = llm_tasks.image_messages(
-                    appearance,
-                    list(zip(headings, texts, strict=True)),
-                    slots,
-                    self.guideline(work, 'image-prompt.md'),
+                    body_text, existing, slots, self.guideline(work, 'image-prompt.md')
                 )
                 result, answer = await llm_tasks.ask_json(
                     self.llm, 'image_prompt', messages, work.id, llm_tasks.image_ok, override=data.get('llm')
                 )
                 model = {'provider': answer['provider'], 'name': answer['model']}
-                allowed = {slot['id'] for slot in slots}
-                for outfit in result['outfits']:
-                    outfit['slots'] = {k: v for k, v in (outfit.get('slots') or {}).items() if k in allowed}
-            outfits_by_name = {
-                str(o.get('name', '')).strip(): o for o in result['outfits'] if isinstance(o, dict)
-            }
+            got = result['appearance']
             design = {
                 'schema_version': 1,
                 'trigger': old.get('trigger') or f'{work.id.lower()}_{cid.lower()}',
                 'appearance': {
-                    'prompt': llm_tasks.tags(result['appearance'].get('prompt')),
-                    'negative': llm_tasks.tags(result['appearance'].get('negative')),
-                    'source': {'section': 'appearance', 'hash': sha256_text(appearance)},
+                    'prompt': llm_tasks.tags(got.get('prompt')),
+                    'negative': llm_tasks.tags(got.get('negative')),
+                    'source': image_designs.make_source(evidence(got), 'auto'),
                 },
                 'outfits': {},
                 'default_outfit': None,
             }
-            for n, (heading, text) in enumerate(zip(headings, texts, strict=True), 1):
-                key = f'o{n:02d}'
-                got = outfits_by_name.get(heading) or (
-                    result['outfits'][n - 1] if n <= len(result['outfits']) else {}
-                )
+            by_name = {str(o.get('name') or k): k for k, o in (old.get('outfits') or {}).items()}
+            taken = set(old.get('outfits') or {}) | set(old.get('retired_outfit_ids') or [])
+            for got in result['outfits']:
+                if not isinstance(got, dict) or not str(got.get('name') or '').strip():
+                    continue
+                name = str(got['name']).strip()[:80]
+                key = by_name.get(name)
+                if key is None or key in design['outfits']:
+                    key = image_designs.new_outfit_id(taken | set(design['outfits']))
                 design['outfits'][key] = {
-                    'name': heading,
-                    'slots': {
-                        k: {'prompt': llm_tasks.tags(v)}
-                        for k, v in (got.get('slots') or {}).items()
-                        if llm_tasks.tags(v)
-                    },
+                    'name': name,
+                    'slots': outfit_slots(got),
                     'negative': llm_tasks.tags(got.get('negative')),
-                    'source': {
-                        'section': 'outfit',
-                        'heading': heading if heading != '기본' else None,
-                        'hash': sha256_text(text),
-                    },
+                    'source': image_designs.make_source(evidence(got), 'auto'),
                 }
-            design['default_outfit'] = next(iter(design['outfits']), None)
-            design = image_designs.reconcile_conversion(old, design)
+            return image_designs.reconcile_conversion(old, design), model, None
+
+        async def ranged(progress):
+            part, texts = chosen['part'], chosen['texts']
+            model = None
+            if self.mocked('image_prompt', data.get('llm')):
+                await asyncio.sleep(0.4)
+                await progress(60)
+                result = {'prompt': ['(모의 태그)'], 'slots': {'top': ['(모의 태그)']}, 'negative': []}
+            else:
+                await progress(10)
+                messages = llm_tasks.image_range_messages(
+                    '\n\n'.join(texts), part, slots, self.guideline(work, 'image-prompt.md')
+                )
+                result, answer = await llm_tasks.ask_json(
+                    self.llm,
+                    'image_prompt',
+                    messages,
+                    work.id,
+                    llm_tasks.image_range_ok,
+                    override=data.get('llm'),
+                )
+                model = {'provider': answer['provider'], 'name': answer['model']}
+            design = deepcopy(old) or {
+                'schema_version': 1,
+                'trigger': f'{work.id.lower()}_{cid.lower()}',
+                'outfits': {},
+                'default_outfit': None,
+            }
+            design.setdefault('appearance', {'prompt': [], 'negative': []})
+            design.setdefault('outfits', {})
+            source = {'spans': chosen['spans']}
+            if part == 'appearance':
+                design['appearance'] = {
+                    **design['appearance'],
+                    'prompt': llm_tasks.tags(result.get('prompt')),
+                    'negative': llm_tasks.tags(result.get('negative')),
+                    'source': source,
+                }
+                focus = 'appearance'
+            else:
+                key = chosen['outfit'] or image_designs.new_outfit_id(
+                    set(design['outfits']) | set(design.get('retired_outfit_ids') or [])
+                )
+                before = design['outfits'].get(key) or {}
+                design['outfits'][key] = {
+                    **before,
+                    'name': chosen['name'] or before.get('name') or key,
+                    'slots': outfit_slots(result),
+                    'negative': llm_tasks.tags(result.get('negative')),
+                    'source': source,
+                }
+                if not design.get('default_outfit'):
+                    design['default_outfit'] = key
+                focus = f'outfit:{key}'
+            image_designs.validate(design)
+            return design, model, focus
+
+        async def runner(progress):
+            design, model, focus = await (ranged(progress) if chosen else whole(progress))
             draft = Drafts(work).create(
                 'image_prompt',
                 {
@@ -402,7 +463,7 @@ class WorkJobs:
                     'base_hash': item['hash'],
                     'base_design_revision': base_design_revision,
                 },
-                {'parts': 'all', 'previous_design': old},
+                {'parts': [focus] if focus else 'all', 'focus': focus, 'previous_design': old},
                 [{'round': 1, 'design': design}],
                 model=model,
                 guidelines=['image-prompt.md'],
@@ -550,6 +611,59 @@ class WorkJobs:
             gpu=action == 'format' and self.llm.on_gpu(task, data.get('llm')),
             work_id=work.id,
         )
+
+
+def _image_range(value, design, body):
+    """A range conversion request checked against the design and the saved text:
+    ``{part, outfit, name, texts, spans}``, or None for a whole-text conversion."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or value.get('part') not in ('appearance', 'outfit'):
+        raise AppError(
+            Msg('server.image.range.invalid', 'Choose the appearance or an outfit for the range.'), 400
+        )
+    text = str(value.get('text') or '').strip()
+    if not text:
+        raise AppError(Msg('server.image.range.empty', 'Select the text to convert first.'), 400)
+    if len(text) > image_designs.MAX_SPAN:
+        raise AppError(Msg('server.image.range.too_long', 'The selected text is too long.'), 400)
+    if not image_designs.found_in(body, text):
+        raise AppError(
+            Msg(
+                'server.image.range.not_in_text',
+                'The selected text is not in the saved text. Save the character first.',
+            ),
+            400,
+        )
+    outfit, name = None, None
+    if value['part'] == 'outfit':
+        outfit = value.get('outfit') or None
+        if outfit is not None and outfit not in (design.get('outfits') or {}):
+            raise AppError(
+                Msg('server.image.range.no_outfit', 'The outfit {id} was not found.', id=str(outfit)), 404
+            )
+        if outfit is None:
+            name = str(value.get('name') or '').strip()[:80]
+            if not name:
+                raise AppError(Msg('server.image.range.name', 'Give the new outfit a name.'), 400)
+    if value['part'] == 'appearance':
+        current = design.get('appearance')
+    else:
+        current = (design.get('outfits') or {}).get(outfit)
+    spans = []
+    if value.get('add') and current:
+        # Adding a range keeps the part's other pieces still in the text, and converts them all together.
+        spans = [s for s in image_designs.spans_of(current) if image_designs.found_in(body, s['text'])]
+    if not any(image_designs.found_in(s['text'], text) and image_designs.found_in(text, s['text']) for s in spans):
+        spans.append({'text': text, 'by': 'pick'})
+    spans = spans[: image_designs.MAX_SPANS]
+    return {
+        'part': value['part'],
+        'outfit': outfit,
+        'name': name,
+        'texts': [s['text'] for s in spans],
+        'spans': spans,
+    }
 
 
 def _markdown_item(work, path):
