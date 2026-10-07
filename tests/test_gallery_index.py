@@ -115,3 +115,30 @@ def test_an_adopted_image_replaced_within_a_rescan_is_not_exported(paths):
     target.write_bytes(_png((255, 0, 0)) + b'changed')
     _touch_later(target)
     assert reviews.plan_export({})['count'] == 0
+
+
+def test_the_measure_tool_keeps_a_named_folder(tmp_path):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / 'tools' / 'measure_gallery.py'
+    busy = tmp_path / 'busy'
+    busy.mkdir()
+    (busy / 'mine.txt').write_text('keep me', encoding='utf-8')
+    refused = subprocess.run(
+        [sys.executable, str(script), '--count', '10', '--root', str(busy)], capture_output=True, check=False
+    )
+    assert refused.returncode == 2 and (busy / 'mine.txt').is_file()
+    reused = subprocess.run(
+        [sys.executable, str(script), '--count', '10', '--root', str(busy), '--reuse'],
+        capture_output=True,
+        check=False,
+    )
+    assert reused.returncode == 2 and (busy / 'mine.txt').is_file()
+    fresh = tmp_path / 'fresh'
+    made = subprocess.run(
+        [sys.executable, str(script), '--count', '60', '--root', str(fresh)], capture_output=True, check=False
+    )
+    assert made.returncode == 0, made.stderr.decode(errors='replace')
+    assert (fresh / '.ax-measure').is_file() and (fresh / 'output' / 'reviews.json').is_file()
