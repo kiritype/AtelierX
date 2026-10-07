@@ -186,3 +186,55 @@ def test_the_civitai_key_is_kept_as_a_vault_reference(unlocked):
     saved = c.put('/api/image/settings/downloads', json={'civitai_key': 'secret:civitai', 'nsfw': True})
     assert saved.status_code == 200
     assert c.get('/api/image/settings/downloads').json() == {'civitai_key': 'secret:civitai', 'nsfw': True}
+
+
+def test_search_leaves_out_adult_models_and_images_unless_asked(paths, tmp_path, monkeypatch):
+    downloads, _ = _downloads(paths, tmp_path, monkeypatch)
+    asked = []
+    page = {
+        'items': [
+            {
+                'id': 1,
+                'name': 'Ink',
+                'type': 'LORA',
+                'nsfw': False,
+                'creator': {'username': 'a'},
+                'stats': {'downloadCount': 5},
+                'modelVersions': [
+                    {
+                        'id': 11,
+                        'name': 'v1',
+                        'baseModel': 'Anima',
+                        'images': [
+                            {'url': 'https://img/adult.jpg', 'nsfwLevel': 8},
+                            {'url': 'https://img/safe.jpg', 'nsfwLevel': 1},
+                        ],
+                    }
+                ],
+            },
+            {
+                'id': 2,
+                'name': 'Adult',
+                'type': 'LORA',
+                'nsfw': True,
+                'modelVersions': [{'id': 21, 'images': []}],
+            },
+        ],
+        'metadata': {'nextCursor': 'abc|1'},
+    }
+
+    def fake_json(url):
+        asked.append(url)
+        return page
+
+    monkeypatch.setattr(downloads, '_json', fake_json)
+    found = downloads.search('ink', 'LORA', 'Anima', 'Newest', False, '')
+    assert [i['name'] for i in found['items']] == ['Ink'] and found['next'] == 'abc|1'
+    assert found['items'][0]['image'] == 'https://img/safe.jpg'
+    assert found['items'][0]['url'].endswith('/models/1?modelVersionId=11')
+    assert 'nsfw=false' in asked[0] and 'types=LORA' in asked[0] and 'baseModels=Anima' in asked[0]
+    every = downloads.search('', 'bogus', 'bogus', 'bogus', True, 'bad cursor!')
+    assert [i['name'] for i in every['items']] == ['Ink', 'Adult'] and every['items'][0][
+        'image'
+    ] == 'https://img/adult.jpg'
+    assert 'types=' not in asked[1] and 'cursor=' not in asked[1] and 'nsfw=true' in asked[1]

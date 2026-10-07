@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { msgText, t, tm } from '../../i18n';
 import { useToast } from '../Toasts';
@@ -30,7 +30,7 @@ type Inspected = { path: string; name: string; size: number; sha256: string; inf
 const KINDS = ['checkpoints', 'diffusion_models', 'loras', 'text_encoders', 'vae', 'embeddings', 'upscale_models'];
 const mb = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${Math.max(1, Math.round(n / 1024 ** 2))} MB`);
 
-export default function ModelGet({ openSettings }: { openSettings?: (section?: 'image' | 'install') => void }) {
+export default function ModelGet({ openSettings, handed }: { openSettings?: (section?: 'image' | 'install') => void; handed?: { address: string; at: number } | null }) {
   const qc = useQueryClient();
   const toast = useToast();
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
@@ -45,11 +45,17 @@ export default function ModelGet({ openSettings }: { openSettings?: (section?: '
     refetchInterval: (q) => ((q.state.data?.jobs ?? []).some((j) => j.status === 'running' || j.status === 'queued') ? 1500 : false),
   });
   const version = read?.versions.find((v) => v.id === versionId) ?? read?.versions[0];
+  useEffect(() => {
+    if (!handed) return;
+    setAddress(handed.address);
+    readAddress(handed.address);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handed?.at]);
 
-  async function readAddress() {
+  async function readAddress(which = address) {
     setBusy(true);
     try {
-      const found = await post<Read>('/api/image/models/read', { address });
+      const found = await post<Read>('/api/image/models/read', { address: which });
       setRead(found);
       setVersionId(found.chosen_version ?? found.versions[0]?.id ?? null);
       setSubfolder('');
@@ -93,7 +99,7 @@ export default function ModelGet({ openSettings }: { openSettings?: (section?: '
         <div className="section-title">{t('models.get.from_civitai')}</div>
         <div className="row">
           <input className="grow" value={address} placeholder={t('models.get.address_hint')} onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && address.trim() && readAddress()} />
-          <button className="primary" disabled={!address.trim() || busy} onClick={readAddress}>
+          <button className="primary" disabled={!address.trim() || busy} onClick={() => readAddress()}>
             {busy ? t('models.get.reading') : t('models.get.read')}
           </button>
         </div>

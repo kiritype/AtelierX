@@ -2347,5 +2347,18 @@
   "server.presets.share.expired": "The package was read too long ago. Choose the file again.",
   "server.presets.share.none": "Choose the style presets to export.",
   "server.presets.share.too_big": "The package is larger than 64 MB.",
-  "server.presets.share.too_big_inside": "A file in the package is too large: {name}"
+  "server.presets.share.too_big_inside": "A file in the package is too large: {name}",
+  "models.tab.search": "Search",
+  "models.search.query": "Search Civitai",
+  "models.search.go": "Search",
+  "models.search.sort_label": "Order",
+  "models.search.sort.Highest Rated": "Highest rated",
+  "models.search.sort.Most Downloaded": "Most downloaded",
+  "models.search.sort.Newest": "Newest",
+  "models.search.nsfw": "Include NSFW",
+  "models.search.nsfw_hint": "Shows adult models and adult preview images too. The last choice is kept.",
+  "models.search.pick_hint": "Click to read this model in the Get tab.",
+  "models.search.none": "No models found.",
+  "models.search.loading": "Searching Civitai…",
+  "models.search.more": "More"
 }

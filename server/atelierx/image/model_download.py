@@ -23,6 +23,7 @@ import shutil
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path, PureWindowsPath
@@ -55,6 +56,11 @@ FOLDER_KEYS = (
 SAFE_NAME = re.compile(r'^[^\\/:*?"<>|\x00-\x1f]{1,200}$')
 MODEL_EXT = ('.safetensors', '.ckpt', '.pt', '.pth', '.bin', '.gguf')
 CHUNK = 1024 * 1024
+# Civitai search (#161): what the screen may ask for.
+SEARCH_PAGE = 24
+SEARCH_TYPES = ('Checkpoint', 'LORA', 'LoCon', 'DoRA', 'TextualInversion', 'VAE', 'Upscaler')
+SEARCH_BASES = ('Anima', 'Illustrious', 'NoobAI', 'Pony', 'SDXL 1.0', 'Krea 2')
+SEARCH_SORTS = ('Highest Rated', 'Most Downloaded', 'Newest')
 
 
 def parse_address(text):
@@ -129,6 +135,50 @@ class ModelDownloads:
             raise ValueError(
                 Msg('server.models.civitai_unreachable', 'Civitai could not be reached.')
             ) from error
+
+    def search(self, query='', kind='', base='', sort='', nsfw=False, cursor=''):
+        """One page of Civitai models. Without ``nsfw``, adult models and adult preview images are left out."""
+        params = {'limit': SEARCH_PAGE, 'nsfw': 'true' if nsfw else 'false'}
+        if str(query or '').strip():
+            params['query'] = str(query).strip()[:200]
+        if kind in SEARCH_TYPES:
+            params['types'] = kind
+        if base in SEARCH_BASES:
+            params['baseModels'] = base
+        if sort in SEARCH_SORTS:
+            params['sort'] = sort
+        if cursor and re.fullmatch(r'[A-Za-z0-9|_.\-]{1,200}', str(cursor)):
+            params['cursor'] = cursor
+        data = self._json(f'{CIVITAI}/api/v1/models?{urllib.parse.urlencode(params)}')
+        items = []
+        for model in data.get('items') or []:
+            if model.get('nsfw') and not nsfw:
+                continue
+            version = (model.get('modelVersions') or [{}])[0]
+            images = [
+                i
+                for i in version.get('images') or []
+                if nsfw or (i.get('nsfwLevel') or 1) <= 1 and not i.get('nsfw')
+            ]
+            stats = model.get('stats') or {}
+            items.append(
+                {
+                    'id': model.get('id'),
+                    'name': model.get('name'),
+                    'type': model.get('type'),
+                    'nsfw': bool(model.get('nsfw')),
+                    'creator': (model.get('creator') or {}).get('username') or '',
+                    'base_model': version.get('baseModel') or '',
+                    'version': version.get('name') or '',
+                    'image': (images[0].get('url') if images else None),
+                    'image_is_video': bool(images and images[0].get('type') == 'video'),
+                    'downloads': stats.get('downloadCount') or 0,
+                    'likes': stats.get('thumbsUpCount') or 0,
+                    # The version shown is the one the get tab opens.
+                    'url': f'{CIVITAI}/models/{model.get("id")}?modelVersionId={version.get("id")}',
+                }
+            )
+        return {'items': items, 'next': (data.get('metadata') or {}).get('nextCursor')}
 
     def read(self, address):
         """What a Civitai address offers: the model, its versions and their files."""
