@@ -102,3 +102,16 @@ def test_a_verdict_on_many_images_scans_once(paths):
     reviews.review({'verdict': 'pass', 'items': [A]})
     # The previous state is left as it was (a failed save would keep it).
     assert next(r for r in before['records'].values() if r['path'] == A)['human'] == 'fail'
+
+
+def test_an_adopted_image_replaced_within_a_rescan_is_not_exported(paths):
+    _image(paths, A, record={'work_id': 'W001'})
+    gallery = Gallery(paths)
+    reviews = ReviewStore(paths, gallery)
+    reviews.review({'verdict': 'pass', 'items': [A]})
+    assert reviews.plan_export({})['count'] == 1
+    # New content right away: the index has not rescanned yet, the export still sees the change.
+    target = paths.output / A
+    target.write_bytes(_png((255, 0, 0)) + b'changed')
+    _touch_later(target)
+    assert reviews.plan_export({})['count'] == 0
