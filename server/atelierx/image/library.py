@@ -191,6 +191,9 @@ def clean_item(kind, item, rules):
     elif kind == 'compositions':
         slots = {s['id'] for s in rules['slots']}
         out['suggest_slots'] = [s for s in item.get('suggest_slots') or [] if s in slots]
+        # No outfit at all in this composition (#162); its visible slots are then not used.
+        if item.get('hide_outfit'):
+            out['hide_outfit'] = True
     elif kind == 'common':
         out['target'] = 'negative' if item.get('target') == 'negative' else 'positive'
         out['default'] = bool(item.get('default', True))

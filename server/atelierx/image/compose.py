@@ -98,14 +98,17 @@ class Composer:
         )
         composition = self._pick('compositions', composition_id, 'Composition') if composition_id else None
 
+        # A composition that hides the outfit (#162: a bath, a bed) leaves the whole outfit part out; the expression says
+        # what is worn instead (completely nude, pajamas …).
+        hidden = bool(composition and composition.get('hide_outfit'))
         order = [s['id'] for s in self.rules['slots']]
-        defined = [s for s in order if s in (outfit.get('slots') or {})]
+        defined = [] if hidden else [s for s in order if s in (outfit.get('slots') or {})]
         wanted = target.get('outfit_slots') or options.get('outfit_slots')
         if not wanted and composition and composition.get('suggest_slots'):
             # 'full' (one-piece outfits) always shows; otherwise only what the framing reveals.
             wanted = [*composition['suggest_slots'], 'full']
         slots = [s for s in defined if not wanted or s in wanted]
-        outfit_prompt, outfit_negative = [], list(outfit.get('negative') or [])
+        outfit_prompt, outfit_negative = [], [] if hidden else list(outfit.get('negative') or [])
         for slot in slots:
             prompt, negative = self._slot(outfit, slot)
             outfit_prompt += prompt
@@ -205,7 +208,9 @@ class Composer:
             'expression_name': expression.get('name', expression['id']),
             'rating': expression.get('rating'),
             'composition_id': composition['id'] if composition else None,
+            'composition_name': composition.get('name', composition['id']) if composition else None,
             'outfit_slots': slots,
+            'outfit_hidden': hidden,
             'common_ids': common_ids,
             'style_ids': options.get('style_ids') or [],
             'trigger': design.get('trigger'),

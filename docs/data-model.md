@@ -710,7 +710,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 |---|---|---|
 | `compose.json` | 조합 규칙 (전역만) | `order`(조합 순서), `slots`(의상 부위와 순서), `ratings`(표정 등급과 순서), `targets`(사용 대상 목록) |
 | `expressions.json` | 표정 | `name`, `code`(배포 코드, 선택), `rating`, `prompt`, `negative`, `composition`(어울리는 구도 id) |
-| `compositions.json` | 구도 | `name`, `prompt`, `negative`, `suggest_slots`(이 구도에서 보이는 의상 부위) |
+| `compositions.json` | 구도·배경 | `name`, `prompt`(프레이밍·배경 태그), `negative`, `suggest_slots`(이 구도에서 보이는 의상 부위, 비면 전부), `hide_outfit`(선택, `true`면 의상 칸과 의상 negative를 넣지 않음) |
 | `styles.json` | 화풍 | `name`, `prompt` |
 | `common.json` | 공통 프롬프트 | `name`, `target`(`positive`·`negative`), `prompt` |
 | `outfits.json` | 공용 의상 부위 | `name`, `slot`, `prompt`, `negative` |
@@ -795,7 +795,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "work_id": "W001", "character_id": "C001",
   "outfit_id": "o01", "outfit_name": "근무복",
   "expression_id": "smile", "expression_name": "미소", "rating": "general",
-  "composition_id": "upper_front", "outfit_slots": ["top", "full"],
+  "composition_id": "upper_front", "composition_name": "상반신 정면", "outfit_slots": ["top", "full"], "outfit_hidden": false,
   "service": "comfyui",
   "common_ids": ["quality"], "style_ids": [], "trigger": "w001_c001", "model_family": "anima",
   "parts": {"common": "…", "style": "", "composition": "…", "trigger": "", "appearance": "…",

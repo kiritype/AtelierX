@@ -2,7 +2,7 @@
   "schema_version": 1,
   "items": {
     "quality": {"name": "품질 기본", "group": "품질", "target": "positive", "prompt": ["masterpiece", "best quality"], "targets": ["sdxl", "anima", "pixai"]},
-    "background_simple": {"name": "단색 배경", "group": "배경", "target": "positive", "prompt": ["simple background", "white background"]},
+    "background_simple": {"name": "단색 배경", "group": "배경", "target": "positive", "default": false, "prompt": ["simple background", "white background"]},
     "negative_basic": {"name": "기본 negative", "group": "품질", "target": "negative", "prompt": ["lowres", "bad anatomy", "bad hands", "extra fingers", "blurry", "watermark", "text"], "targets": ["sdxl", "anima", "pixai"]}
   }
 }
