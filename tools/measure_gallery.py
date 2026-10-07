@@ -205,6 +205,8 @@ def memory(paths, work):
 
 
 def main():
+    # The report is Korean; a console in another code page (cp1252 …) would fail on it.
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--count', type=int, default=20000)
     parser.add_argument('--pad-kb', type=int, default=0)
