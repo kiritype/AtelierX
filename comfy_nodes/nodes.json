@@ -42,22 +42,6 @@
       "note": "Installs ultralytics (AGPL-3.0), which censor detection and the person mask also use."
     }
   ],
-  "known": [
-    {
-      "id": "res4lyf",
-      "repo": "https://github.com/ClownsharkBatwing/RES4LYF",
-      "license": "RES4LYF License (not OSI; forbids offering it as a commercial service)",
-      "provides": ["res_2m", "res_3m", "res_2s", "res_3s", "res_5s", "res_6s", "deis_2m", "deis_3m", "beta57", "bong_tangent"],
-      "note": "Not installed by the app. Used when the user installed it; beta57 works without it."
-    },
-    {
-      "id": "dcw",
-      "repo": "",
-      "license": "unknown (no license file)",
-      "provides": ["DCWModelPatch"],
-      "note": "Not installed by the app. Used when the user installed it."
-    }
-  ],
   "tested_packages": {"ultralytics": "8.4.150", "rembg": "2.0.85", "onnxruntime": "1.30.0"},
   "features": {
     "tagger": "WD14 tagging (image tools)",

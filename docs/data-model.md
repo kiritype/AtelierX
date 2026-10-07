@@ -808,9 +808,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
                "shift": 4.0,
                "upscale": {"model": "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors", "scale": 1.5, "steps": 12,
                            "denoise": 0.3, "cfg": 4.0},
-               "detailer": {"stages": {"face": 0.35, "hand": 0.4}, "steps": 20},
-               "patches": [{"node": "SkimmedCFG_LinInterp_CFG_PreCFG", "inputs": {"skimming_cfg": 4.0}}],
-               "fallback": {"sampler": "er_sde", "scheduler": "beta"}},
+               "detailer": {"stages": {"face": 0.35, "hand": 0.4}, "steps": 20}},
   "generation_preset": {"id": "default", "name": "기본"},
   "seed": 471458691,
   "image_size": [1536, 1536],
@@ -827,15 +825,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
     다시 그린다. `cfg`가 없으면 1차 CFG. `null`이면 하지 않는다.
   - `detailer`: `stages`의 부위(`face`·`eye`·`mouth`·`hand`)를 부위별 denoise(0.05~1)로 얼굴 → 눈 → 입 → 손 순서로 다시 그린다.
     `null`이거나 부위가 없으면 하지 않는다.
-  - 커스텀 노드([결정 0026](decisions/0026-custom-nodes.md)):
-    - `patches`: 모델 패치 노드 목록 `{node, inputs, enabled?}`. `node`는 이미지 생성 서버의 노드 이름, `inputs`는 그 노드의
-      설정값(연결 입력 제외). 빠진 필수 값은 노드의 기본값으로 채운다. `enabled: false`면 목록에 남기되 그래프에서 뺀다. 최대 8개.
-    - `sampler`·`scheduler`는 노드 팩이 더한 이름이어도 된다. `beta57`은 서버 목록에 없으면 기본 노드(Beta 스케줄러 0.5·0.7 +
-      사용자 지정 샘플러)로 만든다. 이때 서버가 `sigmas: {kind, alpha, beta}`를 채운다(사용자가 쓰지 않음).
-    - `fallback`: `{sampler?, scheduler?}`. 샘플러·스케줄러 노드가 없을 때 대신 쓸 기본 이름.
-    - `missing`: `ask`(기본, 없으면 요청을 막고 목록을 돌려줌) 또는 `skip`(빼고 생성).
-    - `skipped`: 빼고 생성했을 때 뺀 이름들(서버가 씀).
-  - 순서는 LoRA → shift → 모델 패치 → 1차 생성 → 업스케일 → 디테일러이고, 모두 이미지 생성 서버의 작업 하나다. 이미지 도구의 디테일러·인페인트는
+  - 순서는 LoRA → shift → 1차 생성 → 업스케일 → 디테일러이고, 모두 이미지 생성 서버의 작업 하나다. 이미지 도구의 디테일러·인페인트는
     기록의 1차 생성 부분만 다시 쓴다.
 - PNG에도 같은 정보를 넣는다: `prompt`(서버용 그래프), `workflow`(편집기용 그래프), `atelierx`(이 기록에서 `workflow`를 뺀 것).
 - 기록이 없거나 깨진 이미지도 갤러리에는 보인다(다시 생성만 안 됨).
