@@ -57,6 +57,10 @@ cd web && npm test && npm run typecheck && npm run build
 - **Save conflicts**: JSON that several screens edit is saved with a revision; a save based on stale content is refused with
   409 (`server.save.stale`, `core/revisions.py`).
 - **Unsaved changes**: editing screens register with `useUnsaved`, so closing a tab, leaving and locking ask first.
+- **API**: server routes live in `routes()` of the area modules `server/atelierx/api/*_routes.py`, gathered by `app.py`.
+  Shared helpers are in `api/common.py` (`ok`, `body`, `st`, `work_of`). A new or changed API gets a response type on the screen
+  side (`web/src/types.ts`, image ones in `web/src/imageTypes.ts`) instead of `any`. Server-side format checks stay plain
+  functions such as `clean_*`.
 - **Data formats** are defined only in [docs/data-model.md](docs/data-model.md). Changing a format updates that document and
   `schema_version` and adds a conversion that reads the old format.
 - **Manual**: when UI text or behavior changes, update `docs/manual/` too. Screenshots use made-up data, never personal works
