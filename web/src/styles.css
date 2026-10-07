@@ -412,7 +412,8 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .ok-text { color: var(--success); }
 .gallery { display: grid; grid-template-columns: 220px 1fr; height: 100%; min-height: 0; }
 .gallery-tree { border-right: 1px solid var(--border); overflow: auto; gap: 1px; }
-.tree-link { border: 0; background: transparent; text-align: left; padding: 3px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* flex-shrink: 0 — in a scrolling column list the list scrolls instead of squeezing the rows (overflow: hidden lets them shrink, #149). */
+.tree-link { border: 0; background: transparent; text-align: left; padding: 3px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .tree-link:hover { background: var(--panel-2); }
 .tree-link.on { background: var(--selected); font-weight: 600; }
 .gallery-main { min-height: 0; overflow: hidden; gap: 0; }
