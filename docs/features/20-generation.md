@@ -77,6 +77,8 @@
 - 미리보기: 프리셋마다 한 장, 같은 프롬프트(`1girl, solo, safe`)와 같은 시드. 생성·비교 대기열로 만들고, 끝나면 프리셋 옆에
   WebP로 둔다. 설정이 바뀌면 "오래됨". "없거나 오래된 미리보기 만들기"로 한꺼번에 넣는다. 지금은 ComfyUI 프리셋만.
 - "생성 화면에 적용"은 생성 화면을 열고 그 프리셋을 고른다(서비스가 다르면 서비스도 바꿈).
+- 공유: 체크한 것(없으면 전부)을 ZIP으로 내보내고, 가져올 때는 먼저 보여 준 뒤 프리셋마다 고른다. 모델·LoRA 파일은 이름·해시·
+  Civitai 주소만 담고, 받는 쪽은 없는 파일 목록을 본다.
 
 ### 예외 흐름
 
@@ -138,6 +140,9 @@
 | `POST /api/image/presets/{id}/preview` | 미리보기 한 장을 대기열에 |
 | `GET /api/image/presets/{id}/preview.webp` | 미리보기 그림 |
 | `GET·PUT /api/image/settings/presets` | 미리보기 시드 `{preview_seed}` |
+| `GET /api/image/presets/export?ids=` | 그림체 프리셋 꾸러미(ZIP). `ids`가 없으면 전부 |
+| `POST /api/image/presets/import/preview` | 꾸러미 읽기(본문 ZIP) → `{token, items: [{id, name, service, exists, preview, missing}]}` |
+| `POST /api/image/presets/import` | 가져오기 `{token, choices: {id: add·replace·skip·{as}}}` → `{written, presets}` |
 | `POST /api/works/{id}/image/regenerate` | 이미지 하나 다시 `{image, seed: "new" | "same", overrides?}` |
 | `POST /api/image/lab` | 생성·비교 실행 `{positive, negative, settings, count, sweep?: {key, values, lora_index?}, source?}` |
 | `GET /api/image/lab/runs` | 최근 실행(격자 칸: 행·열·시드·값·상태·이미지) |
