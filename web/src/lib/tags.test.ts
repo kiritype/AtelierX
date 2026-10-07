@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bracketOpen, pasteInto, splitPrompt } from './tags';
+import { bracketOpen, isNote, pasteInto, splitPrompt, splitTags, stripNotes } from './tags';
 
 describe('pasteInto', () => {
   it('replaces the selection', () => {
@@ -52,5 +52,22 @@ describe('bracketOpen', () => {
     expect(bracketOpen('(upper body,')).toBe(true);
     expect(bracketOpen('(upper body, straight-on:1.4),')).toBe(false);
     expect(bracketOpen('n \\(m,')).toBe(false);
+  });
+});
+
+describe('notes in prompts (#157)', () => {
+  it('keeps a note as one entry to the end of its line', () => {
+    expect(splitPrompt('smile, # tried: grin, laughing\nblue sky')).toEqual(['smile', '# tried: grin, laughing', 'blue sky']);
+    expect(splitPrompt('film grain # maybe')).toEqual(['film grain', '# maybe']);
+    expect(splitPrompt('memories_off#5, ririka_(#compass), \\#compass')).toEqual(['memories_off#5', 'ririka_(#compass)', '\\#compass']);
+    expect(isNote('# why')).toBe(true);
+    expect(isNote('\\#compass')).toBe(false);
+  });
+
+  it('strips notes the way the server does', () => {
+    expect(stripNotes('masterpiece, smile, # tried: grin, laughing\n# whole line\nblue sky,#gone\n\\#compass, (a, b:1.2)')).toBe(
+      'masterpiece, smile\nblue sky\n#compass, (a, b:1.2)',
+    );
+    expect(splitTags('smile # note, laughing')).toEqual(['smile']);
   });
 });

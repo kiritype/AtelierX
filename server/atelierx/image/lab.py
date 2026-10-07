@@ -15,6 +15,7 @@ from pathlib import PurePosixPath
 
 from ..core.i18n import Msg
 from . import library
+from .comments import strip_text
 from .util import atomic_json, code, now, read_json, replace_file
 from .workflow import validate_settings
 
@@ -143,8 +144,13 @@ class LabMixin:
     """Lab part of ``ImageRuntime`` (expects comfy, lock, jobs, persist, gallery)."""
 
     def enqueue_lab(self, body):
-        positive = _text(body.get('positive', ''), Msg('server.lab.positive_prompt', 'Positive prompt'))
-        negative = _text(body.get('negative', ''), Msg('server.lab.negative_prompt', 'Negative prompt'))
+        # Notes (#157) are left out of what is sent and recorded.
+        positive = strip_text(
+            _text(body.get('positive', ''), Msg('server.lab.positive_prompt', 'Positive prompt'))
+        )
+        negative = strip_text(
+            _text(body.get('negative', ''), Msg('server.lab.negative_prompt', 'Negative prompt'))
+        )
         if not positive:
             raise ValueError(Msg('server.lab.enter_a_positive_prompt', 'Enter a positive prompt.'))
         count = body.get('count', 1)

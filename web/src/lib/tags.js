@@ -11,6 +11,27 @@ export function tagAt(text, caret) {
   return {start, end, word: text.slice(start, end)};
 }
 
+// A note (#157): a "#" that starts a tag (line start, after a comma or a space) runs to the end of the line and is never
+// sent. A "#" inside a tag is part of it; a tag that starts with "#" is written "\#compass". Same rule as the server.
+const NOTE = /(?:^|(?<=[\s,]))#/;
+
+/** True for an entry that is a note. */
+export function isNote(entry) {
+  return String(entry || '').trimStart().startsWith('#');
+}
+
+/** Prompt text without notes, as the server sends it: a note ends its line, a line left empty goes. */
+export function stripNotes(text) {
+  const lines = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const found = NOTE.exec(line);
+    let kept = (found ? line.slice(0, found.index) : line).replaceAll('\\#', '#');
+    kept = found ? kept.replace(/[\s,]+$/, '') : kept.trimEnd();
+    if (kept.trim()) lines.push(kept);
+  }
+  return lines.join('\n').trim();
+}
+
 /**
  * Prompt text as entries to keep, in order (#148): split at commas and line breaks that are outside brackets, so a
  * weighted group "(upper body, straight-on:1.4)" stays whole. Escaped brackets ("\(") do not count; entries are
@@ -30,6 +51,15 @@ export function splitPrompt(text) {
     const ch = s[i];
     if (ch === '\\' && i + 1 < s.length) {
       current += ch + s[++i];
+      continue;
+    }
+    // A note keeps the rest of its line, commas included, as one entry (#157).
+    if (ch === '#' && depth === 0 && (!current.trim() || /\s$/.test(current))) {
+      push();
+      const end = s.slice(i).search(/\r?\n/);
+      current = end < 0 ? s.slice(i) : s.slice(i, i + end);
+      i = end < 0 ? s.length : i + end;
+      push();
       continue;
     }
     if ('([{'.includes(ch)) depth++;
@@ -62,7 +92,7 @@ export function bracketOpen(text) {
 
 /** Tags of a prompt in order, without weights or escapes: "(smile:1.2)" -> "smile". */
 export function splitTags(text) {
-  return String(text || '')
+  return stripNotes(text)
     .split(/[,\n]/)
     .map((tag) => unwrap(tag.trim().replace(/:[\d.]+(?=[)\]}]*$)/, '')).replace(/\\([()])/g, '$1'))
     .filter(Boolean);

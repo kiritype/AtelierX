@@ -7,6 +7,7 @@ the request (or a generation preset). Parts are joined in the order of compose.j
 
 from ..core.i18n import Msg
 from . import library
+from .comments import strip_tag, strip_text
 from .util import read_json
 
 OVERRIDABLE = ('common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative')
@@ -17,7 +18,8 @@ def _join(*groups):
     out = []
     for group in groups:
         for tag in group or []:
-            tag = str(tag).strip()
+            # A note (#157) stays in the library and the design, never in the prompt.
+            tag = strip_tag(tag)
             if tag and tag not in out:
                 out.append(tag)
     return out
@@ -192,7 +194,7 @@ class Composer:
                             'A prompt edit must be text of at most 30,000 characters.',
                         )
                     )
-                texts[key] = value.strip()
+                texts[key] = strip_text(value)
 
         order_keys = [k for k in self.rules['order'] if k in parts]
         return {
