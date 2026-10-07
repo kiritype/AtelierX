@@ -4,8 +4,9 @@ A file's family is decided in this order:
 
 1. its folder: ``anima/...`` or ``sdxl/...`` below the model folder,
 2. a manual choice saved in ``config/image/models.json``,
-3. the ``BaseModel`` of a Stability Matrix ``.cm-info.json`` next to it,
-4. the safetensors header (tensor names and training metadata).
+3. the base model Civitai gave when the person looked the file up (#161, ``data/image/model-info.json``),
+4. the ``BaseModel`` of a Stability Matrix ``.cm-info.json`` next to it,
+5. the safetensors header (tensor names and training metadata).
 
 Files that match none stay ``unknown`` and can be set by hand.
 """
@@ -93,6 +94,10 @@ class ModelProfiles:
         self.path = settings_file(paths, 'models.json')
         self._cache = {}
         self._lock = threading.Lock()
+        # The Civitai base model of a looked-up file, and a finder that also knows the image server's own folders
+        # (both set by the image runtime from the model library, #161).
+        self.looked_up = None
+        self.find = None
 
     def settings(self):
         if self.path.is_file():
@@ -113,6 +118,10 @@ class ModelProfiles:
         return None
 
     def locate(self, kind, name):
+        if self.find is not None:
+            found = self.find(kind, name)
+            if found is not None:
+                return found
         base = self.models_dir()
         if base is None:
             return None
@@ -133,6 +142,10 @@ class ModelProfiles:
         path = self.locate(kind, name)
         if path is None:
             return None, 'missing'
+        if self.looked_up is not None:
+            family = family_from_base_model(self.looked_up(path))
+            if family:
+                return family, 'civitai'
         stat = path.stat()
         key = (str(path), stat.st_size, stat.st_mtime_ns)
         with self._lock:

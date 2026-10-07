@@ -223,6 +223,27 @@ async def preset_preview_file(request):
     return FileResponse(library.preview_file(runtime.paths, ident), headers={'Cache-Control': 'no-cache'})
 
 
+async def models_list(request):
+    return await call(_runtime(request).model_items)
+
+
+async def models_lookup(request):
+    runtime = _runtime(request)
+    data = await _body(request)
+    return await call(runtime.model_library.lookup, str(data.get('kind', '')), str(data.get('name', '')))
+
+
+async def models_preview(request):
+    runtime = _runtime(request)
+    kind, name = request.query_params.get('kind', ''), request.query_params.get('name', '')
+    from ..image.model_info import KINDS
+
+    path = await run_in_threadpool(runtime.model_library.preview_file, kind, name) if kind in KINDS else None
+    if path is None:
+        raise AppError(Msg('server.image.file_missing', 'The file does not exist.'), 404)
+    return FileResponse(path, headers={'Cache-Control': 'max-age=3600'})
+
+
 async def presets_export(request):
     runtime = _runtime(request)
     ids = [i for i in request.query_params.get('ids', '').split(',') if i]
@@ -503,6 +524,9 @@ def routes():
         Route(f'{p}/locate', locate),
         Route(f'{p}/catalog', catalog),
         Route(f'{p}/models/family', model_family, methods=['PUT']),
+        Route(f'{p}/models/list', models_list),
+        Route(f'{p}/models/lookup', models_lookup, methods=['POST']),
+        Route(f'{p}/models/preview', models_preview),
         Route(f'{p}/gpu', gpu_status),
         Route(f'{p}/gpu/reserve', gpu_reserve, methods=['POST']),
         Route(f'{p}/gpu/release', gpu_release, methods=['POST']),
