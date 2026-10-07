@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { get } from '../../api';
 import { t, tm } from '../../i18n';
 
@@ -29,7 +30,17 @@ export type GenerationSettings = {
   shift?: number | null;
   upscale?: Upscale | null;
   detailer?: Detailer | null;
+  // Custom nodes (#178): model patches in order, names to use when a node-pack sampler or scheduler is missing.
+  patches?: Patch[];
+  fallback?: { sampler?: string; scheduler?: string };
+  missing?: 'ask' | 'skip';
 };
+export type Patch = { node: string; inputs: Record<string, PatchValue>; enabled?: boolean };
+type PatchValue = number | string | boolean;
+type PatchField = { type: 'INT' | 'FLOAT' | 'BOOLEAN' | 'STRING' | 'COMBO'; default?: PatchValue; min?: number; max?: number; step?: number; options?: string[]; optional?: boolean };
+export type PatchNode = { label: string; module: string; inputs: Record<string, PatchField> };
+// Schedulers the server draws with built-in nodes when ComfyUI does not list them.
+const SCHEDULER_ALIASES = ['beta57'];
 
 export type Catalog = {
   connected: boolean;
@@ -43,6 +54,7 @@ export type Catalog = {
   defaults: GenerationSettings;
   upscale_models?: string[];
   nodes?: { upscale?: boolean; detailer?: boolean };
+  patch_nodes?: Record<string, PatchNode>;
   families?: { models?: Record<string, string | null>; loras?: Record<string, string | null> };
 };
 
@@ -81,19 +93,36 @@ export default function GenSettings({ value, onChange }: { value: GenerationSett
       <input type="number" step={step} style={{ width }} value={(value[key] as number | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value === '' ? undefined : Number(e.target.value) })} />
     </label>
   );
-  const pick = (key: keyof GenerationSettings, label: string, options: string[], allowEmpty?: string) => (
-    <label className="col gen-field">
-      <span className="muted">{label}</span>
-      <select value={(value[key] as string | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined })}>
-        {allowEmpty !== undefined && <option value="">{allowEmpty}</option>}
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {base(o)}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  const pick = (key: keyof GenerationSettings, label: string, options: string[], allowEmpty?: string, extra: string[] = []) => {
+    const current = value[key] as string | undefined;
+    // A name ComfyUI does not list (a node pack's sampler from a preset) stays visible, marked.
+    const absent = current && !options.includes(current) && !extra.includes(current) ? [current] : [];
+    return (
+      <label className="col gen-field">
+        <span className="muted">{label}</span>
+        <select value={current ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined })}>
+          {allowEmpty !== undefined && <option value="">{allowEmpty}</option>}
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {base(o)}
+            </option>
+          ))}
+          {extra
+            .filter((o) => !options.includes(o))
+            .map((o) => (
+              <option key={o} value={o}>
+                {t('gen.alias_option', { name: o })}
+              </option>
+            ))}
+          {absent.map((o) => (
+            <option key={o} value={o}>
+              {t('gen.absent_option', { name: o })}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  };
 
   return (
     <div className="col gen-settings">
@@ -118,7 +147,7 @@ export default function GenSettings({ value, onChange }: { value: GenerationSett
       </div>
       <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {pick('sampler', t('gen.sampler'), c.samplers, t('gen.default'))}
-        {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'))}
+        {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'), SCHEDULER_ALIASES)}
         {num('steps', t('gen.steps'))}
         {num('cfg', 'CFG', 0.5)}
         {num('width', t('gen.width'), 16, 84)}
@@ -182,7 +211,190 @@ export default function GenSettings({ value, onChange }: { value: GenerationSett
       )}
       <UpscaleFields value={value} set={set} catalog={c} />
       <DetailerFields value={value} set={set} catalog={c} />
+      <PatchFields value={value} set={set} catalog={c} />
     </div>
+  );
+}
+
+// Custom nodes (#178): model patches built from the node's own input list, and the fallback names.
+function PatchFields({ value, set, catalog }: { value: GenerationSettings; set: (patch: GenerationSettings) => void; catalog: Catalog }) {
+  const nodes = catalog.patch_nodes ?? {};
+  const patches = value.patches ?? [];
+  const [adding, setAdding] = useState('');
+  const [filter, setFilter] = useState('');
+  const [open, setOpen] = useState(patches.length > 0 || !!value.fallback);
+  const names = Object.keys(nodes)
+    .filter((n) => !filter || `${n} ${nodes[n].label} ${nodes[n].module}`.toLowerCase().includes(filter.toLowerCase()))
+    .sort((a, b) => nodes[a].label.localeCompare(nodes[b].label));
+  const change = (n: number, patch: Partial<Patch>) => set({ patches: patches.map((p, i) => (i === n ? { ...p, ...patch } : p)) });
+  const move = (n: number, by: number) => {
+    const next = [...patches];
+    const [item] = next.splice(n, 1);
+    next.splice(n + by, 0, item);
+    set({ patches: next });
+  };
+  const add = (name: string) => {
+    const spec = nodes[name];
+    const inputs: Record<string, PatchValue> = {};
+    for (const [key, field] of Object.entries(spec.inputs)) if (!field.optional && field.default !== undefined) inputs[key] = field.default;
+    set({ patches: [...patches, { node: name, inputs }] });
+    setAdding('');
+  };
+  const samplerMissing = !!value.sampler && !catalog.samplers.includes(value.sampler);
+  const schedulerMissing = !!value.scheduler && !catalog.schedulers.includes(value.scheduler) && !SCHEDULER_ALIASES.includes(value.scheduler);
+  const fallback = value.fallback ?? {};
+  const setFallback = (patch: { sampler?: string; scheduler?: string }) => {
+    const next = { ...fallback, ...patch };
+    set({ fallback: next.sampler || next.scheduler ? next : undefined });
+  };
+  return (
+    <div className="col gen-stage">
+      <button className="ghost row" style={{ gap: 6, justifyContent: 'flex-start' }} onClick={() => setOpen(!open)}>
+        <span>{open ? '▾' : '▸'}</span>
+        <strong>{t('gen.patches')}</strong>
+        {patches.length > 0 && <span className="chip small">{patches.filter((p) => p.enabled !== false).length}</span>}
+      </button>
+      {(samplerMissing || schedulerMissing) && (
+        <span className="warn-text small">{t('gen.pack_name_missing', { names: [samplerMissing && value.sampler, schedulerMissing && value.scheduler].filter(Boolean).join(', ') })}</span>
+      )}
+      {open && (
+        <>
+          <span className="faint small">{t('gen.patches_hint')}</span>
+          {patches.map((patch, n) => {
+            const spec = nodes[patch.node];
+            return (
+              <div key={n} className={patch.enabled === false ? 'col gen-patch faint' : 'col gen-patch'}>
+                <div className="row" style={{ gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={patch.enabled !== false}
+                    aria-label={t('gen.patch_enabled')}
+                    title={t('gen.patch_enabled')}
+                    onChange={(e) => change(n, { enabled: e.target.checked ? undefined : false })}
+                  />
+                  <strong title={patch.node}>{spec?.label ?? patch.node}</strong>
+                  {!spec && <span className="warn-text small">{t('gen.patch_missing', { name: patch.node })}</span>}
+                  <span className="grow" />
+                  <button className="ghost small" disabled={n === 0} onClick={() => move(n, -1)} aria-label={t('gen.move_up')}>
+                    ↑
+                  </button>
+                  <button className="ghost small" disabled={n === patches.length - 1} onClick={() => move(n, 1)} aria-label={t('gen.move_down')}>
+                    ↓
+                  </button>
+                  <button className="ghost small" onClick={() => set({ patches: patches.filter((_, i) => i !== n) })} aria-label={t('common.delete')}>
+                    ×
+                  </button>
+                </div>
+                {spec && (
+                  <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    {Object.entries(spec.inputs).map(([key, field]) => (
+                      <PatchInput
+                        key={key}
+                        name={key}
+                        field={field}
+                        value={patch.inputs[key]}
+                        onChange={(v) => {
+                          const inputs = { ...patch.inputs };
+                          if (v === undefined) delete inputs[key];
+                          else inputs[key] = v;
+                          change(n, { inputs });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {Object.keys(nodes).length > 0 ? (
+            <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+              <input placeholder={t('gen.patch_search')} value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: 160 }} />
+              <select value={adding} onChange={(e) => setAdding(e.target.value)} style={{ maxWidth: 320 }}>
+                <option value="">{t('gen.patch_choose', { n: names.length })}</option>
+                {names.map((name) => (
+                  <option key={name} value={name}>
+                    {nodes[name].label === name ? name : `${nodes[name].label} (${name})`}
+                  </option>
+                ))}
+              </select>
+              <button disabled={!adding || patches.length >= 8} onClick={() => add(adding)}>
+                {t('gen.add_patch')}
+              </button>
+            </div>
+          ) : (
+            <span className="faint small">{t('gen.no_patch_nodes')}</span>
+          )}
+          <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <span className="muted small" style={{ alignSelf: 'center' }}>
+              {t('gen.fallback')}
+            </span>
+            <label className="col gen-field">
+              <span className="muted">{t('gen.sampler')}</span>
+              <select value={fallback.sampler ?? ''} onChange={(e) => setFallback({ sampler: e.target.value || undefined })}>
+                <option value="">{t('gen.default')}</option>
+                {catalog.samplers.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="col gen-field">
+              <span className="muted">{t('gen.scheduler')}</span>
+              <select value={fallback.scheduler ?? ''} onChange={(e) => setFallback({ scheduler: e.target.value || undefined })}>
+                <option value="">{t('gen.default')}</option>
+                {catalog.schedulers.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PatchInput({ name, field, value, onChange }: { name: string; field: PatchField; value: PatchValue | undefined; onChange: (value: PatchValue | undefined) => void }) {
+  const shown = value ?? field.default;
+  if (field.type === 'BOOLEAN')
+    return (
+      <label className="row gen-field" style={{ gap: 4 }}>
+        <input type="checkbox" checked={!!shown} onChange={(e) => onChange(e.target.checked)} />
+        <span className="muted">{name}</span>
+      </label>
+    );
+  return (
+    <label className="col gen-field">
+      <span className="muted">
+        {name}
+        {field.optional ? ` (${t('gen.optional')})` : ''}
+      </span>
+      {field.type === 'COMBO' ? (
+        <select value={String(shown ?? '')} onChange={(e) => onChange(e.target.value)}>
+          {(field.options ?? []).map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : field.type === 'STRING' ? (
+        <input value={String(value ?? '')} placeholder={field.default === undefined ? '' : String(field.default)} onChange={(e) => onChange(e.target.value === '' && field.optional ? undefined : e.target.value)} />
+      ) : (
+        <input
+          type="number"
+          style={{ width: 84 }}
+          step={field.step ?? (field.type === 'INT' ? 1 : 0.01)}
+          min={field.min}
+          max={field.max}
+          title={field.min !== undefined || field.max !== undefined ? `${field.min ?? ''} ~ ${field.max ?? ''}` : undefined}
+          value={shown === undefined ? '' : Number(shown)}
+          onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+        />
+      )}
+    </label>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { type ComponentType, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post } from '../../api';
+import { Dialog } from '../ui';
 import { t, tm } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
 import type { ImageServices } from '../ImageServiceSettings';
@@ -56,6 +57,13 @@ function takeHanded(): Target[] | null {
   }
 }
 
+// What check-nodes reports (#178): a sampler, scheduler or model patch ComfyUI lacks, and the pack that has it.
+type MissingNode = {
+  kind: 'sampler' | 'scheduler' | 'patch';
+  name: string;
+  pack?: { id: string; repo?: string | null; license?: string | null; installable: boolean; note?: string | null } | null;
+};
+
 export default function ImageGenerate({ workId, openQueue, openItem, openSettings, characterId, outfitId }: { workId: string; openQueue: () => void; openItem: (path: string) => void; openSettings?: () => void; characterId?: string; outfitId?: string }) {
   const toast = useToast();
   const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
@@ -75,6 +83,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const [commonIds, setCommonIds] = useState<string[] | null>(null);
   const [presetId, setPresetId] = useState('');
   const [settings, setSettings] = useState<GenerationSettings>({ family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 });
+  const [missing, setMissing] = useState<{ items: MissingNode[]; request: Record<string, unknown> } | null>(null);
   // Where the images are made (#41): ComfyUI on this PC or an internet service. Each keeps its own last settings.
   const services = useQuery<ImageServices>({ queryKey: ['image-services'], queryFn: () => get('/api/image/services') });
   const [service, setServiceState] = useState(() => lastService(workId));
@@ -138,6 +147,33 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   });
 
   useEffect(() => setPreview(null), [chars, exprs, composition, styleIds, commonIds, settings, handed, service, serviceSettings]);
+
+  async function send(request: Record<string, unknown>) {
+    let result;
+    try {
+      result = await post(`/api/works/${workId}/image/jobs`, request);
+    } catch (err) {
+      // The same request went to a paid service a moment ago (#42): ask before sending it again.
+      if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat') || !confirm(tm(err.msg))) throw err;
+      result = await post(`/api/works/${workId}/image/jobs`, { ...request, repeat_ok: true });
+    }
+    toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
+    setHanded(null); // the board's combinations are queued now; queuing them again would double them
+  }
+
+  async function sendWithout() {
+    if (!missing) return;
+    const request = missing.request as { settings?: GenerationSettings };
+    setMissing(null);
+    setBusy(true);
+    try {
+      await send({ ...request, settings: { ...request.settings, missing: 'skip' } });
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function applyPreset(id: string) {
     setPresetId(id);
@@ -359,16 +395,15 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
                   count,
                   ...(reviewSettings.data?.enabled ? { llm: reviewLlm } : {}),
                 };
-                let result;
-                try {
-                  result = await post(`/api/works/${workId}/image/jobs`, request);
-                } catch (err) {
-                  // The same request went to a paid service a moment ago (#42): ask before sending it again.
-                  if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat') || !confirm(tm(err.msg))) throw err;
-                  result = await post(`/api/works/${workId}/image/jobs`, { ...request, repeat_ok: true });
+                if (!internet) {
+                  // Custom nodes the settings need but ComfyUI lacks (#178): ask before queueing.
+                  const check: { missing: MissingNode[] } = await post('/api/image/generate/check-nodes', request);
+                  if (check.missing.length) {
+                    setMissing({ items: check.missing, request });
+                    return;
+                  }
                 }
-                toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
-                setHanded(null); // the board's combinations are queued now; queuing them again would double them
+                await send(request);
               } catch (err) {
                 fail(err);
               } finally {
@@ -379,6 +414,38 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             {t('gen.enqueue')}
           </button>
         </div>
+        {missing && (
+          <Dialog
+            title={t('gen.missing_title')}
+            onClose={() => setMissing(null)}
+            actions={
+              <>
+                {openSettings && missing.items.some((m) => m.pack?.installable) && <button onClick={openSettings}>{t('gen.missing_install')}</button>}
+                <button className="primary" onClick={sendWithout}>
+                  {t('gen.missing_skip')}
+                </button>
+              </>
+            }
+          >
+            <p>{t('gen.missing_body')}</p>
+            <ul className="col" style={{ gap: 4 }}>
+              {missing.items.map((m) => (
+                <li key={`${m.kind}:${m.name}`}>
+                  <strong className="mono">{m.name}</strong> <span className="faint">({t(`gen.missing_kind.${m.kind}`)})</span>
+                  {m.pack ? (
+                    <div className="faint small">
+                      {t(m.pack.installable ? 'gen.missing_pack_installable' : 'gen.missing_pack_user', { pack: m.pack.id, license: m.pack.license ?? '' })}
+                      {m.pack.repo ? ` · ${m.pack.repo}` : ''}
+                    </div>
+                  ) : (
+                    <div className="faint small">{t('gen.missing_pack_unknown')}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="faint small">{t('gen.missing_skip_hint')}</p>
+          </Dialog>
+        )}
         {preview && (
           <div className="col">
             {preview.map((p, n) => (
