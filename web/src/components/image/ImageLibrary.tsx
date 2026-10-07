@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, del, get, put } from '../../api';
 import { t, tm } from '../../i18n';
 import TagInput from '../TagInput';
@@ -7,6 +7,7 @@ import { useToast } from '../Toasts';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import { afterSave, followSelection } from '../../lib/libraryDraft';
+import LibraryImport from './LibraryImport';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'targets'];
@@ -66,6 +67,7 @@ function useFail() {
 function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 'targets'>; onDirty: (dirty: boolean) => void }) {
   const qc = useQueryClient();
   const fail = useFail();
+  const toast = useToast();
   const key = ['image-lib', kind, workId];
   const items = useQuery<Record<string, Item>>({ queryKey: key, queryFn: () => get(`/api/image/library/${kind}?work=${workId}`) });
   const rules = useQuery<Rules>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
@@ -77,6 +79,10 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<(Item & { scope: 'global' | 'work' }) | null>(null);
   const [filter, setFilter] = useState('');
+  // Items checked for export (#154); none checked exports the whole list.
+  const [checked, setChecked] = useState<string[]>([]);
+  const [importing, setImporting] = useState<unknown>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const list = Object.values(items.data ?? {}).filter((i) => !filter || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
   const groups = [...new Set(Object.values(items.data ?? {}).map((i) => i.group ?? '').filter(Boolean))];
   const targets = rules.data?.targets ?? [];
@@ -164,11 +170,55 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
           <input className="grow" placeholder={t('lib.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />
           <button onClick={create}>+</button>
         </div>
+        <div className="row pad small" style={{ paddingTop: 0, paddingBottom: 4, gap: 6 }}>
+          <a
+            className={`button small${Object.keys(items.data ?? {}).length ? '' : ' disabled'}`}
+            href={
+              Object.keys(items.data ?? {}).length
+                ? `/api/image/library-share/${kind}/export?work=${workId}${checked.length ? `&ids=${checked.join(',')}` : ''}`
+                : undefined
+            }
+            title={t('lib.share.export_hint')}
+          >
+            {checked.length ? t('lib.share.export_checked', { n: checked.length }) : t('lib.share.export_all')}
+          </a>
+          <button className="small" onClick={() => fileInput.current?.click()}>
+            {t('lib.share.import')}
+          </button>
+          {checked.length > 0 && (
+            <button className="small" onClick={() => setChecked([])}>
+              {t('lib.share.uncheck')}
+            </button>
+          )}
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              try {
+                setImporting(JSON.parse(await file.text()));
+              } catch {
+                toast({ text: t('lib.share.not_json'), tone: 'error' });
+              }
+            }}
+          />
+        </div>
         {byGroup(list).map(({ group, items: grouped }) => (
           <div key={group || '-'}>
             {(group || groups.length > 0) && <div className="lib-group-title">{group || t('lib.no_group')}</div>}
             {grouped.map((item) => (
               <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => pick(item.id)}>
+                <input
+                  type="checkbox"
+                  checked={checked.includes(item.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => setChecked(e.target.checked ? [...checked, item.id] : checked.filter((i) => i !== item.id))}
+                  aria-label={t('lib.share.check')}
+                />
                 <span className="grow">
                   {item.name} <span className="faint mono">{item.id}</span>
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
@@ -181,6 +231,19 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
           </div>
         ))}
         {list.length === 0 && <div className="empty">{t('lib.empty')}</div>}
+        {importing !== null && (
+          <LibraryImport
+            kind={kind}
+            workId={workId}
+            file={importing}
+            onClose={() => setImporting(null)}
+            onDone={(written, result) => {
+              qc.setQueryData(key, result);
+              setImporting(null);
+              toast({ text: t('lib.share.imported', { n: written.length }) });
+            }}
+          />
+        )}
       </div>
       <div className="image-lib-edit pad col">
         {!draft ? (
