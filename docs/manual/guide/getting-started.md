@@ -2,7 +2,7 @@
 
 ## 준비물
 
-[릴리스 페이지](https://github.com/kiritype/AtelierX/releases/latest)의 Windows x64 포터블 패키지와 Windows 10/11 x64 PC가 필요합니다. PC에 Microsoft Edge WebView2 Runtime과 .NET Framework 4.8이 준비되어야 합니다. Python, Node.js, Git은 앱 실행에 필요하지 않습니다. 아직 테스트 단계의 버전이며 확인한 범위는 [검증 범위](release-status.md)에 있습니다. 처음이라면 [처음 사용하기](../tutorial/first-run.md)를 따라가는 편이 빠릅니다.
+[릴리스 페이지](https://github.com/kiritype/AtelierX/releases/latest)의 Windows x64 포터블 패키지와 Windows 10/11 x64 PC가 필요합니다. PC에 Microsoft Edge WebView2 Runtime과 .NET Framework 4.8이 준비되어야 합니다. Python, Node.js, Git은 앱 실행에 필요하지 않습니다. 1.0 이전 버전이며 확인한 범위는 [검증 범위](release-status.md)에 있습니다. 처음이라면 [처음 사용하기](../tutorial/first-run.md)를 따라가는 편이 빠릅니다.
 
 ## 압축 풀고 실행
 
