@@ -7,6 +7,7 @@ import { useToast } from '../Toasts';
 import GenSettings, { type GenerationSettings } from './GenSettings';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
+import { followSelection } from '../../lib/libraryDraft';
 
 type Kind = 'expressions' | 'compositions' | 'styles' | 'common' | 'outfits' | 'presets' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'styles', 'common', 'outfits', 'presets', 'targets'];
@@ -33,16 +34,29 @@ type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; nam
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
 export default function ImageLibrary({ workId }: { workId: string }) {
   const [kind, setKind] = useState<Kind>('expressions');
+  // Whether the open editor has unsaved changes: switching the kind would drop them (#167).
+  const [dirty, setDirty] = useState(false);
+  function chooseKind(next: Kind) {
+    if (next === kind || (dirty && !confirm(t('lib.discard_confirm')))) return;
+    setDirty(false);
+    setKind(next);
+  }
   return (
     <div className="image-lib">
       <div className="image-lib-kinds">
         {KINDS.map((k) => (
-          <div key={k} className={`tree-row${kind === k ? ' sel' : ''}`} onClick={() => setKind(k)}>
+          <div key={k} className={`tree-row${kind === k ? ' sel' : ''}`} onClick={() => chooseKind(k)}>
             {t(`lib.kind.${k}`)}
           </div>
         ))}
       </div>
-      {kind === 'presets' ? <Presets workId={workId} /> : kind === 'targets' ? <Targets /> : <Items key={kind} workId={workId} kind={kind} />}
+      {kind === 'presets' ? (
+        <Presets workId={workId} onDirty={setDirty} />
+      ) : kind === 'targets' ? (
+        <Targets onDirty={setDirty} />
+      ) : (
+        <Items key={kind} workId={workId} kind={kind} onDirty={setDirty} />
+      )}
     </div>
   );
 }
@@ -52,7 +66,7 @@ function useFail() {
   return (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
 }
 
-function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets' | 'targets'> }) {
+function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 'presets' | 'targets'>; onDirty: (dirty: boolean) => void }) {
   const qc = useQueryClient();
   const fail = useFail();
   const key = ['image-lib', kind, workId];
@@ -70,9 +84,11 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
   const groups = [...new Set(Object.values(items.data ?? {}).map((i) => i.group ?? '').filter(Boolean))];
   const targets = rules.data?.targets ?? [];
 
+  // The draft follows the selection. A list fetched again (focus, another save) does not replace an edit in progress;
+  // only the first load of the selected item fills an empty editor (#167).
   useEffect(() => {
     const item = selected ? items.data?.[selected] : null;
-    setDraft(item ? { ...item, scope: item.scope ?? 'global' } : null);
+    setDraft((current) => followSelection(current, selected, item ? { ...item, scope: item.scope ?? 'global' } : null));
   }, [selected, items.data]);
   // The item being edited differs from what is stored (a new one always does) until it is saved.
   const stored = draft ? items.data?.[draft.id] : undefined;
@@ -83,23 +99,50 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
           .filter((i) => i.id !== draft.id && (i.code ?? '').trim() === draft.code!.trim())
           .map((i) => `${i.name} (${i.id})`)
       : [];
-  useUnsaved(`library-${kind}`, !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft)));
+  const dirty = !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft));
+  useUnsaved(`library-${kind}`, dirty);
+  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  // A work item saved as global moves there (the work copy is removed, #147); global saved as work overrides it here.
+  const movingToGlobal = stored?.scope === 'work' && draft?.scope === 'global';
+  const overridingGlobal = stored?.scope === 'global' && draft?.scope === 'work';
+
+  function pick(id: string) {
+    if (id === selected && draft?.id === id) return;
+    if (dirty && !confirm(t('lib.discard_confirm'))) return;
+    const item = items.data?.[id];
+    setSelected(id);
+    setDraft(item ? { ...item, scope: item.scope ?? 'global' } : null);
+  }
 
   async function save() {
     if (!draft) return;
+    const { id, scope, ...item } = draft;
+    if (movingToGlobal && stored?.overrides && !confirm(t('lib.replace_global_confirm', { id }))) return;
     try {
-      const { id, scope, ...item } = draft;
-      const result = await put(`/api/image/library/${kind}/${id}`, { scope, work: workId, item });
+      const result = await put<Record<string, Item>>(`/api/image/library/${kind}/${id}`, {
+        scope,
+        work: workId,
+        item,
+        ...(movingToGlobal ? { from_scope: 'work' } : {}),
+      });
       qc.setQueryData(key, result);
+      const saved = result[id];
       setSelected(id);
+      setDraft(saved ? { ...saved, scope: saved.scope ?? 'global' } : null);
     } catch (err) {
       fail(err);
     }
   }
 
   function create() {
-    const ident = prompt(t('lib.new_id'));
+    if (dirty && !confirm(t('lib.discard_confirm'))) return;
+    const ident = prompt(t('lib.new_id'))?.trim();
     if (!ident) return;
+    // An id in use would silently overwrite or override that item (#147).
+    if (items.data?.[ident]) {
+      alert(t('lib.id_taken', { id: ident }));
+      return;
+    }
     const blank: Item & { scope: 'global' | 'work' } = {
       id: ident,
       name: ident,
@@ -110,7 +153,7 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
       ...(kind === 'common' ? { target: 'positive' as const, default: true } : {}),
       ...(kind === 'outfits' ? { slot: rules.data?.slots[0]?.id } : {}),
     };
-    setSelected(null);
+    setSelected(ident);
     setDraft(blank);
   }
 
@@ -125,7 +168,7 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
           <div key={group || '-'}>
             {(group || groups.length > 0) && <div className="lib-group-title">{group || t('lib.no_group')}</div>}
             {grouped.map((item) => (
-              <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => setSelected(item.id)}>
+              <div key={item.id} className={`list-row${selected === item.id ? ' sel' : ''}`} onClick={() => pick(item.id)}>
                 <span className="grow">
                   {item.name} <span className="faint mono">{item.id}</span>
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
@@ -153,6 +196,8 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
                 <option value="global">{t('lib.scope.global')}</option>
               </select>
             </div>
+            {overridingGlobal && <span className="faint small">{t('lib.scope_override_hint')}</span>}
+            {movingToGlobal && <span className="faint small">{t('lib.scope_move_hint')}</span>}
             <label className="col" style={{ gap: 2 }}>
               <span className="muted">{t('lib.name')}</span>
               <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
@@ -301,7 +346,7 @@ function Items({ workId, kind }: { workId: string; kind: Exclude<Kind, 'presets'
   );
 }
 
-function Presets({ workId }: { workId: string }) {
+function Presets({ workId, onDirty }: { workId: string; onDirty: (dirty: boolean) => void }) {
   const qc = useQueryClient();
   const fail = useFail();
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
@@ -309,10 +354,16 @@ function Presets({ workId }: { workId: string }) {
   const styles = useQuery<Record<string, Item>>({ queryKey: ['image-lib', 'styles', workId], queryFn: () => get(`/api/image/library/styles?work=${workId}`) });
   const [draft, setDraft] = useState<Preset | null>(null);
   const storedPreset = draft ? presets.data?.find((p) => p.id === draft.id) : undefined;
-  useUnsaved(
-    'library-presets',
-    !!draft && (!storedPreset || JSON.stringify({ ...storedPreset, settings: { ...storedPreset.settings, family: storedPreset.family } }) !== JSON.stringify(draft)),
-  );
+  const dirty =
+    !!draft && (!storedPreset || JSON.stringify({ ...storedPreset, settings: { ...storedPreset.settings, family: storedPreset.family } }) !== JSON.stringify(draft));
+  useUnsaved('library-presets', dirty);
+  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  // Opening another preset or a new one drops unsaved changes only when confirmed (#167).
+  const replaceDraft = (next: Preset) => {
+    if (draft?.id === next.id && !dirty) return;
+    if (dirty && !confirm(t('lib.discard_confirm'))) return;
+    setDraft(next);
+  };
 
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
   return (
@@ -322,15 +373,21 @@ function Presets({ workId }: { workId: string }) {
           <span className="grow faint">{t('lib.presets_note')}</span>
           <button
             onClick={() => {
-              const ident = prompt(t('lib.new_id'));
-              if (ident) setDraft({ id: ident, name: ident, family: 'anima', settings: { family: 'anima' }, common: [], styles: [] });
+              if (dirty && !confirm(t('lib.discard_confirm'))) return;
+              const ident = prompt(t('lib.new_id'))?.trim();
+              if (!ident) return;
+              if ((presets.data ?? []).some((p) => p.id === ident)) {
+                alert(t('lib.id_taken', { id: ident }));
+                return;
+              }
+              setDraft({ id: ident, name: ident, family: 'anima', settings: { family: 'anima' }, common: [], styles: [] });
             }}
           >
             +
           </button>
         </div>
         {(presets.data ?? []).map((p) => (
-          <div key={p.id} className={`list-row${draft?.id === p.id ? ' sel' : ''}`} onClick={() => setDraft({ ...p, settings: { ...p.settings, family: p.family } })}>
+          <div key={p.id} className={`list-row${draft?.id === p.id ? ' sel' : ''}`} onClick={() => replaceDraft({ ...p, settings: { ...p.settings, family: p.family } })}>
             <span className="grow">{p.name}</span>
             <span className="chip">{p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}</span>
           </div>
@@ -404,7 +461,7 @@ function Presets({ workId }: { workId: string }) {
 }
 
 // Image menu → Prompt library → Targets (#80): the model families and image services fragments are written for.
-function Targets() {
+function Targets({ onDirty }: { onDirty: (dirty: boolean) => void }) {
   const qc = useQueryClient();
   const fail = useFail();
   const rules = useQuery<Rules>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
@@ -412,6 +469,7 @@ function Targets() {
   useEffect(() => setList(rules.data?.targets ?? null), [rules.data]);
   const changed = !!list && JSON.stringify(list) !== JSON.stringify(rules.data?.targets);
   useUnsaved('library-targets', changed);
+  useEffect(() => onDirty(changed), [changed, onDirty]);
   if (!list) return null;
 
   async function save() {
