@@ -122,6 +122,25 @@ def test_edited_paths_clashes_ratings_and_retrying_only_some(unlocked):
     assert list(bucket.objects) == ['chat/003.webp']
 
 
+def test_the_gallery_range_holds_for_plan_and_upload(unlocked):
+    """The character or outfit chosen in the gallery limits what is planned and sent (#163)."""
+    c = unlocked
+    wid, _runtime, bucket = _setup(c)
+    _set_outfit_code(c, wid, 'uniform')
+    body = {'work': wid, 'target': 'main'}
+
+    def rows(**scope):
+        return len(c.post('/api/image/deploy/plan', json={**body, **scope}).json()['rows'])
+
+    assert rows(character='C001') == 2
+    assert rows(character='C001', outfit='o01') == 2
+    assert rows(character='C999') == 0
+    assert rows(character='C001', outfit='o99') == 0
+    # Uploading outside the range sends nothing.
+    assert c.post('/api/image/deploy/upload', json={**body, 'character': 'C999'}).status_code == 400
+    assert bucket.objects == {}
+
+
 def test_a_failed_file_is_reported_and_the_rest_go_on(unlocked):
     c = unlocked
     wid, runtime, bucket = _setup(c)
