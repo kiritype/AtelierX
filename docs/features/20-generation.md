@@ -68,6 +68,15 @@
 - 대기열의 진행 문구에 단계 구성("생성 중 → 업스케일 → 디테일러")을 보여 준다. 이미지 생성 서버의 결과는 HTTP로 확인하므로
   단계별 시간은 따로 재지 않는다.
 
+### 커스텀 노드 (#178)
+
+- 생성 설정과 프리셋에 **모델 패치**(모델을 받아 모델을 돌려주는 커스텀 노드, 여러 개·순서대로)를 둔다. 노드는 이미지 생성 서버가
+  가진 것에서 고르고, 설정 칸은 그 노드의 입력 정의로 만든다([결정 0026](../decisions/0026-custom-nodes.md)).
+- 샘플러·스케줄러는 노드 팩이 더한 이름도 고를 수 있다. 없을 때 대신 쓸 이름(`fallback`)을 함께 둔다. `beta57`은 노드 팩 없이도 된다.
+- 대기열에 넣기 전에 `check-nodes`로 없는 것을 확인하고, 있으면 **설치**(설치 목록에 있을 때) / **빼고 생성** / **취소**를 묻는다.
+  설치 목록에 없는 노드 팩은 출처와 라이선스를 보여 준다.
+- 이미 대기열에 있는 작업은 묻지 않고 빼고 생성하며, 뺀 것은 생성 기록의 `skipped`에 남는다.
+
 ### 예외 흐름
 
 - **서버 연결 안 됨**: 작업을 대기 상태로 두고 "이미지 생성 서버에 연결할 수 없어요"를 띄운다. 연결되면 이어서 실행한다.
@@ -123,6 +132,7 @@
 | `POST /api/image/connection/test` | 이미지 생성 서버 연결 시험, 모델 목록 |
 | `POST /api/works/{id}/image/generate/preview` | 생성 요청 미리보기(합계, 조합 예) |
 | `POST /api/works/{id}/image/generate` | 생성 요청 → 작업 |
+| `POST /api/image/generate/check-nodes` | 생성 설정에 필요한데 서버에 없는 것 `{missing: [{kind: sampler·scheduler·patch, name, pack?}]}` |
 | `POST /api/works/{id}/image/regenerate` | 이미지 하나 다시 `{image, seed: "new" | "same", overrides?}` |
 | `POST /api/image/lab` | 생성·비교 실행 `{positive, negative, settings, count, sweep?: {key, values, lora_index?}, source?}` |
 | `GET /api/image/lab/runs` | 최근 실행(격자 칸: 행·열·시드·값·상태·이미지) |
