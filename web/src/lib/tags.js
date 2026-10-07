@@ -11,6 +11,48 @@ export function tagAt(text, caret) {
   return {start, end, word: text.slice(start, end)};
 }
 
+/**
+ * Prompt text as entries to keep, in order (#148): split at commas and line breaks that are outside brackets, so a
+ * weighted group "(upper body, straight-on:1.4)" stays whole. Escaped brackets ("\(") do not count; entries are
+ * trimmed, empty ones dropped and repeats kept once. Weights and escapes are kept as written.
+ */
+export function splitPrompt(text) {
+  const out = [];
+  let depth = 0;
+  let current = '';
+  const push = () => {
+    const entry = current.trim();
+    if (entry && !out.includes(entry)) out.push(entry);
+    current = '';
+  };
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '\\' && i + 1 < s.length) {
+      current += ch + s[++i];
+      continue;
+    }
+    if ('([{'.includes(ch)) depth++;
+    else if (')]}'.includes(ch)) depth = Math.max(0, depth - 1);
+    if ((ch === ',' || ch === '\n' || ch === '\r') && depth === 0) push();
+    else current += ch;
+  }
+  push();
+  return out;
+}
+
+/** True while a bracket is left open (escaped brackets aside): typing a comma there does not end the entry. */
+export function bracketOpen(text) {
+  let depth = 0;
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\') i++;
+    else if ('([{'.includes(s[i])) depth++;
+    else if (')]}'.includes(s[i])) depth = Math.max(0, depth - 1);
+  }
+  return depth > 0;
+}
+
 /** Tags of a prompt in order, without weights or escapes: "(smile:1.2)" -> "smile". */
 export function splitTags(text) {
   return String(text || '')

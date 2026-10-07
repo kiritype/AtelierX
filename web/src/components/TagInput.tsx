@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { get } from '../api';
+import { bracketOpen, splitPrompt } from '../lib/tags';
 
 type Suggestion = { tag: string; category: string; count: number; alias?: string };
 
@@ -39,11 +40,9 @@ export default function TagInput({
     return () => clearTimeout(timer);
   }, [text]);
 
+  // Commas and line breaks outside brackets separate tags: a weighted group "(a, b:1.2)" stays one (#148).
   const add = (raw: string) => {
-    const tags = raw
-      .split(',')
-      .map((x) => x.trim())
-      .filter(Boolean);
+    const tags = splitPrompt(raw);
     if (tags.length) onChange([...values, ...tags.filter((x) => !values.includes(x))]);
     setText('');
     setSuggestions([]);
@@ -68,8 +67,16 @@ export default function TagInput({
             value={text}
             placeholder={values.length ? '' : placeholder}
             onChange={(e) => {
-              if (e.target.value.includes(',')) add(e.target.value);
+              // A comma ends the tag unless a bracket is still open (typing "(upper body, straight-on:1.4)").
+              if (e.target.value.includes(',') && !bracketOpen(e.target.value)) add(e.target.value);
               else setText(e.target.value);
+            }}
+            onPaste={(e) => {
+              // A one-line input turns pasted line breaks into spaces; take the clipboard text as it is.
+              const pasted = e.clipboardData.getData('text');
+              if (!/[,\n]/.test(pasted)) return;
+              e.preventDefault();
+              add(text + pasted);
             }}
             onKeyDown={(e) => {
               if (e.nativeEvent.isComposing) return;
