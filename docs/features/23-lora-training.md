@@ -14,8 +14,12 @@
    시험한 판으로 `<앱 폴더>/vendor/`에 받고, `uv sync`로 학습 도구 자신의 Python 환경(Python 3.13, CUDA PyTorch, 수 GB)을 만들고,
    모델 경로 패치를 적용한다. 학습 모델은 설정 → 설치 → 모델 → "LoRA 학습용 Anima 기반 모델"로 받는다. 명령줄로는
    `uv run python tools/install_trainer.py --yes`. 앱에는 학습 도구를 넣어 배포하지 않는다.
-2. 설정 → 이미지 → LoRA 학습: 학습 도구 폴더(비우면 `<앱 폴더>/vendor/anima_lora`), 그 Python, LoRA 출력 폴더(이미지 생성 서버의
-   LoRA 폴더), 학습 모델 파일(공식 Anima 기반: DiT·텍스트 인코더·VAE, 선택으로 생성에 쓰는 Anima 모델). 경로마다 찾았는지 표시한다.
+2. 설정 → 이미지 → LoRA 학습: 학습 도구 폴더(비우면 `<앱 폴더>/vendor/anima_lora`), 그 Python, LoRA 폴더(비우면 `output/loras/`),
+   학습 모델 파일(공식 Anima 기반: DiT·텍스트 인코더·VAE, 선택으로 생성에 쓰는 Anima 모델). 경로마다 찾았는지 표시한다.
+3. 같은 화면의 "ComfyUI 연결": 이미지 생성 서버의 LoRA 폴더 안에 `atelierx` 폴더 링크(Windows 정션)를 만들어 LoRA 폴더를
+   보이게 한다([결정 0025](../decisions/0025-lora-folder-link.md)). 상태는 연결됨·아직 연결하지 않음·끊김·이름 충돌·서버 폴더 안·서버 없음.
+   학습 환경 자동 준비도 연결한다. 앱 폴더를 옮겨 끊기면 [다시 연결]은 링크만 바꾼다. LoRA 폴더가 이미 서버의 LoRA 폴더 안이면
+   [AtelierX 폴더로 옮기기]로 파일을 `output/loras/`로 옮기고 캐릭터의 LoRA 등록 이름을 바꾼다.
 
 ### 학습 시작
 
@@ -64,8 +68,9 @@
 | `.atelierx/image/characters/<ID>/lora/models.json` | 읽기·쓰기 | [쓸 LoRA 목록](../data-model.md#쓸-lora-목록-loramodelsjson) |
 | `.atelierx/image/characters/<ID>/datasets/<D###>.json` | 읽기 | [22](22-datasets.md) |
 | 출력 루트 `<작품>/<캐릭터>/lora/<R###>/logs/` | 쓰기 | 학습 로그(`train.log`), 진행(`progress.jsonl`) |
-| LoRA 출력 폴더 | 쓰기 | 에폭 파일 |
-| `config/image/training.json` | 읽기·쓰기 | 학습 도구 폴더·Python, LoRA 출력 폴더, 학습 모델 파일 |
+| LoRA 폴더 | 쓰기 | 에폭 파일 |
+| 이미지 생성 서버의 LoRA 폴더 `atelierx` | 만들기 | LoRA 폴더를 가리키는 폴더 링크 |
+| `config/image/training.json` | 읽기·쓰기 | 학습 도구 폴더·Python, LoRA 폴더, 학습 모델 파일 |
 | 학습 도구 `configs/` | 쓰기 | 앱의 방식 파일, `presets.toml`의 앱 표시 구역(학습할 때마다 다시 씀) |
 
 ## 규칙
@@ -82,6 +87,8 @@
 |---|---|
 | `GET /api/image/training/status` | 학습 도구·패치·Python·LoRA 폴더·모델 파일을 찾았는지, 고를 수 있는 방식·학습 모델 |
 | `GET·PUT /api/image/settings/training` | 학습 설정 |
+| `GET·POST /api/image/training/lora-link` | 이미지 생성 서버 연결 상태 `{state, folder, comfy_folder, link}`, 연결·다시 연결 |
+| `POST /api/image/training/lora-link/move` | 서버 폴더 안의 LoRA를 `output/loras/`로 옮기고 연결 `{moved, link}` |
 | `POST /api/works/{id}/image/lora/{cid}/runs` | 학습 시작 `{dataset_id, params: {method, base, epochs, save_every, learning_rate}}` |
 | `POST …/runs/{rid}/cancel`, `GET …/runs/{rid}/log` | 멈추기, 로그 끝부분 |
 | `POST /api/works/{id}/image/lora/{cid}/models` | 등록 `{run_id, epoch, auto_apply?}` 또는 파일 추가 `{file, name?}` |
