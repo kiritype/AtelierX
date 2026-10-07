@@ -129,3 +129,57 @@ def _zip(files):
         for name, text in files.items():
             archive.writestr(name, text)
     return out.getvalue()
+
+
+def test_ids_that_differ_only_in_case_are_the_same_preset(unlocked, paths):
+    # Review of #196: on Windows "ink" and "Ink" are one file, so taking one for the other overwrote a preset.
+    c = unlocked
+    _preset(c, 'Ink', name='kept')
+    _preset(c, 'water')
+    package = c.get('/api/image/presets/export', params={'ids': 'water'}).content
+    seen = c.post('/api/image/presets/import/preview', content=package).json()
+    refused = c.post(
+        '/api/image/presets/import', json={'token': seen['token'], 'choices': {'water': {'as': 'ink'}}}
+    )
+    assert refused.status_code == 400 and refused.json()['error']['key'] == 'server.presets.share.bad_id'
+    names = {p['id']: p['name'] for p in c.get('/api/image/presets').json()}
+    assert names['Ink'] == 'kept' and 'ink' not in names
+    # A package's own id in another case is "already here".
+    c.delete('/api/image/presets/water')
+    _preset(c, 'WATER', name='local')
+    seen = c.post('/api/image/presets/import/preview', content=package).json()
+    assert seen['items'][0]['exists'] is True
+
+
+def test_a_refused_choice_writes_nothing_and_keeps_the_package_for_another_try(unlocked):
+    # Review of #196: the first preset was written before the second was refused, and the token was gone.
+    c = unlocked
+    _preset(c, 'ink', name='local')
+    _preset(c, 'water')
+    package = c.get('/api/image/presets/export').content
+    c.put('/api/image/presets/ink', json={'name': 'changed here', 'service': 'comfyui'})
+    seen = c.post('/api/image/presets/import/preview', content=package).json()
+    bad = {'ink': 'replace', 'water': {'as': 'ink'}}
+    refused = c.post('/api/image/presets/import', json={'token': seen['token'], 'choices': bad})
+    assert refused.status_code == 400
+    assert {p['id']: p['name'] for p in c.get('/api/image/presets').json()}['ink'] == 'changed here'
+    fixed = {'ink': 'replace', 'water': {'as': 'water_2'}}
+    done = c.post('/api/image/presets/import', json={'token': seen['token'], 'choices': fixed}).json()
+    assert sorted(done['written']) == ['ink', 'water_2']
+
+
+def test_members_that_unpack_too_large_are_refused_before_they_are_read(unlocked):
+    # Review of #196: a small ZIP could unpack a huge preview into memory.
+    c = unlocked
+    _preset(c, 'ink')
+    package = zipfile.ZipFile(io.BytesIO(c.get('/api/image/presets/export').content))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for name in package.namelist():
+            archive.writestr(name, package.read(name))
+        archive.writestr('presets/ink.webp', b'\0' * (17 * 1024**2))
+    assert len(out.getvalue()) < 200_000
+    refused = c.post('/api/image/presets/import/preview', content=out.getvalue())
+    assert (
+        refused.status_code == 400 and refused.json()['error']['key'] == 'server.presets.share.too_big_inside'
+    )
