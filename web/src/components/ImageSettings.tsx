@@ -432,6 +432,54 @@ type InstallStatus = {
   models?: { groups?: { id: string; license?: { name: string; url: string }; items: { size?: number; installed?: string | null }[] }[] };
 };
 
+type LinkState = { state: 'linked' | 'missing' | 'broken' | 'conflict' | 'inside' | 'no_comfy'; folder: string; comfy_folder: string | null; link: string | null };
+
+// Trained LoRAs stay in the app; ComfyUI reads them through an "atelierx" folder link (#160).
+function LoraLink() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const fail = useFail();
+  const link = useQuery<LinkState>({ queryKey: ['lora-link'], queryFn: () => get('/api/image/training/lora-link') });
+  const [busy, setBusy] = useState(false);
+  const s = link.data;
+  if (!s) return null;
+  async function act(url: string, confirmText?: string) {
+    if (confirmText && !confirm(confirmText)) return;
+    setBusy(true);
+    try {
+      const result = await post(url);
+      if (result?.moved) toast({ text: t('image_settings.lora_link.moved', { n: result.moved.length }) });
+      await qc.invalidateQueries({ queryKey: ['lora-link'] });
+      await qc.invalidateQueries({ queryKey: ['training-status'] });
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const tone = s.state === 'linked' || s.state === 'inside' ? 'ok-text' : s.state === 'missing' ? 'faint' : 'warn-text';
+  return (
+    <div className="col small" style={{ gap: 4 }}>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <span className="muted">{t('image_settings.lora_link.title')}</span>
+        <span className={tone}>{t(`image_settings.lora_link.${s.state}`)}</span>
+        {(s.state === 'missing' || s.state === 'broken') && (
+          <button disabled={busy} onClick={() => act('/api/image/training/lora-link')}>
+            {t(s.state === 'broken' ? 'image_settings.lora_link.reconnect' : 'image_settings.lora_link.connect')}
+          </button>
+        )}
+        {s.state === 'inside' && (
+          <button disabled={busy} onClick={() => act('/api/image/training/lora-link/move', t('image_settings.lora_link.move_confirm', { folder: s.folder }))}>
+            {t('image_settings.lora_link.move')}
+          </button>
+        )}
+      </div>
+      <span className="faint mono">{s.folder}{s.link ? `  ←  ${s.link}` : ''}</span>
+      <span className="faint">{t('image_settings.lora_link.note')}</span>
+    </div>
+  );
+}
+
 // LoRA training (23-lora-training): the separately installed trainer, where finished LoRAs go, and the training models.
 function TrainingSection() {
   const qc = useQueryClient();
@@ -536,6 +584,7 @@ function TrainingSection() {
         <span>{mark(s.files?.['official.dit'] && s.files?.['official.text_encoder'] && s.files?.['official.vae'])} {t('image_settings.training.ready_models')}</span>
         <span>{mark(s.lora_dir_found)} {t('image_settings.training.ready_output')}</span>
       </div>
+      <LoraLink />
       <details>
         <summary>{t('image_settings.training.manual')}</summary>
         <div className="col" style={{ marginTop: 8 }}>
@@ -553,7 +602,7 @@ function TrainingSection() {
           </label>
           <label className="row" style={{ gap: 4 }}>
             <span className="muted" style={{ minWidth: 110 }}>{t('image_settings.training.lora_dir')}</span>
-            <input className="mono grow" disabled={running || preparing} value={form.lora_dir} onChange={(e) => setForm({ ...form, lora_dir: e.target.value })} />
+            <input className="mono grow" disabled={running || preparing} placeholder="output/loras" value={form.lora_dir} onChange={(e) => setForm({ ...form, lora_dir: e.target.value })} />
             {mark(s.lora_dir_found)}
           </label>
           <div className="muted">{t('image_settings.training.official')}</div>

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from ...core.i18n import Msg
 from ..settings import MODEL_KEYS, get
+from .link import app_folder
 
 
 def shipped(paths):
@@ -76,7 +77,8 @@ def status(paths):
         'trainer_found': (trainer / 'train.py').is_file(),
         'python_found': (trainer / values['trainer_python']).is_file(),
         'patched': any(marker in text for marker in PATCH_MARKERS),
-        'lora_dir_found': bool(values.get('lora_dir')) and Path(values['lora_dir']).is_dir(),
+        'lora_dir_found': app_folder(paths, values).is_dir(),
+        'lora_dir': str(app_folder(paths, values)),
         'files': files,
         'bases': [{'id': k, 'label': v['label']} for k, v in configured_bases(values).items()],
         'methods': [{'id': k, 'label': v} for k, v in METHODS.items()],

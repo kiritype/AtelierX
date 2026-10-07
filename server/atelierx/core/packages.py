@@ -116,9 +116,11 @@ class Packages:
 
     # --- works: what goes in ----------------------------------------------------------------------------------------
     def _lora_dir(self):
+        # Trained LoRAs live in the app's LoRA folder (#160): output/loras/ unless the settings name another.
+        from ..image.lora.link import app_folder
+
         values = read_json(Path(self.paths.config) / 'image' / 'training.json') or {}
-        folder = values.get('lora_dir')
-        return Path(folder) if folder and Path(folder).is_dir() else None
+        return app_folder(self.paths, values)
 
     def _work_files(self, work, options):
         """``[(archive name, source path)]`` of one work, and its review subset."""

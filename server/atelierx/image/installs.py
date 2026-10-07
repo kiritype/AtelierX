@@ -28,6 +28,7 @@ from ..core.lifecycle import UNFINISHED
 from ..core.proc import NO_WINDOW, stop_tree
 from . import comfy_locate, node_install
 from . import settings as image_settings
+from .lora import link as lora_link
 from .lora import setup as trainer_setup
 from .util import now, read_json
 
@@ -523,15 +524,6 @@ class Installs:
                 )
             )
 
-        settings = trainer_setup.settings(self.paths)
-        if not settings.get('lora_dir') and not comfy_locate.suggest_lora_dir(folders):
-            raise ValueError(
-                Msg(
-                    'server.installs.no_lora_folder',
-                    'The image server has no usable LoRA output folder. Add a LoRA folder in ComfyUI, or set one in Settings → Image → LoRA training.',
-                )
-            )
-
         # Resolve every destination before downloading models or building the trainer environment.
         items = self._training_items()
         planned = []
@@ -648,13 +640,22 @@ class Installs:
         changes = {}
         if not image_settings.get(self.paths, 'training').get('trainer_dir'):
             changes['trainer_dir'] = str(folder)
-        if not values.get('lora_dir'):
-            suggested = comfy_locate.suggest_lora_dir(self.model_folders())
-            if suggested:
-                changes['lora_dir'] = suggested
         if changes:
             image_settings.save(self.paths, 'training', changes)
             self._say(f'Training settings: {", ".join(changes)} set.')
+        # Trained LoRAs stay in the app; ComfyUI reads them through a link (#160).
+        try:
+            linked = lora_link.connect(
+                self.paths,
+                image_settings.get(self.paths, 'training'),
+                self.model_folders(),
+                image_settings.get(self.paths, 'models').get('models_dir'),
+            )
+            self._say(
+                f'LoRA folder for ComfyUI: {linked["state"]} ({linked.get("link") or linked["folder"]})'
+            )
+        except ValueError as error:
+            self._say(f'LoRA folder not linked for ComfyUI: {message_of(error)}')
         self._fill_training_models()
 
     # --- image server restart ---------------------------------------------------------------------------------------
