@@ -222,10 +222,6 @@ async def compose_preview(request):
     return await call(runtime.preview, work, await _body(request))
 
 
-async def check_nodes(request):
-    return await call(_runtime(request).check_nodes, await _body(request))
-
-
 async def enqueue(request):
     runtime = _runtime(request)
     work = runtime.works.get(request.path_params['wid'])
@@ -525,5 +521,4 @@ def routes():
         Route('/api/works/{wid}/image/board/exclude', image_board_exclude, methods=['PUT']),
         Route('/api/works/{wid}/image/compose', compose_preview, methods=['POST']),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),
-        Route('/api/image/generate/check-nodes', check_nodes, methods=['POST']),
     ]

@@ -368,7 +368,6 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 /* A step after the first pass in the generation settings (#168). */
 .gen-stage { gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
-.gen-patch { gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
 .menu-heading { padding: 4px 14px 2px; font-size: 11px; color: var(--text-3); }
 .dot-status { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: var(--text-3); }
 .dot-status.ok { background: var(--success); }

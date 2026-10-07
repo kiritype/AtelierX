@@ -7,7 +7,6 @@ from pathlib import PureWindowsPath
 from typing import Any
 
 from ..core.i18n import Msg
-from . import extensions
 
 DEFAULTS: dict[str, Any] = {
     'model': 'anima_aestheticV11.safetensors',
@@ -155,11 +154,6 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
         value = result[key] = _resolve(result.get(key), choices)
         if not choices:
             raise ValueError(f'catalog.{catalog_key} must contain available choices')
-        if key in ('sampler', 'scheduler'):
-            # Node-pack names are checked with the patches (#178).
-            if not isinstance(value, str) or not value:
-                raise ValueError(f'{key} must be one of the available {catalog_key}')
-            continue
         if not isinstance(value, str) or value not in choices:
             raise ValueError(f'{key} must be one of the available {catalog_key}')
 
@@ -234,8 +228,6 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
             raise ValueError('shift must be between 0.5 and 20')
     result['upscale'] = _upscale_settings(result.get('upscale'), catalog)
     result['detailer'] = _detailer_settings(result.get('detailer'), catalog)
-    # Custom nodes (#178): model patches, node-pack sampler names, and what to do when they are missing.
-    extensions.apply(result, catalog, lambda key: _choice_names(catalog.get(key)), defaults(catalog))
     return result
 
 
@@ -426,12 +418,6 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         }
         model_ref = [str(next_id), 0]
         next_id += 1
-    for patch in settings.get('patches') or []:
-        if patch.get('enabled') is False:
-            continue
-        graph[str(next_id)] = {'class_type': patch['node'], 'inputs': {**patch['inputs'], 'model': model_ref}}
-        model_ref = [str(next_id), 0]
-        next_id += 1
     positive_id, negative_id, latent_id, sampler_id, decode_id, _preview_id = (
         str(next_id + n) for n in range(6)
     )
@@ -447,6 +433,26 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         'class_type': 'EmptyLatentImage',
         'inputs': {'width': settings['width'], 'height': settings['height'], 'batch_size': 1},
     }
+    graph[sampler_id] = {
+        'class_type': 'KSampler',
+        'inputs': {
+            'model': model_ref,
+            'positive': [positive_id, 0],
+            'negative': [negative_id, 0],
+            'latent_image': [latent_id, 0],
+            'seed': actual_seed,
+            'steps': settings['steps'],
+            'cfg': settings['cfg'],
+            'sampler_name': settings['sampler'],
+            'scheduler': settings['scheduler'],
+            'denoise': 1.0,
+        },
+    }
+    graph[decode_id] = {
+        'class_type': 'VAEDecode',
+        'inputs': {'samples': [sampler_id, 0], 'vae': vae_ref},
+    }
+    image_ref = [decode_id, 0]
     free = next_id + 6
 
     def add(node):
@@ -455,11 +461,13 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         free += 1
         return [str(free - 1), 0]
 
-    def sample(node_id, latent, steps, cfg, denoise):
-        """KSampler, or for a scheduler served by a built-in alias (beta57) the custom sampler with its sigmas."""
-        sigmas = settings.get('sigmas')
-        if not sigmas:
-            node = {
+    upscale = settings.get('upscale')
+    if upscale:
+        # Enlarge, then redraw lightly at the new size with the same model, prompts and seed (#168).
+        enlarged = add(upscale_node(image_ref, upscale['model'], upscale['scale']))
+        latent = add({'class_type': 'VAEEncode', 'inputs': {'pixels': enlarged, 'vae': vae_ref}})
+        redrawn = add(
+            {
                 'class_type': 'KSampler',
                 'inputs': {
                     'model': model_ref,
@@ -467,73 +475,13 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
                     'negative': [negative_id, 0],
                     'latent_image': latent,
                     'seed': actual_seed,
-                    'steps': steps,
-                    'cfg': cfg,
+                    'steps': upscale['steps'],
+                    'cfg': upscale.get('cfg', settings['cfg']),
                     'sampler_name': settings['sampler'],
                     'scheduler': settings['scheduler'],
-                    'denoise': denoise,
+                    'denoise': upscale['denoise'],
                 },
             }
-        else:
-            # Like KSampler's denoise: the schedule for steps / denoise, of which the last ``steps`` are run.
-            total = steps if denoise >= 1 else int(steps / denoise)
-            schedule = add(
-                {
-                    'class_type': 'BetaSamplingScheduler',
-                    'inputs': {
-                        'model': model_ref,
-                        'steps': total,
-                        'alpha': sigmas['alpha'],
-                        'beta': sigmas['beta'],
-                    },
-                }
-            )
-            if total > steps:
-                split = add(
-                    {'class_type': 'SplitSigmas', 'inputs': {'sigmas': schedule, 'step': total - steps}}
-                )
-                schedule = [split[0], 1]
-            node = {
-                'class_type': 'SamplerCustomAdvanced',
-                'inputs': {
-                    'noise': add({'class_type': 'RandomNoise', 'inputs': {'noise_seed': actual_seed}}),
-                    'guider': add(
-                        {
-                            'class_type': 'CFGGuider',
-                            'inputs': {
-                                'model': model_ref,
-                                'positive': [positive_id, 0],
-                                'negative': [negative_id, 0],
-                                'cfg': cfg,
-                            },
-                        }
-                    ),
-                    'sampler': add(
-                        {'class_type': 'KSamplerSelect', 'inputs': {'sampler_name': settings['sampler']}}
-                    ),
-                    'sigmas': schedule,
-                    'latent_image': latent,
-                },
-            }
-        if node_id is None:
-            return add(node)
-        graph[node_id] = node
-        return [node_id, 0]
-
-    sample(sampler_id, [latent_id, 0], settings['steps'], settings['cfg'], 1.0)
-    graph[decode_id] = {
-        'class_type': 'VAEDecode',
-        'inputs': {'samples': [sampler_id, 0], 'vae': vae_ref},
-    }
-    image_ref = [decode_id, 0]
-
-    upscale = settings.get('upscale')
-    if upscale:
-        # Enlarge, then redraw lightly at the new size with the same model, prompts and seed (#168).
-        enlarged = add(upscale_node(image_ref, upscale['model'], upscale['scale']))
-        latent = add({'class_type': 'VAEEncode', 'inputs': {'pixels': enlarged, 'vae': vae_ref}})
-        redrawn = sample(
-            None, latent, upscale['steps'], upscale.get('cfg', settings['cfg']), upscale['denoise']
         )
         image_ref = add({'class_type': 'VAEDecode', 'inputs': {'samples': redrawn, 'vae': vae_ref}})
     detailer = settings.get('detailer')
@@ -557,10 +505,7 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
                         steps=detailer['steps'],
                         cfg=settings['cfg'],
                         sampler=settings['sampler'],
-                        # The detailer has its own scheduler list; an aliased one is drawn with its built-in kin.
-                        scheduler=(
-                            settings['sigmas']['kind'] if settings.get('sigmas') else settings['scheduler']
-                        ),
+                        scheduler=settings['scheduler'],
                         denoise=detailer['stages'][stage],
                     )
                 )
@@ -658,30 +603,7 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
             [('IMAGE', 'IMAGE')],
             [],
         ),
-        # The custom sampler for an aliased scheduler (#178).
-        'BetaSamplingScheduler': ([('model', 'MODEL')], [('SIGMAS', 'SIGMAS')], []),
-        'SplitSigmas': ([('sigmas', 'SIGMAS')], [('high_sigmas', 'SIGMAS'), ('low_sigmas', 'SIGMAS')], []),
-        'RandomNoise': ([], [('NOISE', 'NOISE')], []),
-        'CFGGuider': (
-            [('model', 'MODEL'), ('positive', 'CONDITIONING'), ('negative', 'CONDITIONING')],
-            [('GUIDER', 'GUIDER')],
-            [],
-        ),
-        'KSamplerSelect': ([], [('SAMPLER', 'SAMPLER')], []),
-        'SamplerCustomAdvanced': (
-            [
-                ('noise', 'NOISE'),
-                ('guider', 'GUIDER'),
-                ('sampler', 'SAMPLER'),
-                ('sigmas', 'SIGMAS'),
-                ('latent_image', 'LATENT'),
-            ],
-            [('output', 'LATENT'), ('denoised_output', 'LATENT')],
-            [],
-        ),
     }
-    # Model patches (#178): a model in, a model out, their settings as widgets.
-    patch_spec = ([('model', 'MODEL')], [('MODEL', 'MODEL')], [])
     positions = {
         'CheckpointLoaderSimple': (40, 100),
         'UNETLoader': (40, 100),
@@ -703,7 +625,7 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
     for key, api_node in prompt.items():
         node_id = api_to_ui[key]
         node_type = api_node['class_type']
-        input_defs, output_defs, widget_values = specs.get(node_type, patch_spec)
+        input_defs, output_defs, widget_values = specs[node_type]
         values = api_node['inputs']
         if node_type == 'CLIPTextEncode':
             widget_values = [values['text']]
@@ -719,16 +641,7 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
             ]
         elif node_type == 'ModelSamplingAuraFlow':
             widget_values = [values['shift']]
-        elif node_type == 'RandomNoise':
-            widget_values = [values['noise_seed'], 'fixed']
-        elif node_type not in specs or node_type in (
-            'AtelierXUpscale',
-            'AtelierXImpactDetailerPipeline',
-            'BetaSamplingScheduler',
-            'SplitSigmas',
-            'CFGGuider',
-            'KSamplerSelect',
-        ):
+        elif node_type in ('AtelierXUpscale', 'AtelierXImpactDetailerPipeline'):
             # Widget values in the order the node lists its settings.
             widget_values = [v for v in values.values() if not (isinstance(v, list) and len(v) == 2)]
         elif node_type == 'LoraLoader':
