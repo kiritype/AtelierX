@@ -210,6 +210,19 @@ async def preset_put(request):
     return await call(library.save_preset, runtime.paths, request.path_params['ident'], await _body(request))
 
 
+async def preset_preview(request):
+    runtime = _runtime(request)
+    return await call(runtime.enqueue_preset_preview, request.path_params['ident'])
+
+
+async def preset_preview_file(request):
+    runtime = _runtime(request)
+    ident = request.path_params['ident']
+    if not library.ITEM_ID.match(ident) or not library.preview_file(runtime.paths, ident).is_file():
+        raise AppError(Msg('server.image.file_missing', 'The file does not exist.'), 404)
+    return FileResponse(library.preview_file(runtime.paths, ident), headers={'Cache-Control': 'no-cache'})
+
+
 async def preset_delete(request):
     runtime = _runtime(request)
     return await call(library.delete_preset, runtime.paths, request.path_params['ident'])
@@ -490,6 +503,8 @@ def routes():
         Route(f'{p}/presets', presets_get),
         Route(f'{p}/presets/{{ident}}', preset_put, methods=['PUT']),
         Route(f'{p}/presets/{{ident}}', preset_delete, methods=['DELETE']),
+        Route(f'{p}/presets/{{ident}}/preview', preset_preview, methods=['POST']),
+        Route(f'{p}/presets/{{ident}}/preview.webp', preset_preview_file),
         Route(f'{p}/queue', queue_get),
         Route(f'{p}/queue/{{action}}', queue_action, methods=['POST']),
         Route(f'{p}/jobs/{{jid}}/{{action}}', job_action, methods=['POST']),

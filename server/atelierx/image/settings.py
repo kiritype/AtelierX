@@ -101,6 +101,13 @@ def _training(values, current):
     return result
 
 
+def _presets(values, current):
+    result = {**current}
+    if 'preview_seed' in values:
+        result['preview_seed'] = _integer(values['preview_seed'], 'preview_seed', 0, 2**32 - 1)
+    return result
+
+
 SECTIONS = {
     'gpu': (
         'gpu.json',
@@ -112,6 +119,8 @@ SECTIONS = {
         _gpu,
     ),
     'models': ('models.json', {'models_dir': ''}, _models),
+    # Style presets (#169): the one seed every preview uses, so the previews compare side by side.
+    'presets': ('presets.json', {'preview_seed': 1234567}, _presets),
     # Tags left out when tagger results are exported (watermarks, signatures ...).
     'tags': ('tags.json', {'exclude': []}, _tags),
     # LoRA training: the anima_lora folder and its Python, where finished LoRAs go, and the training models.

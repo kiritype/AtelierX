@@ -3,10 +3,12 @@ and style presets. Items live globally (data/image/) and per work (.atelierx/ima
 with the same id overrides the global one.
 """
 
+import hashlib
+import json
 import re
 
 from ..core.i18n import Msg
-from .util import atomic_json, read_json
+from .util import atomic_json, now, read_json
 
 KINDS = ('expressions', 'compositions', 'common', 'outfits')
 SCOPES = ('global', 'work')
@@ -246,6 +248,10 @@ SERVICES = ('comfyui', 'novelai', 'pixai')
 FAMILIES = ('anima', 'sdxl')
 MAX_PRESET_TAGS = 20
 MAX_ARTIST = 30000
+# One preview per preset (#169): the same subject and seed for all, rated safe so the comparison is fair.
+PREVIEW_PROMPT = '1girl, solo, safe'
+PREVIEW_NEGATIVE = 'nsfw, explicit, questionable, nude, nipples, topless, underwear, lingerie, bra, panties, swimsuit, cleavage'
+PREVIEW_SIDE = 1024
 
 
 def _presets_dir(paths):
@@ -282,17 +288,85 @@ def preset_doc(preset, ident):
             'negative': _text(artist.get('negative'), MAX_ARTIST),
         },
         'common': [str(x) for x in preset.get('common') or []],
+        **_preview_field(preset.get('preview')),
     }
 
 
+def _preview_field(value):
+    if not isinstance(value, dict) or not isinstance(value.get('hash'), str):
+        return {}
+    return {
+        'preview': {
+            'seed': value.get('seed') if isinstance(value.get('seed'), int) else 0,
+            'hash': value['hash'][:64],
+            'created_at': str(value.get('created_at') or '')[:40],
+        }
+    }
+
+
+def preview_hash(doc, seed):
+    """What the preview depends on: a change to any of it makes the preview stale."""
+    settings = {k: v for k, v in (doc.get('settings') or {}).items() if k != 'seed'}
+    keys = {k: doc.get(k) for k in ('service', 'family', 'artist', 'common')}
+    text = json.dumps({**keys, 'settings': settings, 'seed': seed}, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+
+
+def preview_file(paths, ident):
+    return _presets_dir(paths) / f'{ident}.webp'
+
+
 def presets(paths):
+    from .settings import get as settings_get
+
+    seed = settings_get(paths, 'presets')['preview_seed']
     folder = _presets_dir(paths)
     out = []
     if folder.is_dir():
         for path in sorted(folder.glob('*.json')):
-            doc = read_json(path, {}) or {}
-            out.append({**preset_doc(doc, path.stem), 'id': path.stem})
+            doc = {**preset_doc(read_json(path, {}) or {}, path.stem), 'id': path.stem}
+            preview = doc.get('preview')
+            if preview and preview_file(paths, path.stem).is_file():
+                doc['preview_url'] = f'/api/image/presets/{path.stem}/preview.webp?h={preview["hash"]}'
+                doc['preview_stale'] = preview['hash'] != preview_hash(doc, seed)
+            else:
+                doc.pop('preview', None)
+            out.append(doc)
     return out
+
+
+def preview_prompts(paths, preset):
+    """The preview's prompts: the preset's common prompts and artist tags around the fixed subject."""
+    from .compose import _join
+
+    commons = items(paths, None, 'common')
+    ids = preset.get('common') or [i for i, c in commons.items() if c.get('default', True)]
+    chosen = [commons[i] for i in ids if i in commons and fits(commons[i], preset['family'])]
+    positive = _join(*(c.get('prompt') for c in chosen if c.get('target') != 'negative'))
+    negative = _join(*(c.get('prompt') for c in chosen if c.get('target') == 'negative'))
+    artist = preset.get('artist') or {}
+    return (
+        ', '.join([*positive, *([artist['positive']] if artist.get('positive') else []), PREVIEW_PROMPT]),
+        ', '.join([*negative, *([artist['negative']] if artist.get('negative') else []), PREVIEW_NEGATIVE]),
+    )
+
+
+def store_preview(paths, ident, image_path, seed, digest):
+    """Keep a finished preview next to its preset as WebP and note what it was made from."""
+    from PIL import Image
+
+    path = _presets_dir(paths) / f'{ident}.json'
+    doc = read_json(path, None)
+    if not isinstance(doc, dict):
+        return
+    with Image.open(image_path) as image:
+        image = image.convert('RGB')
+        image.thumbnail((PREVIEW_SIDE, PREVIEW_SIDE))
+        temp = preview_file(paths, ident).with_suffix('.webp.tmp')
+        image.save(temp, format='WEBP', quality=88, method=4)
+    temp.replace(preview_file(paths, ident))
+    doc['preview'] = {'seed': seed, 'hash': digest, 'created_at': now()}
+    atomic_json(path, doc)
 
 
 def save_preset(paths, ident, preset):
@@ -381,4 +455,5 @@ def migrate_styles(paths):
 def delete_preset(paths, ident):
     if ITEM_ID.match(ident or ''):
         (_presets_dir(paths) / f'{ident}.json').unlink(missing_ok=True)
+        preview_file(paths, ident).unlink(missing_ok=True)
     return presets(paths)

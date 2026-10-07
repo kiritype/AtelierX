@@ -15,6 +15,7 @@ from pathlib import PurePosixPath
 
 from ..core.i18n import Msg
 from . import library
+from . import settings as image_settings
 from .comments import strip_text
 from .util import atomic_json, code, now, read_json, replace_file
 from .workflow import validate_settings
@@ -143,7 +144,31 @@ def _variants(settings, sweep, positive):
 class LabMixin:
     """Lab part of ``ImageRuntime`` (expects comfy, lock, jobs, persist, gallery)."""
 
-    def enqueue_lab(self, body):
+    def enqueue_preset_preview(self, ident):
+        """One preview image for a ComfyUI style preset (#169), queued like a lab run and kept next to the preset."""
+        preset = next((p for p in library.presets(self.paths) if p['id'] == ident), None)
+        if preset is None:
+            raise ValueError(Msg('server.image.queue.no_preset', 'Style preset not found.'))
+        if preset['service'] != 'comfyui':
+            raise ValueError(
+                Msg(
+                    'server.image.presets.preview_comfy_only',
+                    'Previews are made with ComfyUI for now. This preset is for {service}.',
+                    service=preset['service'],
+                )
+            )
+        seed = image_settings.get(self.paths, 'presets')['preview_seed']
+        positive, negative = library.preview_prompts(self.paths, preset)
+        body = {
+            'positive': positive,
+            'negative': negative,
+            'settings': {**preset['settings'], 'family': preset['family'], 'seed': seed},
+            'count': 1,
+        }
+        marker = {'id': ident, 'seed': seed, 'hash': library.preview_hash(preset, seed)}
+        return self.enqueue_lab(body, preset_preview=marker)
+
+    def enqueue_lab(self, body, preset_preview=None):
         # Notes (#157) are left out of what is sent and recorded.
         positive = strip_text(
             _text(body.get('positive', ''), Msg('server.lab.positive_prompt', 'Positive prompt'))
@@ -201,6 +226,8 @@ class LabMixin:
                     'lab_sweep': sweep_key,
                     'lab_source': source,
                 }
+                if preset_preview:
+                    lab['preset_preview'] = preset_preview
                 prepared.append(
                     {
                         'id': uuid.uuid4().hex,
