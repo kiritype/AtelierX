@@ -19,6 +19,7 @@ from pathlib import Path, PurePosixPath
 from PIL import Image, ImageChops, ImageOps, PngImagePlugin
 
 from ...core.i18n import Msg, message_of
+from ..comments import strip_text
 from ..gallery import is_asset
 from ..util import atomic_json, now, replace_file
 from ..workflow import build_workflow, validate_settings
@@ -148,7 +149,7 @@ def _check_inpaint(options, info):
                     key=key,
                 )
             )
-        prompts[key] = value.strip()
+        prompts[key] = strip_text(value)
     return {
         **prompts,
         'denoise': _number(options, 'denoise', 0.6, 0.05, 1),
