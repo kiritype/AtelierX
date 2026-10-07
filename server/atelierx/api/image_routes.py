@@ -9,7 +9,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library
+from ..image import library, library_share
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 
@@ -199,6 +199,37 @@ async def library_delete(request):
     p = request.path_params
     scope = request.query_params.get('scope', 'global')
     return await call(library.delete_item, runtime.paths, work, p['kind'], scope, p['ident'])
+
+
+async def library_export(request):
+    runtime = _runtime(request)
+    work = _work_or_none(runtime, request)
+    ids = [i for i in request.query_params.get('ids', '').split(',') if i]
+    try:
+        doc, name = await run_in_threadpool(library_share.export, runtime.paths, work, request.path_params['kind'], ids)
+    except ValueError as error:
+        raise AppError(_as_msg(error), 400) from error
+    return Response(
+        json.dumps(doc, ensure_ascii=False, indent=2),
+        media_type='application/json',
+        headers={'Content-Disposition': f'attachment; filename="{name}"'},
+    )
+
+
+async def _library_import(request, fn, *extra):
+    runtime = _runtime(request)
+    data = await _body(request)
+    work = runtime.works.get(data['work']) if data.get('work') else None
+    args = (runtime.paths, work, request.path_params['kind'], data.get('file'), data.get('scope', 'global'))
+    return await call(fn, *args, *[data.get(name) for name in extra])
+
+
+async def library_import_preview(request):
+    return await _library_import(request, library_share.preview)
+
+
+async def library_import(request):
+    return await _library_import(request, library_share.apply, 'choices')
 
 
 async def presets_get(request):
@@ -601,6 +632,9 @@ def routes():
         Route(f'{p}/settings/{{section}}', settings_put, methods=['PUT']),
         Route(f'{p}/tags/complete', tags_complete),
         Route(f'{p}/tags/check', tags_check, methods=['POST']),
+        Route(f'{p}/library-share/{{kind}}/export', library_export),
+        Route(f'{p}/library-share/{{kind}}/preview', library_import_preview, methods=['POST']),
+        Route(f'{p}/library-share/{{kind}}/import', library_import, methods=['POST']),
         Route(f'{p}/library/{{kind}}', library_get),
         Route(f'{p}/library/{{kind}}/{{ident}}', library_put, methods=['PUT']),
         Route(f'{p}/library/{{kind}}/{{ident}}', library_delete, methods=['DELETE']),

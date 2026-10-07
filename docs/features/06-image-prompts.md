@@ -75,6 +75,14 @@
 3. 작품 라이브러리에서는 전역 항목도 흐리게 함께 보여 주고, 같은 id로 덮어쓴 항목에는 "작품용으로 바꿈"을 표시한다. 전역 항목을
    "작품용으로 복사"해 고칠 수 있다.
 4. 조합 규칙(`compose.json`: 조합 순서, 의상 부위, 표정 등급)은 전역 라이브러리에서만 고친다.
+5. 내보내기·가져오기(#154): 종류마다 목록에서 체크한 항목(없으면 전체)을 이 앱 전용 JSON 파일 하나로 내보낸다. 파일에는 종류, 앱 버전,
+   항목마다 범위(전역·작품)가 들어간다. 가져오기는 파일을 먼저 읽어 항목마다 새 항목·이미 있음(같은 id)을 보여 주고, 이미 있는 항목은
+   바뀌는 필드(이전 → 새 값)를 보여 준다. 넣을 곳(전역·이 작품)을 고르고 항목마다 추가·덮어씀·건너뜀을 고른다(기본: 새 항목은 추가,
+   있는 항목은 건너뜀).
+   - 이 PC에 없는 사용 대상·의상 부위·등급·구도 참조는 알림으로 보여 주고 값은 그대로 저장한다.
+   - 다른 종류의 파일은 "그 목록에서 가져오세요"로, 이 앱 형식이 아니거나 깨진 파일은 거절한다. 읽을 수 없는 항목(잘못된 id 등)은 빼고
+     몇 개를 뺐는지 알린다.
+   - 고른 것을 모두 확인한 뒤 한 번에 쓴다. 생성 프리셋은 [그림체 프리셋](20-generation.md) 꾸러미로 옮긴다.
 
 ### 항목 없는 이미지 데이터
 
@@ -171,6 +179,9 @@
 | `GET /api/works/{id}/image/compose?character=&outfit=&expression=&composition=&preset=` | 조합 미리보기 |
 | `GET /api/image/library/{kind}` · `PUT …` | 전역 라이브러리 |
 | `GET /api/works/{id}/image/library/{kind}` · `PUT …` | 작품 라이브러리(전역과 합친 보기 포함) |
+| `GET /api/image/library-share/{kind}/export?work=&ids=` | 라이브러리 파일(JSON). `ids`가 없으면 전부 |
+| `POST /api/image/library-share/{kind}/preview` | 가져오기 미리보기 `{file, scope, work?}` → `{items: [{id, name, exists, here_scope, changes, unknown, shadowed}], skipped}` |
+| `POST /api/image/library-share/{kind}/import` | 가져오기 `{file, scope, work?, choices: {id: add·overwrite·skip}}` → `{written, items}` |
 | `GET /api/works/{id}/image/orphans` · `POST …/orphans/{cid}/link` | 항목 없는 이미지 데이터, 캐릭터에 잇기 |
 | `GET /api/tags/suggest?q=` · `POST /api/tags/check` | 태그 자동 완성, 태그 목록 검사(있음·별칭·없음) |
 

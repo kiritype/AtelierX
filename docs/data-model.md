@@ -762,6 +762,28 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   절대 경로를 넣지 않음).
 - "그림체 프리셋"은 이미지 생성 설정과 artist 태그의 묶음이고, [플랫폼 프리셋](#플랫폼-프리셋)과는 다른 것이다.
 
+#### 라이브러리 공유 파일
+
+라이브러리 항목을 다른 PC로 옮기는 파일(#154). 종류 하나의 항목 일부 또는 전부를 담는다.
+
+```json
+{
+  "kind": "atelierx-prompt-library",
+  "schema_version": 1,
+  "app_version": "0.3.0",
+  "library": "expressions",
+  "exported_at": "2026-10-08T01:00:00",
+  "items": {
+    "neutral": {"name": "무표정", "code": "001", "rating": "general", "prompt": ["expressionless"], "negative": [],
+                "composition": "upper_front", "scope": "global"}
+  }
+}
+```
+
+- `library`: `expressions`·`compositions`·`common`·`outfits` 중 하나. 항목 필드는 위 라이브러리 파일과 같고, 내보낼 때의 범위 `scope`가 더해진다.
+- 가져올 때 `scope`는 넣을 곳의 기본값을 정하는 데만 쓴다(모두 `work`면 이 작품). 이 PC에 없는 `targets`·`slot`·`rating`·`composition`
+  값도 그대로 저장한다.
+
 #### 그림체 프리셋
 
 위치: `data/image/presets/<id>.json` (전역만, [결정 0026](decisions/0026-style-presets.md))
