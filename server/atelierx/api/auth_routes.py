@@ -5,6 +5,7 @@ import asyncio
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg
+from ..core.vault import MIN_PASSWORD
 from .common import body, ok, st
 
 
@@ -24,6 +25,7 @@ async def auth_status(request):
             'unlocked': s.sessions.valid(request.cookies.get(st(request).cookie_name)),
             'language': s.settings.load()['language'],
             'wait': round(s.sessions.wait_seconds()),
+            'password_change_suggested': s.password_change_suggested,
         }
     )
 
@@ -32,6 +34,7 @@ async def auth_setup(request):
     data = await body(request)
     s = st(request)
     s.vault.setup(data.get('password', ''))
+    s.password_change_suggested = False
     s.settings.update({'language': data.get('language', 'ko')})
     return _session_response(request, {'ok': True})
 
@@ -43,12 +46,14 @@ async def auth_unlock(request):
             Msg('server.auth.wait', 'Try again in {n} seconds.', n=round(s.sessions.wait_seconds())), 429
         )
     data = await body(request)
+    password = data.get('password', '')
     try:
-        await asyncio.to_thread(s.vault.unlock, data.get('password', ''))
+        await asyncio.to_thread(s.vault.unlock, password)
     except AppError:
         s.sessions.failed()
         raise
-    return _session_response(request, {'ok': True})
+    s.password_change_suggested = isinstance(password, str) and len(password) < MIN_PASSWORD
+    return _session_response(request, {'ok': True, 'password_change_suggested': s.password_change_suggested})
 
 
 async def auth_lock(request):
@@ -68,6 +73,7 @@ async def auth_reset(request):
     s = st(request)
     s.vault.reset(data.get('password', ''))
     s.sessions.clear()
+    s.password_change_suggested = False
     return _session_response(request, {'ok': True})
 
 

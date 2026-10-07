@@ -8,7 +8,6 @@ DEFAULTS = {
     'schema_version': 1,
     'language': 'ko',
     'autosave': {'enabled': True, 'delay_ms': 1000},
-    'autolock_minutes': None,
     'snapshot_interval_minutes': 10,
     'history_prune': {'keep_recent': 200, 'daily_days': 30},
     'jobs': {'api_concurrency': 2},

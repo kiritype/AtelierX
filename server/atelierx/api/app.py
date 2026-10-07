@@ -58,7 +58,9 @@ class State:
         self.dev = dev
         ensure_layout(paths)
         self.vault = Vault(paths.vault_file, kdf=kdf)
-        self.sessions = Sessions()
+        self.sessions = Sessions(paths.state / 'auth.json')
+        # The password unlocked with is shorter than new ones may be (#82): the screen suggests changing it.
+        self.password_change_suggested = False
         self.settings = Settings(paths.settings_file)
         self.works = WorkStore(paths)
         self.presets = Presets(paths)

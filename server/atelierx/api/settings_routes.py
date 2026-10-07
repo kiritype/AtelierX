@@ -60,6 +60,7 @@ async def vault_delete(request):
 async def vault_password(request):
     data = await body(request)
     await asyncio.to_thread(st(request).vault.change_password, data.get('old', ''), data.get('new', ''))
+    st(request).password_change_suggested = False
     return ok()
 
 
