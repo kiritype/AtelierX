@@ -189,6 +189,7 @@ async def library_put(request):
         data.get('scope', 'global'),
         p['ident'],
         data.get('item'),
+        data.get('from_scope'),
     )
 
 
