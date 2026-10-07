@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { type ComponentType, useEffect, useMemo, useState } from 'react';
+import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
@@ -13,6 +13,7 @@ const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = { novel
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
+import { PRESET_HANDOFF } from '../../lib/presetHandoff';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
@@ -147,12 +148,38 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
     setPresetId(id);
     const preset = presets.data?.find((p) => p.id === id);
     if (!preset) return;
+    // A preset sent from the style preset screen may be for another service: switch to it.
+    if (preset.service !== service) {
+      setServiceState(preset.service);
+      rememberService(workId, preset.service);
+    }
     if (preset.service === 'comfyui') setSettings({ ...preset.settings, family: preset.family as 'anima' | 'sdxl', seed: preset.settings.seed ?? -1 });
-    else changeServiceSettings({ ...(serviceSettings[service] ?? {}), ...preset.settings });
+    else {
+      const next = { ...serviceSettings, [preset.service]: { ...(serviceSettings[preset.service] ?? {}), ...preset.settings } };
+      setServiceSettings(next);
+      rememberServiceSettings(next);
+    }
     if (preset.common.length) setCommonIds(preset.common);
     setArtist(preset.artist);
   }
   const servicePresets = (presets.data ?? []).filter((p) => p.service === service);
+  // A preset sent from the style preset screen: read on opening, or announced when this screen is already open.
+  const applyLatest = useRef(applyPreset);
+  applyLatest.current = applyPreset;
+  useEffect(() => {
+    const handed = sessionStorage.getItem(PRESET_HANDOFF);
+    if (!handed || !presets.data) return;
+    sessionStorage.removeItem(PRESET_HANDOFF);
+    applyLatest.current(handed);
+  }, [presets.data]);
+  useEffect(() => {
+    const take = (event: Event) => {
+      sessionStorage.removeItem(PRESET_HANDOFF);
+      applyLatest.current((event as CustomEvent<string>).detail);
+    };
+    window.addEventListener(PRESET_HANDOFF, take);
+    return () => window.removeEventListener(PRESET_HANDOFF, take);
+  }, []);
 
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...new Set([...list, id])] : list.filter((x) => x !== id));
