@@ -88,7 +88,16 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finishedId]);
 
-  const body = () => ({ work, target, path_format: format, ratings, paths: Object.fromEntries(Object.entries(paths).filter(([, v]) => v.trim())) });
+  // The gallery's range (work, and the character or outfit chosen there) goes with every plan and upload.
+  const body = () => ({
+    work,
+    character: scope.character,
+    outfit: scope.outfit,
+    target,
+    path_format: format,
+    ratings,
+    paths: Object.fromEntries(Object.entries(paths).filter(([, v]) => v.trim())),
+  });
 
   async function preview() {
     setBusy(true);
