@@ -3,10 +3,10 @@
 Records are keyed by path and content hash, so a replaced file starts unreviewed. Passing an image made by
 the queue adopts it for its combination (work, character, outfit, expression); the latest pass wins. The
 adopted images are what the ZIP export collects. The results are about the images, so they live next to them in
-``<output>/reviews.json``; every write keeps the previous copy as ``reviews.json.bak``.
+``<output>/reviews.json``; every write keeps the previous copy as ``reviews.json.bak``. The content hashes are kept
+in ``state/image/hashes.json`` by path, modification time and size, a cache that is rebuilt when it is lost.
 """
 
-import copy
 import hashlib
 import io
 import json
@@ -23,7 +23,7 @@ from PIL import Image
 from ..core.i18n import Msg
 from .deployment_export import plan_paths
 from .gallery import combo_of
-from .util import atomic_json, now, read_json
+from .util import atomic_json, now, read_json, state_file
 
 VERDICTS = ('pass', 'fail', 'unreviewed')
 AUTO = ('pending', 'pass', 'fail', 'uncertain', 'error')
@@ -65,12 +65,15 @@ class ReviewStore:
         self.gallery = gallery
         self.path = Path(paths.output) / 'reviews.json'
         self.lock = threading.RLock()
-        self._hashes = {}
+        self._hash_file = state_file(paths, 'hashes.json')
+        self._hashes = self._load_hashes()
+        self._hashes_dirty = False
         self.state = read_json(self.path) or {}
         self.state.setdefault('schema_version', 1)
         for key in ('records', 'adopted'):
             self.state.setdefault(key, {})
         self.state.setdefault('history', [])
+        self._recorded = self._recorded_paths(self.state)
         self.listeners = []  # called after a person's verdict changes (the review rounds)
         # The completeness board (#45) refines what counts as missing: needed but never made, minus excluded.
         self.adjust_plan = None
@@ -79,14 +82,63 @@ class ReviewStore:
         state['history'] = state['history'][-HISTORY_KEPT:]
         if self.path.is_file():
             shutil.copyfile(self.path, self.path.with_name('reviews.json.bak'))
-        atomic_json(self.path, state)
+        # Without indentation: with tens of thousands of records the file is written on every verdict.
+        atomic_json(self.path, state, indent=None)
         self.state = state
+        self._recorded = self._recorded_paths(state)
 
-    def sha256(self, relative, fresh=False):
+    @staticmethod
+    def _recorded_paths(state):
+        """Paths with a verdict or an adoption; any other image is unreviewed whatever its content."""
+        paths = {r.get('path') for r in state['records'].values() if isinstance(r, dict)}
+        paths.update(p.get('path') for p in state['adopted'].values() if isinstance(p, dict))
+        return paths
+
+    def _editable(self):
+        """A copy to change: the containers are new, the records are shared until ``_record`` copies one."""
+        state = dict(self.state)
+        state['records'] = dict(state['records'])
+        state['adopted'] = dict(state['adopted'])
+        state['history'] = list(state['history'])
+        return state
+
+    @staticmethod
+    def _record(state, relative, sha):
+        identity = _identity(relative, sha)
+        record = dict(state['records'].get(identity) or {'path': relative, 'sha256': sha})
+        state['records'][identity] = record
+        return record
+
+    # --- content hashes ---------------------------------------------------------------------------------------------
+    def _load_hashes(self):
+        doc = read_json(self._hash_file) or {}
+        out = {}
+        for relative, value in (doc.get('files') or {}).items() if isinstance(doc, dict) else ():
+            if isinstance(value, list) and len(value) == 3 and isinstance(value[2], str):
+                out[relative] = ((value[0], value[1]), value[2])
+        return out
+
+    def flush_hashes(self):
+        """Write the hash cache when it gained entries, without the images that are gone."""
+        with self.lock:
+            if not self._hashes_dirty:
+                return
+            known = self.gallery.indexed_paths()
+            files = {k: [v[0][0], v[0][1], v[1]] for k, v in self._hashes.items() if k in known}
+            self._hashes_dirty = False
+        try:
+            atomic_json(self._hash_file, {'schema_version': 1, 'files': files}, indent=None)
+        except OSError:
+            pass
+
+    def sha256(self, relative, fresh=False, signature=None):
+        """The content hash. ``signature`` (mtime, size) from the index skips the file checks when it is cached."""
+        cached = self._hashes.get(relative)
+        if not fresh and signature is not None and cached and cached[0] == tuple(signature):
+            return cached[1]
         path = self.gallery.safe_path(relative)
         stat = path.stat()
         signature = (stat.st_mtime_ns, stat.st_size)
-        cached = self._hashes.get(relative)
         if not fresh and cached and cached[0] == signature:
             return cached[1]
         digest = hashlib.sha256()
@@ -94,15 +146,20 @@ class ReviewStore:
             for chunk in iter(lambda: source.read(1024 * 1024), b''):
                 digest.update(chunk)
         value = digest.hexdigest()
-        self._hashes[relative] = (signature, value)
+        if cached != (signature, value):
+            self._hashes[relative] = (signature, value)
+            self._hashes_dirty = True
         return value
+
+    def _item_sha(self, item):
+        try:
+            return self.sha256(item['path'], signature=(item.get('_mtime_ns'), item.get('_bytes')))
+        except (OSError, ValueError):
+            return ''
 
     def annotate(self, item):
         out = self.gallery.public(item)
-        try:
-            sha = self.sha256(item['path'])
-        except (OSError, ValueError):
-            sha = ''
+        sha = self._item_sha(item)
         with self.lock:
             record = self.state['records'].get(_identity(item['path'], sha), {})
             adopted = self.state['adopted'].get(_key(combo_of(item)))
@@ -169,18 +226,23 @@ class ReviewStore:
             _flag(params, 'adopted'),
         )
         if human or auto or adopted_only:
+            # Images never reviewed match without hashing them; the page itself is annotated in full.
+            blank = {'human_status': 'unreviewed', 'auto_status': 'pending', 'adopted': False}
+            with self.lock:
+                recorded = self._recorded
             matched = [
-                i
-                for i in (self.annotate(x) for x in items)
+                x
+                for x, i in ((x, self.annotate(x) if x['path'] in recorded else blank) for x in items)
                 if (not human or i['human_status'] == human)
                 and (not auto or i['auto_status'] == auto)
                 and (not adopted_only or i['adopted'])
             ]
-            page_items = matched[(page - 1) * size : page * size]
+            page_items = [self.annotate(i) for i in matched[(page - 1) * size : page * size]]
         else:
             matched = items
             page_items = [self.annotate(i) for i in items[(page - 1) * size : page * size]]
         total = len(matched)
+        self.flush_hashes()
         # "Select all filtered" asks for every matching path at once.
         paths = [i['path'] for i in matched][:10000] if _flag(params, 'paths_only') else None
         return {
@@ -219,12 +281,13 @@ class ReviewStore:
                 Msg('server.gallery.invalid_review', 'Choose images and pass, fail or unreviewed.')
             )
         chosen, seen = [], set()
+        self.gallery.scan()
         for entry in items:
             relative = entry.get('path') if isinstance(entry, dict) else entry
             if not isinstance(relative, str) or relative in seen:
                 continue
             seen.add(relative)
-            item = self.gallery.find(relative)
+            item = self.gallery.find(relative, refresh=False)
             sha = self.sha256(relative, fresh=True)
             expected = entry.get('sha256') if isinstance(entry, dict) else None
             if expected and expected != sha:
@@ -237,13 +300,11 @@ class ReviewStore:
                 )
             chosen.append((item, sha))
         with self.lock:
-            state = copy.deepcopy(self.state)
+            state = self._editable()
             when = now()
             for item, sha in chosen:
                 relative = item['path']
-                record = state['records'].setdefault(
-                    _identity(relative, sha), {'path': relative, 'sha256': sha}
-                )
+                record = self._record(state, relative, sha)
                 old = record.get('human', 'unreviewed')
                 key = _key(combo_of(item))
                 pointer = {'path': relative, 'sha256': sha}
@@ -258,6 +319,7 @@ class ReviewStore:
                 record['human_revision'] = state.setdefault('revision', 0) + 1
                 state['revision'] = record['human_revision']
             self._save(state)
+        self.flush_hashes()
         for listener in self.listeners:
             listener()
         return {'results': [self.annotate(item) for item, _ in chosen], 'updated': len(chosen)}
@@ -267,8 +329,8 @@ class ReviewStore:
             raise ValueError('invalid automatic verdict')
         sha = self.sha256(relative, fresh=True)
         with self.lock:
-            state = copy.deepcopy(self.state)
-            record = state['records'].setdefault(_identity(relative, sha), {'path': relative, 'sha256': sha})
+            state = self._editable()
+            record = self._record(state, relative, sha)
             when = now()
             state['history'].append(
                 {
@@ -316,18 +378,16 @@ class ReviewStore:
                 items = [i for i in items if i[field] == filters[key]]
         by_path = {i['path']: i for i in items}
         with self.lock:
-            adopted = copy.deepcopy(self.state['adopted'])
+            adopted = dict(self.state['adopted'])
         plan = []
         for key, pointer in adopted.items():
             item = by_path.get(pointer['path'])
             if item is None or _key(combo_of(item)) != key:
                 continue
-            try:
-                if self.sha256(item['path']) != pointer['sha256']:
-                    continue
-            except (OSError, ValueError):
+            if self._item_sha(item) != pointer['sha256']:
                 continue
             plan.append(item)
+        self.flush_hashes()
         chosen = {combo_of(i) for i in plan}
         missing = sorted({combo_of(i) for i in items} - chosen)
         one_work = bool(filters.get('work'))

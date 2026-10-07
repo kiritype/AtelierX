@@ -64,12 +64,14 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
-def atomic_json(path, value):
+def atomic_json(path, value, indent=2):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    separators = None if indent is not None else (',', ':')
     try:
-        temp.write_text(json.dumps(wire(value), ensure_ascii=False, indent=2), encoding='utf-8')
+        text = json.dumps(wire(value), ensure_ascii=False, indent=indent, separators=separators)
+        temp.write_text(text, encoding='utf-8')
         replace_file(temp, path)
     finally:
         temp.unlink(missing_ok=True)

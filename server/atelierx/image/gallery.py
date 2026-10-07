@@ -25,6 +25,7 @@ IMAGE_SUFFIXES = ('.png', '.webp', '.jpg', '.jpeg')
 MAX_DEPTH = 8
 SCAN_SECONDS = 3.0
 COMBO_KEYS = ('work_id', 'character_id', 'outfit_id', 'expression_id')
+META_CACHE_SIZE = 4096
 
 
 def is_asset(parts):
@@ -45,7 +46,9 @@ class Gallery:
         self.cache = state_file(paths, 'thumbnails')
         self.lock = threading.RLock()
         self.items = []
-        self._signature = ()
+        self._by_path = {}
+        # path on disk -> ((image mtime, size, record mtime and size), item); unchanged files are not read again.
+        self._entries = {}
         self._meta_cache = {}
         self._last_scan = 0.0
         self.revision = 0
@@ -92,8 +95,22 @@ class Gallery:
                 value = parsed if isinstance(parsed, dict) else None
             except (OSError, UnicodeError, ValueError):
                 value = None
+        if len(self._meta_cache) >= META_CACHE_SIZE:
+            self._meta_cache.clear()
         self._meta_cache[key] = (signature, value)
         return value
+
+    @staticmethod
+    def _load_record(path, signature):
+        """A record read for the index only: not kept, so the index does not hold every prompt in memory."""
+        if signature is None or signature[1] >= 16 * 1024 * 1024:
+            return None
+        try:
+            with open(path, encoding='utf-8') as source:
+                parsed = json.load(source)
+        except (OSError, UnicodeError, ValueError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     def metadata(self, relative):
         image = self.safe_path(relative)
@@ -107,22 +124,30 @@ class Gallery:
 
     # --- scanning ---------------------------------------------------------------------------------------------------
     def _discover(self, deadline):
-        found = []
-        stack = [(self.root, 0)]
+        """Images as (path, mtime, size) and records as {path: (mtime, size)}, from the folder listings alone."""
+        images, records = [], {}
+        stack = [(str(self.root), 0)]
         while stack:
             directory, depth = stack.pop()
             with os.scandir(directory) as entries:
                 for entry in entries:
                     if time.monotonic() > deadline:
                         return None
-                    if entry.is_symlink() or entry.name.startswith('.'):
+                    name = entry.name
+                    if name.startswith('.') or entry.is_symlink():
                         continue
                     if entry.is_dir(follow_symlinks=False):
                         if depth < MAX_DEPTH:
-                            stack.append((Path(entry.path), depth + 1))
-                    elif entry.name.lower().endswith(IMAGE_SUFFIXES) and entry.is_file(follow_symlinks=False):
-                        found.append((Path(entry.path), entry.stat(follow_symlinks=False)))
-        return found
+                            stack.append((entry.path, depth + 1))
+                        continue
+                    lower = name.lower()
+                    if lower.endswith(IMAGE_SUFFIXES) and entry.is_file(follow_symlinks=False):
+                        stat = entry.stat(follow_symlinks=False)
+                        images.append((entry.path, stat.st_mtime_ns, stat.st_size))
+                    elif lower.endswith('.json') and entry.is_file(follow_symlinks=False):
+                        stat = entry.stat(follow_symlinks=False)
+                        records[os.path.normcase(entry.path)] = (stat.st_mtime_ns, stat.st_size)
+        return images, records
 
     def scan(self, force=False):
         """Refresh the index when files changed; at most every 0.75 s unless ``force``."""
@@ -133,7 +158,7 @@ class Gallery:
             self._last_scan = moment
             if not self.root.is_dir():
                 if self.items:
-                    self.items, self._signature = [], ()
+                    self.items, self._by_path, self._entries = [], {}, {}
                     self.revision += 1
                 return
             try:
@@ -144,35 +169,37 @@ class Gallery:
                 # Keep the last complete index and try again a little later.
                 self._last_scan = time.monotonic() + 4
                 return
-            signature = []
-            for path, stat in found:
-                sidecar = path.with_suffix('.json')
-                try:
-                    side = sidecar.stat()
-                    side_sig = (side.st_mtime_ns, side.st_size)
-                except OSError:
-                    side_sig = None
-                signature.append((path.as_posix(), stat.st_mtime_ns, stat.st_size, side_sig))
-            signature = tuple(sorted(signature))
-            if signature == self._signature:
+            images, records = found
+            current = {}
+            for path, mtime, size in images:
+                record = os.path.splitext(path)[0] + '.json'
+                current[path] = ((mtime, size, records.get(os.path.normcase(record))), record)
+            if len(current) == len(self._entries) and all(
+                self._entries.get(path, (None,))[0] == value[0] for path, value in current.items()
+            ):
                 return
-            items, seen = [], set()
-            for path, stat in found:
-                sidecar = path.with_suffix('.json')
-                seen.add(sidecar.as_posix())
-                items.append(self._item(path, stat, self._read_meta(sidecar)))
-            self._meta_cache = {k: v for k, v in self._meta_cache.items() if k in seen}
-            self.items, self._signature = items, signature
+            entries, items = {}, []
+            for path, (signature, record) in current.items():
+                old = self._entries.get(path)
+                if old and old[0] == signature:
+                    item = old[1]
+                else:
+                    item = self._item(path, signature, self._load_record(record, signature[2]))
+                entries[path] = (signature, item)
+                items.append(item)
+            self._entries, self.items = entries, items
+            self._by_path = {item['path']: item for item in items}
             self.revision += 1
 
-    def _item(self, path, stat, meta):
-        relative = path.relative_to(self.root).as_posix()
-        parts = PurePosixPath(relative).parts
+    def _item(self, path, signature, meta):
+        relative = os.path.relpath(path, self.root).replace(os.sep, '/')
+        parts = tuple(relative.split('/'))
+        mtime_ns, size = signature[0], signature[1]
         asset = is_asset(parts)
         meta = meta or {}
         created = meta.get('created_at')
         if not isinstance(created, str):
-            created = datetime.fromtimestamp(stat.st_mtime, UTC).isoformat()
+            created = datetime.fromtimestamp(mtime_ns / 1e9, UTC).isoformat()
         settings = meta.get('settings') if isinstance(meta.get('settings'), dict) else {}
         if asset:
             kind = 'image'
@@ -184,7 +211,7 @@ class Gallery:
             kind = 'other'
         return {
             'path': relative,
-            'filename': path.name,
+            'filename': parts[-1],
             'folder': '/'.join(parts[:-1]),
             'kind': kind,
             'image_url': self.url(relative),
@@ -203,27 +230,35 @@ class Gallery:
             'postprocessed': bool((meta.get('postprocessing') or {}).get('applied')),
             'created_at': created,
             'size': list(meta.get('image_size') or []),
-            '_mtime_ns': stat.st_mtime_ns,
-            '_bytes': stat.st_size,
+            '_mtime_ns': mtime_ns,
+            '_bytes': size,
         }
 
     @staticmethod
     def public(item):
         return {k: v for k, v in item.items() if not k.startswith('_')}
 
-    def find(self, relative):
+    def find(self, relative, refresh=True):
+        """The indexed image at ``relative``; ``refresh=False`` skips the rescan (several lookups in a row)."""
         self.safe_path(relative)
-        self.scan()
+        if refresh:
+            self.scan()
         with self.lock:
-            for item in self.items:
-                if item['path'] == relative:
-                    return dict(item)
-        raise ValueError(Msg('server.gallery.not_found', 'The image does not exist.'))
+            item = self._by_path.get(relative)
+        if item is None:
+            raise ValueError(Msg('server.gallery.not_found', 'The image does not exist.'))
+        return dict(item)
 
     def snapshot_items(self):
+        """Every indexed image. The items are shared with the index: read them, do not change them."""
         self.scan()
         with self.lock:
-            return [dict(i) for i in self.items]
+            return list(self.items)
+
+    def indexed_paths(self):
+        """The paths in the index as it is, without rescanning."""
+        with self.lock:
+            return set(self._by_path)
 
     # --- listing ----------------------------------------------------------------------------------------------------
     def tree(self):
