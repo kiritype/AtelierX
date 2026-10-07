@@ -117,6 +117,11 @@ export function formatBytes(n: number) {
 }
 
 // Keeps one broken tab or screen from blanking the whole window.
+// Shown while a screen's code is read for the first time (#83).
+export function Loading() {
+  return <div className="empty">{t('common.loading')}</div>;
+}
+
 export class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) {
