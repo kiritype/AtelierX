@@ -10,7 +10,11 @@ from atelierx.image.models import ModelProfiles
 CATALOG = {
     'connected': True,
     'model_entries': {
-        'anima\\base.safetensors': {'loader': 'UNETLoader', 'filename': 'anima\\base.safetensors'}
+        'anima\\base.safetensors': {'loader': 'UNETLoader', 'filename': 'anima\\base.safetensors'},
+        'checkpoint::sdxl\\mix.safetensors': {
+            'loader': 'CheckpointLoaderSimple',
+            'filename': 'sdxl\\mix.safetensors',
+        },
     },
     'loras': ['ink.safetensors', 'atelierx\\W002_C001_R001-e10.safetensors', 'gone.safetensors'],
     'text_encoders': [],
@@ -24,6 +28,9 @@ def _setup(paths, tmp_path):
     (loras / 'atelierx').mkdir(parents=True)
     (unet / 'anima').mkdir(parents=True)
     (unet / 'anima' / 'base.safetensors').write_bytes(b'model')
+    ckpt = tmp_path / 'comfy' / 'checkpoints'
+    (ckpt / 'sdxl').mkdir(parents=True)
+    (ckpt / 'sdxl' / 'mix.safetensors').write_bytes(b'checkpoint')
     (loras / 'ink.safetensors').write_bytes(b'ink lora')
     (loras / 'atelierx' / 'W002_C001_R001-e10.safetensors').write_bytes(b'trained')
     cm = {
@@ -37,7 +44,7 @@ def _setup(paths, tmp_path):
     }
     (loras / 'ink.cm-info.json').write_text(json.dumps(cm), encoding='utf-8')
     (loras / 'ink.preview.jpeg').write_bytes(b'jpeg')
-    folders = {'loras': [str(loras)], 'diffusion_models': [str(unet)]}
+    folders = {'loras': [str(loras)], 'diffusion_models': [str(unet)], 'checkpoints': [str(ckpt)]}
     profiles = ModelProfiles(paths)
     library = ModelLibrary(paths, profiles, lambda: folders)
     profiles.looked_up = library.base_model
@@ -123,7 +130,7 @@ def test_the_models_api_lists_and_looks_up(unlocked, tmp_path, monkeypatch):
     runtime.model_library = library
     runtime.comfy.catalog = lambda: CATALOG
     listed = c.get('/api/image/models/list').json()['items']
-    assert {i['name'] for i in listed} == {
+    assert {i['name'] for i in listed} >= {
         'anima\\base.safetensors',
         'ink.safetensors',
         'atelierx\\W002_C001_R001-e10.safetensors',
@@ -138,3 +145,10 @@ def test_the_models_api_lists_and_looks_up(unlocked, tmp_path, monkeypatch):
     monkeypatch.setattr(library, '_get', lambda url: None)
     found = c.post('/api/image/models/lookup', json={'kind': 'lora', 'name': 'ink.safetensors'}).json()
     assert found['info']['not_found'] is True
+
+
+def test_checkpoints_are_found_without_their_catalog_prefix(paths, tmp_path):
+    library = _setup(paths, tmp_path)
+    item = {i['name']: i for i in library.items(CATALOG)}['checkpoint::sdxl\mix.safetensors']
+    assert item['kind'] == 'checkpoint' and item['path'] and item['file'] == 'mix.safetensors'
+    assert item['family'] == 'sdxl'

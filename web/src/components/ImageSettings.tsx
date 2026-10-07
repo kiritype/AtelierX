@@ -184,56 +184,13 @@ function ConnectionSection() {
   );
 }
 
-type Catalog = {
-  connected: boolean;
-  models: string[];
-  loras: string[];
-  model_entries?: Record<string, { label: any }>;
-  families?: { models?: Record<string, string | null>; loras?: Record<string, string | null> };
-  family_labels: Record<string, any>;
-};
-
 function ModelsSection() {
   const qc = useQueryClient();
   const fail = useFail();
-  const catalog = useQuery<Catalog>({ queryKey: ['image-catalog'], queryFn: () => get('/api/image/catalog') });
   const settings = useQuery<{ models_dir: string }>({ queryKey: ['image-settings', 'models'], queryFn: () => get('/api/image/settings/models') });
   const [dir, setDir] = useState<string | null>(null);
-  const [showLoras, setShowLoras] = useState(false);
-  const data = catalog.data;
   const folder = dir ?? settings.data?.models_dir ?? '';
   useUnsaved('image-models', dir !== null && dir !== (settings.data?.models_dir ?? ''));
-
-  async function setFamily(kind: string, name: string, family: string) {
-    try {
-      await put('/api/image/models/family', { kind, name, family: family || null });
-      qc.invalidateQueries({ queryKey: ['image-catalog'] });
-    } catch (err) {
-      fail(err);
-    }
-  }
-
-  const rows = (key: 'models' | 'loras') =>
-    (data?.[key] ?? []).map((name) => {
-      const family = data?.families?.[key]?.[name] ?? null;
-      const kind = key === 'loras' ? 'loras' : name.startsWith('checkpoint::') ? 'checkpoints' : 'diffusion_models';
-      const file = name.replace(/^checkpoint::/, '');
-      return (
-        <tr key={name}>
-          <td className="mono" style={{ wordBreak: 'break-all' }}>
-            {file}
-            {name.startsWith('checkpoint::') && <span className="faint"> [checkpoint]</span>}
-          </td>
-          <td>
-            <select value={family ?? ''} onChange={(e) => setFamily(kind, file, e.target.value)}>
-              <option value="">{message(data?.family_labels?.unknown)}</option>
-              <option value="anima">Anima</option>
-              <option value="sdxl">SDXL·IL</option>
-            </select>
-          </td>
-        </tr>
-      );
-    });
 
   return (
     <section className="col">
@@ -256,24 +213,7 @@ function ModelsSection() {
           {t('common.save')}
         </button>
       </div>
-      {!data?.connected ? (
-        <div className="faint">{t('image_settings.connect_first')}</div>
-      ) : (
-        <>
-          <table className="plain">
-            <tbody>{rows('models')}</tbody>
-          </table>
-          <label className="row" style={{ gap: 4 }}>
-            <input type="checkbox" checked={showLoras} onChange={(e) => setShowLoras(e.target.checked)} />
-            {t('image_settings.show_loras', { n: data.loras.length })}
-          </label>
-          {showLoras && (
-            <table className="plain">
-              <tbody>{rows('loras')}</tbody>
-            </table>
-          )}
-        </>
-      )}
+      <p className="faint small">{t('image_settings.families_moved')}</p>
     </section>
   );
 }

@@ -125,6 +125,7 @@ class ModelLibrary:
     def locate(self, kind, name):
         """The file behind a catalog name, in the image server's folders (or the shared model folder)."""
         key, shared_names, _ = KINDS[kind]
+        name = name.removeprefix('checkpoint::')
         folders = self.server_folders().get(key, [])
         for folder in folders:
             candidate = Path(folder) / PureWindowsPath(name)

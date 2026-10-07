@@ -353,6 +353,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         { heading: t('image_menu.group.prepare') },
         { label: t('image_menu.library'), run: image('library') },
         { label: t('image_menu.presets'), run: image('presets') },
+        { label: t('image_menu.models'), run: image('models') },
         null,
         { heading: t('image_menu.group.make') },
         { label: t('image_menu.board'), run: image('board') },
