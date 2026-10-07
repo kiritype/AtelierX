@@ -117,3 +117,40 @@ def test_a_second_enabled_main_is_pointed_out_and_ids_typed_are_checked(unlocked
         _rows(_import(c, wid, files, {'f0': {'kind': 'main', 'id': 'bad id'}}))['메인 2.md']['id_error']
         == 'format'
     )
+
+
+def test_upper_case_suffixes_are_saved_in_lower_case(unlocked):
+    """#165: what the preview allowed is written, with the suffix in lower case."""
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    files = [{'name': 'good.md', 'text': '본문\n'}, {'name': 'UPPER.MD', 'text': '본문\n'}]
+    choices = {'f0': {'include': True, 'kind': 'note'}, 'f1': {'include': True, 'kind': 'note'}}
+    preview = _import(c, wid, files, choices).json()
+    assert preview['blocked'] == []
+    assert _rows(_import(c, wid, files, choices))['UPPER.MD']['path'] == 'UPPER.md'
+    done = _import(c, wid, files, choices, apply=True)
+    assert done.status_code == 200 and sorted(done.json()['created']) == ['UPPER.md', 'good.md']
+
+
+def test_a_file_refused_half_way_takes_back_the_others(unlocked, monkeypatch):
+    """#165: no partial result, and a retry does not leave numbered copies."""
+    from atelierx.core import works
+
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    files = [{'name': 'a.md', 'text': '본문\n'}, {'name': 'b.md', 'text': '본문\n'}]
+    choices = {'f0': {'include': True, 'kind': 'note'}, 'f1': {'include': True, 'kind': 'note'}}
+    real = works.Work.write_whole
+
+    def refuse_b(self, rel, text, base_hash=None, new=False):
+        if rel.endswith('b.md'):
+            raise works.AppError(works.Msg('server.works.bad_path', 'This path is not allowed.'))
+        return real(self, rel, text, base_hash, new)
+
+    monkeypatch.setattr(works.Work, 'write_whole', refuse_b)
+    assert _import(c, wid, files, choices, apply=True).status_code == 400
+    assert c.get(f'/api/works/{wid}/file', params={'path': 'a.md'}).status_code == 404
+    monkeypatch.setattr(works.Work, 'write_whole', real)
+    done = _import(c, wid, files, choices, apply=True).json()
+    assert sorted(done['created']) == ['a.md', 'b.md']
+
