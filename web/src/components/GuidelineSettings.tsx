@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError, del, get, put, q } from '../api';
 import { t, tm } from '../i18n';
 import { diffLines } from '../lib/diff';
-import CodeEditor from './CodeEditor';
+import CodeEditor from './LazyCodeEditor';
 import { Icon } from './icons';
 import { useToast } from './Toasts';
 import { useUnsaved } from './Unsaved';

@@ -4,7 +4,7 @@ import { ApiError, get, post, put, q } from '../api';
 import { t, tm } from '../i18n';
 import { KINDS, type Item, type Kind, type WorkInfo } from '../types';
 import { measure } from '../count';
-import CodeEditor from './CodeEditor';
+import CodeEditor from './LazyCodeEditor';
 import MessageMarkdown from './MessageMarkdown';
 import ImageDesign from './ImageDesign';
 import ImageGallery from './image/ImageGallery';

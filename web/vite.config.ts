@@ -20,6 +20,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rolldownOptions: { input: { main: 'index.html', preview: 'preview.html' } },
+    rolldownOptions: {
+      input: { main: 'index.html', preview: 'preview.html' },
+      // The editor's language parsers apart from the editor itself, so no chunk passes the size warning (#83).
+      output: {
+        codeSplitting: {
+          groups: [{ name: 'editor-languages', test: /[\\/]node_modules[\\/](@codemirror[\\/]lang-|@lezer[\\/](javascript|markdown|html|css))/ }],
+        },
+      },
+    },
   },
 });

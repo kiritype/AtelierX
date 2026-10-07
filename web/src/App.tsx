@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { get, patch, put, setConsentHandler, setUnauthorizedHandler } from './api';
 import { Toasts, ToastProvider } from './components/Toasts';
 import TooltipLayer from './components/TooltipLayer';
@@ -7,9 +7,12 @@ import { setLanguage, t, tm } from './i18n';
 import FirstRun from './screens/FirstRun';
 import Lock from './screens/Lock';
 import WorkSelect from './screens/WorkSelect';
-import WorkWindow from './screens/WorkWindow';
+import { Loading } from './components/ui';
 
 type Status = { initialized: boolean; unlocked: boolean; language: string; wait: number };
+
+// The work window and everything in it are read when a work opens (#83): the lock and work list stay small.
+const WorkWindow = lazy(() => import('./screens/WorkWindow'));
 
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
@@ -55,7 +58,7 @@ export default function App() {
 
   return (
     <ToastProvider>
-      {screen}
+      <Suspense fallback={<Loading />}>{screen}</Suspense>
       <Toasts />
       <TooltipLayer />
     </ToastProvider>

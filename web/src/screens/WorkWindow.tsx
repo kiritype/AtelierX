@@ -1,30 +1,23 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ApiError, get, post, put } from '../api';
-import AppSettings from '../components/AppSettings';
 import AuxPanel, { type AuxTab } from '../components/AuxPanel';
 import type { Attachment } from '../components/AgentPanel';
-import CompareTab from '../components/CompareTab';
 import { PackageExportDialog } from '../components/Packages';
 import ExportDialog from '../components/ExportDialog';
 import AuthoringDialog from '../components/AuthoringDialog';
-import GlossaryTab from '../components/GlossaryTab';
 import MenuBar, { type Menu } from '../components/MenuBar';
 import RenameDialog from '../components/RenameDialog';
 import ItemEditor, { type EditorStatus } from '../components/ItemEditor';
 import JobsPopover, { useActivity } from '../components/JobsPopover';
 import Panels, { type PanelKey } from '../components/Panels';
 import QuickOpen from '../components/QuickOpen';
-import RelationsTab from '../components/RelationsTab';
-import ReviewTab from '../components/ReviewTab';
 import { useToast } from '../components/Toasts';
-import { ContextMenu, Dialog, ErrorBoundary, formatBytes, type MenuItem } from '../components/ui';
+import { ContextMenu, Dialog, ErrorBoundary, formatBytes, Loading, type MenuItem } from '../components/ui';
 import { AppMark } from '../components/AppMark';
 import { Icon, type IconName } from '../components/icons';
 import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import WorkSettings from '../components/WorkSettings';
-import ImageScreen from './ImageScreen';
-import TestScreen from './TestScreen';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import { bulkCloseKeys, nextActiveKey } from './tabActions';
 import { useServerEvents } from '../events';
@@ -33,6 +26,15 @@ import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo
 import { unfinished } from '../lib/lifecycle';
 import { TabScope } from '../components/Unsaved';
 import { UnsavedRegistry } from '../lib/unsaved';
+
+// Screens read the first time they open (#83).
+const AppSettings = lazy(() => import('../components/AppSettings'));
+const CompareTab = lazy(() => import('../components/CompareTab'));
+const GlossaryTab = lazy(() => import('../components/GlossaryTab'));
+const RelationsTab = lazy(() => import('../components/RelationsTab'));
+const ReviewTab = lazy(() => import('../components/ReviewTab'));
+const ImageScreen = lazy(() => import('./ImageScreen'));
+const TestScreen = lazy(() => import('./TestScreen'));
 
 // Side panels: one is selected at a time. Below a divider, relations and glossary are launchers that open their editor
 // tab; they never show a selected state, so the activity bar always marks exactly the panel that is open.
@@ -413,6 +415,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       </div>
       <div style={{ display: testing ? 'contents' : 'none' }}>
         <ErrorBoundary label={t('test.title')}>
+          <Suspense fallback={<Loading />}>
           <TestScreen
             workId={workId}
             openItem={(path) => {
@@ -420,6 +423,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
               open({ type: 'item', path });
             }}
           />
+          </Suspense>
         </ErrorBoundary>
       </div>
       <div
@@ -508,6 +512,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                 >
                   <TabScope registry={unsaved} tab={key}>
                   <ErrorBoundary label={tabTitle(tab)}>
+                  <Suspense fallback={<Loading />}>
                     {tab.type === 'item' && (
                       <ItemEditor
                         workId={workId}
@@ -538,6 +543,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                         openSettings={(section) => open({ type: 'settings', section, at: Date.now() })}
                       />
                     )}
+                  </Suspense>
                   </ErrorBoundary>
                   </TabScope>
                 </div>

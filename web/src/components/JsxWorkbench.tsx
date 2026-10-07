@@ -6,7 +6,7 @@ import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import type { WorkInfo } from '../types';
 import { findCalls, type ResponseRule } from '../lib/componentCalls';
 import type { Saver } from '../lib/exampleSaver';
-import CodeEditor from './CodeEditor';
+import CodeEditor from './LazyCodeEditor';
 import JsxPreview, { type PreviewCall } from './JsxPreview';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
