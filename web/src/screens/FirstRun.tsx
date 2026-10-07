@@ -12,7 +12,7 @@ export default function FirstRun({ onDone }: { onDone: () => void }) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (password.length < 4) return setError(t('first_run.too_short'));
+    if (password.length < 8) return setError(t('first_run.too_short'));
     if (password !== again) return setError(t('first_run.mismatch'));
     setBusy(true);
     try {

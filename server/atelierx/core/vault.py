@@ -12,6 +12,8 @@ from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 
 KDF = {'name': 'scrypt', 'n': 2**17, 'r': 8, 'p': 1}
+# New master passwords (#82); an older shorter one still unlocks, and the app suggests changing it.
+MIN_PASSWORD = 8
 
 
 def _b64(data):
@@ -48,8 +50,14 @@ def _open(key, box):
 
 
 def _check_password(password):
-    if not isinstance(password, str) or len(password) < 4:
-        raise AppError(Msg('server.vault.password_too_short', 'Use at least 4 characters for the password.'))
+    if not isinstance(password, str) or len(password) < MIN_PASSWORD:
+        raise AppError(
+            Msg(
+                'server.vault.password_too_short',
+                'Use at least {n} characters for the password.',
+                n=MIN_PASSWORD,
+            )
+        )
 
 
 def _mask(value):

@@ -8,8 +8,9 @@ import FirstRun from './screens/FirstRun';
 import Lock from './screens/Lock';
 import WorkSelect from './screens/WorkSelect';
 import { Loading } from './components/ui';
+import PasswordSuggest from './components/PasswordSuggest';
 
-type Status = { initialized: boolean; unlocked: boolean; language: string; wait: number };
+type Status = { initialized: boolean; unlocked: boolean; language: string; wait: number; password_change_suggested?: boolean };
 
 // The work window and everything in it are read when a work opens (#83): the lock and work list stay small.
 const WorkWindow = lazy(() => import('./screens/WorkWindow'));
@@ -17,12 +18,15 @@ const WorkWindow = lazy(() => import('./screens/WorkWindow'));
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [workId, setWorkId] = useState<string | null>(null);
+  // Unlocked with a password shorter than new ones may be (#82): suggest changing it, once per unlock.
+  const [suggestPassword, setSuggestPassword] = useState(false);
   const queryClient = useQueryClient();
 
   const refresh = useCallback(async () => {
     const value = await get<Status>('/api/auth/status');
     setLanguage(value.language);
     setStatus(value);
+    setSuggestPassword(!!value.unlocked && !!value.password_change_suggested);
   }, []);
 
   useEffect(() => {
@@ -59,6 +63,7 @@ export default function App() {
   return (
     <ToastProvider>
       <Suspense fallback={<Loading />}>{screen}</Suspense>
+      {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}
       <Toasts />
       <TooltipLayer />
     </ToastProvider>
