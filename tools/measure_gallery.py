@@ -9,6 +9,8 @@ verdicts, adoptions and a full history, then times the calls the screens make.
     uv run python tools/measure_gallery.py --count 50000 --root D:/tmp/ax-measure --keep --reuse
 
 Freshly written files are often scanned by antivirus software, so measure a kept folder again with ``--reuse``.
+A ``--root`` folder must be empty or missing (or one this script made, with ``--reuse``) and is never deleted;
+only the temporary folder made without ``--root`` is removed at the end.
 
 The fake images are tiny, so hashing is cheaper than with real 1~2 MB files; ``--pad-kb`` makes them bigger.
 """
@@ -40,6 +42,7 @@ CHARACTERS = 43
 OUTFITS = 2
 EXPRESSIONS = 32
 LIMITS = {'list': 1.0, 'review': 0.2}
+MARKER = '.ax-measure'
 
 
 def png_bytes(pad_kb):
@@ -52,6 +55,9 @@ def png_bytes(pad_kb):
 
 def build(root, count, pad_kb, write=True):
     paths = AppPaths(root=root, defaults=ROOT / 'defaults', samples=ROOT / 'samples', web=root / 'web')
+    if write:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / MARKER).write_text('made by tools/measure_gallery.py\n', encoding='utf-8')
     output = Path(paths.output)
     data = png_bytes(pad_kb)
     sha = hashlib.sha256(data).hexdigest()
@@ -199,16 +205,26 @@ def memory(paths, work):
 
 
 def main():
+    # The report is Korean; a console in another code page (cp1252 …) would fail on it.
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--count', type=int, default=20000)
     parser.add_argument('--pad-kb', type=int, default=0)
     parser.add_argument('--root', type=Path)
-    parser.add_argument('--keep', action='store_true', help='keep the fake folder')
+    parser.add_argument('--keep', action='store_true', help='keep the temporary folder (without --root)')
     parser.add_argument(
         '--reuse', action='store_true', help='measure a folder kept earlier with the same --count'
     )
     args = parser.parse_args()
-    root = args.root or Path(tempfile.mkdtemp(prefix='ax-measure-'))
+    if args.root is not None:
+        root = args.root
+        made_here = root.is_dir() and (root / MARKER).is_file()
+        if args.reuse and not made_here:
+            parser.error(f'--reuse needs a folder made by this script ({MARKER} missing): {root}')
+        if not args.reuse and root.exists() and any(root.iterdir()):
+            parser.error(f'--root must be an empty or new folder: {root}')
+    else:
+        root = Path(tempfile.mkdtemp(prefix='ax-measure-'))
     try:
         start = time.perf_counter()
         reuse = args.reuse and args.root is not None
@@ -228,7 +244,8 @@ def main():
         over = [name for name, seconds, limit in results if limit and seconds > limit]
         print('기준 초과: ' + (', '.join(over) if over else '없음'))
     finally:
-        if not args.keep:
+        # Only the temporary folder this run made; a folder the person named is theirs to remove.
+        if args.root is None and not args.keep:
             shutil.rmtree(root, ignore_errors=True)
 
 

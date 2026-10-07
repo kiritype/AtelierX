@@ -152,6 +152,7 @@ class ReviewStore:
         return value
 
     def _item_sha(self, item):
+        """The hash for showing an indexed image; may trust an index one rescan old (not for exports)."""
         try:
             return self.sha256(item['path'], signature=(item.get('_mtime_ns'), item.get('_bytes')))
         except (OSError, ValueError):
@@ -384,7 +385,12 @@ class ReviewStore:
             item = by_path.get(pointer['path'])
             if item is None or _key(combo_of(item)) != key:
                 continue
-            if self._item_sha(item) != pointer['sha256']:
+            # What leaves the app is checked against the file as it is now, not the index (which can be up
+            # to one rescan behind): a replaced adopted image must not go out unreviewed.
+            try:
+                if self.sha256(item['path']) != pointer['sha256']:
+                    continue
+            except (OSError, ValueError):
                 continue
             plan.append(item)
         self.flush_hashes()
