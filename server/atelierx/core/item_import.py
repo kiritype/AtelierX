@@ -181,7 +181,9 @@ def plan(work, folder, files, choices=None):
         row['enabled'] = bool(choice.get('enabled', plain.get('enabled', True)))
         row['use_table'] = bool(found) and bool(choice.get('use_table', True))
         if row['include']:
-            row['path'] = (f'{folder}/' if folder else '') + _unique_name(name, taken_names)
+            # The file is saved with the suffix checked above, in lower case: "UPPER.MD" → "UPPER.md" (#165).
+            stored = PurePosixPath(name).stem + suffix
+            row['path'] = (f'{folder}/' if folder else '') + _unique_name(stored, taken_names)
             row['renamed'] = PurePosixPath(row['path']).name != name
             if kind == 'main' and row['enabled']:
                 main_enabled += 1
@@ -228,7 +230,7 @@ def apply(work, folder, files, choices, settings=None):
     if not todo:
         raise AppError(Msg('server.import.nothing', 'No file is chosen to bring in.'))
     Snapshots(work).create('import', None, force=True)
-    created = []
+    prepared = []
     for row in todo:
         suffix = row['suffix']
         if row.get('head') == 'broken':
@@ -251,7 +253,16 @@ def apply(work, folder, files, choices, settings=None):
             if found['priority'] is not None:
                 meta['priority'] = found['priority']
             meta['always'] = found['always']
-        path = work.resolve(row['path'])
-        work.write_whole(row['path'], frontmatter.join(meta, body, suffix), new=True)
-        created.append(work.rel(path))
+        prepared.append((row['path'], frontmatter.join(meta, body, suffix)))
+    # All or nothing (#165): a file refused half way takes back the ones written before it, so a retry does not
+    # leave "name (2)" copies behind.
+    created = []
+    try:
+        for rel, text in prepared:
+            work.write_whole(rel, text, new=True)
+            created.append(work.rel(work.resolve(rel)))
+    except Exception:
+        for rel in created:
+            work.resolve(rel).unlink(missing_ok=True)
+        raise
     return {'created': created}
