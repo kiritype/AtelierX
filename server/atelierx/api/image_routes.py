@@ -248,6 +248,19 @@ def _downloads(request):
     return _runtime(request).model_downloads
 
 
+async def models_search(request):
+    q = request.query_params
+    return await call(
+        _downloads(request).search,
+        q.get('query', ''),
+        q.get('kind', ''),
+        q.get('base', ''),
+        q.get('sort', ''),
+        q.get('nsfw') == 'true',
+        q.get('cursor', ''),
+    )
+
+
 async def models_read(request):
     data = await _body(request)
     return await call(_downloads(request).read, str(data.get('address', '')))
@@ -563,6 +576,7 @@ def routes():
         Route(f'{p}/models/lookup', models_lookup, methods=['POST']),
         Route(f'{p}/models/preview', models_preview),
         Route(f'{p}/models/read', models_read, methods=['POST']),
+        Route(f'{p}/models/search', models_search),
         Route(f'{p}/models/downloads', models_downloads),
         Route(f'{p}/models/downloads', models_download_add, methods=['POST']),
         Route(f'{p}/models/downloads/{{jid}}/{{action}}', models_download_act, methods=['POST']),
