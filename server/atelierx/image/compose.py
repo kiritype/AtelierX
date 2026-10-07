@@ -1,8 +1,8 @@
 """Prompt composition (06-image-prompts: 조합): a character's design + the image library -> positive / negative.
 
 A target names one character, one outfit and one expression. The composition comes from the request or the
-expression's suggestion; it also suggests which outfit slots are visible. Common prompts and styles come from
-the request (or a generation preset). Parts are joined in the order of compose.json.
+expression's suggestion; it also suggests which outfit slots are visible. Common prompts and the artist tags come
+from the request (or a style preset). Parts are joined in the order of compose.json.
 """
 
 from ..core.i18n import Msg
@@ -10,7 +10,7 @@ from . import library
 from .comments import strip_tag, strip_text
 from .util import read_json
 
-OVERRIDABLE = ('common', 'style', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative')
+OVERRIDABLE = ('common', 'artist', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative')
 MAX_OVERRIDE = 30000
 
 
@@ -118,7 +118,10 @@ class Composer:
         if common_ids is None:
             common_ids = [i for i, c in self.lib['common'].items() if c.get('default', True)]
         commons = [self._pick('common', i, 'Common prompt') for i in common_ids]
-        styles = [self._pick('styles', i, 'Style') for i in options.get('style_ids') or []]
+        # The style preset's artist tags (#169): free text, notes left out.
+        artist = options.get('artist') if isinstance(options.get('artist'), dict) else {}
+        artist_positive = strip_text(str(artist.get('positive') or ''))
+        artist_negative = strip_text(str(artist.get('negative') or ''))
 
         # Items written for other targets (#80) stay out of the prompt and are named in the warnings. The expression
         # is what the image is of, so it stays and is only named.
@@ -151,14 +154,13 @@ class Composer:
         if composition and not library.fits(composition, family):
             unfit('composition', composition)
             composition = None
-        for label, records in (('common', commons), ('style', styles)):
-            for record in [r for r in records if not library.fits(r, family)]:
-                unfit(label, record)
-                records.remove(record)
+        for record in [r for r in commons if not library.fits(r, family)]:
+            unfit('common', record)
+            commons.remove(record)
 
         parts = {
             'common': _join(*(c.get('prompt') for c in commons if c.get('target') != 'negative')),
-            'style': _join(*(s.get('prompt') for s in styles)),
+            'artist': [artist_positive] if artist_positive else [],
             'composition': _join(composition.get('prompt') if composition else []),
             # The trigger word only means something to a LoRA trained on it: by default it is added when the
             # character has a registered LoRA; options['trigger'] True/False forces it on or off.
@@ -178,7 +180,7 @@ class Composer:
         }
         negative = _join(
             *(c.get('prompt') for c in commons if c.get('target') == 'negative'),
-            *(s.get('negative') for s in styles),
+            [artist_negative] if artist_negative else [],
             (design.get('appearance') or {}).get('negative'),
             outfit_negative,
             expression.get('negative'),
@@ -212,7 +214,7 @@ class Composer:
             'outfit_slots': slots,
             'outfit_hidden': hidden,
             'common_ids': common_ids,
-            'style_ids': options.get('style_ids') or [],
+            'artist': {'positive': artist_positive, 'negative': artist_negative},
             'trigger': design.get('trigger'),
             'model_family': family,
             'parts': texts,

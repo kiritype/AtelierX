@@ -34,9 +34,11 @@ def ensure_layout(paths):
         if source.is_dir() and not target.exists():
             shutil.copytree(source, target)
     # Fields the bundled library gained after this app folder was made (deployment codes, decision 0023).
-    from ..image.library import fill_default_codes
+    from ..image.library import fill_default_codes, migrate_styles
 
     fill_default_codes(paths)
+    # Style fragments became the style presets' artist tags (#169).
+    migrate_styles(paths)
     tags = paths.data / 'tags'
     if not tags.exists() and (paths.defaults / 'tags').is_dir():
         tags.mkdir(parents=True)

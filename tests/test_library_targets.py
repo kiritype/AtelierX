@@ -5,9 +5,9 @@ import json
 from atelierx.image import library
 
 
-def _style(c, wid, ident, **item):
+def _style(c, wid, ident, kind='compositions', **item):
     return c.put(
-        f'/api/image/library/styles/{ident}',
+        f'/api/image/library/{kind}/{ident}',
         json={'scope': 'work', 'work': wid, 'item': {'name': ident, 'prompt': [f'{ident} tag'], **item}},
     ).json()
 
@@ -35,7 +35,7 @@ def test_files_from_before_read_their_model_family_as_targets(unlocked, paths):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     work = c.app.state.app.works.get(wid)
-    path = work.app / 'image' / 'styles.json'
+    path = work.app / 'image' / 'compositions.json'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -50,7 +50,7 @@ def test_files_from_before_read_their_model_family_as_targets(unlocked, paths):
         ),
         encoding='utf-8',
     )
-    styles = c.get(f'/api/image/library/styles?work={wid}').json()
+    styles = c.get(f'/api/image/library/compositions?work={wid}').json()
     assert [styles[k]['targets'] for k in 'abc'] == [['anima'], ['sdxl'], []]
     assert 'model_family' not in styles['a']
     assert library.fits({'model_family': 'anima'}, 'sdxl') is False
@@ -60,10 +60,10 @@ def test_files_from_before_read_their_model_family_as_targets(unlocked, paths):
 def test_fragments_for_other_targets_are_left_out_and_named(unlocked):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
-    _style(c, wid, 'nai_only', targets=['novelai'])
-    _style(c, wid, 'everyone')
+    _style(c, wid, 'nai_only', kind='common', targets=['novelai'])
+    _style(c, wid, 'everyone', kind='common')
     target = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
-    body = {'targets': [target], 'style_ids': ['nai_only', 'everyone'], 'common_ids': ['quality']}
+    body = {'targets': [target], 'common_ids': ['quality', 'nai_only', 'everyone']}
 
     anima = c.post(f'/api/works/{wid}/image/compose', json={**body, 'settings': {'family': 'anima'}}).json()[
         0
@@ -94,7 +94,7 @@ def test_the_target_list_can_be_changed_and_keeps_one(unlocked):
 
     # Removing a target leaves the items alone; one written only for it now fits every target.
     c.put('/api/image/library/rules/targets', json={'targets': [{'id': 'sdxl', 'name': 'SDXL·IL'}]})
-    assert c.get(f'/api/image/library/styles?work={wid}').json()['flux_look']['targets'] == []
+    assert c.get(f'/api/image/library/compositions?work={wid}').json()['flux_look']['targets'] == []
 
     refused = c.put('/api/image/library/rules/targets', json={'targets': []})
     assert refused.status_code == 400

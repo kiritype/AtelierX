@@ -5,13 +5,13 @@ def _put(c, wid, ident, scope, from_scope=None, **item):
     body = {'scope': scope, 'work': wid, 'item': {'name': ident, 'prompt': [f'{ident} tag'], **item}}
     if from_scope:
         body['from_scope'] = from_scope
-    return c.put(f'/api/image/library/styles/{ident}', json=body)
+    return c.put(f'/api/image/library/compositions/{ident}', json=body)
 
 
 def _scopes(c, wid, ident):
     """Where the item is stored: the work's own list shows the work copy first; the global list has no work."""
-    merged = c.get(f'/api/image/library/styles?work={wid}').json().get(ident)
-    global_only = c.get('/api/image/library/styles').json().get(ident)
+    merged = c.get(f'/api/image/library/compositions?work={wid}').json().get(ident)
+    global_only = c.get('/api/image/library/compositions').json().get(ident)
     return merged and merged['scope'], merged and merged['overrides'], global_only is not None
 
 
@@ -25,7 +25,7 @@ def test_saving_a_work_item_as_global_moves_it(unlocked):
     assert moved.status_code == 200
     assert moved.json()['soft']['scope'] == 'global'
     assert _scopes(c, wid, 'soft') == ('global', False, True)
-    assert c.get('/api/image/library/styles').json()['soft']['prompt'] == ['moved tag']
+    assert c.get('/api/image/library/compositions').json()['soft']['prompt'] == ['moved tag']
 
 
 def test_moving_onto_an_existing_global_item_replaces_it(unlocked):
@@ -37,7 +37,7 @@ def test_moving_onto_an_existing_global_item_replaces_it(unlocked):
 
     _put(c, wid, 'film', 'global', from_scope='work', prompt=['work tag'])
     assert _scopes(c, wid, 'film') == ('global', False, True)
-    assert c.get('/api/image/library/styles').json()['film']['prompt'] == ['work tag']
+    assert c.get('/api/image/library/compositions').json()['film']['prompt'] == ['work tag']
 
 
 def test_saving_a_global_item_for_one_work_overrides_it_there(unlocked):
@@ -47,7 +47,7 @@ def test_saving_a_global_item_for_one_work_overrides_it_there(unlocked):
     # Without from_scope (the screen sends it only when moving to global) both copies stay.
     _put(c, wid, 'ink', 'work', prompt=['work tag'])
     assert _scopes(c, wid, 'ink') == ('work', True, True)
-    assert c.get('/api/image/library/styles').json()['ink']['prompt'] == ['global tag']
+    assert c.get('/api/image/library/compositions').json()['ink']['prompt'] == ['global tag']
 
 
 def test_an_unknown_from_scope_is_refused(unlocked):

@@ -89,26 +89,26 @@ def test_library_compose_queue_and_save(unlocked, tmp_path):
     rules = c.get('/api/image/library/rules').json()
     assert [s['id'] for s in rules['slots']][:2] == ['full', 'hands']
     saved = c.put(
-        '/api/image/library/styles/soft',
+        '/api/image/library/common/soft',
         json={
             'scope': 'work',
             'work': wid,
-            'item': {'name': '부드럽게', 'prompt': 'soft lighting, soft lighting'},
+            'item': {'name': '부드럽게', 'target': 'positive', 'prompt': 'soft lighting, soft lighting'},
         },
     ).json()
     assert saved['soft']['prompt'] == ['soft lighting'] and saved['soft']['scope'] == 'work'
 
     target = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
     preview = c.post(
-        f'/api/works/{wid}/image/compose', json={'targets': [target], 'style_ids': ['soft']}
+        f'/api/works/{wid}/image/compose',
+        json={'targets': [target], 'artist': {'positive': '@ink artist', 'negative': '@bad artist'}},
     ).json()[0]
+    assert preview['parts']['artist'] == '@ink artist' and '@bad artist' in preview['negative']
     assert preview['positive'].startswith('masterpiece')
     assert 'w001_c001' not in preview['positive'] and 'soft lighting' in preview['positive']
     assert 'white shirt' in preview['parts']['outfit']
 
-    queued = c.post(
-        f'/api/works/{wid}/image/jobs', json={'targets': [target], 'count': 2, 'style_ids': ['soft']}
-    ).json()
+    queued = c.post(f'/api/works/{wid}/image/jobs', json={'targets': [target], 'count': 2}).json()
     assert queued['count'] == 2
     jobs = c.get('/api/image/queue').json()['jobs']
     assert [j['status'] for j in jobs] == ['queued', 'queued']

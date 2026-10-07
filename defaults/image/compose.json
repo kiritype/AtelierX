@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "order": ["common", "style", "composition", "trigger", "appearance", "expression", "outfit"],
+  "order": ["common", "artist", "composition", "trigger", "appearance", "expression", "outfit"],
   "slots": [
     {"id": "full", "name": "전체"},
     {"id": "hands", "name": "손"},

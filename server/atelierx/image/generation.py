@@ -77,34 +77,59 @@ class GenerationMixin:
         service = self._service(body)
         if service.id != DEFAULT_SERVICE:
             # An internet service has its own settings; prompts are composed for it (library targets, #80).
-            settings = {**(body.get('settings') or {}), 'family': service.id}
+            # A style preset made for this service (#169) gives its settings and artist tags.
+            preset = self._preset(body, service.id)
+            settings = {
+                **((preset or {}).get('settings') or {}),
+                **(body.get('settings') or {}),
+                'family': service.id,
+            }
             options = {
                 'family': service.id,
-                'common_ids': body.get('common_ids'),
-                'style_ids': body.get('style_ids') or [],
+                'common_ids': body.get('common_ids', (preset or {}).get('common') or None),
+                **self._artist(body, preset),
                 'composition_id': body.get('composition_id'),
                 'outfit_slots': body.get('outfit_slots'),
                 'overrides': body.get('overrides') or {},
                 'trigger': False,  # a trigger word only means something to a local LoRA
             }
-            return settings, options, None
-        preset = None
-        if body.get('preset_id'):
-            preset = next((p for p in library.presets(self.paths) if p['id'] == body['preset_id']), None)
-            if preset is None:
-                raise ValueError(Msg('server.image.queue.no_preset', 'Generation preset not found.'))
+            return settings, options, preset
+        preset = self._preset(body, 'comfyui')
         settings = {**((preset or {}).get('settings') or {}), **(body.get('settings') or {})}
         settings['family'] = settings.get('family') or (preset or {}).get('family') or 'anima'
         options = {
             'family': settings['family'],
             'common_ids': body.get('common_ids', (preset or {}).get('common') or None),
-            'style_ids': body.get('style_ids', (preset or {}).get('styles') or []),
+            **self._artist(body, preset),
             'composition_id': body.get('composition_id'),
             'outfit_slots': body.get('outfit_slots'),
             'overrides': body.get('overrides') or {},
             'trigger': body.get('trigger'),
         }
         return settings, options, preset
+
+    def _preset(self, body, service):
+        if not body.get('preset_id'):
+            return None
+        preset = next((p for p in library.presets(self.paths) if p['id'] == body['preset_id']), None)
+        if preset is None:
+            raise ValueError(Msg('server.image.queue.no_preset', 'Style preset not found.'))
+        if preset['service'] != service:
+            raise ValueError(
+                Msg(
+                    'server.image.queue.preset_service',
+                    'Style preset {name} is for {service}.',
+                    name=preset['name'],
+                    service=preset['service'],
+                )
+            )
+        return preset
+
+    @staticmethod
+    def _artist(body, preset):
+        """The artist tags: the request's (the screen may edit them for one run), else the preset's."""
+        artist = body.get('artist') if isinstance(body.get('artist'), dict) else (preset or {}).get('artist')
+        return {'artist': artist or {}}
 
     def preview(self, work, body):
         """Composed prompts for the targets without queueing (the generate screen's preview)."""
@@ -241,7 +266,15 @@ class GenerationMixin:
                 'settings': {k: v for k, v in settings.items() if k != 'seed'},
                 **{
                     k: body.get(k)
-                    for k in ('targets', 'count', 'style_ids', 'common_ids', 'composition_id', 'overrides')
+                    for k in (
+                        'targets',
+                        'count',
+                        'preset_id',
+                        'artist',
+                        'common_ids',
+                        'composition_id',
+                        'overrides',
+                    )
                 },
             },
             sort_keys=True,
