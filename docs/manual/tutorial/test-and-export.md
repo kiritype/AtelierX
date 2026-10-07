@@ -37,4 +37,4 @@
 
 ## 마치며
 
-여기까지 따라 했다면 AtelierX의 기본 흐름을 모두 써 본 것입니다. 기능별 자세한 설명은 [사용 설명서](../guide/getting-started.md)에서, 업데이트와 백업은 [유지 관리](../guide/maintenance.md)에서 찾으세요. 문제가 있으면 [GitHub 이슈](https://github.com/kiritype/AtelierX/issues)로 알려 주세요.
+여기까지 따라 했다면 AtelierX의 기본 흐름을 모두 써 본 것입니다. 기능별 자세한 설명은 [사용 설명서](../guide/getting-started.md)에서, 업데이트와 백업은 [유지 관리](../guide/maintenance.md)에서 찾으세요. 문제나 의견은 앱의 **도움말 → 오류 제보·기능 제안·질문·문의**로 알려 주세요([유지 관리와 문제 해결](../guide/maintenance.md)).
