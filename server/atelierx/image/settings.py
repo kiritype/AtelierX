@@ -108,6 +108,21 @@ def _presets(values, current):
     return result
 
 
+def _downloads(values, current):
+    result = {**current}
+    if 'civitai_key' in values:
+        key = values['civitai_key'] or ''
+        # Only a vault entry is stored here (decision 0011), never the key itself.
+        if key and not (isinstance(key, str) and key.startswith('secret:') and len(key) <= 200):
+            raise ValueError(
+                Msg('server.llm.secret_reference', 'Save credentials in Settings and select the saved entry.')
+            )
+        result['civitai_key'] = key
+    if 'nsfw' in values:
+        result['nsfw'] = bool(values['nsfw'])
+    return result
+
+
 SECTIONS = {
     'gpu': (
         'gpu.json',
@@ -119,6 +134,8 @@ SECTIONS = {
         _gpu,
     ),
     'models': ('models.json', {'models_dir': ''}, _models),
+    # Getting models from Civitai (#161): the vault entry of the API key, and whether searches show adult models.
+    'downloads': ('downloads.json', {'civitai_key': '', 'nsfw': False}, _downloads),
     # Style presets (#169): the one seed every preview uses, so the previews compare side by side.
     'presets': ('presets.json', {'preview_seed': 1234567}, _presets),
     # Tags left out when tagger results are exported (watermarks, signatures ...).

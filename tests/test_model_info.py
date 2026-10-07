@@ -149,6 +149,6 @@ def test_the_models_api_lists_and_looks_up(unlocked, tmp_path, monkeypatch):
 
 def test_checkpoints_are_found_without_their_catalog_prefix(paths, tmp_path):
     library = _setup(paths, tmp_path)
-    item = {i['name']: i for i in library.items(CATALOG)}['checkpoint::sdxl\mix.safetensors']
+    item = {i['name']: i for i in library.items(CATALOG)}[r'checkpoint::sdxl\mix.safetensors']
     assert item['kind'] == 'checkpoint' and item['path'] and item['file'] == 'mix.safetensors'
     assert item['family'] == 'sdxl'

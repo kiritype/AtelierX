@@ -21,6 +21,7 @@ from .lab import LabMixin
 from .lora import models as lora_models
 from .lora import store as lora_store
 from .lora.trainer import LoraTrainer
+from .model_download import ModelDownloads
 from .model_info import ModelLibrary
 from .models import FAMILY_LABELS, ModelProfiles
 from .preset_share import PresetImports
@@ -66,6 +67,9 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.model_library = ModelLibrary(paths, self.models, lambda: self.installs.model_folders())
         self.models.looked_up = self.model_library.base_model
         self.models.find = self.model_library.locate_for_family
+        self.model_downloads = ModelDownloads(
+            paths, self.model_library, lambda: self.installs.model_folders(), self.civitai_key
+        )
         # Only jobs on this PC's GPU count for the GPU broker; an internet service's job does not hold it.
         self.gpu = GpuBroker(paths, self.lock, lambda: self.queue.select(self.on_gpu))
         self.control = ComfyControl(self)
@@ -120,6 +124,18 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             self.stop.clear()
             self._thread = threading.Thread(target=self.worker, name='image-worker', daemon=True)
             self._thread.start()
+
+    def civitai_key(self):
+        """The Civitai API key from the vault, or None (not set, or the app is locked)."""
+        from . import settings as image_settings
+
+        reference = image_settings.get(self.paths, 'downloads').get('civitai_key') or ''
+        if not reference.startswith('secret:'):
+            return None
+        try:
+            return self.llm.vault.reveal(reference[len('secret:') :]) or None
+        except Exception:
+            return None
 
     def model_items(self):
         """My models (#161): every file the image server offers, its family, source and Civitai information."""
