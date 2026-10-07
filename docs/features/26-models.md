@@ -48,7 +48,12 @@
 
 ### 찾기
 
-Civitai 검색(검색어·종류·기반 모델·정렬, NSFW 포함 체크)은 이 문서에 이어서 적는다.
+1. 모델 화면 → **찾기** 탭. 검색어, 종류(Checkpoint·LORA·LoCon·DoRA·임베딩·VAE·업스케일러), 기반 모델(Anima·Illustrious·NoobAI·Pony·
+   SDXL 1.0·Krea 2), 정렬(평가·받은 수·최신)로 Civitai를 찾는다. 처음에는 LORA·Anima·평가 순이다. 한 번에 24개, **더 보기**로 이어 본다.
+2. **NSFW 포함**: 기본 꺼짐, 마지막 선택을 이미지 설정(`downloads.nsfw`)에 기억한다. 끄면 성인 모델을 빼고, 일반 모델의 성인 등급 미리보기
+   그림도 숨긴다(`nsfwLevel` 1보다 큰 그림). 주소를 직접 붙여 넣어 받는 경우는 이 체크와 상관없다.
+3. 카드: 미리보기 그림(Civitai 주소를 리퍼러 없이 불러옴, 동영상은 표시하지 않음), 이름, 작성자·판, 종류, 기반 모델, 받은 수·좋아요.
+   누르면 받기 탭이 열리고 그 판으로 읽는다.
 
 ## 데이터
 
@@ -75,6 +80,7 @@ Civitai 검색(검색어·종류·기반 모델·정렬, NSFW 포함 체크)은 
 | `GET /api/image/models/preview?kind=&name=` | Stability Matrix 미리보기 그림 |
 | `PUT /api/image/models/family` | 계열 직접 지정 `{kind, name, family}` |
 | `POST /api/image/models/read` | `{address}` → 모델·판·파일·라이선스 |
+| `GET /api/image/models/search?query=&kind=&base=&sort=&nsfw=&cursor=` | Civitai 검색 한 쪽 `{items, next}` |
 | `GET·POST /api/image/models/downloads` | 받기 목록 / 넣기 `{model, version, file, subfolder?}` |
 | `POST /api/image/models/downloads/{id}/{cancel·resume·remove}` | 받기 항목 다루기 |
 | `GET /api/image/models/downloaded?folder=` | 폴더의 모델 파일 |
