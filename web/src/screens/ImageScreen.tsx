@@ -7,7 +7,7 @@ import ImageLibrary from '../components/image/ImageLibrary';
 import ImageQueue from '../components/image/ImageQueue';
 import ImageTools from '../components/image/ImageTools';
 import PresetExplorer from '../components/image/PresetExplorer';
-import ModelExplorer from '../components/image/ModelExplorer';
+import ModelsScreen from '../components/image/ModelsScreen';
 import { t } from '../i18n';
 import type { ImageView } from '../types';
 
@@ -33,7 +33,7 @@ export default function ImageScreen({
 }) {
   const content = () => {
   if (view === 'library') return <ImageLibrary workId={workId} />;
-  if (view === 'models') return <ModelExplorer />;
+  if (view === 'models') return <ModelsScreen openSettings={openSettings} />;
   if (view === 'presets') return <PresetExplorer workId={workId} openGenerate={() => openView('generate')} />;
   if (view === 'board') return <ImageBoard workId={workId} openGenerate={() => openImage('generate')} openGallery={(c, o) => openImage('gallery', c, o)} />;
   if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
