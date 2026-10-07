@@ -4,7 +4,7 @@
   "appearance": {
     "prompt": ["1girl", "solo", "black hair", "long hair", "straight hair", "brown eyes"],
     "negative": [],
-    "source": {"section": "appearance", "hash": "sample"}
+    "source": {"spans": [{"text": "- 허리까지 오는 검은 생머리, 갈색 눈, 단정한 인상.", "by": "auto"}]}
   },
   "outfits": {
     "o01": {
@@ -15,7 +15,7 @@
         "shoes": {"prompt": ["brown loafers"]}
       },
       "negative": [],
-      "source": {"section": "outfit", "heading": "교복", "hash": "sample"}
+      "source": {"spans": [{"text": "남색 재킷, 흰 블라우스, 남색 리본, 남색 체크 치마, 검은 스타킹, 갈색 로퍼.", "by": "auto"}]}
     }
   },
   "default_outfit": "o01"

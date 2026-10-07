@@ -7,6 +7,7 @@ import { useToast } from './Toasts';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import { useUnsaved } from './Unsaved';
 import { isNote, splitPrompt } from '../lib/tags';
+import { spansOf, type Source } from '../lib/designSource';
 
 type Prompt = { prompt?: string[]; negative?: string[]; ref?: string; [key: string]: any };
 type Outfit = { name: string; slots?: Record<string, Prompt>; negative?: string[]; [key: string]: any };
@@ -85,13 +86,14 @@ export default function ImageDesign({ workId, characterId, info, onReview: _onRe
     </div>
     <RunLlmSelector task="image_prompt" value={llm} onChange={setLlm} disabled={saving || editing} />
     {doc && <div className="faint">{t('image.design.convert_preserves_manual')}</div>}
+    <div className="faint small">{t('image.range.hint')}</div>
     {!doc && !editing && <div className="empty">{t('image.empty')}</div>}
     <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
     {doc && <>
-      <Part title={t('image.appearance')} status={status.appearance}>
+      <Part title={t('image.appearance')} status={status.appearance} source={doc.appearance?.source}>
         {editing ? <div className="row" style={{ alignItems: 'start' }}>{field(t('image.design.positive'), joinTags(doc.appearance?.prompt), (v) => patchDesign({ appearance: { ...(doc.appearance ?? {}), prompt: splitTags(v) } }))}{field(t('image.design.negative'), joinTags(doc.appearance?.negative), (v) => patchDesign({ appearance: { ...(doc.appearance ?? {}), negative: splitTags(v) } }))}</div> : <><Tags values={doc.appearance?.prompt ?? []} />{(doc.appearance?.negative?.length ?? 0) > 0 && <div className="row"><span className="faint">{t('image.design.negative')}:</span><Tags values={doc.appearance?.negative ?? []} /></div>}</>}
       </Part>
-      {Object.entries(doc.outfits ?? {}).map(([id, outfit]) => <Part key={id} title={<>{t('image.outfit')} {id} · {outfit.name}{outfit.code && <span className="chip small mono" title={t('lib.code')}>{outfit.code}</span>}{doc.default_outfit === id && <span className="chip">{t('image.design.default')}</span>}</>} status={status[`outfit:${id}`]}>
+      {Object.entries(doc.outfits ?? {}).map(([id, outfit]) => <Part key={id} title={<>{t('image.outfit')} {id} · {outfit.name}{outfit.code && <span className="chip small mono" title={t('lib.code')}>{outfit.code}</span>}{doc.default_outfit === id && <span className="chip">{t('image.design.default')}</span>}</>} status={status[`outfit:${id}`]} source={outfit.source}>
         {editing && <div className="row"><label className="grow">{t('image.design.outfit_name')}<input value={outfit.name ?? ''} onChange={(e) => patchDesign({ outfits: { ...doc.outfits, [id]: { ...outfit, name: e.target.value } } })} /></label><label title={t('lib.code_hint')}>{t('lib.code')}<input className="mono" style={{ width: 120 }} value={outfit.code ?? ''} onChange={(e) => patchDesign({ outfits: { ...doc.outfits, [id]: { ...outfit, code: e.target.value } } })} /></label><label>{t('image.design.default')}<input type="radio" checked={doc.default_outfit === id} onChange={() => patchDesign({ default_outfit: id })} /></label><button className="danger" onClick={() => deleteOutfit(id)}>{t('common.delete')}</button></div>}
         {editing && sameOutfitCode(id).length > 0 && <span className="warn-text small">{t('lib.code_same', { names: sameOutfitCode(id).join(', ') })}</span>}
         {!editing && <div className="row"><button onClick={() => openImage?.('generate', characterId, id)}>{t('flow.generate')}</button><button onClick={() => openImage?.('gallery', characterId, id)}>{t('flow.gallery')}</button><button onClick={() => openImage?.('lora', characterId, id)}>{t('flow.lora')}</button></div>}
@@ -106,9 +108,15 @@ export default function ImageDesign({ workId, characterId, info, onReview: _onRe
   </div>;
 }
 
-function Part({ title, status, children }: { title: React.ReactNode; status?: string; children: React.ReactNode }) {
-  const tone: Record<string, string> = { fresh: 'var(--success)', stale: 'var(--warning)', broken: 'var(--danger)', manual: 'var(--text-2)' };
-  return <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }} className="col"><div className="row"><strong className="grow">{title}</strong>{status && <span style={{ color: tone[status] }}>● {t(`image.status.${status}`)}</span>}</div>{children}</div>;
+function Part({ title, status, source, children }: { title: React.ReactNode; status?: string; source?: Source; children: React.ReactNode }) {
+  const tone: Record<string, string> = { fresh: 'var(--success)', stale: 'var(--warning)', broken: 'var(--danger)', manual: 'var(--text-2)', unsourced: 'var(--warning)' };
+  return <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }} className="col"><div className="row"><strong className="grow">{title}</strong>{status && <span style={{ color: tone[status] }} title={t(`image.status_hint.${status}`)}>● {t(`image.status.${status}`)}</span>}</div>{children}<Sources source={source} /></div>;
+}
+// The text a part came from (#150), folded: quoted by a whole-text conversion or chosen as a range.
+export function Sources({ source }: { source?: Source }) {
+  const spans = spansOf({ source });
+  if (!spans.length) return null;
+  return <details className="small"><summary className="faint">{t('image.source.title', { n: spans.length })}</summary><div className="col" style={{ gap: 4, marginTop: 4 }}>{spans.map((s, i) => <div key={i} className="row" style={{ alignItems: 'start' }}><span className="chip small">{t(`image.source.${s.by}`)}</span><span className="grow" style={{ whiteSpace: 'pre-wrap' }}>{s.text}</span></div>)}</div></details>;
 }
 function TagField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [text, setText] = useState(value);

@@ -209,24 +209,49 @@ IMAGE_FIXED = """너는 캐릭터 설정을 이미지 생성용 태그로 바꾸
 결과는 JSON 하나로만 답한다. 설명이나 다른 글은 쓰지 않는다.
 
 형식:
-{"appearance": {"prompt": ["태그"], "negative": ["태그"]},
- "outfits": [{"name": "의상 이름(받은 그대로)", "slots": {"부위 ID": ["태그"]}, "negative": ["태그"]}]}
+{"appearance": {"prompt": ["태그"], "negative": ["태그"], "evidence": ["근거 문장"]},
+ "outfits": [{"name": "의상 이름", "slots": {"부위 ID": ["태그"]}, "negative": ["태그"], "evidence": ["근거 문장"]}]}
 
-- outfits는 받은 의상 목록의 순서와 이름 그대로 쓴다.
+- 인물 본문 전체를 받는다. 이 인물의 현재 외모·의상만 쓴다. 다른 인물, 과거, 가정(만약 ~라면), 꿈·상상은 뺀다.
+- evidence에는 태그의 근거가 된 본문 문장을 고치지 않고 그대로 옮긴다. 줄이거나 바꿔 쓰지 않는다.
+- 기존 의상 목록에 있는 옷이면 그 이름을 그대로 쓴다. 목록에 없는 옷만 짧은 이름을 새로 짓는다.
+- 본문에 의상이 없으면 outfits는 빈 목록으로 둔다.
 - slots의 키는 다음 부위 ID만 쓴다: {slots}. 본문에 없는 부위는 넣지 않는다."""
 
+IMAGE_RANGE_FIXED = """너는 캐릭터 설정의 일부를 이미지 생성용 태그로 바꾸는 도우미다. 아래 가이드라인을 지킨다.
+결과는 JSON 하나로만 답한다. 설명이나 다른 글은 쓰지 않는다.
 
-def image_messages(appearance, outfits, slots, guideline):
-    system = '\n\n'.join(
-        filter(
-            None,
-            [IMAGE_FIXED.replace('{slots}', ', '.join(f'{s["id"]}({s["name"]})' for s in slots)), guideline],
+받은 글은 사람이 고른 {what} 묘사다. 이 글에 적힌 것만 태그로 바꾼다. 다른 인물, 과거, 가정은 뺀다.
+
+형식:
+{format}"""
+
+
+def _slot_list(slots):
+    return ', '.join(f'{s["id"]}({s["name"]})' for s in slots)
+
+
+def image_messages(body, existing, slots, guideline):
+    """Whole-text conversion (#150): the character's text and the names of the outfits it has."""
+    system = '\n\n'.join(filter(None, [IMAGE_FIXED.replace('{slots}', _slot_list(slots)), guideline]))
+    names = '\n'.join(f'- {name}' for name in existing) or '(없음)'
+    user = f'# 기존 의상\n{names}\n\n# 인물 본문\n{body.strip() or "(없음)"}'
+    return [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
+
+
+def image_range_messages(text, part, slots, guideline):
+    """Range conversion (#150): only the chosen text, into one part."""
+    if part == 'appearance':
+        what, form = '외모', '{"prompt": ["태그"], "negative": ["태그"]}'
+    else:
+        what = '의상'
+        form = (
+            '{"slots": {"부위 ID": ["태그"]}, "negative": ["태그"]}\n\n'
+            f'- slots의 키는 다음 부위 ID만 쓴다: {_slot_list(slots)}. 글에 없는 부위는 넣지 않는다.'
         )
-    )
-    parts = [f'# 외모\n{appearance.strip() or "(없음)"}']
-    for name, text in outfits:
-        parts.append(f'# 의상: {name}\n{text.strip() or "(없음)"}')
-    return [{'role': 'system', 'content': system}, {'role': 'user', 'content': '\n\n'.join(parts)}]
+    fixed = IMAGE_RANGE_FIXED.replace('{what}', what).replace('{format}', form)
+    system = '\n\n'.join(filter(None, [fixed, guideline]))
+    return [{'role': 'system', 'content': system}, {'role': 'user', 'content': text.strip()}]
 
 
 def image_ok(data):
@@ -235,6 +260,10 @@ def image_ok(data):
         and isinstance(data.get('appearance'), dict)
         and isinstance(data.get('outfits'), list)
     )
+
+
+def image_range_ok(data):
+    return isinstance(data, dict) and (isinstance(data.get('prompt'), list) or isinstance(data.get('slots'), dict))
 
 
 def tags(values):

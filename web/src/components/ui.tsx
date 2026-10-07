@@ -81,34 +81,76 @@ export function ChipsInput({
   );
 }
 
-export type MenuItem = { label: string; run: () => void; danger?: boolean } | null;
+// An entry runs something, or opens a submenu of its own entries (#150); `hint` shows its key on the right.
+export type MenuItem = { label: string; run?: () => void; danger?: boolean; disabled?: boolean; hint?: string; items?: MenuItem[] } | null;
 
 export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
+    window.addEventListener('keydown', escape);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', escape);
+    };
   }, [onClose]);
   return (
-    <div className="ctx" ref={ref} style={{ left: x, top: y }}>
-      {items.map((item, i) =>
-        item ? (
-          <button
-            key={i}
-            className={item.danger ? 'danger' : undefined}
-            onClick={() => {
-              onClose();
-              item.run();
-            }}
-          >
-            {item.label}
-          </button>
-        ) : (
-          <hr key={i} style={{ border: 0, borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-        ),
-      )}
+    <div ref={ref}>
+      <MenuList x={x} y={y} items={items} onClose={onClose} />
     </div>
+  );
+}
+
+function MenuList({ x, y, from, items, onClose }: { x: number; y: number; from?: number; items: MenuItem[]; onClose: () => void }) {
+  const [open, setOpen] = useState<{ index: number; x: number; y: number; from: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  // Kept inside the window: a menu opened near the right or bottom edge moves back in.
+  const [place, setPlace] = useState({ left: x, top: y });
+  useEffect(() => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    // A submenu with no room on the right opens on the left of its parent.
+    const left = x + box.width > window.innerWidth - 4 && from !== undefined ? from - box.width + 2 : x;
+    setPlace({ left: Math.max(4, Math.min(left, window.innerWidth - box.width - 4)), top: Math.max(4, Math.min(y, window.innerHeight - box.height - 4)) });
+  }, [x, y, from]);
+  const sub = open !== null ? items[open.index] : null;
+  return (
+    <>
+      <div className="ctx" ref={ref} style={place} role="menu">
+        {items.map((item, i) =>
+          item ? (
+            <button
+              key={i}
+              role="menuitem"
+              disabled={item.disabled}
+              className={`${item.danger ? 'danger' : ''}${open?.index === i ? ' open' : ''}`}
+              onMouseEnter={(e) => {
+                const box = e.currentTarget.getBoundingClientRect();
+                setOpen(item.items ? { index: i, x: box.right - 2, y: box.top - 4, from: box.left } : null);
+              }}
+              onClick={(e) => {
+                if (item.items) {
+                  const box = e.currentTarget.getBoundingClientRect();
+                  setOpen({ index: i, x: box.right - 2, y: box.top - 4, from: box.left });
+                  return;
+                }
+                onClose();
+                item.run?.();
+              }}
+            >
+              <span className="grow">{item.label}</span>
+              {item.hint && <span className="ctx-hint">{item.hint}</span>}
+              {item.items && <span className="ctx-hint">▸</span>}
+            </button>
+          ) : (
+            <hr key={i} style={{ border: 0, borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+          ),
+        )}
+      </div>
+      {sub?.items && open && <MenuList key={open.index} x={open.x} y={open.y} from={open.from} items={sub.items} onClose={onClose} />}
+    </>
   );
 }
 

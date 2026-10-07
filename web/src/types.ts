@@ -87,7 +87,6 @@ export type WorkInfo = {
   name: string;
   doc: Record<string, any>;
   effective: { linked: string[]; values: Record<string, any>; sources: Record<string, any> };
-  sections: Record<string, string>;
   presets: { id: string; name: string; readonly: boolean }[];
 };
 

@@ -2,7 +2,7 @@
 
 from starlette.routing import Route
 
-from ..core.fsutil import read_json, sha256_text, write_json
+from ..core.fsutil import read_json, write_json
 from ..core.i18n import AppError, Msg
 from ..core.snapshots import Snapshots
 from ..image import designs as image_designs
@@ -22,14 +22,7 @@ async def image_design(request):
         parts = {'appearance': design.get('appearance', {})}
         parts.update({f'outfit:{k}': v for k, v in (design.get('outfits') or {}).items()})
         for key, part in parts.items():
-            source = part.get('source') or {}
-            text = work.section_text(body_text, source.get('section'), source.get('heading'))
-            if not source:
-                status[key] = 'manual'
-            elif text is None:
-                status[key] = 'broken'
-            else:
-                status[key] = 'fresh' if sha256_text(text) == source.get('hash') else 'stale'
+            status[key] = image_designs.part_status(work, body_text, part)
     return ok({'design': design, 'status': status, 'revision': image_designs.revision(design)})
 
 

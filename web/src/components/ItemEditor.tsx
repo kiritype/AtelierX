@@ -13,7 +13,7 @@ import type { ImageView } from '../types';
 import JsxWorkbench from './JsxWorkbench';
 import { createSaver } from '../lib/exampleSaver';
 import { useToast } from './Toasts';
-import { ChipsInput } from './ui';
+import { ChipsInput, type MenuItem } from './ui';
 import { KindIcon } from './icons';
 import { useUnsaved } from './Unsaved';
 
@@ -112,6 +112,65 @@ export default function ItemEditor({
   }, [body, kind, countMode]);
   // The text, form and JSX examples, saved together (also by "Save all and leave").
   useUnsaved('text', dirty || jsxDirty, () => saveRef.current());
+
+  // Range conversion (#150): the selected text of a character into its appearance or one outfit.
+  const characterId = kind === 'character' ? (meta.id as string | undefined) : undefined;
+  const design = useQuery<{ design?: { outfits?: Record<string, { name?: string }>; appearance?: { prompt?: string[] } } | null }>({
+    queryKey: ['design', workId, characterId],
+    queryFn: () => get(`/api/works/${workId}/image/characters/${characterId}`),
+    enabled: !!characterId,
+  });
+  async function convertRange(text: string, range: { part: 'appearance' | 'outfit'; outfit?: string; name?: string; add?: boolean }) {
+    if (!characterId) return;
+    if (!text.trim()) {
+      toast({ text: t('image.range.select_first'), tone: 'error' });
+      return;
+    }
+    if (!(await saveRef.current())) return;
+    try {
+      await post(`/api/works/${workId}/image/characters/${characterId}/convert`, { range: { ...range, text } });
+      toast({ text: t('image.range.started') });
+    } catch (err) {
+      toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+    }
+  }
+  const imageMenu = ({ text }: { text: string }): MenuItem[] => {
+    if (!characterId) return [];
+    const outfits = Object.entries(design.data?.design?.outfits ?? {});
+    const none = !text.trim();
+    return [
+      {
+        label: t('image.range.menu'),
+        hint: 'Alt+P',
+        items: [
+          { label: t('image.appearance'), disabled: none, run: () => convertRange(text, { part: 'appearance' }) },
+          {
+            label: t('image.outfit'),
+            disabled: none,
+            items: [
+              ...outfits.map(([id, outfit]): MenuItem => ({
+                label: `${outfit.name ?? id} (${id})`,
+                run: () => convertRange(text, { part: 'outfit', outfit: id }),
+              })),
+              ...(outfits.length ? [null] : []),
+              {
+                label: t('image.range.new_outfit'),
+                run: () => {
+                  const name = prompt(t('image.range.new_outfit_name'))?.trim();
+                  if (name) convertRange(text, { part: 'outfit', name });
+                },
+              },
+            ],
+          },
+          {
+            label: t('image.range.add_appearance'),
+            disabled: none || !design.data?.design?.appearance,
+            run: () => convertRange(text, { part: 'appearance', add: true }),
+          },
+        ],
+      },
+    ];
+  };
 
   const save = useCallback(async () => {
     if (saving.current) return false;
@@ -320,6 +379,7 @@ export default function ItemEditor({
             onAttach={(selection) =>
               window.dispatchEvent(new CustomEvent('atelierx:agent-attach', { detail: { path, ...selection } }))
             }
+            menu={characterId ? imageMenu : undefined}
             onSave={save}
           />
         )}

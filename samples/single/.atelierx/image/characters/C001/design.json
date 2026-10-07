@@ -4,7 +4,7 @@
   "appearance": {
     "prompt": ["1girl", "solo", "brown hair", "short hair", "side-swept bangs", "brown eyes", "slender"],
     "negative": [],
-    "source": {"section": "appearance", "hash": "sample"}
+    "source": {"spans": [{"text": "- 어깨에 닿는 갈색 단발, 앞머리는 옆으로 넘김.", "by": "auto"}, {"text": "- 갈색 눈, 웃을 때 눈꼬리가 내려감.", "by": "auto"}, {"text": "- 보통 키, 마른 편.", "by": "auto"}]}
   },
   "outfits": {
     "o01": {
@@ -15,7 +15,7 @@
         "shoes": {"prompt": ["brown shoes"]}
       },
       "negative": [],
-      "source": {"section": "outfit", "heading": "근무복", "hash": "sample"}
+      "source": {"spans": [{"text": "흰 셔츠 소매를 걷어 올리고 남색 앞치마를 맨다. 검은 면바지, 갈색 단화.", "by": "auto"}]}
     },
     "o02": {
       "name": "쉬는 날",
@@ -25,7 +25,7 @@
         "shoes": {"prompt": ["white sneakers"]}
       },
       "negative": [],
-      "source": {"section": "outfit", "heading": "쉬는 날", "hash": "sample"}
+      "source": {"spans": [{"text": "크림색 니트와 연청 청바지, 흰 운동화.", "by": "auto"}]}
     }
   },
   "default_outfit": "o01"
