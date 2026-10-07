@@ -552,6 +552,7 @@ def file_index(folders):
                         'name': str(PureWindowsPath(file.relative_to(root))),
                         'sha256': str((doc.get('Hashes') or {}).get('SHA256') or '').lower(),
                         'version_id': str(doc.get('VersionId') or doc.get('ModelVersionId') or ''),
+                        'model_id': str(doc.get('ModelId') or ''),
                     }
                 )
     return index
