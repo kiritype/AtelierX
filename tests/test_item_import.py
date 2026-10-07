@@ -154,3 +154,18 @@ def test_a_file_refused_half_way_takes_back_the_others(unlocked, monkeypatch):
     done = _import(c, wid, files, choices, apply=True).json()
     assert sorted(done['created']) == ['a.md', 'b.md']
 
+
+def test_a_broken_jsx_brought_in_as_a_note_becomes_a_markdown_note(unlocked):
+    """#166: the whole text is kept as a .md note."""
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    text = '/*---\nkind: [jsx\n---*/\nfunction X() {}\n'
+    files = [{'name': 'Broken.jsx', 'text': text}]
+    choices = {'f0': {'include': True, 'broken': 'note'}}
+    preview = _import(c, wid, files, choices).json()
+    row = preview['rows'][0]
+    assert preview['blocked'] == [] and row['kind'] == 'note' and row['path'] == 'Broken.md'
+    assert 'kind_error' not in row
+    assert _import(c, wid, files, choices, apply=True).json()['created'] == ['Broken.md']
+    note = c.get(f'/api/works/{wid}/file', params={'path': 'Broken.md'}).json()
+    assert note['kind'] == 'note' and 'function X() {}' in note['body']
