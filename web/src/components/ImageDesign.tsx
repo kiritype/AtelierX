@@ -6,13 +6,15 @@ import type { WorkInfo, ImageView } from '../types';
 import { useToast } from './Toasts';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import { useUnsaved } from './Unsaved';
+import { splitPrompt } from '../lib/tags';
 
 type Prompt = { prompt?: string[]; negative?: string[]; ref?: string; [key: string]: any };
 type Outfit = { name: string; slots?: Record<string, Prompt>; negative?: string[]; [key: string]: any };
 type Design = { trigger?: string; appearance?: Prompt; outfits?: Record<string, Outfit>; default_outfit?: string | null; retired_outfit_ids?: string[]; next_outfit_number?: number; [key: string]: any };
 type DesignResult = { design?: Design; status?: Record<string, string>; revision?: string | null };
 const DESIGN_URL = (workId: string, characterId: string) => `/api/works/${workId}/image/characters/${characterId}`;
-const splitTags = (text: string) => text.split(/[,\n]/).map((v) => v.trim()).filter(Boolean);
+// Commas and line breaks outside brackets separate entries, so weighted groups stay whole (#148).
+const splitTags = (text: string) => splitPrompt(text);
 const joinTags = (tags?: string[]) => (tags ?? []).join(', ');
 
 export default function ImageDesign({ workId, characterId, info, onReview: _onReview, beforeConvert, openImage, onDirtyChange }: {
