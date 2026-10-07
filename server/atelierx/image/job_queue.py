@@ -40,6 +40,7 @@ RETRY_KEYS = (
     'tool_item',
     'tag_settings',
     'post_op',
+    'post_method',
     'post_options',
     'post_prefix',
     'post_source',

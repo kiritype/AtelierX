@@ -22,7 +22,7 @@ from ...core.i18n import Msg, message_of
 from ..gallery import is_asset
 from ..util import atomic_json, now, replace_file
 from ..workflow import build_workflow, validate_settings
-from . import censor
+from . import censor, processors
 
 PREFIXES = ('AtelierX',)
 REMBG_MODEL = 'isnet-anime: anime illustrations'
@@ -62,88 +62,104 @@ def _number(options, key, default, low, high, kind=float):
     return kind(value)
 
 
-def check_options(op, options, info):
+def check_options(op, options, info, method='local'):
     """Normalised options for ``op``; ``info`` is :meth:`PostprocessMixin.postprocess_info`."""
-    options = options or {}
-    if op == 'alpha':
-        method = options.get('method', 'isnet')
-        if method not in ('isnet', 'person'):
+    return processors.get(op, method).check(options or {}, info)
+
+
+def _check_alpha(options, info):
+    method = options.get('method', 'isnet')
+    if method not in ('isnet', 'person'):
+        raise ValueError(
+            Msg(
+                'server.postprocess.choose_a_background_removal_method',
+                'Choose a background removal method.',
+            )
+        )
+    if method == 'isnet' and not info.get('rembg', True):
+        raise ValueError(
+            Msg(
+                'server.postprocess.the_isnet_anime_background_removal_node',
+                'The isnet-anime background removal node (ComfyUI_essentials) is missing.',
+            )
+        )
+    return {'method': method, 'confidence': _number(options, 'confidence', 0.35, 0, 1)}
+
+
+def _check_detect(options, info):
+    labels = options.get('labels') or list(NSFW_LABELS)
+    if isinstance(labels, str):
+        labels = [label.strip() for label in labels.split(',') if label.strip()]
+    if not labels or any(label not in NSFW_LABELS for label in labels):
+        raise ValueError(
+            Msg(
+                'server.postprocess.choose_areas_to_cover_from',
+                'Choose areas to cover from: {nsfw_labels}',
+                nsfw_labels=', '.join(NSFW_LABELS),
+            )
+        )
+    return {
+        'confidence': _number(options, 'confidence', 0.35, 0, 1),
+        'labels': ','.join(labels),
+    }
+
+
+def _check_upscale(options, info):
+    model = options.get('model') or next(iter(info['upscale_models']), '')
+    if model not in info['upscale_models']:
+        raise ValueError(
+            Msg(
+                'server.postprocess.choose_an_upscale_model_from_the',
+                'Choose an upscale model from the list.',
+            )
+        )
+    return {'model': model, 'scale': _number(options, 'scale', 2, 0.25, 8)}
+
+
+def _check_detail(options, info):
+    stages = {stage: bool(options.get(stage, stage != 'mouth')) for stage in DETAIL_STAGES}
+    if not any(stages.values()):
+        raise ValueError(
+            Msg(
+                'server.postprocess.choose_at_least_one_area_to',
+                'Choose at least one area to redraw.',
+            )
+        )
+    return {
+        **stages,
+        'denoise': _number(options, 'denoise', 0.4, 0.05, 1),
+        'steps': _number(options, 'steps', 20, 1, 60, int),
+    }
+
+
+def _check_inpaint(options, info):
+    # A prompt left out (None) is the image's own; an empty one stays empty.
+    prompts = {}
+    for key in ('positive', 'negative'):
+        value = options.get(key)
+        if value is None:
+            prompts[key] = None
+            continue
+        if not isinstance(value, str) or len(value) > 8000:
             raise ValueError(
                 Msg(
-                    'server.postprocess.choose_a_background_removal_method',
-                    'Choose a background removal method.',
+                    'server.postprocess.the_prompt_must_be_text_of',
+                    'The {key} prompt must be text of 8000 characters or fewer.',
+                    key=key,
                 )
             )
-        return {'method': method, 'confidence': _number(options, 'confidence', 0.35, 0, 1)}
-    if op == 'detect':
-        labels = options.get('labels') or list(NSFW_LABELS)
-        if isinstance(labels, str):
-            labels = [label.strip() for label in labels.split(',') if label.strip()]
-        if not labels or any(label not in NSFW_LABELS for label in labels):
-            raise ValueError(
-                Msg(
-                    'server.postprocess.choose_areas_to_cover_from',
-                    'Choose areas to cover from: {nsfw_labels}',
-                    nsfw_labels=', '.join(NSFW_LABELS),
-                )
-            )
-        return {
-            'confidence': _number(options, 'confidence', 0.35, 0, 1),
-            'labels': ','.join(labels),
-        }
-    if op == 'upscale':
-        model = options.get('model') or next(iter(info['upscale_models']), '')
-        if model not in info['upscale_models']:
-            raise ValueError(
-                Msg(
-                    'server.postprocess.choose_an_upscale_model_from_the',
-                    'Choose an upscale model from the list.',
-                )
-            )
-        return {'model': model, 'scale': _number(options, 'scale', 2, 0.25, 8)}
-    if op == 'detail':
-        stages = {stage: bool(options.get(stage, stage != 'mouth')) for stage in DETAIL_STAGES}
-        if not any(stages.values()):
-            raise ValueError(
-                Msg(
-                    'server.postprocess.choose_at_least_one_area_to',
-                    'Choose at least one area to redraw.',
-                )
-            )
-        return {
-            **stages,
-            'denoise': _number(options, 'denoise', 0.4, 0.05, 1),
-            'steps': _number(options, 'steps', 20, 1, 60, int),
-        }
-    if op == 'inpaint':
-        # A prompt left out (None) is the image's own; an empty one stays empty.
-        prompts = {}
-        for key in ('positive', 'negative'):
-            value = options.get(key)
-            if value is None:
-                prompts[key] = None
-                continue
-            if not isinstance(value, str) or len(value) > 8000:
-                raise ValueError(
-                    Msg(
-                        'server.postprocess.the_prompt_must_be_text_of',
-                        'The {key} prompt must be text of 8000 characters or fewer.',
-                        key=key,
-                    )
-                )
-            prompts[key] = value.strip()
-        return {
-            **prompts,
-            'denoise': _number(options, 'denoise', 0.6, 0.05, 1),
-            # 0 keeps the step count the image was made with.
-            'steps': _number(options, 'steps', 0, 0, 60, int),
-            'grow': _number(options, 'grow', 8, -64, 64, int),
-            'feather': _number(options, 'feather', 8, 0, 64, int),
-            # crop: redraw only the masked region, enlarged to the generation size.
-            'area': _choice(options, 'area', ('crop', 'full')),
-            'padding': _number(options, 'padding', 64, 0, 512, int),
-        }
-    raise ValueError(Msg('server.postprocess.unknown_post_process', 'Unknown post-process.'))
+        prompts[key] = value.strip()
+    return {
+        **prompts,
+        'denoise': _number(options, 'denoise', 0.6, 0.05, 1),
+        # 0 keeps the step count the image was made with.
+        'steps': _number(options, 'steps', 0, 0, 60, int),
+        'grow': _number(options, 'grow', 8, -64, 64, int),
+        'feather': _number(options, 'feather', 8, 0, 64, int),
+        # crop: redraw only the masked region, enlarged to the generation size.
+        'area': _choice(options, 'area', ('crop', 'full')),
+        'padding': _number(options, 'padding', 64, 0, 512, int),
+    }
 
 
 def _choice(options, key, allowed):
@@ -256,10 +272,20 @@ def inpaint_graph(image_name, mask_name, options, source):
     return nodes
 
 
-def graph(op, image_name, options, prefix):
+def _simple_graph(image_name, build):
+    """LoadImage → ``build(image)`` nodes → the output node the worker reads."""
     nodes = {'1': {'class_type': 'LoadImage', 'inputs': {'image': image_name}}}
-    image = ['1', 0]
-    if op == 'alpha':
+    result = build(nodes, ['1', 0])
+    # Same output node id as generation graphs, so the worker reads the result the same way.
+    nodes['output'] = {
+        'class_type': 'PreviewImage',
+        'inputs': {'images': result},
+    }
+    return nodes
+
+
+def _alpha_nodes(options, prefix):
+    def build(nodes, image):
         if options['method'] == 'isnet':
             nodes['2'] = {
                 'class_type': 'RemBGSession+',
@@ -281,8 +307,13 @@ def graph(op, image_name, options, prefix):
         mask = ['3', 1] if options['method'] == 'isnet' else ['3', 0]
         # The kept area comes back as a mask to edit; the app applies it afterwards.
         nodes['4'] = {'class_type': 'MaskToImage', 'inputs': {'mask': mask}}
-        result = ['4', 0]
-    elif op == 'detect':
+        return ['4', 0]
+
+    return build
+
+
+def _detect_nodes(options, prefix):
+    def build(nodes, image):
         nodes['2'] = {
             'class_type': f'{prefix}DetectNsfwMask',
             'inputs': {
@@ -294,8 +325,13 @@ def graph(op, image_name, options, prefix):
         }
         # The mask comes back as an image; it becomes the editable censor mask.
         nodes['3'] = {'class_type': 'MaskToImage', 'inputs': {'mask': ['2', 0]}}
-        result = ['3', 0]
-    else:
+        return ['3', 0]
+
+    return build
+
+
+def _upscale_nodes(options, prefix):
+    def build(nodes, image):
         nodes['2'] = {
             'class_type': f'{prefix}Upscale',
             'inputs': {
@@ -304,13 +340,101 @@ def graph(op, image_name, options, prefix):
                 'scale': options['scale'],
             },
         }
-        result = ['2', 0]
-    # Same output node id as generation graphs, so the worker reads the result the same way.
-    nodes['output'] = {
-        'class_type': 'PreviewImage',
-        'inputs': {'images': result},
-    }
-    return nodes
+        return ['2', 0]
+
+    return build
+
+
+_NODES = {'alpha': _alpha_nodes, 'detect': _detect_nodes, 'upscale': _upscale_nodes}
+
+
+def graph(op, image_name, options, prefix):
+    return _simple_graph(image_name, _NODES[op](options, prefix))
+
+
+# --- processors on this PC (ComfyUI) --------------------------------------------------------------------------
+class _LocalProcessor(processors.Processor):
+    method = 'local'
+
+    def __init__(self, feature, check, mask_kind=None):
+        self.feature, self.label, self._check, self.mask_kind = feature, OPS[feature], check, mask_kind
+
+    def check(self, options, info):
+        return self._check(options, info)
+
+    def build(self, runtime, job, item, path, reference):
+        return graph(self.feature, reference, job['post_options'], job['post_prefix'])
+
+
+class _LocalDetail(_LocalProcessor):
+    needs_record = True
+    record_missing = Msg(
+        'server.postprocess.detailer_needs_record',
+        'The detailer needs images made by this app (with a record): {missing}',
+    )
+
+    def build(self, runtime, job, item, path, reference):
+        return detail_graph(reference, job['post_options'], job['post_source'], job['post_prefix'])
+
+
+class _LocalInpaint(_LocalProcessor):
+    needs_record = True
+    mask_input = 'inpaint'
+    record_missing = Msg(
+        'server.postprocess.inpaint_needs_record',
+        'Inpaint needs images made by this app (with a record): {missing}',
+    )
+
+    def build(self, runtime, job, item, path, reference):
+        options = job['post_options']
+        mask = runtime._inpaint_mask(item, job)
+        job.pop('post_crop', None)
+        if options.get('area') == 'crop':
+            box = mask.getbbox()
+            if box is None:
+                raise ValueError(
+                    Msg(
+                        'server.postprocess.the_mask_of_the_area_to',
+                        'The mask of the area to redraw is empty.',
+                    )
+                )
+            settings = job['post_source']['settings']
+            region, size = crop_region(
+                box, mask.size, options['padding'], settings['width'] * settings['height']
+            )
+            with Image.open(path) as source:
+                image = ImageOps.exif_transpose(source).convert('RGB')
+            crop = image.crop(region).resize(size, Image.LANCZOS)
+            mask = mask.crop(region).resize(size, Image.LANCZOS)
+            reference = runtime._upload_png(f'atelierx_inpaint_{item["id"]}_crop.png', crop)
+            # finish() pastes the redrawn region back here.
+            job['post_crop'] = {'region': list(region), 'size': list(size)}
+        mask_ref = runtime._upload_png(f'atelierx_inpaint_{item["id"]}.png', mask)
+        return inpaint_graph(reference, mask_ref, options, job['post_source'])
+
+    def finish(self, runtime, job, item, image):
+        if job.get('post_crop'):
+            # Shrink the redrawn region back and blend it in with the soft-edged mask.
+            region = tuple(job['post_crop']['region'])
+            mask = runtime._inpaint_mask(item, job).crop(region)
+            with Image.open(runtime.tools.file(item)) as source:
+                full = ImageOps.exif_transpose(source).convert('RGB')
+            patch = image.convert('RGB').resize(mask.size, Image.LANCZOS)
+            full.paste(patch, region[:2], mask)
+            image = full
+        # ComfyUI drops transparency; a transparent source keeps its own alpha.
+        with Image.open(runtime.tools.file(item)) as source:
+            if 'A' in source.getbands() and source.size == image.size:
+                image = image.convert('RGB')
+                image.putalpha(source.getchannel('A'))
+        return image
+
+
+processors.register(_LocalProcessor('alpha', _check_alpha, mask_kind='alpha'))
+processors.register(_LocalProcessor('detect', _check_detect, mask_kind='censor'))
+processors.register(_LocalProcessor('upscale', _check_upscale))
+processors.register(_LocalDetail('detail', _check_detail))
+processors.register(_LocalInpaint('inpaint', _check_inpaint))
 
 
 class PostprocessMixin:
@@ -366,6 +490,8 @@ class PostprocessMixin:
                 )
             )
         op = body.get('op')
+        method = body.get('method') or 'local'
+        processor = processors.get(op, method)
         info = self.postprocess_info()
         if not info['available']:
             raise ValueError(info['error'])
@@ -376,17 +502,10 @@ class PostprocessMixin:
                     'Unknown post-process, or ComfyUI lacks the nodes it needs.',
                 )
             )
-        if op == 'alpha' and body.get('options', {}).get('method', 'isnet') == 'isnet' and not info['rembg']:
-            raise ValueError(
-                Msg(
-                    'server.postprocess.the_isnet_anime_background_removal_node',
-                    'The isnet-anime background removal node (ComfyUI_essentials) is missing.',
-                )
-            )
-        options = check_options(op, body.get('options'), info)
+        options = processor.check(body.get('options') or {}, info)
         items = [self.tools.get(i) for i in ids]
         sources = {}
-        if op in ('detail', 'inpaint'):
+        if processor.needs_record:
             # Redrawing needs the model, LoRAs and prompt the image was made with.
             catalog = self.comfy.catalog()
             missing = []
@@ -405,23 +524,15 @@ class PostprocessMixin:
                     'seed': secrets.randbits(32),
                 }
             if missing:
-                if op == 'detail':
-                    raise ValueError(
-                        Msg(
-                            'server.postprocess.detailer_needs_record',
-                            'The detailer needs images made by this app (with a record): {missing}',
-                            missing=', '.join(missing[:5]),
-                        )
-                    )
                 raise ValueError(
                     Msg(
-                        'server.postprocess.inpaint_needs_record',
-                        'Inpaint needs images made by this app (with a record): {missing}',
+                        processor.record_missing.key,
+                        processor.record_missing.text,
                         missing=', '.join(missing[:5]),
                     )
                 )
-        if op == 'inpaint':
-            unmasked = [item['name'] for item in items if not item.get('inpaint_mask')]
+        if processor.mask_input:
+            unmasked = [item['name'] for item in items if not item.get(f'{processor.mask_input}_mask')]
             if unmasked:
                 raise ValueError(
                     Msg(
@@ -440,6 +551,7 @@ class PostprocessMixin:
                 tool_item=item['id'],
                 tool_name=item['name'],
                 post_op=op,
+                post_method=method,
                 post_options=options,
                 post_prefix=info['prefix'],
                 post_source=sources.get(item['id']),
@@ -449,13 +561,13 @@ class PostprocessMixin:
             )
             for item in items
         ]
-        # Each inpaint job keeps the mask as it is now; generating and pasting back
+        # Each job that reads a mask keeps it as it is now; generating and pasting back
         # both use this copy even if the mask is edited while the job waits or runs.
         frozen = []
         try:
             for job in prepared:
-                if op == 'inpaint':
-                    job['post_mask'] = self.tools.freeze_mask(job['tool_item'], 'inpaint')
+                if processor.mask_input:
+                    job['post_mask'] = self.tools.freeze_mask(job['tool_item'], processor.mask_input)
                     frozen.append(job['post_mask'])
             self.queue.add(prepared)
         except Exception:
@@ -473,35 +585,8 @@ class PostprocessMixin:
         reference = uploaded['name']
         if uploaded.get('subfolder'):
             reference = f'{uploaded["subfolder"]}/{reference}'
-        if job['post_op'] == 'detail':
-            return detail_graph(reference, job['post_options'], job['post_source'], job['post_prefix'])
-        if job['post_op'] == 'inpaint':
-            options = job['post_options']
-            mask = self._inpaint_mask(item, job)
-            job.pop('post_crop', None)
-            if options.get('area') == 'crop':
-                box = mask.getbbox()
-                if box is None:
-                    raise ValueError(
-                        Msg(
-                            'server.postprocess.the_mask_of_the_area_to',
-                            'The mask of the area to redraw is empty.',
-                        )
-                    )
-                settings = job['post_source']['settings']
-                region, size = crop_region(
-                    box, mask.size, options['padding'], settings['width'] * settings['height']
-                )
-                with Image.open(path) as source:
-                    image = ImageOps.exif_transpose(source).convert('RGB')
-                crop = image.crop(region).resize(size, Image.LANCZOS)
-                mask = mask.crop(region).resize(size, Image.LANCZOS)
-                reference = self._upload_png(f'atelierx_inpaint_{item["id"]}_crop.png', crop)
-                # save_post pastes the redrawn region back here.
-                job['post_crop'] = {'region': list(region), 'size': list(size)}
-            mask_ref = self._upload_png(f'atelierx_inpaint_{item["id"]}.png', mask)
-            return inpaint_graph(reference, mask_ref, options, job['post_source'])
-        return graph(job['post_op'], reference, job['post_options'], job['post_prefix'])
+        processor = processors.get(job['post_op'], job.get('post_method') or 'local')
+        return processor.build(self, job, item, path, reference)
 
     def _inpaint_mask(self, item, job):
         """The redraw mask of a job: the copy taken when it was queued (older saved jobs
@@ -535,25 +620,12 @@ class PostprocessMixin:
         item = self.tools.get(job['tool_item'])
         image = Image.open(io.BytesIO(image_bytes))
         image.load()
-        if job['post_op'] in ('detect', 'alpha'):
-            kind = 'censor' if job['post_op'] == 'detect' else 'alpha'
+        processor = processors.get(job['post_op'], job.get('post_method') or 'local')
+        if processor.mask_kind:
+            kind = processor.mask_kind
             self.tools.set_mask(item['id'], image.convert('L'), 'detected', kind)
             return f'/api/image/tools/mask?id={item["id"]}&kind={kind}', None
-        if job['post_op'] == 'inpaint' and job.get('post_crop'):
-            # Shrink the redrawn region back and blend it in with the soft-edged mask.
-            region = tuple(job['post_crop']['region'])
-            mask = self._inpaint_mask(item, job).crop(region)
-            with Image.open(self.tools.file(item)) as source:
-                full = ImageOps.exif_transpose(source).convert('RGB')
-            patch = image.convert('RGB').resize(mask.size, Image.LANCZOS)
-            full.paste(patch, region[:2], mask)
-            image = full
-        if job['post_op'] == 'inpaint':
-            # ComfyUI drops transparency; a transparent source keeps its own alpha.
-            with Image.open(self.tools.file(item)) as source:
-                if 'A' in source.getbands() and source.size == image.size:
-                    image = image.convert('RGB')
-                    image.putalpha(source.getchannel('A'))
+        image = processor.finish(self, job, item, image)
         return self._store_result(
             item,
             image,
