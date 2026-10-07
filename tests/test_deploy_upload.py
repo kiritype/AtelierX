@@ -111,6 +111,11 @@ def test_edited_paths_clashes_ratings_and_retrying_only_some(unlocked):
     assert bad.status_code == 400
 
     assert c.post('/api/image/deploy/plan', json={**body, 'ratings': ['nsfw']}).json()['rows'] == []
+    # Every rating unticked is no rating at all (#164); null or left out is every rating.
+    assert c.post('/api/image/deploy/plan', json={**body, 'ratings': []}).json()['rows'] == []
+    assert len(c.post('/api/image/deploy/plan', json={**body, 'ratings': None}).json()['rows']) == 2
+    assert c.post('/api/image/deploy/upload', json={**body, 'ratings': []}).status_code == 400
+    assert bucket.objects == {}
     # A work's own path format.
     c.put(f'/api/works/{wid}/image/deploy', json={'target': 'main', 'path_format': 'chat/{expression}'})
     plan = c.post('/api/image/deploy/plan', json={'work': wid}).json()
