@@ -64,7 +64,9 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
             )
         }
         self.models = ModelProfiles(paths)
-        self.model_library = ModelLibrary(paths, self.models, lambda: self.installs.model_folders())
+        self.model_library = ModelLibrary(
+            paths, self.models, lambda: self.installs.model_folders(), self.civitai_key
+        )
         self.models.looked_up = self.model_library.base_model
         self.models.find = self.model_library.locate_for_family
         self.model_downloads = ModelDownloads(

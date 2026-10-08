@@ -103,9 +103,9 @@ class ModelDownloads:
         self.thread = None
         self.cancel = set()
         jobs = (read_json(self.file, {}) or {}).get('jobs') or []
-        # A download running when the app stopped is waiting to resume.
+        # A download running or waiting when the app stopped waits for "Resume": the worker is not started at launch.
         for job in jobs:
-            if job.get('status') == 'running':
+            if job.get('status') in ('running', 'queued'):
                 job['status'] = 'paused'
         self.jobs = jobs
 
@@ -355,10 +355,23 @@ class ModelDownloads:
                 self.cancel.discard(job['id'])
                 self._save()
 
+    def _taken(self, target):
+        # Something else may have been put at the target since the job was added (#161 review): never overwrite it.
+        if target.exists():
+            raise ValueError(
+                Msg(
+                    'server.models.exists',
+                    '{name} is already in {folder}.',
+                    name=target.name,
+                    folder=str(target.parent),
+                )
+            )
+
     def _fetch(self, job):
         target = Path(job['target'])
         part = Path(job['target'] + '.part')
         target.parent.mkdir(parents=True, exist_ok=True)
+        self._taken(target)
         have = part.stat().st_size if part.exists() else 0
         need = max(job['size'] - have, 0)
         free = shutil.disk_usage(target.parent).free
@@ -426,7 +439,10 @@ class ModelDownloads:
             raise ValueError(
                 Msg('server.installs.hash', 'The downloaded file does not match: {name}', name=job['name'])
             )
-        os.replace(part, target)
+        # The checked download stays as .part when the name was taken meanwhile; resuming after moving the other file
+        # finishes it without downloading again.
+        self._taken(target)
+        os.rename(part, target)
         with self.lock:
             job['received'] = target.stat().st_size
         self.library.remember(target, value, _info_of(job))
