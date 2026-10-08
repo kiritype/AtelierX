@@ -23,7 +23,12 @@ export default defineConfig({
   base, outDir: '../../dist/manual-site',
   srcExclude: ['node_modules/**', 'README.md'],
   cleanUrls: false,
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }]],
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }],
+    // Visit counts and referrers for the online site, without cookies. The offline manual in the app is rendered
+    // separately (tools/render_manual.mjs) and never loads it.
+    ['script', { type: 'module', src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "11572766391e4631a4e44849c39ebe56"}' }],
+  ],
   themeConfig: {
     logo: '/icon.svg',
     nav: [
@@ -34,7 +39,7 @@ export default defineConfig({
     ],
     sidebar,
     socialLinks: [{ icon: 'github', link: 'https://github.com/kiritype/AtelierX' }],
-    footer: { message: `AtelierX ${version} 기준 설명서 · MIT License`, copyright: '© 2026 kiritype' },
+    footer: { message: `AtelierX ${version} 기준 설명서 · MIT License · 방문 통계는 쿠키 없이 수집합니다(Cloudflare Web Analytics)`, copyright: '© 2026 kiritype' },
     search: { provider: 'local', options: { locales: { root: { translations: {
       button: { buttonText: '검색', buttonAriaLabel: '설명서 검색' },
       modal: { noResultsText: '검색 결과가 없습니다', resetButtonTitle: '검색 초기화', footer: { selectText: '선택', navigateText: '이동', closeText: '닫기' } },
