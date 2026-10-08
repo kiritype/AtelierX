@@ -654,8 +654,17 @@ def _image_range(value, design, body):
     if value.get('add') and current:
         # Adding a range keeps the part's other pieces still in the text, and converts them all together.
         spans = [s for s in image_designs.spans_of(current) if image_designs.found_in(body, s['text'])]
-    if not any(image_designs.found_in(s['text'], text) and image_designs.found_in(text, s['text']) for s in spans):
-        spans.append({'text': text, 'by': 'pick'})
+    # A chosen range that overlaps a piece already there is not a second piece: a piece inside the range gives way to
+    # it, and a range inside a piece makes that piece the person's choice.
+    absorbed = False
+    kept = []
+    for span in spans:
+        if image_designs.found_in(span['text'], text):
+            kept.append({'text': span['text'], 'by': 'pick'})
+            absorbed = True
+        elif not image_designs.found_in(text, span['text']):
+            kept.append(span)
+    spans = kept if absorbed else [*kept, {'text': text, 'by': 'pick'}]
     spans = spans[: image_designs.MAX_SPANS]
     return {
         'part': value['part'],
