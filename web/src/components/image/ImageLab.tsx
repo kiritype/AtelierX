@@ -5,6 +5,7 @@ import { ApiError, get, post, put } from '../../api';
 import { t, tm, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
+import { settingsFromPreset } from '../../lib/presetSettings';
 
 type Cell = {
   row: number;
@@ -238,7 +239,7 @@ export default function ImageLab({ workId }: { workId?: string }) {
               value=""
               onChange={(e) => {
                 const preset = presets.data?.find((p) => p.id === e.target.value);
-                if (preset) setDraft({ ...draft, settings: { ...preset.settings, family: preset.family, seed: draft.settings.seed ?? -1 } });
+                if (preset) setDraft({ ...draft, settings: { ...settingsFromPreset(draft.settings, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS), seed: draft.settings.seed ?? -1 } });
               }}
             >
               <option value="">{t('lab.load_preset')}</option>
