@@ -238,3 +238,62 @@ def test_search_leaves_out_adult_models_and_images_unless_asked(paths, tmp_path,
         'image'
     ] == 'https://img/adult.jpg'
     assert 'types=' not in asked[1] and 'cursor=' not in asked[1] and 'nsfw=true' in asked[1]
+
+
+def test_a_file_put_at_the_target_meanwhile_is_never_overwritten(paths, tmp_path, monkeypatch):
+    downloads, loras = _downloads(paths, tmp_path, monkeypatch)
+    job = _job(downloads)
+    target = loras / 'anima' / 'ink.safetensors'
+    target.parent.mkdir(parents=True)
+    # Another model was put there after the job was added: the download does not start.
+    target.write_bytes(b'other model')
+    monkeypatch.setattr(model_download.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('downloaded'))
+    downloads._worker()
+    assert job['status'] == 'failed' and job['error']['key'] == 'server.models.exists'
+    assert target.read_bytes() == b'other model'
+
+    # It appears while the file is downloading: the checked download is kept as .part, the other file stays.
+    target.unlink()
+
+    def arrive_meanwhile(request, timeout=0):
+        target.write_bytes(b'other model')
+        return _Response(BODY)
+
+    monkeypatch.setattr(model_download.urllib.request, 'urlopen', arrive_meanwhile)
+    downloads.act(job['id'], 'resume')
+    downloads._worker()
+    assert job['status'] == 'failed' and job['error']['key'] == 'server.models.exists'
+    assert target.read_bytes() == b'other model'
+    assert (loras / 'anima' / 'ink.safetensors.part').read_bytes() == BODY
+
+    # Once the other file is moved away, resuming finishes from the kept part.
+    target.unlink()
+
+    def complete(request, timeout=0):
+        raise urllib.error.HTTPError(URL, 416, 'Range Not Satisfiable', {}, None)
+
+    monkeypatch.setattr(model_download.urllib.request, 'urlopen', complete)
+    downloads.act(job['id'], 'resume')
+    downloads._worker()
+    assert job['status'] == 'done', job.get('error')
+    assert target.read_bytes() == BODY
+
+
+def test_waiting_downloads_can_be_resumed_after_a_restart(paths, tmp_path, monkeypatch):
+    downloads, loras = _downloads(paths, tmp_path, monkeypatch)
+    first = _job(downloads)
+    second = _job(downloads, name='brush.safetensors')
+    first['status'] = 'running'
+    downloads._save()
+    # The app starts again: nothing runs by itself, and both can be resumed.
+    again, _ = _downloads(paths, tmp_path / 'again', monkeypatch)
+    statuses = {j['id']: j['status'] for j in again.jobs}
+    assert statuses == {first['id']: 'paused', second['id']: 'paused'}
+    again.act(second['id'], 'resume')
+    assert next(j for j in again.jobs if j['id'] == second['id'])['status'] == 'queued'
+
+
+def test_civitai_lookups_use_the_saved_key(unlocked):
+    image = unlocked.app.state.app.image
+    assert image.model_library.key == image.civitai_key
+    assert image.model_downloads.key == image.civitai_key
