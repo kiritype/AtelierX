@@ -15,6 +15,7 @@ import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { settingsFromPreset } from '../../lib/presetSettings';
+import CharacterOutfitTable from './CharacterOutfitTable';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
@@ -193,53 +194,22 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
+    <div className="image-gen-page">
+      <div className="image-gen-top pad col">
+      {handed && (
+        <div className="col handed-targets">
+          <div className="section-title">{t('gen.handed', { n: handed.length })}</div>
+          <div className="mono small faint" style={{ maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-line' }}>
+            {handed.map((x) => `${x.character_id} · ${x.outfit_id} · ${x.expression_id}`).join('\n')}
+          </div>
+          <button onClick={() => setHanded(null)}>{t('gen.handed_clear')}</button>
+        </div>
+      )}
+        {!handed && <CharacterOutfitTable characters={designs.data ?? []} value={chars} onChange={setChars} openItem={openItem} />}
+      </div>
     <div className="image-gen">
       <div className="image-gen-pick pad col">
-        {handed && (
-          <div className="col handed-targets">
-            <div className="section-title">{t('gen.handed', { n: handed.length })}</div>
-            <div className="mono small faint" style={{ maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-line' }}>
-              {handed.map((x) => `${x.character_id} · ${x.outfit_id} · ${x.expression_id}`).join('\n')}
-            </div>
-            <button onClick={() => setHanded(null)}>{t('gen.handed_clear')}</button>
-          </div>
-        )}
         <div className="col" hidden={!!handed}>
-        <div className="section-title">{t('gen.characters')}</div>
-        {(designs.data ?? []).length === 0 && <div className="faint">{t('gen.no_characters')}</div>}
-        {(designs.data ?? []).map((d) => (
-          <div key={d.id} className="col gen-char">
-            <label className="row" style={{ gap: 4 }}>
-              <input
-                type="checkbox"
-                disabled={!d.has_design}
-                checked={!!chars[d.id]}
-                onChange={(e) => {
-                  const next = { ...chars };
-                  if (e.target.checked) next[d.id] = [d.default_outfit ?? d.outfits[0]?.id].filter(Boolean) as string[];
-                  else delete next[d.id];
-                  setChars(next);
-                }}
-              />
-              <strong>{d.name}</strong> <span className="faint mono">{d.id}</span>
-              {!d.has_design && (
-                <a href="#" onClick={(e) => (e.preventDefault(), openItem(d.path))} className="faint">
-                  {t('gen.no_design')}
-                </a>
-              )}
-            </label>
-            {chars[d.id] && (
-              <div className="row" style={{ flexWrap: 'wrap', paddingLeft: 20 }}>
-                {d.outfits.map((o) => (
-                  <label key={o.id} className="row" style={{ gap: 4 }}>
-                    <input type="checkbox" checked={chars[d.id].includes(o.id)} onChange={(e) => setChars({ ...chars, [d.id]: toggle(chars[d.id], o.id, e.target.checked) })} />
-                    {o.name}
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
         <div className="section-title">{t('gen.expressions')}</div>
         {byRating.map((group) => (
           <div key={group.id} className="col" style={{ gap: 2 }}>
@@ -352,61 +322,6 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         {internet && (ServicePanel ? <ServicePanel value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
-        <div className="row" style={{ alignItems: 'flex-end' }}>
-          <label className="col" style={{ gap: 2 }}>
-            <span className="muted">{t('gen.count')}</span>
-            <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
-          </label>
-          <span className="grow faint">
-            {t('gen.total', { targets: targets.length.toLocaleString(), n: (targets.length * count).toLocaleString() })}
-            {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
-          </span>
-          <button
-            disabled={!targets.length || busy}
-            onClick={async () => {
-              try {
-                setPreview(await post(`/api/works/${workId}/image/compose`, options()));
-              } catch (err) {
-                fail(err);
-              }
-            }}
-          >
-            {t('gen.preview')}
-          </button>
-          <button
-            className="primary"
-            disabled={!targets.length || busy || (internet && !serviceInfo?.connected)}
-            onClick={async () => {
-              if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
-              // No cap per request (#209): a large one is confirmed instead.
-              if (!internet && targets.length * count > LARGE_REQUEST && !confirm(t('gen.confirm_large', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() }))) return;
-              setBusy(true);
-              try {
-                const request = {
-                  ...options(),
-                  count,
-                  ...(reviewSettings.data?.enabled ? { llm: reviewLlm } : {}),
-                };
-                let result;
-                try {
-                  result = await post(`/api/works/${workId}/image/jobs`, request);
-                } catch (err) {
-                  // The same request went to a paid service a moment ago (#42): ask before sending it again.
-                  if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat') || !confirm(tm(err.msg))) throw err;
-                  result = await post(`/api/works/${workId}/image/jobs`, { ...request, repeat_ok: true });
-                }
-                toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
-                setHanded(null); // the board's combinations are queued now; queuing them again would double them
-              } catch (err) {
-                fail(err);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t('gen.enqueue')}
-          </button>
-        </div>
         {preview && (
           <div className="col">
             {preview.map((p, n) => (
@@ -444,6 +359,63 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             {targets.length > preview.length && <div className="faint">{t('gen.more', { n: targets.length - preview.length })}</div>}
           </div>
         )}
+      </div>
+    </div>
+      <div className="image-gen-bar row">
+        <label className="col" style={{ gap: 2 }}>
+          <span className="muted">{t('gen.count')}</span>
+          <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
+        </label>
+        <span className="grow">
+          {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
+          <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
+          {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
+        </span>
+        <button
+          disabled={!targets.length || busy}
+          onClick={async () => {
+            try {
+              setPreview(await post(`/api/works/${workId}/image/compose`, options()));
+            } catch (err) {
+              fail(err);
+            }
+          }}
+        >
+          {t('gen.preview')}
+        </button>
+        <button
+          className="primary"
+          disabled={!targets.length || busy || (internet && !serviceInfo?.connected)}
+          onClick={async () => {
+            if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
+            // No cap per request (#209): a large one is confirmed instead.
+            if (!internet && targets.length * count > LARGE_REQUEST && !confirm(t('gen.confirm_large', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() }))) return;
+            setBusy(true);
+            try {
+              const request = {
+                ...options(),
+                count,
+                ...(reviewSettings.data?.enabled ? { llm: reviewLlm } : {}),
+              };
+              let result;
+              try {
+                result = await post(`/api/works/${workId}/image/jobs`, request);
+              } catch (err) {
+                // The same request went to a paid service a moment ago (#42): ask before sending it again.
+                if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat') || !confirm(tm(err.msg))) throw err;
+                result = await post(`/api/works/${workId}/image/jobs`, { ...request, repeat_ok: true });
+              }
+              toast({ text: t('gen.queued', { n: result.count }), action: { label: t('image_menu.queue'), run: openQueue } });
+              setHanded(null); // the board's combinations are queued now; queuing them again would double them
+            } catch (err) {
+              fail(err);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t('gen.enqueue')}
+        </button>
       </div>
     </div>
   );
