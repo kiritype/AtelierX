@@ -243,3 +243,22 @@ def test_a_large_request_is_queued_and_the_queue_limit_names_the_numbers(unlocke
     assert error['key'] == 'server.queue.too_many'
     assert error['values'] == {'waiting': '3,501', 'adding': '200', 'limit': '3,600'}
     assert unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': [], 'count': 1}).status_code == 400
+
+
+def test_a_request_past_the_queue_limit_is_refused_before_any_job_is_made(unlocked, monkeypatch):
+    from atelierx.image import compose, job_queue
+
+    runtime = _queued(unlocked, HeldComfy())
+    wid = unlocked.get('/api/works').json()['works'][0]['id']
+    monkeypatch.setattr(job_queue, 'MAX_QUEUED', 100)
+    made = []
+    original = compose.Composer.compose
+    monkeypatch.setattr(compose.Composer, 'compose', lambda self, *a, **k: made.append(1) or original(self, *a, **k))
+    before = len(runtime.jobs)
+    refused = unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': [TARGET] * 60, 'count': 50})
+    assert refused.status_code == 400 and refused.json()['error']['key'] == 'server.queue.too_many'
+    assert refused.json()['error']['values'] == {'waiting': '1', 'adding': '3,000', 'limit': '100'}
+    assert made == [] and len(runtime.jobs) == before
+    # Within the limit it is queued as before.
+    assert unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': [TARGET] * 3, 'count': 2}).status_code == 200
+    assert made and len(runtime.jobs) == before + 6

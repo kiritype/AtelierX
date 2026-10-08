@@ -158,6 +158,8 @@ class GenerationMixin:
                     'server.queue.the_count_must_be_a_whole', 'The count must be a whole number from 1 to 50.'
                 )
             )
+        # A request the queue cannot take is refused before any prompt or snapshot is made (#217).
+        self.queue.check_room(len(targets) * count)
         service = self._service(body)
         raw_settings, options, preset = self._settings(body)
         if service.id == DEFAULT_SERVICE:
