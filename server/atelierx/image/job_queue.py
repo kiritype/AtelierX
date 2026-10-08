@@ -128,11 +128,18 @@ class JobQueue:
     def add(self, prepared, before_save=None):
         """Append new jobs, refusing when too many would wait. ``before_save`` sees them first (under the lock)."""
         with self.lock:
-            if self.queued_count() + len(prepared) > MAX_QUEUED:
+            # The whole queue is written on every change, so it stays small enough to save quickly (#209: 5,000 jobs
+            # are about 30 MB and 0.7 s a save; 20,000 would be 120 MB and 2.7 s).
+            waiting = self.queued_count()
+            if waiting + len(prepared) > MAX_QUEUED:
                 raise ValueError(
                     Msg(
-                        'server.queue.too_many_queued_jobs_let_the',
-                        'Too many queued jobs. Let the queue run first.',
+                        'server.queue.too_many',
+                        '{waiting} jobs are waiting; {adding} more would pass the limit of {limit}. '
+                        'Let the queue run first, or queue fewer.',
+                        waiting=f'{waiting:,}',
+                        adding=f'{len(prepared):,}',
+                        limit=f'{MAX_QUEUED:,}',
                     )
                 )
             self.jobs.extend(prepared)

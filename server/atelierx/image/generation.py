@@ -26,7 +26,6 @@ from .workflow import build_ui_workflow, pipeline_stages, validate_settings
 
 log = logging.getLogger(__name__)
 
-MAX_REQUEST = 3000
 DEFAULT_SERVICE = 'comfyui'
 
 
@@ -146,8 +145,12 @@ class GenerationMixin:
 
     def enqueue(self, work, body):
         targets = body.get('targets')
-        if not isinstance(targets, list) or not 1 <= len(targets) <= 500:
-            raise ValueError(Msg('server.queue.select_1_to_500_expressions', 'Select 1 to 500 expressions.'))
+        # No cap per request (#209): the screen shows the total and asks before a large one; the queue's own limit
+        # (MAX_QUEUED) is what keeps it workable.
+        if not isinstance(targets, list) or not targets:
+            raise ValueError(
+                Msg('server.image.queue.no_targets', 'Choose characters, outfits and expressions.')
+            )
         count = body.get('count', 1)
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 50:
             raise ValueError(
@@ -155,8 +158,6 @@ class GenerationMixin:
                     'server.queue.the_count_must_be_a_whole', 'The count must be a whole number from 1 to 50.'
                 )
             )
-        if len(targets) * count > MAX_REQUEST:
-            raise ValueError(Msg('server.queue.up_to_3_000_images_per', 'Up to 3,000 images per request.'))
         service = self._service(body)
         raw_settings, options, preset = self._settings(body)
         if service.id == DEFAULT_SERVICE:

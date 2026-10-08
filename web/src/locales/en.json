@@ -2415,5 +2415,6 @@
   "image.source.auto": "Auto",
   "image.source.pick": "Chosen",
   "image.review.update": "Update",
-  "image.review.new": "New outfit"
+  "image.review.new": "New outfit",
+  "gen.confirm_large": "{targets} combinations × {count} = {n} images will be queued. Continue?"
 }
