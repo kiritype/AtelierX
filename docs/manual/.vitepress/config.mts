@@ -27,7 +27,7 @@ export default defineConfig({
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }],
     // Visit counts and referrers for the online site, without cookies. The offline manual in the app is rendered
     // separately (tools/render_manual.mjs) and never loads it.
-    ['script', { type: 'module', src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "53f7e62b8e2a47ca9abff10e23cc2d75"}' }],
+    ['script', { type: 'module', src: 'https://static.cloudflareinsights.com/beacon.min.js', 'data-cf-beacon': '{"token": "11572766391e4631a4e44849c39ebe56"}' }],
   ],
   themeConfig: {
     logo: '/icon.svg',
