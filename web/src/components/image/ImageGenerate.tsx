@@ -60,6 +60,9 @@ function takeHanded(): Target[] | null {
   }
 }
 
+// Above this many images the generate screen asks before queueing (#209).
+const LARGE_REQUEST = 500;
+
 export default function ImageGenerate({ workId, openQueue, openItem, openSettings, characterId, outfitId }: { workId: string; openQueue: () => void; openItem: (path: string) => void; openSettings?: () => void; characterId?: string; outfitId?: string }) {
   const toast = useToast();
   const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
@@ -355,7 +358,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
           </label>
           <span className="grow faint">
-            {t('gen.total', { targets: targets.length, n: targets.length * count })}
+            {t('gen.total', { targets: targets.length.toLocaleString(), n: (targets.length * count).toLocaleString() })}
             {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
           </span>
           <button
@@ -375,6 +378,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             disabled={!targets.length || busy || (internet && !serviceInfo?.connected)}
             onClick={async () => {
               if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
+              // No cap per request (#209): a large one is confirmed instead.
+              if (!internet && targets.length * count > LARGE_REQUEST && !confirm(t('gen.confirm_large', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() }))) return;
               setBusy(true);
               try {
                 const request = {

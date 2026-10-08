@@ -743,10 +743,7 @@
   "server.queue.job_not_found": "작업을 찾을 수 없습니다.",
   "server.queue.only_failed_cancelled_or_interrupted_jobs": "실패·취소·중단된 작업만 재시도할 수 있습니다.",
   "server.queue.only_finished_jobs_can_be_cleared": "종료된 작업만 지울 수 있습니다. 진행·대기 작업은 먼저 취소하세요.",
-  "server.queue.select_1_to_500_expressions": "감정·동작을 1~500개 선택하세요.",
   "server.queue.the_count_must_be_a_whole": "생성 수는 1~50 사이의 정수여야 합니다.",
-  "server.queue.too_many_queued_jobs_let_the": "대기 작업이 너무 많습니다. 기존 작업을 먼저 처리하세요.",
-  "server.queue.up_to_3_000_images_per": "한 번에 3,000장까지 요청할 수 있습니다.",
   "server.tags.danbooru_tag_data_not_found": "Danbooru 태그 데이터를 찾지 못했습니다.",
   "server.worker.an_all_black_image_came_back": "완전 검정 이미지가 반환됐습니다. 정상 결과로 저장하지 않고 큐를 일시정지했습니다.",
   "server.worker.cancel": "취소",
@@ -2588,5 +2585,7 @@
   "server.image.range.too_long": "고른 글이 너무 깁니다.",
   "server.image.range.not_in_text": "고른 글이 저장된 본문에 없습니다. 먼저 인물을 저장하세요.",
   "server.image.range.no_outfit": "의상 {id}를 찾지 못했습니다.",
-  "server.image.range.name": "새 의상의 이름을 넣으세요."
+  "server.image.range.name": "새 의상의 이름을 넣으세요.",
+  "server.queue.too_many": "대기열에 {waiting}개가 기다리고 있어 {adding}개를 더 넣으면 최대 {limit}개를 넘습니다. 대기열을 먼저 돌리거나 나눠서 넣으세요.",
+  "gen.confirm_large": "조합 {targets}개 × {count}장 = 총 {n}장을 대기열에 넣습니다. 계속할까요?"
 }

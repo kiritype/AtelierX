@@ -223,3 +223,23 @@ def test_a_job_runs_on_the_service_it_names_without_comfyui(unlocked):
     runtime.jobs.append({**job, 'id': 'x', 'status': 'running'})
     failed = runtime.run_job(runtime.jobs[-1]) or runtime.jobs[-1]
     assert failed['status'] == 'failed' and failed['error'].key == 'server.worker.unknown_service'
+
+
+def test_a_large_request_is_queued_and_the_queue_limit_names_the_numbers(unlocked, monkeypatch):
+    from atelierx.image import job_queue
+
+    runtime = _queued(unlocked, HeldComfy())
+    wid = unlocked.get('/api/works').json()['works'][0]['id']
+    before = len(runtime.jobs)
+    # More than the old 500 combinations and 3,000 images in one request.
+    targets = [TARGET] * 700
+    res = unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': targets, 'count': 5})
+    assert res.status_code == 200, res.json()
+    assert len(runtime.jobs) - before == 3500
+    monkeypatch.setattr(job_queue, 'MAX_QUEUED', 3600)
+    refused = unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': [TARGET] * 100, 'count': 2})
+    assert refused.status_code == 400
+    error = refused.json()['error']
+    assert error['key'] == 'server.queue.too_many'
+    assert error['values'] == {'waiting': '3,501', 'adding': '200', 'limit': '3,600'}
+    assert unlocked.post(f'/api/works/{wid}/image/jobs', json={'targets': [], 'count': 1}).status_code == 400
