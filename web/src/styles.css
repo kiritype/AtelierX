@@ -396,7 +396,19 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .image-lib-list .list-row.sel { background: var(--selected); }
 .image-lib-edit { overflow: auto; max-width: 820px; }
 .chip.scope-work { background: var(--accent-bg); color: var(--accent); }
-.image-gen { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(420px, 1.4fr); height: 100%; min-height: 0; }
+/* Generate (#208): the character × outfit table on top, the two columns below, the totals and buttons in a bar at the bottom. */
+.image-gen-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.image-gen-top { border-bottom: 1px solid var(--border); flex: none; }
+.image-gen { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(420px, 1.4fr); flex: 1; min-height: 0; }
+.image-gen-bar { flex: none; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--panel); align-items: flex-end; }
+.gen-table-scroll { max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.gen-table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+.gen-table th, .gen-table td { padding: 4px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
+.gen-table thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; font-weight: 600; }
+.gen-table .gen-table-row-head { text-align: left; position: sticky; left: 0; background: var(--panel); }
+.gen-table thead .gen-table-row-head { z-index: 2; }
+.gen-table td.gen-table-others { text-align: left; white-space: normal; }
+.gen-table tr.on .gen-table-row-head { background: var(--hover); }
 .image-gen-pick { border-right: 1px solid var(--border); overflow: auto; }
 .image-gen-run { overflow: auto; }
 .gen-char { gap: 2px; padding: 2px 0; }

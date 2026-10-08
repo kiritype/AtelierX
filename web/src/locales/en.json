@@ -2416,5 +2416,16 @@
   "image.source.pick": "Chosen",
   "image.review.update": "Update",
   "image.review.new": "New outfit",
-  "gen.confirm_large": "{targets} combinations × {count} = {n} images will be queued. Continue?"
+  "gen.confirm_large": "{targets} combinations × {count} = {n} images will be queued. Continue?",
+  "gen.table.summary": "{chars} characters · {outfits} outfits",
+  "gen.table.find": "Find a character",
+  "gen.table.only_chosen": "Chosen only",
+  "gen.table.fold": "Fold",
+  "gen.table.unfold": "Unfold",
+  "gen.table.all": "All",
+  "gen.table.others": "Other outfits",
+  "gen.table.column_hint": "Every character with this outfit",
+  "gen.table.row_hint": "Every outfit of this character",
+  "gen.bar_summary": "{chars} characters · {outfits} outfits · {exprs} expressions →",
+  "gen.bar_total": "{targets} combinations × {count} = {n} images"
 }

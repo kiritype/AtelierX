@@ -559,7 +559,9 @@ def _designs(work):
                 'trigger': design.get('trigger'),
                 'default_outfit': design.get('default_outfit'),
                 'outfits': [
-                    {'id': k, 'name': v.get('name', k)} for k, v in (design.get('outfits') or {}).items()
+                    # The deployment code lines up the same outfit across characters on the generate screen (#208).
+                    {'id': k, 'name': v.get('name', k), 'code': str(v.get('code') or '')}
+                    for k, v in (design.get('outfits') or {}).items()
                 ],
             }
         )

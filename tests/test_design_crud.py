@@ -176,3 +176,17 @@ def test_conversion_reconcile_keeps_user_added_outfits_and_never_reuses_removed_
     assert merged['appearance']['prompt'] == ['converted']
     assert merged['default_outfit'] == 'o02'
     assert merged['trigger'] == 'keepme'
+
+
+def test_the_design_list_gives_each_outfit_its_deployment_code(unlocked):
+    c = unlocked
+    wid = c.post('/api/samples/single/install').json()['id']
+    url = f'/api/works/{wid}/image/characters/C001'
+    loaded = c.get(url).json()
+    design = loaded['design']
+    first = next(iter(design['outfits']))
+    design['outfits'][first]['code'] = '001'
+    assert c.put(url, json={'design': design, 'base_revision': loaded['revision']}).status_code == 200
+    (row,) = [d for d in c.get(f'/api/works/{wid}/image/designs').json() if d['id'] == 'C001']
+    codes = {o['id']: o['code'] for o in row['outfits']}
+    assert codes[first] == '001' and all(v == '' for k, v in codes.items() if k != first)
