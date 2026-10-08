@@ -218,3 +218,17 @@ def test_reconcile_adds_new_outfits_and_keeps_the_ones_not_named():
     assert merged['outfits']['o02']['name'] == '잠옷'
     assert merged['outfits']['o04']['name'] == '수영복'
     assert merged['retired_outfit_ids'] == ['o03']
+
+
+def test_a_range_overlapping_a_piece_is_not_added_twice(unlocked):
+    c = unlocked
+    wid, url = _character(c)
+    _apply(c, wid, _convert(c, wid, url)[0])
+    # The mock quoted the whole first line; choosing part of it marks that piece as chosen instead of adding another.
+    first = '한서윤은 열일곱 살 고등학생이다.'
+    _, doc = _convert(c, wid, url, range={'part': 'appearance', 'add': True, 'text': '열일곱 살 고등학생이다'})
+    assert doc['candidates'][0]['design']['appearance']['source']['spans'] == [{'text': first, 'by': 'pick'}]
+    # A range holding a piece replaces it.
+    wider = first + '\n검은 긴 머리를 하나로 묶고 다닌다.'
+    _, doc = _convert(c, wid, url, range={'part': 'appearance', 'add': True, 'text': wider})
+    assert doc['candidates'][0]['design']['appearance']['source']['spans'] == [{'text': wider, 'by': 'pick'}]
