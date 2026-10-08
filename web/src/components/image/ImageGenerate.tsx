@@ -14,6 +14,7 @@ import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
+import { settingsFromPreset } from '../../lib/presetSettings';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
@@ -153,7 +154,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
       setServiceState(preset.service);
       rememberService(workId, preset.service);
     }
-    if (preset.service === 'comfyui') setSettings({ ...preset.settings, family: preset.family as 'anima' | 'sdxl', seed: preset.settings.seed ?? -1 });
+    if (preset.service === 'comfyui') setSettings((current) => settingsFromPreset(current, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS));
     else {
       const next = { ...serviceSettings, [preset.service]: { ...(serviceSettings[preset.service] ?? {}), ...preset.settings } };
       setServiceSettings(next);
