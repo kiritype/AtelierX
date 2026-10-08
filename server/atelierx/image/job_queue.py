@@ -125,23 +125,29 @@ class JobQueue:
             }
 
     # --- changing ----------------------------------------------------------------------------------------------------
-    def add(self, prepared, before_save=None):
-        """Append new jobs, refusing when too many would wait. ``before_save`` sees them first (under the lock)."""
+    def check_room(self, adding):
+        """Refuse ``adding`` more jobs when the queue would pass its limit. The whole queue is written on every
+        change, so it stays small enough to save quickly (#209: 5,000 jobs are about 30 MB and 0.7 s a save; 20,000
+        would be 120 MB and 2.7 s)."""
         with self.lock:
-            # The whole queue is written on every change, so it stays small enough to save quickly (#209: 5,000 jobs
-            # are about 30 MB and 0.7 s a save; 20,000 would be 120 MB and 2.7 s).
             waiting = self.queued_count()
-            if waiting + len(prepared) > MAX_QUEUED:
+            if waiting + adding > MAX_QUEUED:
                 raise ValueError(
                     Msg(
                         'server.queue.too_many',
                         '{waiting} jobs are waiting; {adding} more would pass the limit of {limit}. '
                         'Let the queue run first, or queue fewer.',
                         waiting=f'{waiting:,}',
-                        adding=f'{len(prepared):,}',
+                        adding=f'{adding:,}',
                         limit=f'{MAX_QUEUED:,}',
                     )
                 )
+
+    def add(self, prepared, before_save=None):
+        """Append new jobs, refusing when too many would wait. ``before_save`` sees them first (under the lock)."""
+        with self.lock:
+            # Checked again under the same lock: another request may have queued jobs since the early check.
+            self.check_room(len(prepared))
             self.jobs.extend(prepared)
             if before_save:
                 before_save(prepared)
