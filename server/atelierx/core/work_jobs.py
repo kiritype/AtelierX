@@ -5,7 +5,9 @@ a draft for the review tab. The API only reads the request and returns the job. 
 """
 
 import asyncio
+import threading
 from copy import deepcopy
+from functools import partial
 
 from ..image import designs as image_designs
 from . import authoring, editor_tasks, exporter, guidelines, llm_tasks, review
@@ -49,9 +51,34 @@ class WorkJobs:
 
         async def runner(progress):
             await progress(30)
-            return await asyncio.to_thread(
-                exporter.export, work, data['target'], data.get('overwrite', False), self.paths.root
+            cancel = threading.Event()
+            writer = asyncio.get_running_loop().run_in_executor(
+                None,
+                partial(
+                    exporter.export,
+                    work,
+                    data['target'],
+                    data.get('overwrite', False),
+                    self.paths.root,
+                    cancel,
+                )
             )
+            try:
+                return await asyncio.shield(writer)
+            except asyncio.CancelledError:
+                cancel.set()
+                # Cancelling to_thread does not stop its thread. Keep the job cancelling
+                # until the current atomic write finishes and the writer acknowledges it.
+                while True:
+                    try:
+                        await asyncio.shield(writer)
+                        break
+                    except asyncio.CancelledError:
+                        # Shutdown can cancel the runner again while its writer drains.
+                        continue
+                    except exporter.ExportCancelled:
+                        break
+                raise
 
         return self.jobs.submit('export', f'{work.name} 내보내기', runner, work_id=work.id)
 
