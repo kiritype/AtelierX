@@ -32,6 +32,7 @@ export type ModelItem = {
   family: string | null;
   family_by: string | null;
   preview: string | null;
+  preview_version?: string;
   info: Info | null;
   source: 'civitai' | 'trained' | 'unknown';
   hashed?: boolean;
@@ -45,7 +46,7 @@ const FAMILY_KIND: Record<string, string> = {
   vae: 'vaes',
 };
 const size = (n: number | null) => (!n ? '' : n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${Math.round(n / 1024 ** 2)} MB`);
-const previewUrl = (m: ModelItem) => `/api/image/models/preview?kind=${m.kind}&name=${encodeURIComponent(m.name)}`;
+const previewUrl = (m: ModelItem) => `/api/image/models/preview?kind=${m.kind}&name=${encodeURIComponent(m.name)}&v=${encodeURIComponent(m.preview_version ?? "")}`;
 const idOf = (m: ModelItem) => `${m.kind}:${m.name}`;
 
 export default function ModelExplorer() {

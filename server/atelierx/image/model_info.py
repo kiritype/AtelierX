@@ -184,6 +184,8 @@ class ModelLibrary:
         for suffix in ('.preview.jpeg', '.preview.jpg', '.preview.png', '.preview.webp'):
             if path.with_name(path.stem + suffix).is_file():
                 item['preview'] = suffix
+                stat = path.with_name(path.stem + suffix).stat()
+                item['preview_version'] = f'{stat.st_mtime_ns}-{stat.st_size}'
                 break
         item['hashed'] = bool(digest)
         return item

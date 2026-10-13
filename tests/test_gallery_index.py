@@ -142,3 +142,19 @@ def test_the_measure_tool_keeps_a_named_folder(tmp_path):
     )
     assert made.returncode == 0, made.stderr.decode(errors='replace')
     assert (fresh / '.ax-measure').is_file() and (fresh / 'output' / 'reviews.json').is_file()
+
+
+def test_thumbnail_url_changes_only_when_image_changes(paths):
+    _image(paths, A, record={})
+    gallery = Gallery(paths)
+    gallery.scan(force=True)
+    first = gallery.find(A, refresh=False)['thumbnail_url']
+    stat = (paths.output / A).stat()
+    assert first.endswith(f'&v={stat.st_mtime_ns}-{stat.st_size}')
+    gallery.scan(force=True)
+    assert gallery.find(A, refresh=False)['thumbnail_url'] == first
+    (paths.output / A).unlink()
+    _image(paths, A, (255, 0, 0), record={})
+    _touch_later(paths.output / A)
+    gallery.scan(force=True)
+    assert gallery.find(A, refresh=False)['thumbnail_url'] != first

@@ -152,3 +152,11 @@ def test_checkpoints_are_found_without_their_catalog_prefix(paths, tmp_path):
     item = {i['name']: i for i in library.items(CATALOG)}[r'checkpoint::sdxl\mix.safetensors']
     assert item['kind'] == 'checkpoint' and item['path'] and item['file'] == 'mix.safetensors'
     assert item['family'] == 'sdxl'
+
+
+def test_preview_version_follows_preview_file(paths, tmp_path):
+    library = _setup(paths, tmp_path)
+    first = library.describe('lora', 'ink.safetensors')['preview_version']
+    assert library.describe('lora', 'ink.safetensors')['preview_version'] == first
+    library.preview_file('lora', 'ink.safetensors').write_bytes(b'new preview')
+    assert library.describe('lora', 'ink.safetensors')['preview_version'] != first

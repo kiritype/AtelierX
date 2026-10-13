@@ -227,3 +227,20 @@ def test_tools_list_the_methods_each_feature_runs_with(unlocked):
     before = len(runtime.jobs)
     unmasked = c.post('/api/image/tools/postprocess', json={'ids': [item['id']], 'op': 'inpaint'})
     assert unmasked.status_code == 400 and len(runtime.jobs) == before
+
+
+def test_gallery_tool_thumbnail_url_follows_replaced_file(paths):
+    from atelierx.image.gallery import Gallery
+    from atelierx.image.tools.workspace import ToolWorkspace
+
+    path = paths.output / 'sample.png'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(png())
+    workspace = ToolWorkspace(paths, Gallery(paths))
+    workspace.items = [{'id': 'sample', 'source': 'gallery', 'path': 'sample.png'}]
+    first = workspace.public()['items'][0]['thumbnail_url']
+    assert workspace.public()['items'][0]['thumbnail_url'] == first
+    path.write_bytes(png(size=(80, 60)))
+    assert workspace.public()['items'][0]['thumbnail_url'] != first
+    path.unlink()
+    assert 'thumbnail_url' not in workspace.public()['items'][0]

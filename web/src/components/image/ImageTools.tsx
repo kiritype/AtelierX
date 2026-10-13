@@ -21,6 +21,7 @@ export type ToolItem = {
   width: number;
   height: number;
   bytes?: number;
+  thumbnail_url?: string;
   parent?: string;
   op?: string;
   tags?: { tags: string[]; model: string; threshold: number; character_threshold: number };
@@ -263,7 +264,7 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
           <div className="tools-grid">
             {list.map((item) => (
               <div key={item.id} className={`tools-card ${item.id === currentId ? 'current' : ''}`} title={`${item.name} · ${item.width}×${item.height} · ${item.format}`}>
-                <img src={`/api/image/tools/thumbnail?id=${item.id}`} alt="" loading="lazy" onClick={() => show(item.id)} />
+                <img src={item.thumbnail_url ?? `/api/image/tools/thumbnail?id=${item.id}`} alt="" loading="lazy" onClick={() => show(item.id)} />
                 <div className="row tools-caption">
                   <input type="checkbox" checked={chosen.has(item.id)} onChange={(e) => toggle(item.id, e.target.checked)} />
                   <span className="grow ellipsis">{item.name.split('/').pop()}</span>
