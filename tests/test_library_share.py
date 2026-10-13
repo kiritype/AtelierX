@@ -5,7 +5,6 @@ from starlette.testclient import TestClient
 
 from atelierx.api.app import build_app
 from atelierx.core.paths import REPO_ROOT, AppPaths
-
 from conftest import FAST_KDF
 
 

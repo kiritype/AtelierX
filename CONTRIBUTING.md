@@ -36,7 +36,9 @@ cd web && npm ci && npm run build
 PR은 CI의 `test` 검사를 통과해야 합니다. 같은 내용을 로컬에서 돌립니다.
 
 ```bash
-uv run pytest -q
+uv sync --locked
+uv run --locked ruff check
+uv run --locked pytest -q -p no:cacheprovider
 cd web && npm test && npm run typecheck && npm run build
 ```
 

@@ -37,7 +37,9 @@ cd web && npm ci && npm run build
 Pull requests must pass the CI `test` check. Run the same locally:
 
 ```bash
-uv run pytest -q
+uv sync --locked
+uv run --locked ruff check
+uv run --locked pytest -q -p no:cacheprovider
 cd web && npm test && npm run typecheck && npm run build
 ```
 
