@@ -1,56 +1,69 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, put } from '../api';
 import { t, tm } from '../i18n';
-import { useToast } from './Toasts';
+import { createSaver } from '../lib/exampleSaver';
+import { useUnsaved } from './Unsaved';
 import { ChipsInput } from './ui';
 
 type Term = { use: string; avoid: string[]; note: string };
 
 export default function GlossaryTab({ workId }: { workId: string }) {
   const qc = useQueryClient();
-  const toast = useToast();
   const query = useQuery<{ terms: Term[]; revision: string }>({ queryKey: ['glossary', workId], queryFn: () => get(`/api/works/${workId}/glossary`) });
   const [terms, setTerms] = useState<Term[] | null>(null);
-  const dirty = useRef(false);
+  const [dirty, setDirty] = useState(false);
+  const [saveError, setSaveError] = useState('');
   // The revision the next save starts from: a change made elsewhere since is not overwritten (#90).
   const revision = useRef<string | null>(null);
+  const failure = (err: unknown) => setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err));
+  const saver = useMemo(() => createSaver<string>(async (_, text) => {
+    const terms: Term[] = JSON.parse(text);
+    const saved = await put<{ revision: string }>(`/api/works/${workId}/glossary`, { terms, base_revision: revision.current });
+    revision.current = saved.revision;
+    await qc.cancelQueries({ queryKey: ['glossary', workId] });
+    return { terms, revision: saved.revision };
+  }, {
+    delay: 600,
+    onChange: setDirty,
+    onSaved: (_, saved, clean) => {
+      setSaveError('');
+      if (clean) qc.setQueryData(['glossary', workId], saved);
+      qc.invalidateQueries({ queryKey: ['check', workId] });
+    },
+    onError: failure,
+  }), [workId, qc]);
+  const save = async () => {
+    try {
+      return (await saver.flush()).clean;
+    } catch (err) {
+      failure(err);
+      return false;
+    }
+  };
+  useUnsaved('glossary', dirty, save);
+  useEffect(() => {
+    saver.activate();
+    return () => saver.dispose();
+  }, [saver]);
 
   useEffect(() => {
-    if (query.data && !dirty.current) {
+    if (query.data && !saver.dirty) {
       setTerms(query.data.terms);
       revision.current = query.data.revision;
     }
-  }, [query.data]);
-
-  useEffect(() => {
-    if (!terms || !dirty.current) return;
-    const timer = setTimeout(async () => {
-      // Rows without a term to use are kept on screen but not saved yet.
-      try {
-        const saved = await put<{ revision: string }>(`/api/works/${workId}/glossary`, { terms, base_revision: revision.current });
-        revision.current = saved.revision;
-        dirty.current = false;
-        qc.invalidateQueries({ queryKey: ['check', workId] });
-      } catch (err) {
-        dirty.current = false;
-        const stale = err instanceof ApiError && err.status === 409;
-        toast({ text: stale ? t('save.reloaded') : err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
-        if (stale) qc.invalidateQueries({ queryKey: ['glossary', workId] });
-      }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [terms, workId, qc, toast]);
+  }, [query.data, saver]);
 
   if (!terms) return null;
   const change = (next: Term[]) => {
-    dirty.current = true;
     setTerms(next);
+    saver.edit(workId, JSON.stringify(next));
   };
   const update = (n: number, term: Term) => change(terms.map((x, i) => (i === n ? term : x)));
 
   return (
     <div className="pad col" style={{ maxWidth: 900 }}>
+      {saveError && <div role="alert">{saveError} <button onClick={save}>{t('common.save')}</button></div>}
       <p className="faint">{t('glossary.note')}</p>
       <table className="plain">
         <thead>
