@@ -30,6 +30,7 @@ from .reviews import ReviewStore
 from .service_config import ServiceConfig
 from .services import ComfyService
 from .tags import TagLookup
+from .tools.batches import ToolBatches
 from .tools.convert import ConvertTasks
 from .tools.postprocess import PostprocessMixin
 from .tools.tagger import TaggerMixin
@@ -90,6 +91,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self._resume_sent_jobs()
         self.rounds = ReviewRounds(self)
         self.reviews.listeners.append(self.rounds.human_changed)
+        self.bulk = ToolBatches(self)
 
     def _resume_sent_jobs(self):
         """Jobs a restart cut off after their request went to a service that keeps results (PixAI) wait again for that
@@ -173,9 +175,14 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
 
     def shutdown(self):
         self.stop.set()
+        stopped = True
         if self._thread is not None:
             self._thread.join(timeout=5)
+            stopped = not self._thread.is_alive()
             self._thread = None
+        if stopped:
+            with self.lock:
+                self.bulk.db.close()
         # Programs started by the app must not outlive it, still running and holding its log files open.
         self.trainer.shutdown()
         self.installs.shutdown()

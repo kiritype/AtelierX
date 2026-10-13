@@ -1,18 +1,16 @@
-"""Uploading adopted images to a deployment target (decision 0023, features/25-deployment).
-
-A plan names, for each adopted image in the chosen range, the path it gets from the work's or target's path format and
-the deployment codes, and compares it with what the bucket already holds: new, overwrite, unchanged (same MD5),
-no code, or a clash with another image. An upload runs the new and changed rows in a background thread. Results are
-kept in memory only; the next plan compares with the bucket again.
-"""
+"""Plan without conversion; convert/compare/upload sequentially and keep a per-work JSONL audit trail."""
 
 import hashlib
+import io
+import json
+import os
 import threading
 import uuid
+from collections import deque
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-from ...core.i18n import AppError, Msg, message_of
+from ...core.i18n import AppError, Msg, message_of, wire
 from ...core.lifecycle import CANCELLED, CANCELLING, DONE, FAILED, RUNNING
 from .. import library
 from ..designs import character_design_path
@@ -60,8 +58,8 @@ def static_prefix(path_format):
 class DeployUploads:
     def __init__(self, runtime):
         self.rt = runtime
-        self.cache = Path(runtime.paths.state) / 'deploy' / 'webp'
         self.lock = threading.Lock()
+        self.log_lock = threading.Lock()
         self.runs = {}
         self.transport = None  # tests answer the bucket with httpx.MockTransport
 
@@ -78,19 +76,45 @@ class DeployUploads:
         )
         return work, target_id, target, path_format
 
-    def _webp(self, source):
-        """WebP bytes of an image without its metadata, cached by the source's content."""
-        raw = source.read_bytes()
-        digest = hashlib.sha256(raw).hexdigest()
-        cached = self.cache / f'{digest}.webp'
-        if cached.is_file():
-            return cached.read_bytes()
-        data, _ = convert(source, WEBP)
-        self.cache.mkdir(parents=True, exist_ok=True)
-        part = cached.with_suffix('.part')
-        part.write_bytes(data)
-        part.replace(cached)
-        return data
+    def _webp(self, raw):
+        """Convert exactly the bytes fingerprinted for this upload, without a disk cache."""
+        return convert(io.BytesIO(raw), WEBP)[0]
+
+    def _records(self, work):
+        path = work.app / 'deploy-log.jsonl'
+        with self.log_lock:
+            if not path.exists():
+                return
+            with path.open('rb') as stream:
+                for line in stream:
+                    try:
+                        row = json.loads(line)
+                    except (ValueError, UnicodeError):
+                        continue  # tolerate a torn final record after an interrupted write
+                    if isinstance(row, dict) and row.get('schema_version') == 1:
+                        yield row
+
+    def history(self, work_id):
+        work = self.rt.works.get(work_id)
+        return {'records': list(reversed(deque(self._records(work), maxlen=100)))}
+
+    def _record(self, work, record):
+        with self.log_lock:
+            work.app.mkdir(parents=True, exist_ok=True)
+            path = work.app / 'deploy-log.jsonl'
+            # A newline isolates an incomplete previous append rather than losing the next result.
+            with path.open('ab+') as stream:
+                if stream.tell():
+                    stream.seek(-1, os.SEEK_END)
+                    if stream.read(1) != b'\n':
+                        stream.write(b'\n')
+                stream.write((json.dumps(wire(record), ensure_ascii=False) + '\n').encode('utf-8'))
+                stream.flush()
+                os.fsync(stream.fileno())
+
+    @staticmethod
+    def _destination(target):
+        return {'account_id': target['account_id'], 'bucket': target['bucket']}
 
     def plan(self, body):
         body = body if isinstance(body, dict) else {}
@@ -168,6 +192,11 @@ class DeployUploads:
         for row in rows:
             if row['path']:
                 used.setdefault(row['path'], []).append(row['source'])
+        previous = {}
+        destination = self._destination(target)
+        for record in self._records(work):
+            if record.get('target') == target_id and record.get('destination') == destination:
+                previous[record.get('path')] = record
         public = target['public_url']
         for row in rows:
             if not row['path']:
@@ -177,16 +206,24 @@ class DeployUploads:
             if len(used[row['path']]) > 1:
                 row['status'] = 'clash'
                 continue
-            data = self._webp(Path(self.rt.paths.output) / row['source'])
-            row['bytes'] = len(data)
             etag = remote.get(row['path'])
-            row['status'] = (
-                'new'
-                if etag is None
-                else 'unchanged'
-                if etag == hashlib.md5(data).hexdigest()
-                else 'overwrite'
-            )
+            row['etag'] = etag
+            row['status'] = 'new' if etag is None else 'existing'
+            record = previous.get(row['path'])
+            if (
+                etag is not None
+                and record
+                and record.get('ok')
+                and record.get('source') == row['source']
+                and record.get('md5') == etag
+            ):
+                try:
+                    with (Path(self.rt.paths.output) / row['source']).open('rb') as stream:
+                        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                    if digest == record.get('source_sha256'):
+                        row['status'] = 'unchanged'
+                except OSError:
+                    pass  # report source errors per file during upload
         counts = {}
         for row in rows:
             counts[row['status']] = counts.get(row['status'], 0) + 1
@@ -194,6 +231,7 @@ class DeployUploads:
             'work': work.id,
             'target': target_id,
             'target_name': target['name'],
+            'destination': destination,
             'public_url': public,
             'path_format': path_format,
             'rows': rows,
@@ -204,17 +242,20 @@ class DeployUploads:
     # --- upload ----------------------------------------------------------------------------------------------------
     def start(self, body):
         """Upload the new and changed rows of a fresh plan (or only the paths named in ``only``)."""
+        body = body if isinstance(body, dict) else {}
         plan = self.plan(body)
         only = set(body.get('only') or []) if isinstance(body.get('only'), list) else None
         todo = [
             r
             for r in plan['rows']
-            if r['status'] in ('new', 'overwrite') and (only is None or r['path'] in only)
+            if r['status'] in ('new', 'existing') and (only is None or r['path'] in only)
         ]
         if not todo:
             raise ValueError(
                 Msg('server.deploy.nothing', 'Nothing to upload: every image is unchanged or held back.')
             )
+        client = self.rt.deploy_targets.client(plan['target'], self.transport)
+        work = self.rt.works.get(plan['work'])
         with self.lock:
             if any(r['status'] in (RUNNING, CANCELLING) for r in self.runs.values()):
                 raise ValueError(Msg('server.deploy.busy', 'An upload is already running.'))
@@ -225,21 +266,22 @@ class DeployUploads:
                 'work': plan['work'],
                 'target': plan['target'],
                 'target_name': plan['target_name'],
+                'destination': plan['destination'],
                 'total': len(todo),
                 'done': 0,
                 'results': [],
+                'current': None,
                 'started_at': now(),
                 'finished_at': None,
             }
             for old in sorted(self.runs, key=lambda k: self.runs[k]['started_at'])[:-KEEP_RUNS]:
                 self.runs.pop(old, None)
-        client = self.rt.deploy_targets.client(plan['target'], self.transport)
         threading.Thread(
-            target=self._run, args=(run_id, client, todo), name='deploy-upload', daemon=True
+            target=self._run, args=(run_id, client, todo, work), name='deploy-upload', daemon=True
         ).start()
         return self.public(run_id)
 
-    def _run(self, run_id, client, todo):
+    def _run(self, run_id, client, todo, work):
         run = self.runs[run_id]
         for row in todo:
             if run['status'] == CANCELLING:
@@ -248,14 +290,51 @@ class DeployUploads:
                 'path': row['path'],
                 'source': row['source'],
                 'url': row.get('url', ''),
-                'overwrote': row['status'] == 'overwrite',
+                'overwrote': False,
+                'source_sha256': None,
+                'md5': None,
+                'bytes': None,
             }
+            with self.lock:
+                run['current'] = {'source': row['source'], 'path': row['path'], 'status': 'converting'}
             try:
-                data = self._webp(Path(self.rt.paths.output) / row['source'])
-                client.put(row['path'], data, 'image/webp')
+                raw = (Path(self.rt.paths.output) / row['source']).read_bytes()
+                result['source_sha256'] = hashlib.sha256(raw).hexdigest()
+                data = self._webp(raw)
+                del raw
+                result.update(md5=hashlib.md5(data).hexdigest(), bytes=len(data))
+                if run['status'] == CANCELLING:
+                    break
+                # Refresh this key after conversion: the bucket may have changed since preview.
+                etag = client.head(row['path'])
+                if etag == result['md5']:
+                    result['status'] = 'unchanged'
+                else:
+                    if run['status'] == CANCELLING:
+                        break
+                    with self.lock:
+                        run['current'] = {**run['current'], 'status': 'uploading'}
+                    client.put(row['path'], data, 'image/webp')
+                    result['overwrote'] = etag is not None
+                    result['status'] = 'overwritten' if etag is not None else 'uploaded'
+                del data
                 result['ok'] = True
             except Exception as error:  # one file failing does not stop the others
-                result.update(ok=False, error=message_of(error))
+                result.update(ok=False, status='failed', error=message_of(error))
+            record = {
+                **result,
+                'schema_version': 1,
+                'at': now(),
+                'run': run_id,
+                'target': run['target'],
+                'target_name': run['target_name'],
+                'destination': run['destination'],
+            }
+            try:
+                self._record(work, record)
+            except OSError as error:
+                # Preserve the real remote outcome; a logging failure must not masquerade as a failed PUT.
+                result['log_error'] = message_of(error)
             with self.lock:
                 run['results'].append(result)
                 run['done'] += 1
@@ -266,6 +345,7 @@ class DeployUploads:
             else:
                 run['status'] = FAILED if failed == len(run['results']) else DONE
             run['finished_at'] = now()
+            run['current'] = None
 
     def public(self, run_id):
         with self.lock:

@@ -131,6 +131,10 @@ async def deploy_run(request):
     return await call(_runtime(request).deploy.public, request.path_params['run'])
 
 
+async def deploy_history(request):
+    return await call(_runtime(request).deploy.history, request.path_params['wid'])
+
+
 async def deploy_cancel(request):
     return await call(_runtime(request).deploy.cancel, request.path_params['run'])
 
@@ -648,6 +652,7 @@ def routes():
         Route(f'{p}/deploy/plan', deploy_plan, methods=['POST']),
         Route(f'{p}/deploy/upload', deploy_upload, methods=['POST']),
         Route(f'{p}/deploy/runs/{{run}}', deploy_run),
+        Route('/api/works/{wid}/image/deploy/history', deploy_history),
         Route(f'{p}/deploy/runs/{{run}}/cancel', deploy_cancel, methods=['POST']),
         Route(f'{p}/services', image_services_get),
         Route(f'{p}/services', image_services_put, methods=['PUT']),

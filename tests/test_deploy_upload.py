@@ -90,7 +90,118 @@ def test_plan_upload_and_unchanged_files(unlocked):
     key = paths[0]
     bucket.objects[key] = (b'old', 'different')
     plan = c.post('/api/image/deploy/plan', json=body).json()
-    assert {r['path']: r['status'] for r in plan['rows']}[key] == 'overwrite'
+    assert {r['path']: r['status'] for r in plan['rows']}[key] == 'existing'
+    run = _wait(c, c.post('/api/image/deploy/upload', json=body).json()['id'])
+    assert len(run['results']) == 1
+    assert run['results'][0]['status'] == 'overwritten' and run['results'][0]['overwrote']
+
+
+def test_preview_does_not_convert_and_existing_files_compare_on_upload(unlocked, monkeypatch):
+    c = unlocked
+    wid, runtime, bucket = _setup(c)
+    _set_outfit_code(c, wid, 'uniform')
+    body = {'work': wid, 'target': 'main'}
+    original = runtime.deploy._webp
+    monkeypatch.setattr(
+        runtime.deploy, '_webp', lambda _: (_ for _ in ()).throw(AssertionError('converted in preview'))
+    )
+    plan = c.post('/api/image/deploy/plan', json=body).json()
+    assert plan['counts'] == {'new': 2}
+    monkeypatch.setattr(runtime.deploy, '_webp', original)
+    # Remote matching bytes without any local upload history still skip PUT.
+    import hashlib
+    from pathlib import Path
+
+    for row in plan['rows']:
+        data = original((Path(runtime.paths.output) / row['source']).read_bytes())
+        bucket.objects[row['path']] = (data, hashlib.md5(data).hexdigest())
+    assert c.post('/api/image/deploy/plan', json=body).json()['counts'] == {'existing': 2}
+    run = _wait(c, c.post('/api/image/deploy/upload', json=body).json()['id'])
+    assert [r['status'] for r in run['results']] == ['unchanged', 'unchanged']
+    assert not any(r.method == 'PUT' for r in bucket.requests)
+    assert not (Path(runtime.paths.state) / 'deploy' / 'webp').exists()
+    history = c.get(f'/api/works/{wid}/image/deploy/history').json()['records']
+    assert len(history) == 2 and all(r['schema_version'] == 1 and r['source_sha256'] for r in history)
+    # A new service instance restores history and can recognize unchanged sources.
+    from atelierx.image.deploy.upload import DeployUploads
+
+    runtime.deploy = DeployUploads(runtime)
+    runtime.deploy.transport = httpx.MockTransport(bucket)
+    assert len(runtime.deploy.history(wid)['records']) == 2
+    assert runtime.deploy.plan(body)['counts'] == {'unchanged': 2}
+    target = dict(runtime.deploy_targets.get('main'))
+    monkeypatch.setattr(runtime.deploy_targets, 'get', lambda _: {**target, 'account_id': 'another-account'})
+    assert runtime.deploy.plan(body)['counts'] == {'existing': 2}
+    monkeypatch.setattr(runtime.deploy_targets, 'get', lambda _: target)
+    # Changing the source invalidates the record even while its remote ETag stays the same.
+    export = runtime.reviews.plan_export({'work': wid})
+    items = runtime.gallery.snapshot_items()
+    monkeypatch.setattr(runtime.reviews, 'plan_export', lambda _: export)
+    monkeypatch.setattr(runtime.gallery, 'snapshot_items', lambda: items)
+    source = Path(runtime.paths.output) / plan['rows'][0]['source']
+    source.write_bytes(source.read_bytes() + b'changed source metadata')
+    assert runtime.deploy.plan(body)['counts'] == {'existing': 1, 'unchanged': 1}
+
+
+def test_cancel_during_conversion_never_puts_or_logs_completed_file(unlocked, monkeypatch):
+    import threading
+
+    c = unlocked
+    wid, runtime, bucket = _setup(c)
+    _set_outfit_code(c, wid, 'uniform')
+    entered, release = threading.Event(), threading.Event()
+    original = runtime.deploy._webp
+
+    def blocked(raw):
+        entered.set()
+        assert release.wait(5)
+        return original(raw)
+
+    monkeypatch.setattr(runtime.deploy, '_webp', blocked)
+    run = c.post('/api/image/deploy/upload', json={'work': wid, 'target': 'main'}).json()
+    try:
+        assert entered.wait(5)
+        current = runtime.deploy.public(run['id'])
+        assert current['current']['status'] == 'converting'
+        c.post(f'/api/image/deploy/runs/{run["id"]}/cancel')
+    finally:
+        release.set()
+    run = _wait(c, run['id'])
+    assert run['status'] == 'cancelled' and run['done'] == 0 and run['current'] is None
+    assert bucket.objects == {} and runtime.deploy.history(wid)['records'] == []
+
+
+def test_hundreds_of_preview_rows_need_no_source_reads_or_conversion(unlocked, monkeypatch):
+    c = unlocked
+    wid, runtime, _bucket = _setup(c)
+    item = runtime.gallery.snapshot_items()[0]
+    items = [{**item, 'path': f'not-on-disk/{i}.png'} for i in range(500)]
+    monkeypatch.setattr(runtime.gallery, 'snapshot_items', lambda: items)
+    monkeypatch.setattr(
+        runtime.reviews, 'plan_export', lambda _: {'manifest': {i['path']: {} for i in items}}
+    )
+    monkeypatch.setattr(runtime.deploy, '_webp', lambda _: (_ for _ in ()).throw(AssertionError('converted')))
+    plan = runtime.deploy.plan(
+        {'work': wid, 'target': 'main', 'paths': {i['path']: f'preview/{n}' for n, i in enumerate(items)}}
+    )
+    assert plan['counts'] == {'new': 500}
+
+
+def test_history_recovers_torn_records_and_retains_real_result_on_log_failure(unlocked, monkeypatch):
+    c = unlocked
+    wid, runtime, bucket = _setup(c)
+    _set_outfit_code(c, wid, 'uniform')
+    work = runtime.works.get(wid)
+    (work.app / 'deploy-log.jsonl').write_bytes(b'{"torn":\xff')
+    body = {'work': wid, 'target': 'main'}
+    run = _wait(c, c.post('/api/image/deploy/upload', json=body).json()['id'])
+    assert all(r['ok'] for r in run['results'])
+    assert len(runtime.deploy.history(wid)['records']) == 2
+    bucket.objects.clear()
+    monkeypatch.setattr(runtime.deploy, '_record', lambda *_: (_ for _ in ()).throw(OSError('disk full')))
+    run = _wait(c, c.post('/api/image/deploy/upload', json=body).json()['id'])
+    assert all(r['ok'] and r['log_error'] for r in run['results'])
+    assert len(bucket.objects) == 2
 
 
 def test_edited_paths_clashes_ratings_and_retrying_only_some(unlocked):
@@ -167,3 +278,7 @@ def test_a_failed_file_is_reported_and_the_rest_go_on(unlocked):
         and 'HTTP 500' in failed[0]['error']['text']
     )
     assert len(bucket.objects) == 1
+    history = c.get(f'/api/works/{wid}/image/deploy/history').json()['records']
+    logged_error = next(r['error'] for r in history if r['status'] == 'failed')
+    assert logged_error['key'] == 'server.deploy.http'
+    assert logged_error['values']['status'] == 500

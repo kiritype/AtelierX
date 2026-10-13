@@ -470,7 +470,7 @@ class PostprocessMixin:
             'rembg': 'RemBGSession+' in info,
         }
 
-    def enqueue_postprocess(self, body):
+    def enqueue_postprocess(self, body, *, enqueue=True, info=None, catalog=None, frozen_mask=None):
         ids = body.get('ids')
         if not isinstance(ids, list) or not 1 <= len(ids) <= 200:
             raise ValueError(
@@ -482,7 +482,7 @@ class PostprocessMixin:
         op = body.get('op')
         method = body.get('method') or 'local'
         processor = processors.get(op, method)
-        info = self.postprocess_info()
+        info = info or self.postprocess_info()
         if not info['available']:
             raise ValueError(info['error'])
         if op not in info['ops']:
@@ -497,7 +497,7 @@ class PostprocessMixin:
         sources = {}
         if processor.needs_record:
             # Redrawing needs the model, LoRAs and prompt the image was made with.
-            catalog = self.comfy.catalog()
+            catalog = catalog or self.comfy.catalog()
             missing = []
             for item in items:
                 record = self.tools.analyze(item['id']).get('studio') or {}
@@ -521,7 +521,7 @@ class PostprocessMixin:
                         missing=', '.join(missing[:5]),
                     )
                 )
-        if processor.mask_input:
+        if processor.mask_input and not frozen_mask:
             unmasked = [item['name'] for item in items if not item.get(f'{processor.mask_input}_mask')]
             if unmasked:
                 raise ValueError(
@@ -556,14 +556,19 @@ class PostprocessMixin:
         frozen = []
         try:
             for job in prepared:
-                if processor.mask_input:
+                if frozen_mask:
+                    job['bulk_mask'] = frozen_mask
+                elif processor.mask_input:
                     job['post_mask'] = self.tools.freeze_mask(job['tool_item'], processor.mask_input)
                     frozen.append(job['post_mask'])
-            self.queue.add(prepared)
+            if enqueue:
+                self.queue.add(prepared)
         except Exception:
             for token in frozen:
                 self.tools.job_mask_path(token).unlink(missing_ok=True)
             raise
+        if not enqueue:
+            return prepared
         public = [{k: v for k, v in j.items() if k != 'snapshot'} for j in prepared]
         return {'ok': True, 'jobs': public}
 
@@ -582,7 +587,10 @@ class PostprocessMixin:
         """The redraw mask of a job: the copy taken when it was queued (older saved jobs
         have none and use the image's current mask)."""
         options = job['post_options']
-        if job.get('post_mask'):
+        if job.get('bulk_mask'):
+            with Image.open(job['bulk_mask']) as image:
+                mask = image.convert('L')
+        elif job.get('post_mask'):
             mask = self.tools.job_mask(job['post_mask'])
         else:
             mask = self.tools.mask(item['id'], 'inpaint')
@@ -613,7 +621,7 @@ class PostprocessMixin:
         processor = processors.get(job['post_op'], job.get('post_method') or 'local')
         if processor.mask_kind:
             kind = processor.mask_kind
-            self.tools.set_mask(item['id'], image.convert('L'), 'detected', kind)
+            self.tools.set_mask(item['id'], image.convert('L'), 'detected', kind, job_id=job['id'])
             return f'/api/image/tools/mask?id={item["id"]}&kind={kind}', None
         image = processor.finish(self, job, item, image)
         return self._store_result(
@@ -626,7 +634,7 @@ class PostprocessMixin:
             made=job.get('post_source'),
         )
 
-    def apply_censor(self, body):
+    def apply_censor(self, body, *, frozen_mask=None, job_id=None):
         """Cover the masked area of one tool image (on the CPU, no GPU) and save the result."""
         item = self.tools.get(body.get('id'))
         options = {
@@ -637,7 +645,11 @@ class PostprocessMixin:
             'grow': _number(body, 'grow', 0, -64, 64, int),
             'feather': _number(body, 'feather', 0, 0, 64, int),
         }
-        mask = self.tools.mask(item['id'])
+        if frozen_mask:
+            with Image.open(frozen_mask) as image:
+                mask = image.convert('L')
+        else:
+            mask = self.tools.mask(item['id'])
         if mask is None:
             raise ValueError(
                 Msg(
@@ -649,17 +661,21 @@ class PostprocessMixin:
             source.load()
             result = censor.apply(source, mask, **options)
         options['mask'] = item.get('mask')
-        url, _ = self._store_result(item, result, 'censor', options, None, None)
+        url, _ = self._store_result(item, result, 'censor', options, None, job_id)
         return {'ok': True, 'url': url}
 
-    def apply_alpha(self, body):
+    def apply_alpha(self, body, *, frozen_mask=None, job_id=None):
         """Make everything outside the kept-area mask transparent (on the CPU, no GPU)."""
         item = self.tools.get(body.get('id'))
         options = {
             'grow': _number(body, 'grow', 0, -64, 64, int),
             'feather': _number(body, 'feather', 0, 0, 64, int),
         }
-        mask = self.tools.mask(item['id'], 'alpha')
+        if frozen_mask:
+            with Image.open(frozen_mask) as image:
+                mask = image.convert('L')
+        else:
+            mask = self.tools.mask(item['id'], 'alpha')
         if mask is None:
             raise ValueError(
                 Msg(
@@ -674,7 +690,7 @@ class PostprocessMixin:
         alpha = ImageChops.multiply(image.getchannel('A'), mask)
         image.putalpha(alpha)
         options['mask'] = item.get('alpha_mask')
-        url, _ = self._store_result(item, image, 'alpha', options, None, None)
+        url, _ = self._store_result(item, image, 'alpha', options, None, job_id)
         return {'ok': True, 'url': url}
 
     def _asset_source(self, item):

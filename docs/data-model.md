@@ -932,6 +932,20 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 대기열 작업(`state/image/queue.json`)과 생성 기록에는 `service`가 붙는다. 이 PC의 GPU를 쓰는 서비스(ComfyUI)의 작업만 GPU 차례를
   기다리고, LoRA 학습·로컬 LLM도 그 작업만 기다린다.
 
+#### 배포 기록 (`<작품>/.atelierx/deploy-log.jsonl`)
+
+새로운 추가 전용 JSONL 형식이며 각 행의 `schema_version`은 1이다. 기존 버전은 기록이 없으므로 빈 이력으로 읽는다. 기존 작품/배포 설정 형식은 바뀌지 않는다. 앱은 잘린 마지막 행과 알 수 없는 버전의 행을 건너뛴다.
+
+```json
+{"schema_version":1,"at":"2026-10-13T12:00:00","run":"abc123","target":"r2-main","target_name":"이미지","destination":{"account_id":"example","bucket":"images"},"path":"W001/C001/o01/002.webp","source":"W001/C001/o01/smile/a.png","source_sha256":"sha256","md5":"webp-md5","bytes":12345,"url":"https://img.example.com/W001/C001/o01/002.webp","status":"uploaded","ok":true,"overwrote":false}
+```
+
+- `status`: `uploaded`, `overwritten`, `unchanged`, `failed`. 실패는 `error` 메시지 객체(`key`, `text`, `values`; 일반 오류는 문자열)를 추가하며 아직 읽기/변환하지 못한 해시·크기는 null이다.
+- `destination`은 대상 ID를 다른 계정/버킷에 재사용할 때 오판하지 않기 위한 식별값이다. 인증 정보는 기록하지 않는다.
+- 최신 동일 대상/목적지/경로 기록의 원본 경로·SHA256과 WebP MD5를 현재 원본·ETag에 비교한다. 실패 기록은 변경 없음 판단에 쓰지 않는다.
+- API/UI는 최신 100건을 돌려준다. 파일은 전체 기록을 보존한다. 원격 업로드 후 기록 저장 실패는 실행 응답의 `log_error`로 따로 알린다.
+- 취소로 처리하지 않은 파일은 완료 기록을 만들지 않는다. 새 실행 상태는 메모리에 있으며 완료 파일 기록만 영구 보존한다.
+
 #### 배포 대상 (`<데이터 루트>/image/deploy.json`)
 
 채택 이미지를 올릴 곳이다. 지금은 Cloudflare R2(S3 호환 API)만 있다. 동작은 [25](features/25-deployment.md).
@@ -1094,6 +1108,19 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 <출력 루트>/.trash/<id>/           지운 이미지와 기록 (+ .trash/index.json: 원래 경로·지운 때)
 ```
 
+- 이미지 도구 목록은 `data/image/tools/tools.sqlite3`의 `items(id PRIMARY KEY, data JSON)`에 저장한다(#222).
+  SQLite `user_version=2`; 기존 `tools.json`(schema_version 1)은 DB 최초 생성 시 트랜잭션으로 가져오고 원본 파일을 남긴다.
+  행별 수정·삭제만 반영하며 목록 전체 JSON을 다시 쓰지 않는다. 모르는 DB 버전은 거절한다.
+- 대량 도구 요청은 `data/image/batches/batches.sqlite3`(`user_version=1`, WAL/FULL)에 별도로 저장한다.
+  `batches`는 ID·고유 request_id·본문 fingerprint·operation·settings JSON·created_at·cancelled,
+  `items`는 (batch, ordinal) 기본키·target JSON·status·attempt·고유 job_id·result JSON,
+  `history`는 job_id 기본키·batch·ordinal·전체 실행 결과 JSON이다. 재시도해도 이전 history는 남는다.
+  target은 원본 ID/출처·파일/옆 JSON signature(mtime_ns,size)·seed·입력 마스크 상대 토큰·개별 오류를 담는다.
+  마스크는 `data/image/batches/<batch>/<ordinal>.png`에 복사한다. 절대 경로를 영속화하지 않고 현재 앱 루트에서 해석한다.
+  접수 트랜잭션 후 응답하고, stable job_id의 queued intent를 먼저 커밋한 뒤 공용 JSON 큐에 추가한다.
+  완료 결과를 SQLite history에 커밋한 다음 공용 큐에서 제거한다. 큐 저장 실패는 대상 실패로 오분류하지 않고 실행을 멈춘다.
+  재시작 때 intent·공용 큐·출력 job_id를 대조하며 완료를 재실행하지 않는다. 확정할 수 없는 실행은 interrupted로 보존한다.
+  마스크 메타데이터의 선택적 job_id는 감지 결과 복구용이다. 기존 마스크의 이 필드 누락은 허용한다.
 - 이미지 도구의 목록·올린 사본·마스크는 앱 데이터 `data/image/tools/`에 둔다([24](features/24-image-tools.md)). 제외 태그는
   `config/image/tags.json`.
 

@@ -7,18 +7,21 @@ path in the output root and never copied. The list and the masks live next to th
 
 import hashlib
 import io
+import json
 import re
 import shutil
+import sqlite3
 import threading
 import uuid
 import zipfile
+from contextlib import closing
 from pathlib import Path, PurePosixPath
 from typing import ClassVar
 
 from PIL import Image, ImageOps
 
-from ...core.i18n import Msg, message_of
-from ..util import atomic_json, now, read_json
+from ...core.i18n import Msg, message_of, wire
+from ..util import now, read_json, replace_file
 from . import censor
 from .metadata import describe
 
@@ -27,7 +30,7 @@ MAX_FILE_BYTES = 100 * 1024 * 1024
 MAX_ZIP_FILES = 500
 MAX_ZIP_BYTES = 2 * 1024**3
 MAX_PIXELS = 64_000_000
-MAX_ITEMS = 2000
+MAX_ITEMS = 50000
 THUMBNAIL = 320
 
 
@@ -39,14 +42,52 @@ class ToolWorkspace:
         self.masks = self.base / 'masks'
         self.path = self.base / 'tools.json'
         self.lock = threading.RLock()
-        self.items = (read_json(self.path) or {}).get('items', [])
+        self.database = self.base / 'tools.sqlite3'
+        self.base.mkdir(parents=True, exist_ok=True)
+        self._dirty = {}
+        self._deleted = set()
+        with closing(sqlite3.connect(self.database)) as db:
+            version = db.execute('PRAGMA user_version').fetchone()[0]
+            if version not in (0, 2):
+                raise RuntimeError('Unsupported tool workspace schema')
+            with db:
+                db.execute('CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+                if version == 0:
+                    legacy = (read_json(self.path) or {}).get('items', [])
+                    db.executemany(
+                        'INSERT OR IGNORE INTO items VALUES(?,?)', [(i['id'], json.dumps(i)) for i in legacy]
+                    )
+                    db.execute('PRAGMA user_version=2')
+            self.items = [json.loads(row[0]) for row in db.execute('SELECT data FROM items ORDER BY rowid')]
 
-    def _persist(self):
-        atomic_json(self.path, {'schema_version': 1, 'items': self.items})
+    def _persist(self, changed=()):
+        self._dirty.update({item['id']: item for item in changed})
+        with closing(sqlite3.connect(self.database)) as db, db:
+            db.executemany('DELETE FROM items WHERE id=?', [(ident,) for ident in self._deleted])
+            db.executemany(
+                'INSERT INTO items(id,data) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
+                [
+                    (ident, json.dumps(wire(item), ensure_ascii=False))
+                    for ident, item in self._dirty.items()
+                    if ident not in self._deleted
+                ],
+            )
+        self._dirty.clear()
+        self._deleted.clear()
 
-    def public(self):
+    def public(self, offset=0, limit=None):
         with self.lock:
-            return {'items': [self._public_item(item) for item in self.items]}
+            offset = max(0, offset)
+            end = None if limit is None else offset + min(max(limit, 1), 500)
+            return {
+                'items': [self._public_item(item) for item in self.items[offset:end]],
+                'total': len(self.items),
+                'offset': offset,
+            }
+
+    def ids(self):
+        with self.lock:
+            return {'ids': [item['id'] for item in self.items], 'total': len(self.items)}
 
     def _public_item(self, item):
         result = dict(item)
@@ -134,6 +175,7 @@ class ToolWorkspace:
                     )
                 )
             self.items.append(record)
+            self._dirty[record['id']] = record
 
     def _store(self, name, raw):
         kind, width, height = self._check(raw, name)
@@ -258,6 +300,7 @@ class ToolWorkspace:
         with self.lock:
             gone = [i for i in self.items if i['id'] in wanted]
             self.items = [i for i in self.items if i['id'] not in wanted]
+            self._deleted.update(i['id'] for i in gone)
             self._persist()
         for item in gone:
             if item['source'] == 'upload':
@@ -331,7 +374,7 @@ class ToolWorkspace:
         with self.lock:
             item = self.get(item_id)
             item.update(parent=parent_id, op=op)
-            self._persist()
+            self._persist([item])
 
     # ---- censor masks ------------------------------------------------------------------
 
@@ -387,7 +430,7 @@ class ToolWorkspace:
             if path.stem not in keep:
                 path.unlink(missing_ok=True)
 
-    def set_mask(self, item_id, mask, source, kind='censor'):
+    def set_mask(self, item_id, mask, source, kind='censor', job_id=None):
         """Store a mask (PIL image or PNG bytes) for an item; its size must match the image."""
         item = self.get(item_id)
         size = (item['width'], item['height'])
@@ -404,13 +447,17 @@ class ToolWorkspace:
             )
         path = self.mask_path(item_id, kind)
         path.parent.mkdir(parents=True, exist_ok=True)
-        mask.convert('L').save(path, 'PNG')
         with self.lock:
+            temporary = path.with_suffix('.png.tmp')
+            mask.convert('L').save(temporary, 'PNG')
+            replace_file(temporary, path)
             item[self.MASK_KINDS[kind][1]] = {'source': source, 'updated_at': now()}
-            self._persist()
+            if job_id:
+                item[self.MASK_KINDS[kind][1]]['job_id'] = job_id
+            self._persist([item])
 
     def set_tags(self, item_id, tags):
         with self.lock:
             item = self.get(item_id)
             item['tags'] = tags
-            self._persist()
+            self._persist([item])

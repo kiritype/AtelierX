@@ -164,7 +164,7 @@ class TaggerMixin:
                 archive.writestr(caption, ', '.join(tags))
         return out.getvalue(), f'tags-{len(rows)}.zip', 'application/zip'
 
-    def enqueue_tags(self, body):
+    def enqueue_tags(self, body, *, enqueue=True, info=None):
         ids = body.get('ids')
         if not isinstance(ids, list) or not 1 <= len(ids) <= MAX_IDS:
             raise ValueError(
@@ -174,7 +174,7 @@ class TaggerMixin:
                     max_ids=MAX_IDS,
                 )
             )
-        info = self.tagger_info()
+        info = info or self.tagger_info()
         if not info['available']:
             raise ValueError(info['error'])
         settings = tag_settings(body, info['models'])
@@ -194,6 +194,8 @@ class TaggerMixin:
             )
             for item in items
         ]
+        if not enqueue:
+            return prepared
         self.queue.add(prepared)
         return {
             'ok': True,
