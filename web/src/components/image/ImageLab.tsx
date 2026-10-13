@@ -61,17 +61,14 @@ export function compareLorasInLab(files: string[], positive: string, model: stri
 }
 
 // Image menu → Generate & compare: one prompt with several seeds, or one changing value compared side by side.
-export default function ImageLab({ workId }: { workId?: string }) {
+export default function ImageLab({ workId, active = true }: { workId?: string; active?: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
   const catalog = useCatalog();
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const [importing, setImporting] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(() => {
-    const handoff = readStore(sessionStorage, HANDOFF_KEY);
-    writeStore(sessionStorage, HANDOFF_KEY, null);
-    return handoff ?? readStore(localStorage, DRAFT_KEY) ?? { positive: '', negative: '', settings: { family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 } };
-  });
+  const [draft, setDraft] = useState<Draft>(() => readStore(localStorage, DRAFT_KEY) ??
+    { positive: '', negative: '', settings: { family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 } });
   const [mode, setMode] = useState<'single' | 'compare'>(draft.compareFiles ? 'compare' : 'single');
   const [count, setCount] = useState(draft.compareFiles ? 1 : 4);
   const [sweepKey, setSweepKey] = useState<(typeof SWEEPS)[number]>(draft.compareFiles ? 'lora_file' : 'cfg');
@@ -90,6 +87,7 @@ export default function ImageLab({ workId }: { workId?: string }) {
 
   useEffect(() => writeStore(localStorage, DRAFT_KEY, { ...draft, source: null, compareFiles: undefined }), [draft]);
   useEffect(() => {
+    if (!active) return;
     const take = () => {
       const handoff = readStore(sessionStorage, HANDOFF_KEY);
       writeStore(sessionStorage, HANDOFF_KEY, null);
@@ -100,9 +98,10 @@ export default function ImageLab({ workId }: { workId?: string }) {
         }
       }
     };
+    take();
     window.addEventListener(HANDOFF_KEY, take);
     return () => window.removeEventListener(HANDOFF_KEY, take);
-  }, []);
+  }, [active]);
 
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const runs = useQuery<{ runs: Run[] }>({ queryKey: ['lab-runs'], queryFn: () => get('/api/image/lab/runs'), refetchInterval: 2000 });

@@ -900,6 +900,14 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - `service`: 이미지를 만든 생성 서비스(`comfyui`, `novelai`, `pixai`). 없으면 `comfyui`. 인터넷 서비스의 `settings`는 그 서비스의
   설정이고 `model_family`는 서비스 id다(라이브러리 사용 대상과 같은 값). `workflow`에는 그 서비스에 보낸 요청이 들어간다.
 
+캐릭터 등록이 필요 없는 **단일 이미지 생성**은 `<출력 루트>/_single/<작품 ID>/<날짜>/<작업 ID>.png`와 같은 이름의
+`.json`에 저장한다. 이 기록은 `schema_version: 2`, `kind: "single"`, `work_id`, `service`, 최종 `positive`·`negative`,
+실제 `settings`·`seed`, `request: {positive, negative, service, settings, preset_id}`, `job_id`, `created_at`,
+`run_created_at`, `image_size`, `workflow`, `postprocessing`을 가진다. `request`는 원래 화면 입력을 기록하며,
+복원·재생성은 프리셋이 바뀌거나 삭제되어도 결과의 최종 프롬프트·설정·시드를 사용한다. 캐릭터·의상·표정 필드는 없다. 기존 `schema_version: 1` 조합 및
+생성·비교 기록은 그대로 읽는다. 큐 작업은 기존 `state/image/queue.json` 형식에 `kind: "single"`과 작품·요청
+스냅샷을 더하며, 완료 작업을 큐에서 지운 뒤에도 출력 파일에서 단일 생성 이력을 다시 만든다.
+
 #### 인터넷 이미지 서비스 설정 (`<데이터 루트>/image/services.json`)
 
 ```json

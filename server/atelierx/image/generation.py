@@ -19,9 +19,11 @@ from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
 from . import library
-from .compose import Composer
+from .comments import strip_text
+from .compose import Composer, _join
 from .services import ResultPending
 from .util import atomic_json, code, now, replace_file
+from .workflow import DEFAULTS as COMFY_DEFAULTS
 from .workflow import build_ui_workflow, pipeline_stages, validate_settings
 
 log = logging.getLogger(__name__)
@@ -260,6 +262,120 @@ class GenerationMixin:
         self.queue.add(prepared, before_save=mark)
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
+    def enqueue_single(self, work, body):
+        """Queue one free-prompt image for a work without requiring a character design."""
+        self.queue.check_room(1)
+        if not isinstance(body, dict):
+            raise ValueError(Msg('server.single.request', 'Choose an image service and enter a prompt.'))
+        positive, negative = body.get('positive'), body.get('negative', '')
+        if not isinstance(positive, str) or not isinstance(negative, str) or len(positive) > 30000 or len(negative) > 30000:
+            raise ValueError(Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.'))
+        positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
+        if not positive:
+            raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
+        if not isinstance(body.get('settings', {}), dict):
+            raise ValueError(Msg('server.single.settings', 'Choose valid generation settings.'))
+        service = self._service(body)
+        raw_settings, options, preset = self._settings(body)
+        if service.id == DEFAULT_SERVICE:
+            allowed = set(COMFY_DEFAULTS) | {'family', 'clip_skip', 'shift', 'upscale', 'detailer'}
+        elif service.id == 'novelai':
+            from .internet.novelai import DEFAULTS as NOVELAI_DEFAULTS
+            allowed = set(NOVELAI_DEFAULTS) | {'family'}
+        else:
+            from .internet.pixai import DEFAULTS as PIXAI_DEFAULTS
+            allowed = set(PIXAI_DEFAULTS) | {'family'}
+        unsupported = set(raw_settings) - allowed
+        if unsupported:
+            raise ValueError(Msg('server.single.unsupported_settings',
+                                 'These settings are not supported by {service}: {settings}.',
+                                 service=service.id, settings=', '.join(sorted(unsupported))))
+        if service.id == DEFAULT_SERVICE:
+            catalog = self.comfy.catalog()
+            if not catalog['connected']:
+                raise ValueError(catalog['error'])
+            settings = validate_settings(raw_settings, catalog)
+        else:
+            settings = service.validate_settings(raw_settings)
+        commons = library.items(self.paths, work, 'common')
+        common_ids = (preset or {}).get('common') or []
+        selected = []
+        for ident in common_ids:
+            item = commons.get(ident)
+            if item is None:
+                raise ValueError(Msg('server.single.missing_common', 'Preset common prompt {id} was not found.', id=ident))
+            if not library.fits(item, options['family']):
+                raise ValueError(Msg('server.single.other_target', 'Preset common prompt {id} is for another target.', id=ident))
+            selected.append(item)
+        artist = (preset or {}).get('artist') or {}
+        common_positive = _join(*(item.get('prompt') for item in selected if item.get('target') != 'negative'))
+        common_negative = _join(*(item.get('prompt') for item in selected if item.get('target') == 'negative'))
+        final_positive = ', '.join(x for x in (*common_positive, positive, strip_text(artist.get('positive') or '').strip()) if x)
+        final_negative = ', '.join(x for x in (*common_negative, negative, strip_text(artist.get('negative') or '').strip()) if x)
+        if len(final_positive) > 30000 or len(final_negative) > 30000:
+            raise ValueError(Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.'))
+        seed = (secrets.randbelow(2**31) if service.id == 'pixai' else secrets.randbits(32)) if settings.get('seed', -1) == -1 else settings['seed']
+        actual = {**settings, 'seed': seed}
+        if service.id != DEFAULT_SERVICE:
+            self._check_repeat(service, {**body, 'positive': final_positive, 'negative': final_negative}, settings)
+        job_id = uuid.uuid4().hex
+        created = now()
+        request = {
+            'positive': positive, 'negative': negative, 'service': service.id,
+            'settings': copy.deepcopy(body.get('settings') or {}), 'preset_id': body.get('preset_id') or '',
+        }
+        snapshot = {
+            'kind': 'single', 'work_id': work.id, 'service': service.id,
+            'positive': final_positive, 'negative': final_negative, 'settings': actual,
+            'request': request, 'run_created_at': created,
+        }
+        if common_ids:
+            snapshot['common_ids'] = list(common_ids)
+        if preset:
+            snapshot['generation_preset'] = {'id': preset['id'], 'name': preset.get('name', preset['id'])}
+        self.queue.add([{
+            'id': job_id, 'kind': 'single', 'status': 'queued', 'created_at': created,
+            'work_id': work.id, 'service': service.id, 'seed': seed,
+            'title': positive[:80], 'review_requested': False, 'snapshot': snapshot,
+        }])
+        return {'job_id': job_id}
+
+    def single_runs(self, work):
+        """Recent single results survive clearing the queue because the PNG sidecars are authoritative."""
+        saved = {}
+        prefix = f'_single/{work.id}/'
+        for item in self.gallery.snapshot_items():
+            if not item['path'].startswith(prefix):
+                continue
+            try:
+                record = self.gallery.metadata(item['path'])
+            except ValueError:
+                continue
+            if record.get('kind') != 'single' or record.get('work_id') != work.id:
+                continue
+            actual = self._single_actual(record)
+            saved[record['job_id']] = {
+                'id': record['job_id'], 'status': 'done', 'created_at': record.get('run_created_at') or record.get('created_at'),
+                'service': record.get('service'), 'seed': record.get('seed'), 'request': record.get('request'), 'actual': actual,
+                'image_url': item['image_url'], 'path': item['path'],
+            }
+        for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work.id):
+            entry = saved.get(job['id'], {})
+            saved[job['id']] = {**entry, 'id': job['id'], 'status': job['status'],
+                'created_at': job['created_at'], 'service': job['service'], 'seed': job['seed'],
+                'request': (job.get('snapshot') or {}).get('request'), 'actual': self._single_actual(job.get('snapshot') or {}),
+                'image_url': job.get('image_url') or entry.get('image_url'),
+                'path': entry.get('path'), 'error': message_of(job['error']) if job.get('error') else None}
+        return {'runs': sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)[:100]}
+
+    @staticmethod
+    def _single_actual(snapshot):
+        settings = snapshot.get('settings') or {}
+        return {
+            'positive': snapshot.get('positive') or '', 'negative': snapshot.get('negative') or '',
+            'settings': {key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')},
+        }
+
     REPEAT_WINDOW = 600
 
     def _check_repeat(self, service, body, settings):
@@ -271,6 +387,8 @@ class GenerationMixin:
                     k: body.get(k)
                     for k in (
                         'targets',
+                        'positive',
+                        'negative',
                         'count',
                         'preset_id',
                         'artist',
@@ -306,8 +424,8 @@ class GenerationMixin:
         return {'ok': True}
 
     def retry(self, job_id):
-        self.queue.retry(job_id, attach=self.attach_retry)
-        return {'ok': True}
+        job = self.queue.retry(job_id, attach=self.attach_retry)
+        return {'ok': True, 'job_id': job['id']}
 
     def remove_finished(self, job_id=None):
         removed = self.queue.remove_finished(job_id)
@@ -337,7 +455,10 @@ class GenerationMixin:
                     'An all-black image came back. It was not saved and the queue is paused.',
                 )
             )
-        if job.get('kind') == 'lab':
+        if job.get('kind') == 'single':
+            folder = self.paths.output / '_single' / code(job['work_id']) / time.strftime('%Y-%m-%d')
+            stem = job['id']
+        elif job.get('kind') == 'lab':
             stamp = time.localtime()
             folder = self.paths.output / '_lab' / time.strftime('%Y-%m-%d', stamp)
             stem = '{}_{}_{:02d}'.format(
@@ -363,7 +484,7 @@ class GenerationMixin:
             index += 1
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
-            schema_version=1,
+            schema_version=2 if job.get('kind') == 'single' else 1,
             created_at=now(),
             job_id=job['id'],
             prompt_id=prompt_id,
@@ -477,7 +598,7 @@ class GenerationMixin:
             sent = {'id': resume, 'record': service.request_body(job)} if resume else service.submit(job)
             working = (
                 self._generating(job)
-                if kind in (None, 'lab')
+                if kind in (None, 'lab', 'single')
                 else Msg('server.worker.processing', 'Processing')
             )
             self.queue.update(job, prompt_id=sent['id'], progress=working)

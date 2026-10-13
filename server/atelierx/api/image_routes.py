@@ -383,6 +383,18 @@ async def enqueue(request):
     return await call(runtime.enqueue, work, data)
 
 
+async def single_enqueue(request):
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    return await call(runtime.enqueue_single, work, await _body(request))
+
+
+async def single_runs(request):
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    return await call(runtime.single_runs, work)
+
+
 async def queue_get(request):
     return await call(_runtime(request).public_jobs)
 
@@ -695,5 +707,7 @@ def routes():
         Route('/api/works/{wid}/image/deploy', work_deploy_put, methods=['PUT']),
         Route('/api/works/{wid}/image/board/exclude', image_board_exclude, methods=['PUT']),
         Route('/api/works/{wid}/image/compose', compose_preview, methods=['POST']),
+        Route('/api/works/{wid}/image/single', single_enqueue, methods=['POST']),
+        Route('/api/works/{wid}/image/single/runs', single_runs),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),
     ]
