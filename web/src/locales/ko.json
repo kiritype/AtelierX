@@ -1920,6 +1920,8 @@
   "update.restarting": "앱을 닫고 새 버전을 설치하는 중입니다. 잠시 뒤 새 버전이 열립니다.",
   "update.done": "{version}로 업데이트했습니다.",
   "update.rolled_back": "업데이트하지 못해 이전 버전으로 되돌렸습니다. {detail}",
+  "server.update.restarting": "업데이트로 앱을 다시 시작하고 있습니다. 다시 시작한 뒤 시도하세요.",
+  "server.update.active_requests": "진행 중인 요청이나 업데이트 재시작이 끝날 때까지 기다리세요.",
   "server.update.not_packaged": "패키지로 실행한 앱만 스스로 업데이트할 수 있습니다.",
   "server.update.busy": "먼저 끝내거나 멈추세요: {what}.",
   "server.update.busy_images": "대기열의 이미지 작업",

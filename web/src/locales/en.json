@@ -1798,6 +1798,8 @@
   "update.restarting": "Closing the app and installing the new version. It opens in a moment.",
   "update.done": "Updated to {version}.",
   "update.rolled_back": "The update failed and the previous version was put back. {detail}",
+  "server.update.restarting": "The update is restarting the app. Try again after restart.",
+  "server.update.active_requests": "Wait for active requests or the update restart to finish.",
   "server.update.not_packaged": "Only the packaged app updates itself.",
   "server.update.busy": "Finish or stop first: {what}.",
   "server.update.busy_images": "image work in the queue",
