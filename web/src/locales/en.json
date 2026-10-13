@@ -637,6 +637,8 @@
   "lib.scope_move_hint": "Saving moves it to global and removes this work's item.",
   "lib.scope_override_hint": "Overrides the global item in this work only. The global item stays as it is.",
   "lib.replace_global_confirm": "A global item {id} already exists. Replace it with this one and remove the work item?",
+  "lib.conflict_preserved": "This item changed elsewhere and was not saved. Your input is preserved. Copy anything you need, then reopen the latest version to review the changes.",
+  "lib.reload_conflict": "Reopen latest version",
   "lib.discard_confirm": "There are unsaved changes. Drop them and move on?",
   "lib.overrides": "overrides the global item",
   "lib.preset_common_note": "Empty: the common prompts that are on by default.",

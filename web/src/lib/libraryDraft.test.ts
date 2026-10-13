@@ -67,3 +67,23 @@ describe('afterRevisionSave', () => {
     expect(afterRevisionSave(typed, fresh, { ...fresh, revision: 'first' })).toEqual({ ...typed, revision: 'first' });
   });
 });
+
+
+describe('conflict refresh', () => {
+  it('preserves rejected text and stale revision across refreshes until explicit reopen', () => {
+    const rejected = { id: 'one', revision: 'old', prompt: ['my unsaved input'] };
+    const latest = { id: 'one', revision: 'new', prompt: ['another window'] };
+    let draft = followSelection(rejected, 'one', latest);
+    expect(draft).toBe(rejected);
+    // A retry still uses the rejected base; a list refresh cannot silently authorize an overwrite.
+    expect(draft?.revision).toBe('old');
+    draft = followSelection(draft, 'one', latest);
+    expect(draft).toBe(rejected);
+    // Explicitly discarding the draft allows the normal selection loader to take the latest item.
+    expect(followSelection(null, 'one', latest)).toBe(latest);
+  });
+  it('keeps input when a conflicting remote item was deleted', () => {
+    const rejected = { id: 'one', revision: 'old', prompt: ['my unsaved input'] };
+    expect(followSelection(rejected, 'one', null)).toBe(rejected);
+  });
+});
