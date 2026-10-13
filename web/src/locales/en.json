@@ -2432,5 +2432,8 @@
   "gen.table.column_hint": "Every character with this outfit",
   "gen.table.row_hint": "Every outfit of this character",
   "gen.bar_summary": "{chars} characters · {outfits} outfits · {exprs} expressions →",
-  "gen.bar_total": "{targets} combinations × {count} = {n} images"
+  "gen.bar_total": "{targets} combinations × {count} = {n} images",
+  "gallery.original_unknown": "The source path is not in the record. This sends the current image. Select its original in the gallery to remask it.",
+  "gallery.already_in_tools": "This image is already in Image tools.",
+  "gallery.send_original": "Send the source image for remasking"
 }
