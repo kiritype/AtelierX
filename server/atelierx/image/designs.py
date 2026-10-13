@@ -279,9 +279,13 @@ def default_choice(previous, proposed, focus=None):
     conversion is always taken)."""
     old = previous or {}
     design = deepcopy(proposed)
-    if old.get('appearance') and focus != 'appearance' and picked(old['appearance']):
-        if (old['appearance'].get('prompt') or old['appearance'].get('negative') or old['appearance'].get('source')):
-            design['appearance'] = deepcopy(old['appearance'])
+    if (
+        old.get('appearance')
+        and focus != 'appearance'
+        and picked(old['appearance'])
+        and (old['appearance'].get('prompt') or old['appearance'].get('negative') or old['appearance'].get('source'))
+    ):
+        design['appearance'] = deepcopy(old['appearance'])
     for key, outfit in (old.get('outfits') or {}).items():
         if key in design.get('outfits', {}) and focus != f'outfit:{key}' and picked(outfit):
             design['outfits'][key] = deepcopy(outfit)

@@ -170,7 +170,7 @@ def test_designs_from_before_150_still_read(unlocked, paths):
     wid = c.post('/api/samples/single/install').json()['id']
     url = f'/api/works/{wid}/image/characters/C001'
     # A design converted from sections, as written before #150.
-    (path,) = paths.works.glob(f'*/.atelierx/image/characters/C001/design.json')
+    (path,) = paths.works.glob('*/.atelierx/image/characters/C001/design.json')
     legacy = json.loads(path.read_text(encoding='utf-8'))
     legacy['appearance']['source'] = {'section': 'appearance', 'hash': 'sample'}
     for outfit in legacy['outfits'].values():

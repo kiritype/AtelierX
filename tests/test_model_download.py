@@ -280,7 +280,7 @@ def test_a_file_put_at_the_target_meanwhile_is_never_overwritten(paths, tmp_path
 
 
 def test_waiting_downloads_can_be_resumed_after_a_restart(paths, tmp_path, monkeypatch):
-    downloads, loras = _downloads(paths, tmp_path, monkeypatch)
+    downloads, _loras = _downloads(paths, tmp_path, monkeypatch)
     first = _job(downloads)
     second = _job(downloads, name='brush.safetensors')
     first['status'] = 'running'
