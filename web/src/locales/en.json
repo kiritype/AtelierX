@@ -2530,5 +2530,12 @@
   "server.bulk.retry_batch": "Retry failed items from the bulk request panel.",
   "server.bulk.page": "Invalid page number.",
   "server.bulk.action": "Unknown bulk action.",
-  "server.bulk.retry_panel": "Retry this job from its bulk request panel."
+  "server.bulk.retry_panel": "Retry this job from its bulk request panel.",
+  "server.single.request": "Choose an image service and enter a prompt.",
+  "server.single.prompt_length": "Prompts must be text of at most 30,000 characters.",
+  "server.single.positive": "Enter a positive prompt.",
+  "server.single.settings": "Choose valid generation settings.",
+  "server.single.unsupported_settings": "These settings are not supported by {service}: {settings}.",
+  "server.single.missing_common": "Preset common prompt {id} was not found.",
+  "server.single.other_target": "Preset common prompt {id} is for another target."
 }

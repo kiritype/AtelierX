@@ -2701,5 +2701,12 @@
   "server.bulk.retry_batch": "일괄 요청 패널에서 실패한 항목을 재시도하세요.",
   "server.bulk.page": "올바르지 않은 페이지 번호입니다.",
   "server.bulk.action": "알 수 없는 일괄 작업 명령입니다.",
-  "server.bulk.retry_panel": "이 작업은 대량 요청 패널에서 재시도하세요."
+  "server.bulk.retry_panel": "이 작업은 대량 요청 패널에서 재시도하세요.",
+  "server.single.request": "이미지 서비스를 선택하고 프롬프트를 입력하세요.",
+  "server.single.prompt_length": "프롬프트는 최대 30,000자의 텍스트여야 합니다.",
+  "server.single.positive": "Positive 프롬프트를 입력하세요.",
+  "server.single.settings": "올바른 생성 설정을 선택하세요.",
+  "server.single.unsupported_settings": "{service}에서 지원하지 않는 설정입니다: {settings}.",
+  "server.single.missing_common": "그림체 프리셋의 공통 프롬프트 {id}을(를) 찾을 수 없습니다.",
+  "server.single.other_target": "그림체 프리셋의 공통 프롬프트 {id}은(는) 다른 대상용입니다."
 }
