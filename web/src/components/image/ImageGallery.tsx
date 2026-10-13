@@ -561,6 +561,7 @@ function Detail({
                 {t(`gallery.human.${v}`)} <span className="faint">{n + 1}</span>
               </button>
             ))}
+            <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} shortcut disabled={detail.isPending} />
             {record && (
               <button
                 onClick={() => {

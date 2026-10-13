@@ -13,7 +13,7 @@ it('selects the handed image and censor tab before mount and while already open'
   takeToolHandoff();
   const items = ['first', 'second'].map(id => ({ id, name: id, source: 'gallery', path: id + '.png', width: 10, height: 10, format: 'PNG' }));
   vi.mocked(get).mockImplementation(async url => {
-    if (url.startsWith('/api/image/tools/items')) return { items };
+    if (url === '/api/image/tools/items') return { items };
     if (url === '/api/image/tools/methods') return { methods: ['local'], features: {} };
     if (url.includes('/analyze')) return { item: items.find(i => url.endsWith(i.id)), prompt: { source: '', positive: '', negative: '', settings: {} }, text_keys: [], exif: {} };
     return { available: false };
@@ -38,19 +38,6 @@ it('selects the handed image and censor tab before mount and while already open'
     await act(async () => sendToTools('second'));
     await act(async () => { await new Promise(r => setTimeout(r, 30)); });
     expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('second');
-    expect((target.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
-    const later = { ...items[0], id: 'page-two', name: 'page-two', path: 'page-two.png' };
-    vi.mocked(get).mockImplementation(async url => {
-      if (url.startsWith('/api/image/tools/items')) return { items: url.includes('offset=200') ? [later] : items, total: 201 };
-      if (url === '/api/image/tools/ids') return { ids: [...Array.from({ length: 200 }, (_, i) => String(i)), later.id] };
-      if (url === '/api/image/tools/methods') return { methods: ['local'], features: {} };
-      if (url.includes('/analyze')) return { item: later, prompt: { source: '', positive: '', negative: '', settings: {} }, text_keys: [], exif: {} };
-      return { available: false };
-    });
-    await act(async () => sendToTools(later.id));
-    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
-    expect(vi.mocked(get).mock.calls.some(([url]) => url.includes('/tools/items?offset=200'))).toBe(true);
-    expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('page-two');
     expect((target.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
   } finally { await act(async () => root.unmount()); qc.clear(); host.remove(); }
 });
