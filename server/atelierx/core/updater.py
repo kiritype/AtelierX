@@ -24,6 +24,7 @@ import httpx
 
 from .. import __version__
 from .about import LATEST_URL, version_key
+from .admission import Admission
 from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 
@@ -83,9 +84,10 @@ def _sha256(path):
 
 
 class Updater:
-    def __init__(self, paths, busy=list):
+    def __init__(self, paths, busy=list, admission=None):
         self.paths = paths
         self.folder = Path(paths.state) / 'update'
+        self.admission = admission or Admission()
         self.busy = busy  # names of work in progress that an update would cut off
         self.lock = threading.Lock()
         self.state = {'state': 'idle'}
@@ -311,6 +313,10 @@ class Updater:
         return path
 
     def apply(self):
+        with self.admission.stop(self.busy):
+            return self._apply()
+
+    def _apply(self):
         with self.lock:
             if self.state.get('state') != 'ready':
                 raise AppError(Msg('server.update.not_ready', 'Prepare the update first.'), 409)

@@ -11,6 +11,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from ..core.admission import Admission, AdmissionMiddleware
 from ..core.auth import COOKIE, Sessions
 from ..core.bootstrap import ensure_layout
 from ..core.events import Events
@@ -73,20 +74,19 @@ class State:
             self.image.gpu, lambda: (self.settings.load().get('jobs') or {}).get('api_concurrency', 2)
         )
         self.packages = Packages(paths, self.works, self.image, self.vault)
-        self.updater = Updater(paths, busy=self.busy_work)
+        self.admission = Admission()
+        self.updater = Updater(paths, busy=self.busy_work, admission=self.admission)
         self.maintain()
 
     def busy_work(self):
         """What an update would cut off: image work in the queue, LoRA training, installs, LLM jobs."""
         busy = []
-        with self.image.lock:
-            if any(j['status'] in ('queued', 'running', 'cancelling') for j in self.image.jobs):
-                busy.append(Msg('server.update.busy_images', 'image work in the queue'))
-        if self.image.trainer.active:
-            busy.append(Msg('server.update.busy_training', 'LoRA training'))
-        if (self.image.installs.run or {}).get('status') == 'running':
-            busy.append(Msg('server.update.busy_install', 'an install'))
-        if any(j['status'] in ('queued', 'running') for j in self.jobs.jobs.values()):
+        if self.image.activity():
+            busy.append(Msg('server.update.busy_images', 'image work in the queue'))
+        with self.image.model_downloads.lock:
+            if any(j['status'] in ('queued', 'running') for j in self.image.model_downloads.jobs):
+                busy.append(Msg('server.update.busy_install', 'an install'))
+        if any(j['status'] in ('queued', 'running', 'cancelling') for j in self.jobs.jobs.values()):
             busy.append(Msg('server.update.busy_jobs', 'LLM jobs'))
         return busy
 
@@ -216,7 +216,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
 
     app = Starlette(
         routes=routes,
-        middleware=[Middleware(Guard)],
+        middleware=[Middleware(Guard), Middleware(AdmissionMiddleware, admission=state.admission)],
         exception_handlers={AppError: handle_app_error},
         lifespan=lifespan,
     )
