@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
 import { t, tm } from '../i18n';
+import { createSaver } from '../lib/exampleSaver';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import { useToast } from './Toasts';
 
@@ -50,37 +51,45 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
   const [mode, setMode] = useState<'graph' | 'table'>('graph');
   const [filter, setFilter] = useState('');
   const [focus, setFocus] = useState<string | null>(null);
-  const dirty = useRef(false);
-
-  useEffect(() => {
-    if (query.data && !dirty.current) setDoc(query.data);
-  }, [query.data]);
-
-  // Save shortly after the last change; the server returns the refreshed view.
-  useEffect(() => {
-    if (!doc || !dirty.current) return;
-    const timer = setTimeout(async () => {
-      try {
-        // The doc carries the revision it was loaded with; a change made elsewhere since is not overwritten (#90).
-        const saved = await put<Doc>(`/api/works/${workId}/relations`, doc);
-        dirty.current = false;
+  const revision = useRef<string | undefined>(undefined);
+  const [saveError, setSaveError] = useState('');
+  const saver = useMemo(() => createSaver<string>(async (_, text) => {
+    const saved = await put<Doc>(`/api/works/${workId}/relations`, { ...JSON.parse(text), revision: revision.current });
+    revision.current = saved.revision;
+    // A GET begun before the write must not replace the acknowledged revision.
+    await qc.cancelQueries({ queryKey: ['relations', workId] });
+    return saved;
+  }, {
+    delay: 600,
+    onSaved: (_, response, clean) => {
+      const saved = response as Doc;
+      setSaveError('');
+      if (clean) {
+        setDoc(saved);
         qc.setQueryData(['relations', workId], saved);
-        setDoc((current) => (current ? { ...current, revision: saved.revision } : current));
-        qc.invalidateQueries({ queryKey: ['check', workId] });
-      } catch (err) {
-        dirty.current = false;
-        const stale = err instanceof ApiError && err.status === 409;
-        toast({ text: stale ? t('save.reloaded') : err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
-        if (stale) qc.invalidateQueries({ queryKey: ['relations', workId] });
       }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [doc, workId, qc, toast]);
+      qc.invalidateQueries({ queryKey: ['check', workId] });
+    },
+    onError: (err) => setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err)),
+  }), [workId, qc]);
+
+  useEffect(() => {
+    saver.activate();
+    return () => saver.dispose();
+  }, [saver]);
+
+  useEffect(() => {
+    if (query.data && !saver.dirty) {
+      setDoc(query.data);
+      revision.current = query.data.revision;
+    }
+  }, [query.data, saver]);
 
   if (!doc) return null;
   const change = (next: Partial<Doc>) => {
-    dirty.current = true;
-    setDoc({ ...doc, ...next });
+    const updated = { ...doc, ...next };
+    setDoc(updated);
+    saver.edit(workId, JSON.stringify(updated));
   };
   const characterIds = new Set(doc.view.filter((p) => p.source === 'character').map((p) => p.id));
   const nameOf = (id: string) => doc.view.find((p) => p.id === id)?.name ?? id;
@@ -89,6 +98,7 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
 
   return (
     <div className="relations">
+      {saveError && <div className="pad" role="alert">{saveError} <button onClick={() => saver.flush().catch((err) => setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err)))}>{t('common.save')}</button></div>}
       <div className="row pad" style={{ paddingBottom: 0 }}>
         <div className="seg">
           <button className={mode === 'graph' ? 'on' : ''} onClick={() => setMode('graph')}>

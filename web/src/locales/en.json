@@ -1954,6 +1954,7 @@
   "server.pixai.expired": "PixAI no longer has this image (results are kept only for a while).",
   "server.save.stale": "This was changed elsewhere after you opened it. It has been reloaded; make your change again.",
   "save.reloaded": "It was changed elsewhere and has been reloaded. Your last change was not saved.",
+  "save.conflict_preserved": "This changed elsewhere and could not be saved. Your input is preserved. Copy what you need, then reopen the tab to compare.",
   "jobs.status.cancelling": "Cancelling",
   "jobs.status.interrupted": "Interrupted",
   "queue.status.done": "Done",
