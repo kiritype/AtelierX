@@ -2708,5 +2708,11 @@
   "server.single.settings": "올바른 생성 설정을 선택하세요.",
   "server.single.unsupported_settings": "{service}에서 지원하지 않는 설정입니다: {settings}.",
   "server.single.missing_common": "그림체 프리셋의 공통 프롬프트 {id}을(를) 찾을 수 없습니다.",
-  "server.single.other_target": "그림체 프리셋의 공통 프롬프트 {id}은(는) 다른 대상용입니다."
+  "server.single.other_target": "그림체 프리셋의 공통 프롬프트 {id}은(는) 다른 대상용입니다.",
+  "single.open_preview": "이미지와 생성 상세 정보 열기",
+  "single.history_limit": "최근 결과 100개까지 여기에 표시합니다.",
+  "single.view_all": "전체 결과를 갤러리에서 보기",
+  "single.history_page": "{current} / {total}",
+  "single.previous_page": "이전 페이지",
+  "single.next_page": "다음 페이지"
 }

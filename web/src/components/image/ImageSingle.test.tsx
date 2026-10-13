@@ -145,3 +145,44 @@ it('hands a saved image to tools and keeps unsupported comparison disabled', asy
   expect(takeToolHandoff()).toBe('tool-1');
   expect(openView).toHaveBeenCalledWith('tools');
 });
+
+it('pages six recent results, preserves the draft on selection, and opens a detailed image dialog', async () => {
+  await edit(positive(), 'Unchanged draft');
+  rows = Array.from({ length: 7 }, (_, index): SingleRun => ({
+    id: `saved-${index}`, status: 'done', created_at: `2026-10-${String(13 - index).padStart(2, '0')}T10:30:00`,
+    service: 'comfyui', seed: index,
+    request: { positive: `image ${index}`, negative: '', service: 'comfyui', settings: {}, preset_id: '' },
+    actual: { positive: `final image ${index}`, negative: 'blur', settings: { seed: index } },
+    image_url: `/api/image/files/_single/synthetic/file_${index}.png`, path: `_single/synthetic/file_${index}.png`,
+  }));
+  await publish();
+  expect(host.querySelectorAll('.single-history-row')).toHaveLength(6);
+  expect(host.querySelector('.single-history-thumb')?.getAttribute('src')).toContain('file_0.png');
+  expect(host.querySelector('.single-history-name')?.getAttribute('title')).toBe('file_0.png');
+  await click(t('single.next_page'));
+  expect(host.querySelectorAll('.single-history-row')).toHaveLength(1);
+  await act(async () => { (host.querySelector('.single-history-row') as HTMLButtonElement).click(); });
+  expect(positive().value).toBe('Unchanged draft');
+  expect(host.querySelector('.single-history-row')?.getAttribute('aria-pressed')).toBe('true');
+  const preview = host.querySelector('button.single-canvas') as HTMLButtonElement;
+  preview.focus();
+  await act(async () => { preview.click(); });
+  const dialog = host.querySelector('[role="dialog"]') as HTMLDivElement;
+  expect(dialog?.getAttribute('aria-modal')).toBe('true');
+  expect(dialog.querySelector('.gallery-detail-image img')?.getAttribute('src')).toContain('file_6.png');
+  expect(dialog.textContent).toContain('final image 6');
+  expect(dialog.textContent).toContain(t('single.regenerate'));
+  expect(dialog.textContent).toContain(t('single.send_tools'));
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })); });
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true })); });
+  expect(document.activeElement).toBe([...dialog.querySelectorAll('button')].at(-1));
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(preview);
+  await act(async () => { preview.click(); });
+  const modalTools = [...host.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(item => item.textContent === t('single.send_tools'))!;
+  await act(async () => { modalTools.click(); });
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(openView).toHaveBeenCalledWith('tools');
+});

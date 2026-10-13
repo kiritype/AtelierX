@@ -2537,5 +2537,11 @@
   "server.single.settings": "Choose valid generation settings.",
   "server.single.unsupported_settings": "These settings are not supported by {service}: {settings}.",
   "server.single.missing_common": "Preset common prompt {id} was not found.",
-  "server.single.other_target": "Preset common prompt {id} is for another target."
+  "server.single.other_target": "Preset common prompt {id} is for another target.",
+  "single.open_preview": "Open image and generation details",
+  "single.history_limit": "The latest 100 results appear here.",
+  "single.view_all": "Browse all in the gallery",
+  "single.history_page": "{current} / {total}",
+  "single.previous_page": "Previous page",
+  "single.next_page": "Next page"
 }
