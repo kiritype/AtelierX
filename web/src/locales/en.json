@@ -2444,5 +2444,8 @@
   "deploy.log_failed": "Could not save the remote operation result",
   "deploy.history": "Recent upload history (100 records)",
   "deploy.history_empty": "No upload history yet.",
-  "deploy.history_failed": "Could not read upload history."
+  "deploy.history_failed": "Could not read upload history.",
+  "gallery.original_unknown": "The source path is not in the record. This sends the current image. Select its original in the gallery to remask it.",
+  "gallery.already_in_tools": "This image is already in Image tools.",
+  "gallery.send_original": "Send the source image for remasking"
 }

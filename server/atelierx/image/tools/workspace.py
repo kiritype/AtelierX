@@ -247,7 +247,10 @@ class ToolWorkspace:
                 added.append(record)
                 known.add(relative)
             self._persist()
-        return {'ok': True, 'added': added}
+            # Existing entries let a repeated single-image send select its original item.
+            selected = {i['path']: i for i in self.items if i['source'] == 'gallery'}
+            items = [dict(selected[p]) for p in dict.fromkeys(paths)]
+        return {'ok': True, 'added': added, 'items': items}
 
     def remove(self, ids):
         """Take images off the list; uploaded copies are deleted, gallery files are kept."""

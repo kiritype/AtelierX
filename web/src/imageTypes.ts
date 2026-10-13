@@ -49,7 +49,11 @@ export type GenerationSettings = {
 };
 
 // The generation record next to an image (data-model: 생성 기록), as much as the screens read.
+export type PostprocessingSource = { op?: string; source_image?: string | null; previous?: PostprocessingSource | null };
 export type GenerationRecord = {
+  postprocessing?: PostprocessingSource;
+  op?: string;
+  source?: { source?: string; path?: string | null };
   positive?: string;
   negative?: string;
   seed?: number;
@@ -86,3 +90,4 @@ export type DeployPlan = { target: string; target_name: string; public_url: stri
 export type DeployResult = { source: string; path: string; url: string; ok: boolean; overwrote: boolean; status: string; error?: ServerMsg | string; log_error?: ServerMsg | string };
 export type DeployRun = { id: string; status: string; total: number; done: number; results: DeployResult[]; current: { source: string; path: string; status: string } | null };
 export type DeployHistory = { records: (DeployResult & { at: string; target_name: string })[] };
+export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[] };
