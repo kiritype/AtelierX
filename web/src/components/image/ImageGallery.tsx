@@ -8,6 +8,7 @@ import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import { DeploymentExport } from './DeploymentExport';
 import { DeployUpload } from './DeployUpload';
+import GalleryToolSend from './GalleryToolSend';
 import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
 
 export type GalleryItem = {
@@ -452,6 +453,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
           review={review}
           regenerate={regenerate}
           openLab={openLab}
+          openTools={() => { setOpen(null); openTools(); }}
           remove={(paths) => remove(paths).then((done) => done && setOpen(null))}
         />
       )}
@@ -473,6 +475,7 @@ function Detail({
   review,
   regenerate,
   openLab,
+  openTools,
   remove,
 }: {
   item: GalleryItem;
@@ -485,6 +488,7 @@ function Detail({
   review: (paths: string[], verdict: string, note?: string) => Promise<any>;
   regenerate: (paths: string[]) => void;
   openLab: () => void;
+  openTools: () => void;
   remove: (paths: string[]) => void;
 }) {
   const toast = useToast();
@@ -549,6 +553,7 @@ function Detail({
             </button>
           </div>
           <div className="faint mono small">{item.path}</div>
+          <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} />
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {(['pass', 'fail', 'unreviewed'] as const).map((v, n) => (
               <button key={v} className={data.human_status === v ? 'primary' : ''} onClick={() => review([item.path], v)}>
