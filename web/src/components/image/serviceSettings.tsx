@@ -1,7 +1,7 @@
 // The generate screen's image services (#41): their names, the props of each internet service's settings panel, and
 // the last service and settings remembered (each service keeps its own).
 
-export type ServicePanelProps = { value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void };
+export type ServicePanelProps = { preview?: boolean; value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void };
 
 export const SERVICE_NAMES: Record<string, string> = { comfyui: 'ComfyUI', novelai: 'NovelAI', pixai: 'PixAI' };
 

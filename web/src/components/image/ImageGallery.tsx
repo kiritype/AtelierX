@@ -10,6 +10,7 @@ import { sendToLab } from './ImageLab';
 import { DeploymentExport } from './DeploymentExport';
 import { DeployUpload } from './DeployUpload';
 import GalleryToolSend from './GalleryToolSend';
+import GalleryDetailFrame from './GalleryDetailFrame';
 import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
 
 export type GalleryItem = {
@@ -527,10 +528,7 @@ function Detail({
   const settings = record?.settings ?? {};
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="gallery-detail">
-        <div className="gallery-detail-image">
-          <img src={item.image_url} alt="" />
+    <GalleryDetailFrame imageUrl={item.image_url} label={item.filename} close={close} imageOverlay={<>
           {hasPrev && (
             <button className="nav prev" onClick={() => move(-1)} title={t('gallery.prev')}>
               ‹
@@ -541,8 +539,7 @@ function Detail({
               ›
             </button>
           )}
-        </div>
-        <div className="gallery-detail-side col pad">
+        </>}>
           <div className="row">
             <strong className="grow">
               {item.kind === 'image'
@@ -554,7 +551,6 @@ function Detail({
             </button>
           </div>
           <div className="faint mono small">{item.path}</div>
-          <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} />
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {(['pass', 'fail', 'unreviewed'] as const).map((v, n) => (
               <button key={v} className={data.human_status === v ? 'primary' : ''} onClick={() => review([item.path], v)}>
@@ -679,9 +675,7 @@ function Detail({
                 ))}
             </>
           )}
-        </div>
-      </div>
-    </div>
+    </GalleryDetailFrame>
   );
 }
 

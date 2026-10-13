@@ -1,3 +1,4 @@
+import { PIXAI_PREVIEW_INFO } from './singlePreviewSettings';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { get } from '../../api';
@@ -5,7 +6,7 @@ import { t } from '../../i18n';
 import type { PixAILora } from '../../lib/pixai';
 import type { ServicePanelProps } from './serviceSettings';
 
-type Info = {
+export type PixAIInfo = {
   models: { id: string; name: string; type: 'sdxl' | 'dit' }[];
   aspect_ratios: string[];
   sizes: string[];
@@ -19,8 +20,12 @@ type Picked = { id: string; weight: number; trigger_words?: string };
 
 // The generate screen's settings for PixAI (#43): model (version id), framing, sampling or mode, and up to five of the
 // LoRAs registered in Settings. PixAI's API does not tell the cost beforehand.
-export default function PixAISettings({ value, onChange }: ServicePanelProps) {
-  const info = useQuery<Info>({ queryKey: ['image-service-info', 'pixai'], queryFn: () => get('/api/image/services/pixai/info') });
+export default function PixAISettings({ value, onChange, preview = false }: ServicePanelProps) {
+  const info = useQuery<PixAIInfo>({
+    queryKey: preview ? ['image-single-preview', 'pixai-info'] : ['image-service-info', 'pixai'],
+    queryFn: () => preview ? Promise.resolve(PIXAI_PREVIEW_INFO) : get('/api/image/services/pixai/info'),
+    initialData: preview ? PIXAI_PREVIEW_INFO : undefined,
+  });
   const [customModel, setCustomModel] = useState(false);
   if (!info.data) return null;
   const v = { ...info.data.defaults, ...value } as Record<string, any>;
@@ -143,7 +148,7 @@ export default function PixAISettings({ value, onChange }: ServicePanelProps) {
           );
         })}
       </div>
-      <p className="faint small">{t('pixai.cost_unknown')}</p>
+      {!preview && <p className="faint small">{t('pixai.cost_unknown')}</p>}
     </div>
   );
 }

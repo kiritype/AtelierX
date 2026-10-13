@@ -1,6 +1,7 @@
 import ImageBoard from '../components/image/ImageBoard';
 import ImageGallery from '../components/image/ImageGallery';
 import ImageGenerate from '../components/image/ImageGenerate';
+import ImageSingle from '../components/image/ImageSingle';
 import ImageLab from '../components/image/ImageLab';
 import ImageLora from '../components/image/ImageLora';
 import ImageLibrary from '../components/image/ImageLibrary';
@@ -10,6 +11,7 @@ import PresetExplorer from '../components/image/PresetExplorer';
 import ModelsScreen from '../components/image/ModelsScreen';
 import { t } from '../i18n';
 import type { ImageView } from '../types';
+import { imageFlow } from '../lib/imageNavigation';
 
 // Image module screens (decision 0018). Views not ported yet say what is coming.
 export default function ImageScreen({
@@ -34,6 +36,7 @@ export default function ImageScreen({
   outfitId?: string;
 }) {
   const content = () => {
+  if (view === 'single') return <ImageSingle workId={workId} openView={openView} />;
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'models') return <ModelsScreen openSettings={openSettings} />;
   if (view === 'presets') return <PresetExplorer workId={workId} openGenerate={() => openView('generate')} />;
@@ -41,7 +44,7 @@ export default function ImageScreen({
   if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
   if (view === 'queue') return <ImageQueue />;
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
-  if (view === 'lab') return <ImageLab workId={workId} />;
+  if (view === 'lab') return <ImageLab workId={workId} active={active} />;
   if (view === 'tools') return <ImageTools active={active} openLab={() => openView('lab')} openSettings={openSettings} />;
   if (view === 'lora') return <ImageLora workId={workId} initialCharacterId={characterId} initialOutfitId={outfitId} openLab={() => openView('lab')} />;
   return (
@@ -55,7 +58,7 @@ export default function ImageScreen({
   return <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
     <nav className="row image-flow" aria-label={t('flow.navigation')}>
       {characterId && <strong>{characterId}{outfitId ? ` · ${outfitId}` : ''}</strong>}
-      {(['board', 'generate', 'gallery', 'lora', 'lab'] as ImageView[]).map((step) => <button key={step} className={view === step ? 'primary' : 'ghost'} onClick={() => openView(step)}>{t(`flow.${step}`)}</button>)}
+      {imageFlow.map((step) => <button key={step} className={view === step ? 'primary' : 'ghost'} onClick={() => openView(step)}>{t(`image_menu.${step}`)}</button>)}
     </nav>
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{content()}</div>
   </div>;

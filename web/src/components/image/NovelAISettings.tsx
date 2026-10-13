@@ -1,10 +1,11 @@
+import { NOVELAI_PREVIEW_INFO } from './singlePreviewSettings';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, get } from '../../api';
 import { t, tm } from '../../i18n';
 import type { ServicePanelProps } from './serviceSettings';
 
-type Info = {
+export type NovelAIInfo = {
   models: { id: string; name: string }[];
   samplers: string[];
   noise_schedules: string[];
@@ -25,11 +26,17 @@ export function freeForOpus(width: number, height: number, steps: number, free: 
 }
 
 // The generate screen's settings for NovelAI (#42): model (V4.5, V5 …), size, sampling, and the account's Anlas.
-export default function NovelAISettings({ value, onChange }: ServicePanelProps) {
-  const info = useQuery<Info>({ queryKey: ['image-service-info', 'novelai'], queryFn: () => get('/api/image/services/novelai/info'), staleTime: Infinity });
+export default function NovelAISettings({ value, onChange, preview = false }: ServicePanelProps) {
+  const info = useQuery<NovelAIInfo>({
+    queryKey: preview ? ['image-single-preview', 'novelai-info'] : ['image-service-info', 'novelai'],
+    queryFn: () => preview ? Promise.resolve(NOVELAI_PREVIEW_INFO) : get('/api/image/services/novelai/info'),
+    initialData: preview ? NOVELAI_PREVIEW_INFO : undefined,
+    staleTime: Infinity,
+  });
   const account = useQuery<Account, ApiError>({
-    queryKey: ['image-service-account', 'novelai'],
-    queryFn: () => get('/api/image/services/novelai/account'),
+    queryKey: preview ? ['image-single-preview', 'novelai-account'] : ['image-service-account', 'novelai'],
+    queryFn: () => preview ? Promise.resolve({ tier: null, active: null, anlas: null, opus: false }) : get('/api/image/services/novelai/account'),
+    enabled: !preview,
     retry: false,
     staleTime: 60_000,
   });
@@ -122,7 +129,7 @@ export default function NovelAISettings({ value, onChange }: ServicePanelProps) 
           </select>
         </label>
       </div>
-      <div className="row small">
+      {!preview && <div className="row small">
         {account.data ? (
           <span className="faint">
             {account.data.anlas != null ? t('nai.anlas', { n: account.data.anlas.toLocaleString() }) : t('nai.anlas_unknown')}
@@ -136,7 +143,7 @@ export default function NovelAISettings({ value, onChange }: ServicePanelProps) 
         <button className="ghost small" onClick={() => account.refetch()}>
           {t('nai.account_refresh')}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
