@@ -2435,5 +2435,17 @@
   "gen.bar_total": "{targets} combinations × {count} = {n} images",
   "gallery.original_unknown": "The source path is not in the record. This sends the current image. Select its original in the gallery to remask it.",
   "gallery.already_in_tools": "This image is already in Image tools.",
-  "gallery.send_original": "Send the source image for remasking"
+  "gallery.send_original": "Send the source image for remasking",
+  "deploy.status.existing": "Exists (compare on upload)",
+  "deploy.status.converting": "Converting",
+  "deploy.status.uploading": "Uploading",
+  "deploy.status.uploaded": "Uploaded",
+  "deploy.status.overwritten": "Overwritten",
+  "deploy.status.failed": "Failed",
+  "deploy.upload_candidates": "Upload {n} candidates ({m} existing: changed files only)",
+  "deploy.skipped": "{n} unchanged",
+  "deploy.log_failed": "Could not save the remote operation result",
+  "deploy.history": "Recent upload history (100 records)",
+  "deploy.history_empty": "No upload history yet.",
+  "deploy.history_failed": "Could not read upload history."
 }

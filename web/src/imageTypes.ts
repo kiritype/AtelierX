@@ -69,3 +69,24 @@ export type GenerationRecord = {
 export type ReviewHistoryEntry = { at: string; path: string; from: string; to: string; source?: string };
 
 export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[] };
+export type DeployTarget = { id: string; name: string; ready: boolean; path_format: string; public_url: string };
+export type DeployRow = {
+  source: string;
+  thumbnail_url?: string;
+  character_id: string;
+  outfit_id: string;
+  outfit_code: string;
+  expression_id: string;
+  expression_name: string;
+  expression_code: string;
+  rating: string;
+  auto_path: string | null;
+  path: string | null;
+  edited: boolean;
+  status: 'new' | 'existing' | 'unchanged' | 'no_code' | 'clash';
+  url?: string;
+};
+export type DeployPlan = { target: string; target_name: string; public_url: string; path_format: string; rows: DeployRow[]; counts: Record<string, number>; missing: string[] };
+export type DeployResult = { source: string; path: string; url: string; ok: boolean; overwrote: boolean; status: string; error?: ServerMsg | string; log_error?: ServerMsg | string };
+export type DeployRun = { id: string; status: string; total: number; done: number; results: DeployResult[]; current: { source: string; path: string; status: string } | null };
+export type DeployHistory = { records: (DeployResult & { at: string; target_name: string })[] };
