@@ -11,8 +11,14 @@ export default function GalleryToolSend({ path, record, openTools }: { path: str
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [original, setOriginal] = useState(true);
-  const source = record?.postprocessing?.op === 'censor' ? record.postprocessing.source_image
+  let source = record?.postprocessing?.op === 'censor' ? record.postprocessing.source_image
     : record?.op === 'censor' && record.source?.source === 'gallery' ? record.source.path : null;
+  // Consecutive censor passes must return to the uncensored source, not an earlier masked result.
+  let previous = record?.postprocessing?.previous;
+  while (source && previous?.op === 'censor' && previous.source_image) {
+    source = previous.source_image;
+    previous = previous.previous;
+  }
   const censored = !!source || /_censor(?:_\d+)?\.\w+$/i.test(path);
   async function send() {
     setBusy(true);

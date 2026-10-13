@@ -26,7 +26,7 @@ async function render(record?: GenerationRecord) {
 async function send() { await act(async () => host.querySelector('button')!.click()); }
 it('sends the recorded source by default and selects an existing item only when the toast is followed', async () => {
   vi.mocked(post).mockResolvedValue({ ok: true, added: [], items: [{ id: 'existing', path: 'source.png' }] });
-  await render({ postprocessing: { op: 'censor', source_image: 'source.png' } });
+  await render({ postprocessing: { op: 'censor', source_image: 'source_censor.png', previous: { op: 'censor', source_image: 'source.png' } } });
   await send();
   expect(post).toHaveBeenCalledWith('/api/image/tools/gallery', { paths: ['source.png'] });
   expect(open).not.toHaveBeenCalled();

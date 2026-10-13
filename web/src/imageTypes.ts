@@ -49,8 +49,9 @@ export type GenerationSettings = {
 };
 
 // The generation record next to an image (data-model: 생성 기록), as much as the screens read.
+export type PostprocessingSource = { op?: string; source_image?: string | null; previous?: PostprocessingSource | null };
 export type GenerationRecord = {
-  postprocessing?: { op?: string; source_image?: string | null };
+  postprocessing?: PostprocessingSource;
   op?: string;
   source?: { source?: string; path?: string | null };
   positive?: string;
