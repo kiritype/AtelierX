@@ -20,16 +20,24 @@ it('selects the handed image and censor tab before mount and while already open'
   });
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
+  const render = (active: boolean) => <QueryClientProvider client={qc}>
+    <div data-hidden><ImageTools active={false} openLab={() => {}} /></div>
+    <div data-target><ImageTools active={active} openLab={() => {}} /></div>
+  </QueryClientProvider>;
   try {
-    sendToTools('first');
-    await act(async () => { root.render(<QueryClientProvider client={qc}><ImageTools openLab={() => {}} /></QueryClientProvider>); });
+    await act(async () => { root.render(render(false)); });
     await act(async () => { await new Promise(r => setTimeout(r, 30)); });
-    expect(host.querySelector('.tools-card.current')?.getAttribute('title')).toContain('first');
-    expect((host.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
-    expect([...host.querySelectorAll('button')].find(b => b.textContent === t('tools.tab.censor'))?.className).toContain('on');
+    sendToTools('first');
+    await act(async () => { root.render(render(true)); });
+    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
+    const target = host.querySelector('[data-target]')!;
+    expect(host.querySelector('[data-hidden] .tools-card.current')?.getAttribute('title')).toContain('second');
+    expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('first');
+    expect((target.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
+    expect([...target.querySelectorAll('button')].find(b => b.textContent === t('tools.tab.censor'))?.className).toContain('on');
     await act(async () => sendToTools('second'));
     await act(async () => { await new Promise(r => setTimeout(r, 30)); });
-    expect(host.querySelector('.tools-card.current')?.getAttribute('title')).toContain('second');
-    expect((host.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
+    expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('second');
+    expect((target.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
   } finally { await act(async () => root.unmount()); qc.clear(); host.remove(); }
 });
