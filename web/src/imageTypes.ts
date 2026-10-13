@@ -91,6 +91,7 @@ export type SingleRuns = { runs: SingleRun[] };
 
 export type ReviewHistoryEntry = { at: string; path: string; from: string; to: string; source?: string };
 
+export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[] };
 export type DeployTarget = { id: string; name: string; ready: boolean; path_format: string; public_url: string };
 export type DeployRow = {
   source: string;
@@ -112,4 +113,3 @@ export type DeployPlan = { target: string; target_name: string; public_url: stri
 export type DeployResult = { source: string; path: string; url: string; ok: boolean; overwrote: boolean; status: string; error?: ServerMsg | string; log_error?: ServerMsg | string };
 export type DeployRun = { id: string; status: string; total: number; done: number; results: DeployResult[]; current: { source: string; path: string; status: string } | null };
 export type DeployHistory = { records: (DeployResult & { at: string; target_name: string })[] };
-export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[] };
