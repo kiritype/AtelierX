@@ -6,7 +6,7 @@ import type { Attachment } from '../components/AgentPanel';
 import { PackageExportDialog } from '../components/Packages';
 import ExportDialog from '../components/ExportDialog';
 import AuthoringDialog from '../components/AuthoringDialog';
-import MenuBar, { type Menu } from '../components/MenuBar';
+import MenuBar, { type Menu, type MenuEntry } from '../components/MenuBar';
 import RenameDialog from '../components/RenameDialog';
 import ItemEditor, { type EditorStatus } from '../components/ItemEditor';
 import JobsPopover, { useActivity } from '../components/JobsPopover';
@@ -26,6 +26,7 @@ import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo
 import { unfinished } from '../lib/lifecycle';
 import { TabScope } from '../components/Unsaved';
 import { UnsavedRegistry } from '../lib/unsaved';
+import { imageNavigation } from '../lib/imageNavigation';
 
 // Screens read the first time they open (#83).
 const AppSettings = lazy(() => import('../components/AppSettings'));
@@ -349,25 +350,11 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     },
     {
       label: t('menu.image'),
-      items: [
-        { heading: t('image_menu.group.prepare') },
-        { label: t('image_menu.library'), run: image('library') },
-        { label: t('image_menu.presets'), run: image('presets') },
-        { label: t('image_menu.models'), run: image('models') },
-        null,
-        { heading: t('image_menu.group.make') },
-        { label: t('image_menu.board'), run: image('board') },
-        { label: t('image_menu.generate'), run: image('generate') },
-        { label: t('image_menu.queue'), run: image('queue') },
-        { label: t('image_menu.lab'), run: image('lab') },
-        null,
-        { heading: t('image_menu.group.refine') },
-        { label: t('image_menu.gallery'), run: image('gallery') },
-        { label: t('image_menu.tools'), run: image('tools') },
-        null,
-        { heading: t('image_menu.group.train') },
-        { label: t('image_menu.lora'), run: image('lora') },
-      ],
+      items: imageNavigation.flatMap<MenuEntry>(({ group, views }, index) => [
+        ...(index ? [null] : []),
+        { heading: t(`image_menu.group.${group}`) },
+        ...views.map((view) => ({ label: t(`image_menu.${view}`), run: image(view) })),
+      ]),
     },
     { label: t('menu.help'), items: help.entries },
   ];
