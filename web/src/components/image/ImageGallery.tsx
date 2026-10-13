@@ -553,13 +553,13 @@ function Detail({
             </button>
           </div>
           <div className="faint mono small">{item.path}</div>
-          <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} />
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {(['pass', 'fail', 'unreviewed'] as const).map((v, n) => (
               <button key={v} className={data.human_status === v ? 'primary' : ''} onClick={() => review([item.path], v)}>
                 {t(`gallery.human.${v}`)} <span className="faint">{n + 1}</span>
               </button>
             ))}
+            <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} shortcut disabled={detail.isPending} />
             {record && (
               <button
                 onClick={() => {

@@ -20,8 +20,8 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); qc.clear(); });
-async function render(record?: GenerationRecord) {
-  await act(async () => root.render(<QueryClientProvider client={qc}><GalleryToolSend path="image_censor.png" record={record} openTools={open} /></QueryClientProvider>));
+async function render(record?: GenerationRecord, shortcut = false) {
+  await act(async () => root.render(<QueryClientProvider client={qc}><GalleryToolSend path="image_censor.png" record={record} openTools={open} shortcut={shortcut} /></QueryClientProvider>));
 }
 async function send() { await act(async () => host.querySelector('button')!.click()); }
 it('sends the recorded source by default and selects an existing item only when the toast is followed', async () => {
@@ -45,4 +45,24 @@ it('reports a full list in the selected language without navigating', async () =
   await render(); await send();
   expect(toast.mock.calls[0][0].tone).toBe('error'); expect(open).not.toHaveBeenCalled();
   expect(host.textContent).toContain(t('gallery.original_unknown'));
+});
+it('uses 4 for the selected source but ignores typing, modifiers, repeats and duplicate sends', async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(post).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await render({ op: 'censor', source: { source: 'gallery', path: 'source.png' } }, true);
+  const field = document.createElement('textarea'); host.append(field);
+  await act(async () => {
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: '4', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '4', ctrlKey: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '4', repeat: true }));
+  });
+  expect(post).not.toHaveBeenCalled();
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '4' }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '4' }));
+  });
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith('/api/image/tools/gallery', { paths: ['source.png'] });
+  await act(async () => finish({ added: [], items: [{ id: 'existing' }] }));
+  expect(host.querySelector('button')?.getAttribute('aria-keyshortcuts')).toBe('4');
 });
