@@ -1,4 +1,4 @@
-.gallery-detail-frame { grid-template-columns: minmax(0, 1fr) minmax(280px, 380px); min-width: 0; min-height: 0; }
+.gallery-detail-frame { grid-template-columns: minmax(0, 1fr) minmax(280px, 400px); min-width: 0; min-height: 0; }
 .gallery-detail-frame .gallery-detail-image, .gallery-detail-frame .gallery-detail-side { min-width: 0; min-height: 0; }
 .gallery-detail-frame .gallery-detail-image { overflow: hidden; }
 .gallery-detail-frame .gallery-detail-image img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
