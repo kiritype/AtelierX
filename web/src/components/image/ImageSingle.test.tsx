@@ -3,161 +3,145 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import * as api from '../../api';
+import { get, post } from '../../api';
 import { t } from '../../i18n';
+import type { SingleRun } from '../../imageTypes';
+import { takeToolHandoff } from '../../lib/toolHandoff';
+import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
 
-vi.mock('../../api', async (original) => ({
-  ...await original<typeof import('../../api')>(),
-  get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), del: vi.fn(),
-}));
+vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn() }));
+vi.mock('./ImageLab', () => ({ sendToLab: vi.fn() }));
 let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
+let rows: SingleRun[];
 const openView = vi.fn();
-const fetch = vi.fn();
-const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
-const status = () => host.querySelector('[role="status"]')?.textContent;
+const catalog = { connected: true, models: ['m.safetensors'], text_encoders: ['t.safetensors'], vaes: ['v.safetensors'],
+  loras: [], samplers: ['euler'], schedulers: ['normal'], defaults: { family: 'anima', model: 'm.safetensors',
+    text_encoder: 't.safetensors', vae: 'v.safetensors', sampler: 'euler', scheduler: 'normal', seed: -1 } };
+const services = { max_images_per_run: 50, services: [
+  { id: 'novelai', name: 'NovelAI', supported: true, connected: true, key: 'secret:n', interval: 3 },
+  { id: 'pixai', name: 'PixAI', supported: true, connected: true, key: 'secret:p', interval: 3 },
+] };
 const positive = () => host.querySelector('textarea[id$="-positive"]') as HTMLTextAreaElement;
 const negative = () => host.querySelector('textarea[id$="-negative"]') as HTMLTextAreaElement;
-const preset = () => host.querySelector('.single-field select') as HTMLSelectElement;
-function button(text: string) {
-  const result = [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text);
-  expect(result, text).toBeTruthy();
-  return result!;
-}
-const click = (text: string) => act(async () => button(text).click());
-async function change(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+const button = (label: string) => {
+  const found = [...host.querySelectorAll('button')].find(b => b.textContent?.trim() === label);
+  expect(found, label).toBeTruthy();
+  return found!;
+};
+const click = async (label: string) => act(async () => { button(label).click(); });
+async function edit(element: HTMLTextAreaElement, value: string) {
   await act(async () => {
-    const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype :
-      element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value);
-    element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
-function seed() {
-  const label = [...host.querySelectorAll('label')].find((el) => el.querySelector('span')?.textContent === t('gen.seed'));
-  return label!.querySelector('input')!;
-}
-function resultDraft() {
-  return JSON.parse(host.querySelector('.single-result details pre')!.textContent!);
-}
+const publish = async () => act(async () => { await qc.invalidateQueries({ queryKey: ['image-single-runs', 'synthetic'] }); await new Promise(resolve => setTimeout(resolve, 0)); });
 
 beforeEach(async () => {
-  vi.useFakeTimers();
   vi.clearAllMocks();
-  vi.stubGlobal('fetch', fetch);
+  takeToolHandoff();
   localStorage.clear();
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  rows = [];
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  host = document.createElement('div');
-  document.body.append(host);
-  root = createRoot(host);
+  qc.setQueryData(['image-catalog'], catalog);
+  qc.setQueryData(['image-services'], services);
+  qc.setQueryData(['image-presets'], [{ id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima',
+    settings: {}, artist: { positive: 'soft light', negative: '' } }]);
+  qc.setQueryData(['image-single-runs', 'synthetic'], { runs: [] });
+  vi.mocked(get).mockImplementation(async url => {
+    if (url.endsWith('/single/runs')) return { runs: [...rows] };
+    if (url.endsWith('/novelai/info')) return { models: [{ id: 'nai-test', name: 'Test' }], samplers: ['euler'], noise_schedules: ['karras'],
+      defaults: { model: 'nai-test', width: 1024, height: 1024, seed: -1, steps: 20, scale: 5, sampler: 'euler', noise_schedule: 'karras' }, free: { pixels: 0, steps: 0 } };
+    if (url.endsWith('/pixai/info')) return { models: [{ id: '123456', name: 'Test', type: 'sdxl' }], aspect_ratios: ['1:1'], sizes: ['1k'], modes: ['standard'], samplers: ['Euler'], max_loras: 5, loras: [],
+      defaults: { model: '123456', aspect_ratio: '1:1', size: '1k', mode: 'standard', sampler: 'Euler', steps: 20, cfg_scale: 5, seed: -1, loras: [] } };
+    return {};
+  });
+  vi.mocked(post).mockImplementation(async (url, body) => {
+    if (url.endsWith('/single')) {
+      const request = body as { positive: string; negative: string; service: 'comfyui' | 'novelai' | 'pixai'; settings: Record<string, unknown>; preset_id?: string };
+      const id = `job-${rows.length + 1}`;
+      rows.unshift({ id, status: 'queued', created_at: '2026-10-13', service: request.service, seed: 17,
+        request: { positive: request.positive, negative: request.negative, service: request.service, settings: request.settings, preset_id: request.preset_id ?? '' },
+        actual: { positive: request.positive, negative: request.negative, settings: { ...request.settings, seed: 17 } } });
+      return { job_id: id };
+    }
+    if (url.endsWith('/cancel')) { rows[0].status = 'cancelled'; return { ok: true }; }
+    if (url.endsWith('/retry')) { rows.unshift({ ...rows[0], id: `job-${rows.length + 1}`, status: 'queued' }); return { job_id: rows[0].id }; }
+    if (url.endsWith('/tools/gallery')) return { items: [{ id: 'tool-1' }] };
+    return { ok: true };
+  });
+  host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} /></QueryClientProvider>));
 });
-afterEach(async () => {
-  await act(async () => root.unmount());
-  qc.clear();
-  host.remove();
-  // Preview settings must use their fixtures even after switching service or model.
-  for (const request of [api.get, api.post, api.put, api.patch, api.del, fetch]) expect(request).not.toHaveBeenCalled();
-  vi.unstubAllGlobals();
-  vi.useRealTimers();
-});
+afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); });
 
-it('preserves both prompts across service, model and preset changes and restores each service settings', async () => {
-  await change(positive(), 'Two people beside a lake\nwith long detailed text');
-  await change(negative(), 'blur, extra fingers\nwatermark');
-  await change(seed(), '73');
-  await click('SDXL·IL');
-  await change(preset(), 'soft');
-  for (const service of ['NovelAI', 'PixAI', 'ComfyUI']) {
-    await click(service);
-    expect(positive().value).toBe('Two people beside a lake\nwith long detailed text');
-    expect(negative().value).toBe('blur, extra fingers\nwatermark');
-    expect(preset().value).toBe('soft');
-  }
-  expect(seed().value).toBe('73');
-  expect(button('SDXL·IL').className).toBe('on');
-  await change(preset(), 'ink');
-  expect(positive().value).toContain('Two people beside a lake');
-  expect(negative().value).toContain('watermark');
-  const stored = JSON.parse(localStorage.getItem('atelierx-single-ui-v1-synthetic')!);
-  expect(stored.settings.comfyui.seed).toBe(73);
-  expect(stored.preset).toBe('ink');
-});
-
-it.each([0, 500])('cancels a request after %i ms without a late result or completion', async (elapsed) => {
-  await change(positive(), 'A request to cancel');
+it('keeps both prompts across services and submits a real queued request', async () => {
+  await edit(positive(), 'Two people beside a lake'); await edit(negative(), 'blur');
+  await click('NovelAI'); await click('PixAI'); await click('ComfyUI');
+  expect(positive().value).toBe('Two people beside a lake');
+  expect(negative().value).toBe('blur');
   await click(t('single.run'));
-  expect(status()).toBe(t('single.state.queued'));
-  if (elapsed) {
-    await advance(elapsed);
-    expect(status()).toBe(t('single.state.running'));
-  }
+  expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({
+    positive: 'Two people beside a lake', negative: 'blur', service: 'comfyui',
+  }));
+  expect(host.querySelector('[role="status"]')?.textContent).toBe(t('single.state.queued'));
+  expect(button(t('single.multi')).hasAttribute('disabled')).toBe(true);
+});
+
+it('cancels, retries, restores and regenerates the saved request', async () => {
+  await edit(positive(), 'Original'); await edit(negative(), 'No blur');
+  await click(t('single.run'));
   await click(t('common.cancel'));
-  await advance(3000);
-  expect(status()).toBe(t('single.state.cancelled'));
-  expect(host.querySelector('.single-canvas svg')).toBeNull();
-  expect(host.querySelector('progress')).toBeNull();
-});
-
-it('uses an immutable request snapshot while typing and restores its prompts, service, preset and seed', async () => {
-  await change(positive(), 'Original request');
-  await change(negative(), 'Original negative');
-  await change(seed(), '123');
-  await change(preset(), 'soft');
-  await click(t('single.run'));
-  await change(positive(), 'Typed while running');
-  await change(negative(), 'Different negative');
-  await click('NovelAI');
-  await change(preset(), 'ink');
-  await advance(450);
-  await advance(1200);
-  expect(status()).toBe(t('single.state.done'));
-  expect(positive().value).toBe('Typed while running');
-  expect(resultDraft()).toMatchObject({ positive: 'Original request', negative: 'Original negative', service: 'comfyui', preset: 'soft', settings: { comfyui: { seed: 123 } } });
-  await click(t('single.restore'));
-  expect(positive().value).toBe('Original request');
-  expect(negative().value).toBe('Original negative');
-  expect(preset().value).toBe('soft');
-  expect(seed().value).toBe('123');
-  expect(button('ComfyUI').getAttribute('aria-pressed')).toBe('true');
-  await click(t('single.regenerate'));
-  await advance(450);
-  await advance(1200);
-  expect(resultDraft().settings.comfyui.seed).toBe(123);
-});
-
-it('retries the failed request rather than silently substituting newly edited input', async () => {
-  await change(positive(), 'Fail this snapshot');
-  await act(async () => (host.querySelector('.single-run input[type="checkbox"]') as HTMLInputElement).click());
-  await click(t('single.run'));
-  await change(positive(), 'New draft after enqueue');
-  await advance(450);
-  await advance(1200);
-  expect(status()).toBe(t('single.state.failed'));
-  expect(host.querySelector('.single-canvas svg')).toBeNull();
+  expect(rows[0].status).toBe('cancelled');
+  await edit(positive(), 'New draft');
   await click(t('single.retry'));
-  await advance(450);
-  await advance(1200);
-  expect(status()).toBe(t('single.state.done'));
-  expect(positive().value).toBe('New draft after enqueue');
-  expect(resultDraft().positive).toBe('Fail this snapshot');
+  expect(rows[0].request?.positive).toBe('Original');
+  rows[0] = { ...rows[0], status: 'done', image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png',
+    actual: { positive: 'Preserved tag, Original', negative: 'No blur, preserved negative', settings: { ...rows[0].actual.settings, cfg: 6.5 } } };
+  await publish();
+  expect(button(t('single.restore')).hasAttribute('disabled')).toBe(false);
+  await click(t('single.restore'));
+  expect(positive().value).toBe('Preserved tag, Original'); expect(negative().value).toBe('No blur, preserved negative');
+  await click(t('single.regenerate'));
+  expect(rows[0].request?.positive).toBe('Preserved tag, Original');
+  expect(rows[0].request?.negative).toBe('No blur, preserved negative');
+  expect(rows[0].request?.preset_id).toBe('');
+  expect(rows[0].request?.settings.cfg).toBe(6.5);
+  expect(rows[0].request?.settings.seed).toBe(17);
 });
 
-it('keeps multi-character disabled and opens another view only after explicit handoff', async () => {
-  const multi = button(t('single.multi'));
-  expect(multi.disabled).toBe(true);
-  await act(async () => multi.click());
-  expect(status()).toBe(t('single.state.idle'));
-  await change(positive(), 'Preview handoff');
-  await click(t('single.run'));
-  await advance(450);
-  await advance(1200);
-  await click(t('single.send_tools'));
-  expect(openView).not.toHaveBeenCalled();
-  expect(host.querySelector('.single-handoff')?.textContent).toContain(t('single.handoff_note'));
+it('previews preset common tags and compares the saved final prompt', async () => {
+  qc.setQueryData(['image-lib', 'common', 'synthetic'], { glow: { prompt: ['warm daylight # note'], target: 'positive' } });
+  qc.setQueryData(['image-presets'], [{ id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima',
+    common: ['glow'], settings: {}, artist: { positive: 'soft light', negative: '' } }]);
+  await edit(positive(), 'forest');
+  await act(async () => { (host.querySelector('.single-field select') as HTMLSelectElement).value = 'soft';
+    host.querySelector('.single-field select')!.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('warm daylight, forest, soft light');
+  rows.unshift({ id: 'saved', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 42,
+    request: { positive: 'forest', negative: '', service: 'comfyui', settings: {}, preset_id: 'soft' },
+    actual: { positive: 'warm daylight, forest, soft light', negative: 'low quality', settings: { family: 'anima', seed: 42 } },
+    image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
+  await publish();
+  await click(t('single.compare'));
   await click(t('single.open_existing'));
+  expect(sendToLab).toHaveBeenCalledWith(expect.objectContaining({ positive: 'warm daylight, forest, soft light', negative: 'low quality' }));
+});
+
+it('hands a saved image to tools and keeps unsupported comparison disabled', async () => {
+  rows.unshift({ id: 'saved', status: 'done', created_at: '2026-10-13', service: 'novelai', seed: 42,
+    request: { positive: 'scene', negative: '', service: 'novelai', settings: {}, preset_id: '' },
+    actual: { positive: 'scene', negative: '', settings: { seed: 42 } },
+    image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
+  await publish();
+  expect(button(t('single.compare')).hasAttribute('disabled')).toBe(true);
+  await click(t('single.send_tools'));
+  await click(t('single.open_existing'));
+  expect(post).toHaveBeenCalledWith('/api/image/tools/gallery', { paths: ['_single/synthetic/a.png'] });
+  expect(takeToolHandoff()).toBe('tool-1');
   expect(openView).toHaveBeenCalledWith('tools');
 });

@@ -63,4 +63,26 @@ export type GenerationRecord = {
   [key: string]: unknown;
 };
 
+export type SingleService = 'comfyui' | 'novelai' | 'pixai';
+export type SingleRequest = {
+  positive: string;
+  negative: string;
+  service: SingleService;
+  settings: Record<string, unknown>;
+  preset_id: string;
+};
+export type SingleRun = {
+  id: string;
+  status: 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
+  created_at: string;
+  service: SingleService;
+  seed: number;
+  request: SingleRequest | null;
+  actual: { positive: string; negative: string; settings: Record<string, unknown> };
+  image_url?: string | null;
+  path?: string | null;
+  error?: ServerMsg | string | null;
+};
+export type SingleRuns = { runs: SingleRun[] };
+
 export type ReviewHistoryEntry = { at: string; path: string; from: string; to: string; source?: string };
