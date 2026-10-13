@@ -192,6 +192,9 @@ export default function ItemEditor({
         body,
         base_hash: baseHash.current,
       });
+      // A read started before/during this write may still contain the old (even empty) body.
+      // Cancel it before marking the editor clean and publishing the saved version.
+      await qc.cancelQueries({ queryKey: ['item', workId, path], exact: true });
       baseHash.current = saved.hash;
       const unchanged = latestEdit.current.body === body && latestEdit.current.meta === meta;
       if (unchanged) setMeta(saved.meta);
