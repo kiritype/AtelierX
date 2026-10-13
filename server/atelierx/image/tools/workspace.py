@@ -46,7 +46,18 @@ class ToolWorkspace:
 
     def public(self):
         with self.lock:
-            return {'items': [dict(item) for item in self.items]}
+            return {'items': [self._public_item(item) for item in self.items]}
+
+    def _public_item(self, item):
+        result = dict(item)
+        try:
+            stat = self.file(item).stat()
+            result['thumbnail_url'] = (
+                f'/api/image/tools/thumbnail?id={item["id"]}&v={stat.st_mtime_ns}-{stat.st_size}'
+            )
+        except (OSError, ValueError):
+            pass  # Deleted gallery references remain removable in the tools list.
+        return result
 
     def get(self, item_id):
         with self.lock:

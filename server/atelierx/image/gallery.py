@@ -215,7 +215,7 @@ class Gallery:
             'folder': '/'.join(parts[:-1]),
             'kind': kind,
             'image_url': self.url(relative),
-            'thumbnail_url': '/api/image/gallery/thumbnail?path=' + quote(relative, safe=''),
+            'thumbnail_url': '/api/image/gallery/thumbnail?path=' + quote(relative, safe='') + f'&v={mtime_ns}-{size}',
             'has_record': bool(meta),
             'work_id': parts[0] if asset else str(meta.get('work_id') or ''),
             'character_id': parts[1] if asset else str(meta.get('character_id') or ''),
