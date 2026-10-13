@@ -2482,5 +2482,12 @@
   "single.handoff_failed": "Could not add this image to the tools workspace.",
   "gallery.original_unknown": "The source path is not in the record. This sends the current image. Select its original in the gallery to remask it.",
   "gallery.already_in_tools": "This image is already in Image tools.",
-  "gallery.send_original": "Send the source image for remasking"
+  "gallery.send_original": "Send the source image for remasking",
+  "server.single.request": "Choose an image service and enter a prompt.",
+  "server.single.prompt_length": "Prompts must be text of at most 30,000 characters.",
+  "server.single.positive": "Enter a positive prompt.",
+  "server.single.settings": "Choose valid generation settings.",
+  "server.single.unsupported_settings": "These settings are not supported by {service}: {settings}.",
+  "server.single.missing_common": "Preset common prompt {id} was not found.",
+  "server.single.other_target": "Preset common prompt {id} is for another target."
 }
