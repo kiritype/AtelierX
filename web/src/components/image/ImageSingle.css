@@ -16,7 +16,18 @@
 .single-details h4 { margin: 10px 0 0; }
 .single-form .row { flex-wrap: wrap; }
 .single-form select, .single-form input, .single-form .gen-field { max-width: 100%; min-width: 0; }
-.single-form .gen-field { flex: 1 1 110px; }
+/* Keep field sizing on horizontal groups; a flex basis on the vertical
+   settings container also stretches standalone fields such as shift. */
+.single-form .gen-settings { padding: 14px; gap: 14px; }
+.single-form .gen-model-fields, .single-form .gen-core-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.single-form .gen-model-fields > .gen-field:first-child, .single-form [data-setting="model"], .single-form [data-setting="seed"] { grid-column: 1 / -1; }
+.single-form .gen-core-fields { border-top: 1px solid var(--border); padding-top: 14px; }
+.single-form .gen-core-fields [data-setting="clip_skip"] + [data-setting="seed"] { grid-column: auto; }
+.single-form .gen-model-fields select, .single-form .gen-core-fields input, .single-form .gen-core-fields select { width: 100% !important; }
+.single-form .gen-stage > .row > .gen-field { flex: 1 1 100px; }
+.single-form .gen-stage > .row > .gen-field select { width: 100%; }
+.single-form .gen-stage { padding-top: 12px; }
+.single-form .gen-field { gap: 5px; }
 .single-run { margin-top: 16px; padding: 14px 0; border-top: 1px solid var(--border); }
 .single-run label { margin-right: auto; }
 .single-result { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
