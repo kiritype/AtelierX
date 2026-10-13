@@ -13,6 +13,7 @@ import type { ImageView } from '../types';
 
 // Image module screens (decision 0018). Views not ported yet say what is coming.
 export default function ImageScreen({
+  active = true,
   workId,
   view,
   openView,
@@ -22,6 +23,7 @@ export default function ImageScreen({
   characterId,
   outfitId,
 }: {
+  active?: boolean;
   workId: string;
   view: ImageView;
   openView: (view: ImageView) => void;
@@ -40,7 +42,7 @@ export default function ImageScreen({
   if (view === 'queue') return <ImageQueue />;
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
   if (view === 'lab') return <ImageLab workId={workId} />;
-  if (view === 'tools') return <ImageTools openLab={() => openView('lab')} openSettings={openSettings} />;
+  if (view === 'tools') return <ImageTools active={active} openLab={() => openView('lab')} openSettings={openSettings} />;
   if (view === 'lora') return <ImageLora workId={workId} initialCharacterId={characterId} initialOutfitId={outfitId} openLab={() => openView('lab')} />;
   return (
     <div className="pad col" style={{ maxWidth: 720 }}>
