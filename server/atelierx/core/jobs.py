@@ -36,7 +36,13 @@ class Jobs:
         self.jobs[job_id] = job
         self.events.publish('job', job)
         job['_task'] = asyncio.get_running_loop().create_task(self._run(job, runner, gpu))
+        job['_task'].add_done_callback(lambda task: self._cancelled_before_start(job, task))
         return self.public(job)
+
+    def _cancelled_before_start(self, job, task):
+        if task.cancelled() and job['status'] == CANCELLING:
+            job['status'] = CANCELLED
+            self.events.publish('job', self.public(job))
 
     def public(self, job):
         return {k: v for k, v in job.items() if not k.startswith('_')}

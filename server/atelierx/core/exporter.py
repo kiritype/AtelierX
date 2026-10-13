@@ -95,7 +95,16 @@ def target_state(target_dir, items):
     return {'exists': True, 'files': len(files), 'leftovers': leftovers[:200]}
 
 
-def export(work, target_dir, overwrite=False, app_root=None):
+class ExportCancelled(Exception):
+    """The writer acknowledged a cooperative cancellation request."""
+
+
+def export(work, target_dir, overwrite=False, app_root=None, cancel=None):
+    def check_cancel():
+        if cancel is not None and cancel.is_set():
+            raise ExportCancelled
+
+    check_cancel()
     target = Path(target_dir)
     blocked = blocked_target(target_dir, app_root or work.folder, work.folder)
     if blocked:
@@ -116,6 +125,9 @@ def export(work, target_dir, overwrite=False, app_root=None):
             Msg('server.export.not_empty', 'The folder is not empty. Confirm overwriting first.'), 409
         )
     for item in include:
+        check_cancel()
         atomic_write_text(target / item['path'], item['body'])
+    check_cancel()
     atomic_write_text(target / KEYWORDS_FILE, keywords_table(include, work.doc().get('language', 'ko')))
+    check_cancel()
     return {'written': [i['path'] for i in include] + [KEYWORDS_FILE], 'skipped': skip}
