@@ -1,6 +1,9 @@
 import json
 import time
 
+import httpx
+import pytest
+
 from atelierx.core.editor_tasks import preserves_protected
 
 
@@ -140,3 +143,46 @@ def test_format_syntax_guard():
     assert preserves_protected('Hi {{user}} <StatusPanel />', '<StatusPanel /> Hi {{user}}')
     assert not preserves_protected('Hi {{user}} <StatusPanel />', 'Hi <StatusPanel />')
     assert not preserves_protected('<StatusPanel />', '<StatusPanel title="changed" />')
+
+
+@pytest.mark.parametrize(
+    'action', ['compress', 'editor/content-review', 'editor/consistency', 'editor/format']
+)
+@pytest.mark.parametrize('failure', ['missing-provider', 'http-400'])
+def test_failed_editor_llm_preserves_files(unlocked, monkeypatch, action, failure):
+    client = unlocked
+    wid, paths = _make_work(client)
+    originals = [client.get(f'/api/works/{wid}/file', params={'path': path}).json() for path in paths]
+    providers = client.get('/api/providers').json()
+    override = {'provider': 'unconfigured'}
+    if failure == 'http-400':
+        providers['providers']['broken'] = {
+            'name': 'Broken endpoint',
+            'type': 'openai_compatible',
+            'base_url': 'http://localhost:1234/wrong',
+            'default_model': 'test-model',
+            'trusted': True,
+        }
+        assert client.put('/api/providers', json=providers).status_code == 200
+        override = {'provider': 'broken'}
+
+        async def reject(self, url, **kwargs):
+            return httpx.Response(400, json={'error': {'message': 'Bad endpoint'}})
+
+        monkeypatch.setattr(httpx.AsyncClient, 'post', reject)
+
+    response = client.post(
+        f'/api/works/{wid}/{action}',
+        json={'path': paths[0], 'compare_paths': list(paths), 'llm': override},
+    )
+    if failure == 'missing-provider':
+        assert response.status_code == 400
+    else:
+        assert response.status_code == 200
+        assert _finished_job(client, response.json()['id'])['status'] == 'failed'
+    for path, original in zip(paths, originals):
+        current = client.get(f'/api/works/{wid}/file', params={'path': path}).json()
+        assert current['body'] == original['body']
+        assert current['meta'] == original['meta']
+        assert current['hash'] == original['hash']
+    assert client.get(f'/api/works/{wid}/drafts').json() == []
