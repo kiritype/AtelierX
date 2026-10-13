@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../../api';
 import { t, tm } from '../../i18n';
+import { COMFY_PREVIEW_CATALOG } from './singlePreviewSettings';
 
 export type Lora = { name: string; strength_model: number; strength_clip: number; enabled?: boolean };
 // After the first pass (#168): enlarge and redraw lightly, then redraw chosen parts.
@@ -52,14 +53,19 @@ export const FAMILY_DEFAULTS: Record<'anima' | 'sdxl', GenerationSettings> = {
   sdxl: { steps: 28, cfg: 5, sampler: 'euler_ancestral', scheduler: 'normal', width: 1024, height: 1024, clip_skip: 2 },
 };
 
-export function useCatalog() {
-  return useQuery<Catalog>({ queryKey: ['image-catalog'], queryFn: () => get('/api/image/catalog'), staleTime: 60_000 });
+export function useCatalog(preview = false) {
+  return useQuery<Catalog>({
+    queryKey: preview ? ['image-single-preview', 'catalog'] : ['image-catalog'],
+    queryFn: () => preview ? Promise.resolve(COMFY_PREVIEW_CATALOG) : get('/api/image/catalog'),
+    initialData: preview ? COMFY_PREVIEW_CATALOG : undefined,
+    staleTime: 60_000,
+  });
 }
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop();
 
-export default function GenSettings({ value, onChange }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void }) {
-  const catalog = useCatalog();
+export default function GenSettings({ value, onChange, preview = false }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void; preview?: boolean }) {
+  const catalog = useCatalog(preview);
   const c = catalog.data;
   if (!c) return null;
   if (!c.connected) return <div className="warn-text">{t('gen.not_connected')} {c.error ? tm(c.error) : ''}</div>;
@@ -105,7 +111,7 @@ export default function GenSettings({ value, onChange }: { value: GenerationSett
               <button
                 key={f}
                 className={family === f ? 'on' : ''}
-                onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], model: firstModel(f), seed: value.seed, loras: [] })}
+                onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), seed: value.seed, loras: [] })}
               >
                 {f === 'anima' ? 'Anima' : 'SDXL·IL'}
               </button>

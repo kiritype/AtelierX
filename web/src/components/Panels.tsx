@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { del, get, patch, post } from '../api';
 import { t } from '../i18n';
 import type { DraftSummary, ImageView, SearchHit, SnapshotSummary, Tab, TrashBundle, TreeEntry, WorkInfo } from '../types';
+import { imageNavigation } from '../lib/imageNavigation';
 import FileTree from './FileTree';
 import RenameDialog from './RenameDialog';
 import { useToast } from './Toasts';
@@ -96,15 +97,19 @@ function ImagePanel({ workId, open }: Props) {
   const characters = flatten(tree.data ?? []).filter((e) => e.kind === 'character');
   // The same screens as the Image menu, then each character: a click opens its gallery, the small buttons go to
   // generation, LoRA or the character's document. A character without an ID has no images yet, so it opens the document.
-  const views: ImageView[] = ['library', 'generate', 'queue', 'lab', 'gallery', 'tools', 'lora'];
   const image = (view: ImageView, characterId?: string) => open({ type: 'image', view, characterId });
   return (
     <>
       <div className="side-head">{t('panel.image')}</div>
       <div className="tree">
-        {views.map((view) => (
-          <div key={view} className="tree-row" title={t(`image_menu.${view}_about`)} onClick={() => image(view)}>
-            <span className="grow">{t(`image_menu.${view}`)}</span>
+        {imageNavigation.map(({ group, views }) => (
+          <div key={group}>
+            <div className="side-head">{t(`image_menu.group.${group}`)}</div>
+            {views.map((view) => (
+              <div key={view} className="tree-row" title={t(`image_menu.${view}_about`)} onClick={() => image(view)}>
+                <span className="grow">{t(`image_menu.${view}`)}</span>
+              </div>
+            ))}
           </div>
         ))}
       </div>
