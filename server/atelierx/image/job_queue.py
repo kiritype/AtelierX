@@ -211,6 +211,8 @@ class JobQueue:
                         'Only failed, cancelled or interrupted jobs can be retried.',
                     )
                 )
+            # Keep admission and append under the same lock, before attach can change related state.
+            self.check_room(1)
             job = {k: copy.deepcopy(v) for k, v in old.items() if k in RETRY_KEYS}
             job.update(id=uuid.uuid4().hex, status='queued', created_at=now())
             if attach:
