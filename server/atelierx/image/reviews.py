@@ -245,7 +245,7 @@ class ReviewStore:
         total = len(matched)
         self.flush_hashes()
         # "Select all filtered" asks for every matching path at once.
-        paths = [i['path'] for i in matched][:10000] if _flag(params, 'paths_only') else None
+        paths = [i['path'] for i in matched] if _flag(params, 'paths_only') else None
         return {
             'results': page_items,
             'total': total,
