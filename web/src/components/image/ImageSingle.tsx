@@ -12,6 +12,7 @@ import PixAISettings from './PixAISettings';
 import { SERVICE_NAMES } from './serviceSettings';
 import { sendToLab } from './ImageLab';
 import { sendToTools } from '../../lib/toolHandoff';
+import GalleryDetailFrame from './GalleryDetailFrame';
 import './ImageSingle.css';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
@@ -39,6 +40,12 @@ const withoutNote = (value: string) => {
   return (note ? value.slice(0, note.index) : value).replaceAll('\\#', '#').trim();
 };
 const promptText = (value: string) => value.split(/\r?\n/).map(line => withoutNote(line)).filter(Boolean).join('\n');
+const filenameOf = (run: SingleRun) => run.path?.split('/').pop() || `${run.id}.png`;
+const localTime = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+};
+const HISTORY_PAGE_SIZE = 6;
 
 export default function ImageSingle({ workId, openView }: { workId: string; openView: (view: ImageView) => void }) {
   const id = useId();
@@ -50,12 +57,18 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const [runId, setRunId] = useState('');
   const [error, setError] = useState('');
   const [destination, setDestination] = useState<'tools' | 'lab' | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [historyPage, setHistoryPage] = useState(0);
   const services = useQuery<ImageServices>({ queryKey: ['image-services'], queryFn: () => get('/api/image/services') });
   const catalog = useCatalog();
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
   const runs = useQuery<SingleRuns>({ queryKey: ['image-single-runs', workId], queryFn: () => get(`/api/works/${workId}/image/single/runs`), refetchInterval: 1500 });
-  const run = runs.data?.runs.find(r => r.id === runId) ?? runs.data?.runs[0];
+  const history = (runs.data?.runs ?? []).slice(0, 100);
+  const pageCount = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
+  const page = Math.min(historyPage, pageCount - 1);
+  const visibleHistory = history.slice(page * HISTORY_PAGE_SIZE, (page + 1) * HISTORY_PAGE_SIZE);
+  const run = history.find(r => r.id === runId) ?? history[0];
   const busy = pending || active(run);
   const serialized = JSON.stringify(draft);
   function saveDraft(): boolean {
@@ -100,6 +113,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         response = await post(`/api/works/${workId}/image/single`, { ...request, repeat_ok: true });
       }
       setRunId(response.job_id);
+      setHistoryPage(0);
+      setPreviewOpen(false);
       await refresh();
     } catch (err) { fail(err); }
     finally { setPending(false); }
@@ -115,6 +130,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     try {
       const response = await post<{ job_id: string }>(`/api/image/jobs/${run.id}/retry`);
       setRunId(response.job_id);
+      setHistoryPage(0);
+      setPreviewOpen(false);
       await post('/api/image/queue/resume');
       await refresh();
     } catch (err) { fail(err); }
@@ -122,6 +139,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   }
   function restore(selected: SingleRun) {
     if (!selected.actual) return;
+    setPreviewOpen(false);
     setDraft(current => ({ ...current, positive: selected.actual.positive, negative: selected.actual.negative,
       service: selected.service, preset: '',
       settings: { ...current.settings, [selected.service]: { ...selected.actual.settings, seed: selected.seed } },
@@ -129,6 +147,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   }
   async function regenerate() {
     if (!run?.actual) return;
+    setPreviewOpen(false);
     const value = clone(draft);
     value.positive = run.actual.positive; value.negative = run.actual.negative; value.service = run.service; value.preset = '';
     value.settings[run.service] = { ...run.actual.settings, seed: run.seed };
@@ -142,6 +161,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
       const item = response.items[0];
       if (!item) throw new Error(t('single.handoff_failed'));
       sendToTools(item.id);
+      setPreviewOpen(false);
       openView('tools');
     } catch (err) { fail(err); }
   }
@@ -149,6 +169,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     if (!run?.actual || !run.path || run.service !== 'comfyui') return;
     sendToLab({ positive: run.actual.positive, negative: run.actual.negative,
       settings: { ...run.actual.settings, seed: run.seed } as GenerationSettings, source: run.path });
+    setPreviewOpen(false);
     openView('lab');
   }
   return <section className="single-image" aria-label={t('image_menu.single')}>
@@ -188,7 +209,9 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         {run?.error && <div className="single-review" role="alert">{msgText(run.error)}</div>}
         {run && ['failed', 'cancelled', 'interrupted'].includes(run.status) && <button type="button" disabled={pending} onClick={retry}>{t('single.retry')}</button>}
         {busy && <progress aria-label={t('single.progress')} />}
-        <div className="single-canvas">{run?.image_url ? <img src={run.image_url} alt={t('single.result')} /> : <div className="single-empty">{t('single.empty')}</div>}</div>
+        {run?.image_url
+          ? <button type="button" className="single-canvas" aria-label={t('single.open_preview')} onClick={() => setPreviewOpen(true)}><img src={run.image_url} alt="" /></button>
+          : <div className="single-canvas"><div className="single-empty">{t('single.empty')}</div></div>}
         {run && <>
           <p className="faint small">{SERVICE_NAMES[run.service] ?? run.service} · Seed {run.seed}</p>
           <div className="single-result-actions"><button type="button" disabled={busy || !run.actual} onClick={() => restore(run)}>{t('single.restore')}</button><button type="button" disabled={busy || !run.actual} onClick={regenerate}>{t('single.regenerate')}</button><button type="button" disabled={!run.path} onClick={() => setDestination('tools')}>{t('single.send_tools')}</button><button type="button" disabled={!run.path || run.service !== 'comfyui'} title={run.service !== 'comfyui' ? t('single.compare_comfy_only') : undefined} onClick={() => setDestination('lab')}>{t('single.compare')}</button></div>
@@ -196,8 +219,37 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         </>}
         {destination && <section className="single-handoff" aria-label={t('single.handoff')}><h4>{t(`image_menu.${destination}`)}</h4><p>{t('single.handoff_note')}</p><button type="button" onClick={destination === 'tools' ? handoffTools : handoffLab}>{t('single.open_existing')}</button><button type="button" onClick={() => setDestination(null)}>{t('common.close')}</button></section>}
         <div className="single-result-links"><button type="button" className="ghost" onClick={() => openView('gallery')}>{t('image_menu.gallery')}</button><button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button></div>
-        {(runs.data?.runs.length ?? 0) > 1 && <div className="single-history"><h4>{t('single.history')}</h4>{runs.data!.runs.map(entry => <button key={entry.id} type="button" className={run?.id === entry.id ? 'on' : ''} onClick={() => { setRunId(entry.id); setDestination(null); }}>{entry.image_url ? <img src={entry.image_url} alt="" /> : null}<span>{entry.created_at} · {t(`single.state.${entry.status}`)}</span></button>)}</div>}
+        {history.length > 0 && <div className="single-history">
+          <h4>{t('single.history')}</h4>
+          <p className="faint small">{t('single.history_limit')} <button type="button" className="ghost" onClick={() => openView('gallery')}>{t('single.view_all')}</button></p>
+          <div className="single-history-list">{visibleHistory.map(entry => <button key={entry.id} type="button"
+            className={`single-history-row${run?.id === entry.id ? ' is-selected' : ''}`} aria-pressed={run?.id === entry.id}
+            onClick={() => { setRunId(entry.id); setDestination(null); setPreviewOpen(false); }}>
+            {entry.image_url ? <img className="single-history-thumb" src={entry.image_url} alt="" /> : <span className="single-history-thumb" />}
+            <span className="single-history-content"><span className="single-history-name" title={filenameOf(entry)}>{filenameOf(entry)}</span>
+              <span className="faint small">{localTime(entry.created_at)} · {t(`single.state.${entry.status}`)}</span></span>
+          </button>)}</div>
+          {pageCount > 1 && <div className="single-history-pages"><button type="button" disabled={page === 0} onClick={() => setHistoryPage(page - 1)}>{t('single.previous_page')}</button>
+            <span>{t('single.history_page', { current: page + 1, total: pageCount })}</span>
+            <button type="button" disabled={page + 1 >= pageCount} onClick={() => setHistoryPage(page + 1)}>{t('single.next_page')}</button></div>}
+        </div>}
       </div>
     </div>
+    {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={`${t('single.result')} · ${filenameOf(run)}`} close={() => setPreviewOpen(false)}>
+      <div className="row"><strong className="grow single-modal-name" title={filenameOf(run)}>{filenameOf(run)}</strong>
+        <button type="button" className="ghost" aria-label={t('common.close')} onClick={() => setPreviewOpen(false)}>×</button></div>
+      {run.path && <div className="faint mono small single-modal-path" title={run.path}>{run.path}</div>}
+      <div className="faint small">{SERVICE_NAMES[run.service] ?? run.service} · {localTime(run.created_at)} · {t(`single.state.${run.status}`)}</div>
+      <div className="single-modal-actions"><button type="button" disabled={busy || !run.actual} onClick={() => restore(run)}>{t('single.restore')}</button>
+        <button type="button" disabled={busy || !run.actual} onClick={regenerate}>{t('single.regenerate')}</button>
+        <button type="button" disabled={!run.path} onClick={handoffTools}>{t('single.send_tools')}</button>
+        <button type="button" disabled={!run.path || run.service !== 'comfyui'} onClick={handoffLab}>{t('single.compare')}</button></div>
+      {run.actual && <><div className="section-title">{t('gallery.prompts')}</div>
+        <div className="prompt-box mono small">{run.actual.positive}</div>
+        <div className="prompt-box mono small faint">− {run.actual.negative}</div>
+        <div className="section-title">{t('gallery.settings')}</div>
+        <dl className="kv small">{Object.entries(run.actual.settings).map(([key, value]) => <div key={key} className="row"><dt>{key}</dt>
+          <dd className="mono">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl></>}
+    </GalleryDetailFrame>}
   </section>;
 }
