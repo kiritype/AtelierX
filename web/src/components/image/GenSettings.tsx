@@ -82,13 +82,13 @@ export default function GenSettings({ value, onChange, preview = false }: { valu
   const loras = c.loras.filter((l) => (fam('loras', l) === family || fam('loras', l) === null));
   const set = (patch: GenerationSettings) => onChange({ ...value, ...patch });
   const num = (key: keyof GenerationSettings, label: string, step = 1, width = 72) => (
-    <label className="col gen-field">
+    <label className="col gen-field" data-setting={key}>
       <span className="muted">{label}</span>
       <input type="number" step={step} style={{ width }} value={(value[key] as number | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value === '' ? undefined : Number(e.target.value) })} />
     </label>
   );
   const pick = (key: keyof GenerationSettings, label: string, options: string[], allowEmpty?: string) => (
-    <label className="col gen-field">
+    <label className="col gen-field" data-setting={key}>
       <span className="muted">{label}</span>
       <select value={(value[key] as string | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined })}>
         {allowEmpty !== undefined && <option value="">{allowEmpty}</option>}
@@ -103,7 +103,7 @@ export default function GenSettings({ value, onChange, preview = false }: { valu
 
   return (
     <div className="col gen-settings">
-      <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label className="col gen-field">
           <span className="muted">{t('gen.family')}</span>
           <div className="seg">
@@ -122,7 +122,7 @@ export default function GenSettings({ value, onChange, preview = false }: { valu
         {family === 'anima' && pick('text_encoder', t('gen.text_encoder'), c.text_encoders, t('gen.default'))}
         {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}
       </div>
-      <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div className="row gen-core-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {pick('sampler', t('gen.sampler'), c.samplers, t('gen.default'))}
         {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'))}
         {num('steps', t('gen.steps'))}
@@ -130,7 +130,7 @@ export default function GenSettings({ value, onChange, preview = false }: { valu
         {num('width', t('gen.width'), 16, 84)}
         {num('height', t('gen.height'), 16, 84)}
         {family === 'sdxl' && num('clip_skip', 'clip skip')}
-        <label className="col gen-field">
+        <label className="col gen-field" data-setting="seed">
           <span className="muted">{t('gen.seed')}</span>
           <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
         </label>
