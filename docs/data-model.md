@@ -1100,6 +1100,19 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 <출력 루트>/.trash/<id>/           지운 이미지와 기록 (+ .trash/index.json: 원래 경로·지운 때)
 ```
 
+- 이미지 도구 목록은 `data/image/tools/tools.sqlite3`의 `items(id PRIMARY KEY, data JSON)`에 저장한다(#222).
+  SQLite `user_version=2`; 기존 `tools.json`(schema_version 1)은 DB 최초 생성 시 트랜잭션으로 가져오고 원본 파일을 남긴다.
+  행별 수정·삭제만 반영하며 목록 전체 JSON을 다시 쓰지 않는다. 모르는 DB 버전은 거절한다.
+- 대량 도구 요청은 `data/image/batches/batches.sqlite3`(`user_version=1`, WAL/FULL)에 별도로 저장한다.
+  `batches`는 ID·고유 request_id·본문 fingerprint·operation·settings JSON·created_at·cancelled,
+  `items`는 (batch, ordinal) 기본키·target JSON·status·attempt·고유 job_id·result JSON,
+  `history`는 job_id 기본키·batch·ordinal·전체 실행 결과 JSON이다. 재시도해도 이전 history는 남는다.
+  target은 원본 ID/출처·파일/옆 JSON signature(mtime_ns,size)·seed·입력 마스크 상대 토큰·개별 오류를 담는다.
+  마스크는 `data/image/batches/<batch>/<ordinal>.png`에 복사한다. 절대 경로를 영속화하지 않고 현재 앱 루트에서 해석한다.
+  접수 트랜잭션 후 응답하고, stable job_id의 queued intent를 먼저 커밋한 뒤 공용 JSON 큐에 추가한다.
+  완료 결과를 SQLite history에 커밋한 다음 공용 큐에서 제거한다. 큐 저장 실패는 대상 실패로 오분류하지 않고 실행을 멈춘다.
+  재시작 때 intent·공용 큐·출력 job_id를 대조하며 완료를 재실행하지 않는다. 확정할 수 없는 실행은 interrupted로 보존한다.
+  마스크 메타데이터의 선택적 job_id는 감지 결과 복구용이다. 기존 마스크의 이 필드 누락은 허용한다.
 - 이미지 도구의 목록·올린 사본·마스크는 앱 데이터 `data/image/tools/`에 둔다([24](features/24-image-tools.md)). 제외 태그는
   `config/image/tags.json`.
 

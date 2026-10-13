@@ -1,3 +1,5 @@
+import ToolBatches from './ToolBatches';
+import { submitToolBatch } from '../../lib/toolBatches';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import GenerationInfo, { type Generation } from './GenerationInfo';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -112,7 +114,8 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   const qc = useQueryClient();
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
-  const items = useQuery<{ items: ToolItem[] }>({ queryKey: ['tool-items'], queryFn: () => get('/api/image/tools/items'), refetchInterval: 3000 });
+  const [offset, setOffset] = useState(0);
+  const items = useQuery<{ items: ToolItem[]; total: number }>({ queryKey: ['tool-items', offset], queryFn: () => get(`/api/image/tools/items?offset=${offset}&limit=200`), refetchInterval: active ? 3000 : false });
   const tagger = useQuery<TaggerInfo>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
   const postInfo = useQuery<PostInfo>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
   const methods = useQuery<ToolMethods>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
@@ -136,7 +139,14 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
     if (!active) return;
     const receive = () => {
       const id = takeToolHandoff();
-      if (id) { setPendingSelection(id); qc.invalidateQueries({ queryKey: ['tool-items'] }); }
+      if (id) {
+        setPendingSelection(id);
+        qc.invalidateQueries({ queryKey: ['tool-items'] });
+        get<{ ids: string[] }>('/api/image/tools/ids').then(({ ids }) => {
+          const index = ids?.indexOf(id) ?? -1;
+          if (index >= 0) setOffset(Math.floor(index / 200) * 200);
+        }).catch(fail);
+      }
     };
     receive();
     window.addEventListener(TOOL_HANDOFF, receive);
@@ -166,18 +176,16 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   const rerender = () => setTick((n) => n + 1);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const current = list.find((i) => i.id === currentId);
-  const chosenIds = list.filter((i) => chosen.has(i.id)).map((i) => i.id);
+  const chosenIds = [...chosen];
   const analysis = useQuery<Analysis>({
     queryKey: ['tool-analyze', currentId],
     queryFn: () => get(`/api/image/tools/analyze?id=${currentId}`),
     enabled: !!currentId,
   });
 
+  const current = list.find((i) => i.id === currentId) ?? (analysis.data?.item?.id === currentId ? analysis.data.item : undefined);
   useEffect(() => {
     if (!currentId && list.length) setCurrentId(list[list.length - 1].id);
-    const known = new Set(list.map((i) => i.id));
-    if ([...chosen].some((id) => !known.has(id))) setChosen(new Set([...chosen].filter((id) => known.has(id))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.data]);
 
@@ -254,6 +262,7 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
 
   return (
     <div className="tools-wrap">
+      <ToolBatches active={active} fail={fail} />
       <div className="tools">
         <aside
           className={`tools-list pad col ${dragging ? 'dragging' : ''}`}
@@ -270,8 +279,11 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
               {t('tools.upload_files')}
             </button>
             <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => upload([...(e.target.files ?? [])])} />
-            <button onClick={() => setChosen(chosen.size === list.length ? new Set() : new Set(list.map((i) => i.id)))}>
-              {chosen.size === list.length && list.length ? t('gallery.clear_selection') : t('tools.select_all')}
+            <button onClick={async () => {
+              if (chosen.size) { setChosen(new Set()); return; }
+              try { setChosen(new Set((await get<{ ids: string[] }>('/api/image/tools/ids')).ids)); } catch (error) { fail(error); }
+            }}>
+              {chosen.size ? t('gallery.clear_selection') : t('tools.select_all')}
             </button>
             <button disabled={!chosenIds.length} onClick={removeChosen}>
               {t('tools.remove_from_list')}
@@ -282,6 +294,11 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
           </div>
           {uploadStatus && <div className="faint small">{uploadStatus}</div>}
           {!list.length && <div className="empty">{t('tools.drop_hint')}</div>}
+          <div className="row">
+            <button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 200))}>{t('bulk.previous')}</button>
+            <span>{offset + 1}–{offset + list.length} / {items.data?.total ?? list.length}</span>
+            <button disabled={offset + 200 >= (items.data?.total ?? list.length)} onClick={() => setOffset(offset + 200)}>{t('bulk.next')}</button>
+          </div>
           <div className="tools-grid">
             {list.map((item) => (
               <div key={item.id} className={`tools-card ${item.id === currentId ? 'current' : ''}`} title={`${item.name} · ${item.width}×${item.height} · ${item.format}`}>
@@ -728,7 +745,7 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
         disabled={!ids.length}
         onClick={async () => {
           try {
-            await post('/api/image/tools/tag', { ...form, model, ids });
+            await submitToolBatch('tag', { ...form, model, ids });
             toast({ text: tp('tools.queued_tagging', ids.length) });
             qc.invalidateQueries({ queryKey: ['image-queue'] });
           } catch (err) {
@@ -845,8 +862,8 @@ function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; in
         disabled={!ids.length}
         onClick={async () => {
           try {
-            const result = await post('/api/image/tools/postprocess', { ids, op, method, options: op === 'detail' ? detail : { ...upscale, model } });
-            toast({ text: tp('tools.queued_post', result.jobs.length) });
+            const result = await submitToolBatch('postprocess', { ids, op, method, options: op === 'detail' ? detail : { ...upscale, model } });
+            toast({ text: tp('tools.queued_post', result.accepted) });
             qc.invalidateQueries({ queryKey: ['image-queue'] });
           } catch (err) {
             fail(err);
@@ -918,14 +935,16 @@ function MaskForm({
   const queue = async (op: string, options: any, targetIds: string[], done: string) => {
     try {
       await flush();
-      const result = await post('/api/image/tools/postprocess', { ids: targetIds, op, method, options });
-      toast({ text: tp(done, result.jobs.length) });
+      const result = await submitToolBatch('postprocess', { ids: targetIds, op, method, options });
+      toast({ text: tp(done, result.accepted) });
       qc.invalidateQueries({ queryKey: ['image-queue'] });
     } catch (err) {
       fail(err);
     }
   };
   const confirmOverwrite = (targetIds: string[]) => {
+    if (targetIds.some((id) => !list.some((item) => item.id === id)))
+      return confirm(tp('tools.overwrite_masks', targetIds.length));
     const masked = list.filter((i) => targetIds.includes(i.id) && i[field]).length;
     return !masked || confirm(tp('tools.overwrite_masks', masked));
   };
@@ -936,30 +955,24 @@ function MaskForm({
   const applyOne = async () => {
     try {
       await flush();
-      await post(`/api/image/tools/${kind}`, { id: item!.id, ...bodyOf() });
-      toast({ text: t(`tools.applied.${kind}`) });
+      const result = await submitToolBatch(kind, { ids: [item!.id], ...bodyOf() });
+      toast({ text: t('bulk.accepted', { n: result.accepted, id: result.id.slice(0, 8) }) });
       reload();
     } catch (err) {
       fail(err);
     }
   };
-  const withMask = list.filter((i) => ids.includes(i.id) && i[field]);
+  const withMask = ids;
   const applyChosen = async () => {
     try {
       await flush();
     } catch (err) {
       return fail(err);
     }
-    let done = 0;
-    for (const target of withMask) {
-      try {
-        await post(`/api/image/tools/${kind}`, { id: target.id, ...bodyOf() });
-        done += 1;
-      } catch (err) {
-        fail(err);
-      }
-    }
-    toast({ text: tp('tools.applied_chosen', done, ids.length - withMask.length) });
+    try {
+      const result = await submitToolBatch(kind, { ids, ...bodyOf() });
+      toast({ text: t('bulk.accepted', { n: result.accepted, id: result.id.slice(0, 8) }) });
+    } catch (err) { fail(err); }
     reload();
   };
   const markText = item?.[field] ? tp('tools.mask_state', item[field]!.source === 'detected' ? t('tools.detected') : t('tools.edited_by_hand')) : t('tools.no_mask');

@@ -204,6 +204,10 @@ class JobQueue:
         """A new queued job with the request of a failed, cancelled or interrupted one."""
         with self.lock:
             old = self.get(job_id)
+            if old.get('bulk_id'):
+                raise ValueError(
+                    Msg('server.bulk.retry_panel', 'Retry this job from its bulk request panel.')
+                )
             if old['status'] not in RETRYABLE:
                 raise ValueError(
                     Msg(
