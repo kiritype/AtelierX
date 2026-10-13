@@ -1,3 +1,4 @@
+import { submitToolBatch } from '../../lib/toolBatches';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
@@ -372,8 +373,8 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
               <button
                 onClick={async () => {
                   try {
-                    const result = await post('/api/image/tools/gallery', { paths: chosen.slice(0, 500) });
-                    toast({ text: t('gallery.sent_to_tools', { n: result.added.length }), action: { label: t('image_menu.tools'), run: openTools } });
+                    const result = await submitToolBatch('gallery', { paths: chosen });
+                    toast({ text: t('bulk.accepted', { n: result.accepted, id: result.id.slice(0, 8) }), action: { label: t('image_menu.tools'), run: openTools } });
                     qc.invalidateQueries({ queryKey: ['tool-items'] });
                   } catch (err) {
                     fail(err);

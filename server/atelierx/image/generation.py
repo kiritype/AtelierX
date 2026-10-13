@@ -306,11 +306,23 @@ class GenerationMixin:
         return {'ok': True}
 
     def retry(self, job_id):
+        if self.queue.get(job_id).get('bulk_id'):
+            raise ValueError(
+                Msg('server.bulk.retry_batch', 'Retry failed items from the bulk request panel.')
+            )
         self.queue.retry(job_id, attach=self.attach_retry)
         return {'ok': True}
 
     def remove_finished(self, job_id=None):
-        removed = self.queue.remove_finished(job_id)
+        with self.lock:
+            was_bulk = any(j['id'] == job_id and j.get('bulk_id') for j in self.queue.jobs)
+            bulk = getattr(self, 'bulk', None)
+            if bulk:
+                bulk.reconcile()
+            if was_bulk and not any(j['id'] == job_id for j in self.queue.jobs):
+                removed = 0
+            else:
+                removed = self.queue.remove_finished(job_id)
         self.after_remove()
         return {'ok': True, 'removed': removed}
 
@@ -405,11 +417,23 @@ class GenerationMixin:
 
     # --- worker ------------------------------------------------------------------------------------------------------
     def on_gpu(self, job):
+        if job.get('kind') in ('bulk_gallery', 'bulk_censor', 'bulk_alpha'):
+            return False
         service = self.services.get(job.get('service') or DEFAULT_SERVICE)
         return service is None or service.local_gpu
 
     def worker(self):
         while not self.stop.wait(0.5):
+            try:
+                self.bulk.pump()
+            except Exception:
+                log.exception('Bulk dispatch halted')
+                with self.lock:
+                    self.queue.paused = True
+                    try:
+                        self.queue.persist()
+                    except OSError:
+                        log.exception('Could not persist paused queue; execution remains paused')
             with self.lock:
                 upcoming = self.next_generation_job()
                 local = upcoming is not None and self.on_gpu(upcoming)
@@ -452,6 +476,13 @@ class GenerationMixin:
     def run_job(self, job):
         """Run one job that the worker (or a test) marked running, on its service, to its end."""
         try:
+            if job.get('bulk_id'):
+                if not self.bulk.check_job(job):
+                    return
+                if job.get('kind') in ('bulk_gallery', 'bulk_censor', 'bulk_alpha'):
+                    self.ensure_generation_safe()
+                    self.bulk.run_cpu(job)
+                    return
             service = self.service_for(job)
 
             def cancelling():
@@ -521,7 +552,8 @@ class GenerationMixin:
                     finished_at=now(),
                     progress=Msg('server.worker.failed', 'Failed'),
                 )
-                self.paused = True
+                if not job.get('bulk_id') or not isinstance(error, (OSError, ValueError)):
+                    self.paused = True
                 self.persist()
 
     @staticmethod
