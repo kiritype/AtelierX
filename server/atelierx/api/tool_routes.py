@@ -18,6 +18,13 @@ def _ids(request):
     return [i for i in request.query_params.get('ids', '').split(',') if i]
 
 
+def _number(request, name, default):
+    try:
+        return int(request.query_params[name]) if name in request.query_params else default
+    except ValueError as error:
+        raise AppError(Msg('server.bulk.page', 'Invalid page number.'), 400) from error
+
+
 async def _bytes(fn, *args):
     try:
         return await run_in_threadpool(fn, *args)
@@ -32,7 +39,13 @@ def _download(raw, name, kind):
 
 
 async def items(request):
-    return await call(_runtime(request).tools.public)
+    offset = _number(request, 'offset', 0)
+    limit = _number(request, 'limit', None)
+    return await call(_runtime(request).tools.public, offset, limit)
+
+
+async def item_ids(request):
+    return await call(_runtime(request).tools.ids)
 
 
 async def analyze(request):
@@ -144,10 +157,36 @@ def _post(attr, key=None):
     return handler
 
 
+async def batches(request):
+    return await call(_runtime(request).bulk.list)
+
+
+async def batch_details(request):
+    return await call(
+        _runtime(request).bulk.details,
+        request.path_params['batch'],
+        _number(request, 'offset', 0),
+        _number(request, 'limit', 100),
+    )
+
+
+async def batch_action(request):
+    runtime = _runtime(request)
+    action = request.path_params['action']
+    if action not in ('cancel', 'retry'):
+        raise AppError(Msg('server.bulk.action', 'Unknown bulk action.'), 400)
+    return await call(getattr(runtime.bulk, action), request.path_params['batch'])
+
+
 def routes():
     p = '/api/image/tools'
     return [
         Route(f'{p}/items', items),
+        Route(f'{p}/ids', item_ids),
+        Route(f'{p}/batches', batches),
+        Route(f'{p}/batches', _post('bulk.submit'), methods=['POST']),
+        Route(f'{p}/batches/{{batch}}', batch_details),
+        Route(f'{p}/batches/{{batch}}/{{action}}', batch_action, methods=['POST']),
         Route(f'{p}/analyze', analyze),
         Route(f'{p}/tagger', tagger_info),
         Route(f'{p}/postprocess', postprocess_info),
