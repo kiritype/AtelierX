@@ -44,7 +44,7 @@ export default function ImageScreen({
   if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
   if (view === 'queue') return <ImageQueue />;
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
-  if (view === 'lab') return <ImageLab workId={workId} />;
+  if (view === 'lab') return <ImageLab workId={workId} active={active} />;
   if (view === 'tools') return <ImageTools active={active} openLab={() => openView('lab')} openSettings={openSettings} />;
   if (view === 'lora') return <ImageLora workId={workId} initialCharacterId={characterId} initialOutfitId={outfitId} openLab={() => openView('lab')} />;
   return (
