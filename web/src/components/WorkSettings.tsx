@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, get, patch } from '../api';
 import { t, tm } from '../i18n';
 import type { WorkInfo } from '../types';
 import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
+import { useUnsaved } from './Unsaved';
 
 function flattenValues(value: any, sources: any, prefix = ''): { key: string; value: any; source: string }[] {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -21,6 +22,12 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
   const [scale, setScale] = useState(doc.scale);
   const [language, setLanguage] = useState(doc.language);
   const [char, setChar] = useState(doc.char ?? '');
+  const form = { tags, scale, language, char: char || null };
+  const currentForm = useRef(form);
+  currentForm.current = form;
+  const [savedForm, setSavedForm] = useState(form);
+  const saving = useRef<Promise<boolean> | null>(null);
+  useUnsaved('work-settings', JSON.stringify(form) !== JSON.stringify(savedForm), saveForm);
   const presetIds = new Set(info.presets.map((p) => p.id));
   const providers = useQuery<any>({ queryKey: ['providers'], queryFn: () => get('/api/providers') });
 
@@ -30,9 +37,23 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
       qc.invalidateQueries({ queryKey: ['work', workId] });
       qc.invalidateQueries({ queryKey: ['check', workId] });
       toast({ text: t('common.saved') });
+      return true;
     } catch (err) {
       toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
+      return false;
     }
+  }
+
+  async function saveForm(): Promise<boolean> {
+    if (saving.current) return saving.current;
+    const snapshot = currentForm.current;
+    const pending = save(snapshot).then((ok) => {
+      if (ok) setSavedForm(snapshot);
+      // An edit during the request remains dirty and keeps the close guard open.
+      return ok && JSON.stringify(currentForm.current) === JSON.stringify(snapshot);
+    }).finally(() => { saving.current = null; });
+    saving.current = pending;
+    return pending;
   }
 
   const rows = flattenValues(info.effective.values, info.effective.sources).filter((r) => !r.key.startsWith('jsx.globals'));
@@ -75,7 +96,7 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
         <span className="faint">{t('works.tags_note')}</span>
       </label>
       <div>
-        <button className="primary" onClick={() => save({ tags, scale, language, char: char || null })}>
+        <button className="primary" onClick={saveForm}>
           {t('common.save')}
         </button>
       </div>

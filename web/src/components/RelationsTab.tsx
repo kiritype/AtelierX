@@ -21,6 +21,7 @@ import { t, tm } from '../i18n';
 import { createSaver } from '../lib/exampleSaver';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
 import { useToast } from './Toasts';
+import { useUnsaved } from './Unsaved';
 
 type Person = { id: string; name: string; path?: string; source: 'reserved' | 'character' | 'extra'; note?: string; char?: boolean };
 type Relation = { from: string; to: string; kind?: string; calls?: string; note?: string };
@@ -53,6 +54,7 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
   const [focus, setFocus] = useState<string | null>(null);
   const revision = useRef<string | undefined>(undefined);
   const [saveError, setSaveError] = useState('');
+  const [dirty, setDirty] = useState(false);
   const saver = useMemo(() => createSaver<string>(async (_, text) => {
     const saved = await put<Doc>(`/api/works/${workId}/relations`, { ...JSON.parse(text), revision: revision.current });
     revision.current = saved.revision;
@@ -61,6 +63,7 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
     return saved;
   }, {
     delay: 600,
+    onChange: setDirty,
     onSaved: (_, response, clean) => {
       const saved = response as Doc;
       setSaveError('');
@@ -72,6 +75,14 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
     },
     onError: (err) => setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err)),
   }), [workId, qc]);
+  useUnsaved('relations', dirty, async () => {
+    try {
+      return (await saver.flush()).clean;
+    } catch (err) {
+      setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err));
+      return false;
+    }
+  });
 
   useEffect(() => {
     saver.activate();
