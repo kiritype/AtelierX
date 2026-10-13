@@ -23,7 +23,7 @@
 .single-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .single-result-head h3 { margin: 0; }
 .single-result-head [role=status] { color: var(--text-2); }
-.single-canvas { position: relative; width: 100%; height: min(54vh, 560px); min-height: 220px; display: grid; place-items: center; padding: 0; border: 0; background: var(--panel-2); border-radius: var(--radius); overflow: hidden; }
+.single-canvas { position: relative; width: 100%; height: min(54vh, 560px); display: grid; place-items: center; padding: 0; border: 0; background: var(--panel-2); border-radius: var(--radius); overflow: hidden; }
 button.single-canvas { cursor: zoom-in; }
 .single-canvas img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
 .single-empty { padding: 24px; text-align: center; color: var(--text-3); }
