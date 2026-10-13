@@ -2479,5 +2479,8 @@
   "single.history": "Recent generations for this work",
   "single.service_unavailable": "Connect this service's API key in Settings → Image.",
   "single.compare_comfy_only": "Generation comparison currently supports ComfyUI settings only.",
-  "single.handoff_failed": "Could not add this image to the tools workspace."
+  "single.handoff_failed": "Could not add this image to the tools workspace.",
+  "gallery.original_unknown": "The source path is not in the record. This sends the current image. Select its original in the gallery to remask it.",
+  "gallery.already_in_tools": "This image is already in Image tools.",
+  "gallery.send_original": "Send the source image for remasking"
 }
