@@ -9,6 +9,7 @@ import { MODEL_WORDS, splitTags } from '../../lib/tags';
 import { useToast } from '../Toasts';
 import { sendToLab } from './ImageLab';
 import PromptConverter, { type PromptHandoff } from './PromptConverter';
+import { TOOL_HANDOFF, takeToolHandoff } from '../../lib/toolHandoff';
 import type { PostInfo, TaggerInfo, ToolInfo, ToolMethods } from '../../imageTypes';
 
 type Mark = { source: string; updated_at: string };
@@ -107,7 +108,7 @@ function ComfyNotice({ info, openSettings, recheck }: { info: ToolInfo; openSett
 
 // Image menu → Image tools: a workspace of uploaded and gallery images, their metadata and tags, WebP conversion,
 // post-processing (upscale, detailer), censor, background removal, inpaint and prompt-format conversion.
-export default function ImageTools({ openLab, openSettings }: { openLab: () => void; openSettings?: OpenSettings }) {
+export default function ImageTools({ openLab, openSettings, active = true }: { openLab: () => void; openSettings?: OpenSettings; active?: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
@@ -130,6 +131,17 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [currentId, setCurrentId] = useState('');
   const [tab, setTab] = useState<Tab>('convert');
+  const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const receive = () => {
+      const id = takeToolHandoff();
+      if (id) { setPendingSelection(id); qc.invalidateQueries({ queryKey: ['tool-items'] }); }
+    };
+    receive();
+    window.addEventListener(TOOL_HANDOFF, receive);
+    return () => window.removeEventListener(TOOL_HANDOFF, receive);
+  }, [qc, active]);
   // Where the tab's work runs (#151): this PC or an internet service; each tab keeps its last choice.
   const [remembered, setRemembered] = useState(readMethods);
   const method = pickMethod(tab, methods.data?.features, remembered);
@@ -180,6 +192,15 @@ export default function ImageTools({ openLab, openSettings }: { openLab: () => v
     if (id !== currentId && !leaveEditor()) return;
     setCurrentId(id);
   };
+  useEffect(() => {
+    if (!active || !pendingSelection || !list.some(item => item.id === pendingSelection)) return;
+    if (leaveEditor()) {
+      setCurrentId(pendingSelection);
+      setChosen(new Set([pendingSelection]));
+      setTab('censor');
+    }
+    setPendingSelection(null);
+  }, [pendingSelection, items.data, active]);
   const toggle = (id: string, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(id);

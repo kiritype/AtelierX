@@ -54,6 +54,25 @@ def upload(c, name, raw):
     return c.post('/api/image/tools/upload', content=raw, headers={'X-File-Name': name}).json()
 
 
+def test_gallery_send_returns_existing_selection_at_capacity(unlocked, paths, monkeypatch):
+    from atelierx.image.tools import workspace
+
+    paths.output.mkdir(parents=True, exist_ok=True)
+    (paths.output / 'source.png').write_bytes(png())
+    (paths.output / 'other.png').write_bytes(png())
+    monkeypatch.setattr(workspace, 'MAX_ITEMS', 1)
+    first = unlocked.post('/api/image/tools/gallery', json={'paths': ['source.png']})
+    assert first.status_code == 200
+    item_id = first.json()['items'][0]['id']
+    again = unlocked.post('/api/image/tools/gallery', json={'paths': ['source.png', 'source.png']})
+    assert again.status_code == 200
+    assert again.json()['added'] == []
+    assert [item['id'] for item in again.json()['items']] == [item_id]
+    full = unlocked.post('/api/image/tools/gallery', json={'paths': ['other.png']})
+    assert full.status_code == 400
+    assert full.json()['error']['key'] == 'server.workspace.the_image_tools_list_holds_up'
+
+
 def test_workspace_convert_mask_and_cpu_tools(unlocked):
     c = unlocked
     params = 'masterpiece, 1girl\nNegative prompt: lowres\nSteps: 20, Sampler: Euler a, CFG scale: 5, Seed: 7'
