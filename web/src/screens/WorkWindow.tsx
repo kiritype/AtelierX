@@ -535,6 +535,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                     {tab.type === 'glossary' && <GlossaryTab workId={workId} />}
                     {tab.type === 'image' && (
                       <ImageScreen
+                        active={key === active}
                         workId={workId}
                         view={tab.view}
                         characterId={tab.characterId}
