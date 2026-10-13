@@ -2432,5 +2432,17 @@
   "gen.table.column_hint": "Every character with this outfit",
   "gen.table.row_hint": "Every outfit of this character",
   "gen.bar_summary": "{chars} characters · {outfits} outfits · {exprs} expressions →",
-  "gen.bar_total": "{targets} combinations × {count} = {n} images"
+  "gen.bar_total": "{targets} combinations × {count} = {n} images",
+  "deploy.status.existing": "Exists (compare on upload)",
+  "deploy.status.converting": "Converting",
+  "deploy.status.uploading": "Uploading",
+  "deploy.status.uploaded": "Uploaded",
+  "deploy.status.overwritten": "Overwritten",
+  "deploy.status.failed": "Failed",
+  "deploy.upload_candidates": "Upload {n} candidates ({m} existing: changed files only)",
+  "deploy.skipped": "{n} unchanged",
+  "deploy.log_failed": "Could not save the remote operation result",
+  "deploy.history": "Recent upload history (100 records)",
+  "deploy.history_empty": "No upload history yet.",
+  "deploy.history_failed": "Could not read upload history."
 }

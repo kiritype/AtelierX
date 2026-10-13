@@ -2603,5 +2603,17 @@
   "gen.table.column_hint": "이 의상을 가진 캐릭터 모두",
   "gen.table.row_hint": "이 캐릭터의 의상 모두",
   "gen.bar_summary": "캐릭터 {chars} · 의상 {outfits} · 표정 {exprs} →",
-  "gen.bar_total": "조합 {targets}개 × {count}장 = 총 {n}장"
+  "gen.bar_total": "조합 {targets}개 × {count}장 = 총 {n}장",
+  "deploy.status.existing": "이미 있음(올릴 때 비교)",
+  "deploy.status.converting": "변환 중",
+  "deploy.status.uploading": "업로드 중",
+  "deploy.status.uploaded": "올림",
+  "deploy.status.overwritten": "덮어씀",
+  "deploy.status.failed": "실패",
+  "deploy.upload_candidates": "올릴 후보 {n}개 (이미 있는 {m}개는 바뀐 것만 올림)",
+  "deploy.skipped": "변경 없음 {n}개",
+  "deploy.log_failed": "원격 처리 결과 기록을 저장하지 못했습니다",
+  "deploy.history": "최근 업로드 기록 (100건)",
+  "deploy.history_empty": "아직 업로드 기록이 없습니다.",
+  "deploy.history_failed": "업로드 기록을 읽지 못했습니다."
 }

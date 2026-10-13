@@ -924,6 +924,20 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 대기열 작업(`state/image/queue.json`)과 생성 기록에는 `service`가 붙는다. 이 PC의 GPU를 쓰는 서비스(ComfyUI)의 작업만 GPU 차례를
   기다리고, LoRA 학습·로컬 LLM도 그 작업만 기다린다.
 
+#### 배포 기록 (`<작품>/.atelierx/deploy-log.jsonl`)
+
+새로운 추가 전용 JSONL 형식이며 각 행의 `schema_version`은 1이다. 기존 버전은 기록이 없으므로 빈 이력으로 읽는다. 기존 작품/배포 설정 형식은 바뀌지 않는다. 앱은 잘린 마지막 행과 알 수 없는 버전의 행을 건너뛴다.
+
+```json
+{"schema_version":1,"at":"2026-10-13T12:00:00","run":"abc123","target":"r2-main","target_name":"이미지","destination":{"account_id":"example","bucket":"images"},"path":"W001/C001/o01/002.webp","source":"W001/C001/o01/smile/a.png","source_sha256":"sha256","md5":"webp-md5","bytes":12345,"url":"https://img.example.com/W001/C001/o01/002.webp","status":"uploaded","ok":true,"overwrote":false}
+```
+
+- `status`: `uploaded`, `overwritten`, `unchanged`, `failed`. 실패는 `error` 메시지 객체(`key`, `text`, `values`; 일반 오류는 문자열)를 추가하며 아직 읽기/변환하지 못한 해시·크기는 null이다.
+- `destination`은 대상 ID를 다른 계정/버킷에 재사용할 때 오판하지 않기 위한 식별값이다. 인증 정보는 기록하지 않는다.
+- 최신 동일 대상/목적지/경로 기록의 원본 경로·SHA256과 WebP MD5를 현재 원본·ETag에 비교한다. 실패 기록은 변경 없음 판단에 쓰지 않는다.
+- API/UI는 최신 100건을 돌려준다. 파일은 전체 기록을 보존한다. 원격 업로드 후 기록 저장 실패는 실행 응답의 `log_error`로 따로 알린다.
+- 취소로 처리하지 않은 파일은 완료 기록을 만들지 않는다. 새 실행 상태는 메모리에 있으며 완료 파일 기록만 영구 보존한다.
+
 #### 배포 대상 (`<데이터 루트>/image/deploy.json`)
 
 채택 이미지를 올릴 곳이다. 지금은 Cloudflare R2(S3 호환 API)만 있다. 동작은 [25](features/25-deployment.md).
