@@ -1,33 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { get, post, put } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
 
 type Scope = { work?: string; character?: string; outfit?: string };
-type Target = { id: string; name: string; ready: boolean; path_format: string; public_url: string };
-type Row = {
-  source: string;
-  thumbnail_url?: string;
-  character_id: string;
-  outfit_id: string;
-  outfit_code: string;
-  expression_id: string;
-  expression_name: string;
-  expression_code: string;
-  rating: string;
-  auto_path: string | null;
-  path: string | null;
-  edited: boolean;
-  status: 'new' | 'overwrite' | 'unchanged' | 'no_code' | 'clash';
-  url?: string;
-};
-type Plan = { target: string; target_name: string; public_url: string; path_format: string; rows: Row[]; counts: Record<string, number>; missing: string[] };
-type Result = { path: string; url: string; ok: boolean; overwrote: boolean; error?: { key: string; text: string } };
-type Run = { id: string; status: string; total: number; done: number; results: Result[] };
+import type { DeployTarget as Target, DeployRow as Row, DeployPlan as Plan, DeployRun as Run, DeployHistory as History } from '../../imageTypes';
 
-const STATUSES: Row['status'][] = ['new', 'overwrite', 'unchanged', 'no_code', 'clash'];
-const CHIP: Record<Row['status'], string> = { new: 'ok', overwrite: 'accent', unchanged: '', no_code: 'warn', clash: 'warn' };
+const STATUSES: Row['status'][] = ['new', 'existing', 'unchanged', 'no_code', 'clash'];
+const CHIP: Record<Row['status'], string> = { new: 'ok', existing: 'accent', unchanged: '', no_code: 'warn', clash: 'warn' };
 
 function saveText(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -43,6 +24,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   const qc = useQueryClient();
   const toast = useToast();
   const work = scope.work;
+  const history = useQuery<History>({ queryKey: ['deploy-history', work], queryFn: () => get(`/api/works/${work}/image/deploy/history`), enabled: !!work });
   const targets = useQuery<{ targets: Target[] }>({ queryKey: ['deploy-targets'], queryFn: () => get('/api/image/deploy/targets') });
   const saved = useQuery<{ target: string | null; path_format: string | null }>({
     queryKey: ['work-deploy', work],
@@ -84,7 +66,10 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   // After an upload, the preview shows what the bucket holds now.
   const finishedId = run && !['running', 'cancelling'].includes(run.status) ? run.id : '';
   useEffect(() => {
-    if (finishedId) preview();
+    if (finishedId) {
+      preview();
+      qc.invalidateQueries({ queryKey: ['deploy-history', work] });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finishedId]);
 
@@ -134,12 +119,14 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
 
   const list = targets.data?.targets ?? [];
   const chosen = list.find((x) => x.id === target);
-  const sendable = plan ? plan.rows.filter((r) => r.status === 'new' || r.status === 'overwrite').length : 0;
+  const sendable = plan ? plan.rows.filter((r) => r.status === 'new' || r.status === 'existing').length : 0;
   const running = !!run && ['running', 'cancelling'].includes(run.status);
   const finished = !!run && !running;
   const failed = run?.results.filter((r) => !r.ok) ?? [];
-  const uploaded = run?.results.filter((r) => r.ok) ?? [];
+  const uploaded = run?.results.filter((r) => r.ok && r.status !== 'unchanged') ?? [];
+  const skipped = run?.results.filter((r) => r.status === 'unchanged') ?? [];
   const overwritten = uploaded.filter((r) => r.overwrote);
+  const resultStates = new Map(run?.results.map((r) => [r.source, r.status]));
   const urls = (plan?.rows ?? []).filter((r) => r.url && r.status !== 'no_code' && r.status !== 'clash').map((r) => r.url!);
 
   return (
@@ -199,7 +186,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
               {chosen && /\.r2\.dev(\/|$)/i.test(chosen.public_url) && <span className="warn-text">{t('deploy.r2dev')}</span>}
             </div>
             <div className="row">
-              <button className="primary" disabled={busy || running || !target || noRatings} onClick={preview}>
+              <button className="primary" disabled={busy || running || !target || noRatings} onClick={() => { setRun(null); preview(); }}>
                 {plan ? t('deploy.preview_again') : t('deploy.preview')}
               </button>
               {noRatings && <span className="warn-text small">{t('deploy.no_ratings')}</span>}
@@ -255,7 +242,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                         />
                       </td>
                       <td>
-                        <span className={`chip small ${CHIP[row.status]}`}>{t(`deploy.status.${row.status}`)}</span>
+                        <span className={`chip small ${CHIP[row.status]}`}>{t(`deploy.status.${run?.current?.source === row.source ? run.current.status : resultStates.get(row.source) ?? row.status}`)}</span>
                       </td>
                     </tr>
                   ))}
@@ -281,12 +268,13 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             </div>
             {finished && (
               <>
-                <span className="small">{t('deploy.result', { ok: uploaded.length, failed: failed.length })}</span>
+                <span className="small">{t('deploy.result', { ok: uploaded.length, failed: failed.length })} · {t('deploy.skipped', { n: skipped.length })}</span>
+                {run.results.filter((r) => r.log_error).map((r) => <span key={r.path} className="warn-text small">{t('deploy.log_failed')}: {r.path} — {msgText(r.log_error)}</span>)}
                 {failed.length > 0 && (
                   <div className="col small">
                     {failed.map((r) => (
                       <span key={r.path} className="error-text">
-                        <span className="mono">{r.path}</span>: {r.error ? tm(r.error) : ''}
+                        <span className="mono">{r.path}</span>: {r.error ? msgText(r.error) : ''}
                       </span>
                     ))}
                     <div>
@@ -306,6 +294,14 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
           </div>
         )}
 
+        <details>
+          <summary>{t('deploy.history')}</summary>
+          {history.isError && <span className="error-text">{t('deploy.history_failed')}</span>}
+          {!history.isPending && !history.isError && !history.data?.records.length && <p className="faint small">{t('deploy.history_empty')}</p>}
+          <div className="col small" style={{ maxHeight: 180, overflow: 'auto' }}>
+            {(history.data?.records ?? []).map((r, i) => <div key={`${r.at}-${i}`}><span className="faint">{r.at} · {r.target_name}</span> · <span className="mono">{r.path}</span> · {t(`deploy.status.${r.status}`)}{r.error && <span className="error-text"> — {msgText(r.error)}</span>}</div>)}
+          </div>
+        </details>
         <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           {plan && urls.length > 0 && (
             <>
@@ -319,7 +315,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             {t('common.close')}
           </button>
           <button className="primary" disabled={busy || running || !plan || sendable === 0 || noRatings} onClick={() => upload()}>
-            {t('deploy.upload_n', { n: sendable })}
+            {t('deploy.upload_candidates', { n: sendable, m: plan?.counts.existing ?? 0 })}
           </button>
         </div>
       </div>
