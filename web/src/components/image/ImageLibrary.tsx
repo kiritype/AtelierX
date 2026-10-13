@@ -6,13 +6,14 @@ import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
-import { afterSave, followSelection } from '../../lib/libraryDraft';
+import { afterRevisionSave, followSelection } from '../../lib/libraryDraft';
 import LibraryImport from './LibraryImport';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'targets'];
 type Item = {
   id: string;
+  revision?: string;
   name: string;
   prompt: string[];
   negative?: string[];
@@ -78,6 +79,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<(Item & { scope: 'global' | 'work' }) | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   // Items checked for export (#154); none checked exports the whole list.
   const [checked, setChecked] = useState<string[]>([]);
@@ -110,10 +112,11 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   const overridingGlobal = stored?.scope === 'global' && draft?.scope === 'work';
 
   function pick(id: string) {
-    if (id === selected && draft?.id === id) return;
+    if (id === selected && draft?.id === id && conflict !== id) return;
     if (dirty && !confirm(t('lib.discard_confirm'))) return;
     const item = items.data?.[id];
     setSelected(id);
+    setConflict(null);
     setDraft(item ? { ...item, scope: item.scope ?? 'global' } : null);
   }
 
@@ -126,18 +129,38 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
     try {
       const result = await put<Record<string, Item>>(`/api/image/library/${kind}/${id}`, {
         scope,
+        revision: sent.revision,
         work: workId,
         item,
         ...(movingToGlobal ? { from_scope: 'work' } : {}),
       });
       qc.setQueryData(key, result);
+      setConflict((current) => current === id ? null : current);
       const saved = result[id];
       // Typing on, or opening another item, while the save was on its way wins over the answer.
       setSelected((current) => (current === sentSelection ? id : current));
-      setDraft((current) => afterSave(current, sent, saved ? { ...saved, scope: saved.scope ?? 'global' } : null));
+      setDraft((current) => afterRevisionSave(current, sent, saved ? { ...saved, scope: saved.scope ?? 'global' } : null));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        // Refresh the list, but keep both the local text and its old base revision.
+        // Only an explicit discard/reopen may advance the base after a rejected save.
+        setConflict(sent.id);
+        await items.refetch();
+        toast({ text: t('lib.conflict_preserved'), tone: 'error' });
+        return;
+      }
       fail(err);
     }
+  }
+
+  async function reloadConflict() {
+    if (!draft || !confirm(t('lib.discard_confirm'))) return;
+    const sent = draft;
+    const fresh = await items.refetch();
+    if (fresh.error) { fail(fresh.error); return; }
+    const latest = fresh.data?.[sent.id];
+    setDraft((current) => current === sent ? (latest ? { ...latest, scope: latest.scope ?? 'global' } : null) : current);
+    setConflict((current) => current === sent.id ? null : current);
   }
 
   function create() {
@@ -389,6 +412,9 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
               <span className="faint small">{t('lib.targets_all')}</span>
             </div>
             <div className="row">
+              {conflict === draft.id && (
+                <button onClick={reloadConflict}>{t('lib.reload_conflict')}</button>
+              )}
               <button className="primary" onClick={save}>
                 {t('common.save')}
               </button>
@@ -398,7 +424,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   onClick={async () => {
                     if (!confirm(t('lib.delete_confirm', { id: draft.id }))) return;
                     try {
-                      qc.setQueryData(key, await del(`/api/image/library/${kind}/${draft.id}?scope=${draft.scope}&work=${workId}`));
+                      qc.setQueryData(key, await del(`/api/image/library/${kind}/${draft.id}?scope=${draft.scope}&work=${workId}&revision=${encodeURIComponent(draft.revision ?? "")}`));
                       setSelected(null);
                     } catch (err) {
                       fail(err);

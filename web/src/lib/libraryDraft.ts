@@ -9,3 +9,10 @@ export function followSelection<T extends { id: string }>(current: T | null, sel
 export function afterSave<T>(current: T | null, sent: T, saved: T | null): T | null {
   return current === sent ? saved : current;
 }
+
+// A successful save advances the base of edits typed during that request, without replacing their text.
+export function afterRevisionSave<T extends { id: string; revision?: string }>(current: T | null, sent: T, saved: T | null): T | null {
+  const next = afterSave(current, sent, saved);
+  return next && next.id === sent.id && next.revision === sent.revision && saved
+    ? { ...next, revision: saved.revision } : next;
+}
