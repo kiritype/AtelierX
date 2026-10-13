@@ -20,6 +20,7 @@ FIELDS = ('name', 'group', 'targets', 'prompt', 'negative', 'code', 'rating', 'c
           'hide_outfit', 'target', 'default', 'slot')
 
 
+@library.locked
 def export(paths, work, kind, ids):
     """``(document, file name)`` of the chosen items of one kind (all when ``ids`` is empty), as the list shows them."""
     merged = library.items(paths, work, kind)
@@ -145,6 +146,7 @@ def _changes(old, new):
     return out
 
 
+@library.locked
 def preview(paths, work, kind, doc, scope):
     """Each item of the file: ``{id, name, scope (in the file), exists, here_scope, changes, unknown, shadowed}``."""
     raw_items = _read(kind, doc)
@@ -169,6 +171,7 @@ def preview(paths, work, kind, doc, scope):
         out.append(
             {
                 'id': ident,
+                'revision': library.item_revision(paths, work, kind, ident),
                 'name': item['name'] or ident,
                 'scope': raw.get('scope') if raw.get('scope') in library.SCOPES else None,
                 'exists': old is not None,
@@ -184,7 +187,8 @@ def preview(paths, work, kind, doc, scope):
     return {'app_version': doc.get('app_version'), 'items': out, 'skipped': skipped}
 
 
-def apply(paths, work, kind, doc, scope, choices):
+@library.locked
+def apply(paths, work, kind, doc, scope, choices, base_revisions=None):
     """``choices``: ``{id: 'add' | 'overwrite' | 'skip'}``; an id not named is added when new and skipped when here.
     Everything is checked before anything is written. Returns ``{written, items}``."""
     raw_items = _read(kind, doc)
@@ -203,6 +207,7 @@ def apply(paths, work, kind, doc, scope, choices):
             )
         if choice == 'skip' or (choice == 'add' and ident in merged):
             continue
+        library.revisions.check((base_revisions or {}).get(ident), library.item_revision(paths, work, kind, ident))
         plan[ident] = item
     if plan:
         path = library._file(paths, work, kind, scope)

@@ -11,6 +11,8 @@ from conftest import FAST_KDF
 
 def _put(c, kind, ident, scope='global', wid=None, **item):
     body = {'scope': scope, 'work': wid, 'item': {'name': ident, 'prompt': [f'{ident} tag'], **item}}
+    current = c.get(f'/api/image/library/{kind}', params={'work': wid} if wid else {}).json().get(ident)
+    body['revision'] = current and current['revision']
     assert c.put(f'/api/image/library/{kind}/{ident}', json=body).status_code == 200
 
 
@@ -47,7 +49,7 @@ def test_chosen_items_move_to_another_root_unchanged(unlocked, other):
     mine = c.get(f'/api/image/library/compositions?work={wid}').json()
     theirs = other.get('/api/image/library/compositions').json()
     for ident in ('wide', 'close'):
-        drop = ('scope', 'overrides')
+        drop = ('scope', 'overrides', 'revision')
         assert {k: v for k, v in theirs[ident].items() if k not in drop} == {
             k: v for k, v in mine[ident].items() if k not in drop
         }
@@ -75,7 +77,11 @@ def test_same_id_shows_the_changes_and_overwrite_or_skip_follow_the_choice(unloc
 
     choices = {'smile': 'overwrite', 'cry': 'skip'}
     done = c.post(
-        '/api/image/library-share/expressions/import', json={'file': doc, 'scope': 'global', 'choices': choices}
+        '/api/image/library-share/expressions/import',
+        json={
+            'file': doc, 'scope': 'global', 'choices': choices,
+            'revisions': {r['id']: r['revision'] for r in rows.values()},
+        }
     ).json()
     assert sorted(done['written']) == ['smile', 'wink']
     items = c.get('/api/image/library/expressions').json()
@@ -99,7 +105,10 @@ def test_items_go_to_the_chosen_scope(unlocked):
     assert rows[0]['exists'] and rows[0]['here_scope'] == 'global'
     c.post(
         '/api/image/library-share/common/import',
-        json={'file': doc, 'scope': 'work', 'work': wid, 'choices': {'quality': 'overwrite'}},
+        json={
+            'file': doc, 'scope': 'work', 'work': wid, 'choices': {'quality': 'overwrite'},
+            'revisions': {'quality': rows[0]['revision']},
+        },
     )
     merged = c.get(f'/api/image/library/common?work={wid}').json()['quality']
     assert merged['scope'] == 'work' and merged['overrides'] and merged['prompt'] == ['best quality']

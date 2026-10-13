@@ -190,6 +190,7 @@ async def library_put(request):
         p['ident'],
         data.get('item'),
         data.get('from_scope'),
+        data.get('revision'),
     )
 
 
@@ -198,7 +199,15 @@ async def library_delete(request):
     work = _work_or_none(runtime, request)
     p = request.path_params
     scope = request.query_params.get('scope', 'global')
-    return await call(library.delete_item, runtime.paths, work, p['kind'], scope, p['ident'])
+    return await call(
+        library.delete_item,
+        runtime.paths,
+        work,
+        p['kind'],
+        scope,
+        p['ident'],
+        request.query_params.get('revision'),
+    )
 
 
 async def library_export(request):
@@ -206,7 +215,9 @@ async def library_export(request):
     work = _work_or_none(runtime, request)
     ids = [i for i in request.query_params.get('ids', '').split(',') if i]
     try:
-        doc, name = await run_in_threadpool(library_share.export, runtime.paths, work, request.path_params['kind'], ids)
+        doc, name = await run_in_threadpool(
+            library_share.export, runtime.paths, work, request.path_params['kind'], ids
+        )
     except ValueError as error:
         raise AppError(_as_msg(error), 400) from error
     return Response(
@@ -229,7 +240,7 @@ async def library_import_preview(request):
 
 
 async def library_import(request):
-    return await _library_import(request, library_share.apply, 'choices')
+    return await _library_import(request, library_share.apply, 'choices', 'revisions')
 
 
 async def presets_get(request):

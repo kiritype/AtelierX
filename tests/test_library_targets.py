@@ -6,9 +6,15 @@ from atelierx.image import library
 
 
 def _style(c, wid, ident, kind='compositions', **item):
+    current = c.get(f'/api/image/library/{kind}?work={wid}').json().get(ident)
     return c.put(
         f'/api/image/library/{kind}/{ident}',
-        json={'scope': 'work', 'work': wid, 'item': {'name': ident, 'prompt': [f'{ident} tag'], **item}},
+        json={
+            'revision': current and current['revision'],
+            'scope': 'work',
+            'work': wid,
+            'item': {'name': ident, 'prompt': [f'{ident} tag'], **item},
+        },
     ).json()
 
 

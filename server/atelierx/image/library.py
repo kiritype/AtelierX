@@ -6,9 +6,43 @@ with the same id overrides the global one.
 import hashlib
 import json
 import re
+import threading
+from functools import wraps
 
+from ..core import revisions
 from ..core.i18n import Msg
 from .util import atomic_json, now, read_json
+
+# One reentrant transaction boundary also covers moves between global/work files and imports.
+# These JSON documents are small; serializing them avoids lock-order inversions across scopes.
+_lock = threading.RLock()
+_UNCHECKED = object()
+
+
+def locked(fn):
+    @wraps(fn)
+    def run(*args, **kwargs):
+        with _lock:
+            return fn(*args, **kwargs)
+
+    return run
+
+
+@locked
+def item_revision(paths, work, kind, ident):
+    values = {'global': None, 'work': None}
+    for scope in SCOPES:
+        if scope == 'work' and work is None:
+            continue
+        values[scope] = ((read_json(_file(paths, work, kind, scope), {}) or {}).get('items') or {}).get(ident)
+    return _revision(values)
+
+
+def _revision(values):
+    if not any(value is not None for value in values.values()):
+        return None
+    return revisions.of(values)
+
 
 KINDS = ('expressions', 'compositions', 'common', 'outfits')
 SCOPES = ('global', 'work')
@@ -49,6 +83,7 @@ def clean_code(value):
     return code
 
 
+@locked
 def fill_default_codes(paths):
     """Give the global expressions that came with the app the codes the defaults have now, once.
 
@@ -98,16 +133,21 @@ def fits(item, target):
     return not target or not wanted or target in wanted
 
 
+@locked
 def items(paths, work, kind):
     """Merged items of one kind: {id: {..., 'group', 'targets', 'scope': 'global'|'work', 'overrides': bool}}."""
     _check_kind(kind)
     known = {t['id'] for t in compose_rules(paths)['targets']}
     merged = {}
+    documents = {
+        scope: (read_json(_file(paths, work, kind, scope), {}) or {}).get('items') or {}
+        for scope in SCOPES
+        if scope != 'work' or work is not None
+    }
     for scope in SCOPES:
         if scope == 'work' and work is None:
             continue
-        doc = read_json(_file(paths, work, kind, scope), {}) or {}
-        for ident, item in (doc.get('items') or {}).items():
+        for ident, item in documents[scope].items():
             entry = {k: v for k, v in item.items() if k != 'model_family'}
             merged[ident] = {
                 **entry,
@@ -116,6 +156,7 @@ def items(paths, work, kind):
                 'id': ident,
                 'scope': scope,
                 'overrides': ident in merged,
+                'revision': _revision({key: documents.get(key, {}).get(ident) for key in SCOPES}),
             }
     return merged
 
@@ -148,6 +189,7 @@ def _clean_targets(value):
     return out[:MAX_TARGETS]
 
 
+@locked
 def save_targets(paths, targets):
     """Replace the target list in the global compose.json. Items keep their choices; a target no longer listed is
     ignored, so an item written only for it fits every target again."""
@@ -212,7 +254,8 @@ def clean_item(kind, item, rules):
     return out
 
 
-def save_item(paths, work, kind, scope, ident, item, from_scope=None):
+@locked
+def save_item(paths, work, kind, scope, ident, item, from_scope=None, base_revision=_UNCHECKED):
     """Write an item to `scope`. With `from_scope` (where the item was loaded from) set to the other scope, the item
     moves: it is written to `scope` and taken out of `from_scope`, so it is not left behind in both (#147)."""
     _check_kind(kind)
@@ -221,21 +264,34 @@ def save_item(paths, work, kind, scope, ident, item, from_scope=None):
     if from_scope is not None and from_scope not in SCOPES:
         raise ValueError(Msg('server.image.library.unknown_scope', 'Choose global or work.'))
     path = _file(paths, work, kind, scope)
+    old_path = _file(paths, work, kind, from_scope) if from_scope and from_scope != scope else None
+    if base_revision is not _UNCHECKED:
+        revisions.check(base_revision, item_revision(paths, work, kind, ident))
+    previous = read_json(path, None)
     doc = read_json(path, {}) or {'schema_version': 1, 'items': {}}
+    old = read_json(old_path, {}) or {} if old_path else {}
     doc.setdefault('items', {})[ident] = clean_item(kind, item, compose_rules(paths))
     atomic_json(path, doc)
-    if from_scope and from_scope != scope:
-        old_path = _file(paths, work, kind, from_scope)
-        old = read_json(old_path, {}) or {}
-        if ident in (old.get('items') or {}):
-            del old['items'][ident]
+    if old_path and ident in (old.get('items') or {}):
+        del old['items'][ident]
+        try:
             atomic_json(old_path, old)
+        except OSError:
+            # The source is still intact. Undo the destination so a failed move changes neither scope.
+            if previous is None:
+                path.unlink(missing_ok=True)
+            else:
+                atomic_json(path, previous)
+            raise
     return items(paths, work, kind)
 
 
-def delete_item(paths, work, kind, scope, ident):
+@locked
+def delete_item(paths, work, kind, scope, ident, base_revision=_UNCHECKED):
     _check_kind(kind)
     path = _file(paths, work, kind, scope)
+    if base_revision is not _UNCHECKED:
+        revisions.check(base_revision, item_revision(paths, work, kind, ident))
     doc = read_json(path, {}) or {}
     if ident in (doc.get('items') or {}):
         del doc['items'][ident]

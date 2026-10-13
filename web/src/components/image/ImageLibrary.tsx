@@ -6,13 +6,14 @@ import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
-import { afterSave, followSelection } from '../../lib/libraryDraft';
+import { afterRevisionSave, followSelection } from '../../lib/libraryDraft';
 import LibraryImport from './LibraryImport';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'targets'];
 type Item = {
   id: string;
+  revision?: string;
   name: string;
   prompt: string[];
   negative?: string[];
@@ -126,6 +127,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
     try {
       const result = await put<Record<string, Item>>(`/api/image/library/${kind}/${id}`, {
         scope,
+        revision: sent.revision,
         work: workId,
         item,
         ...(movingToGlobal ? { from_scope: 'work' } : {}),
@@ -134,8 +136,13 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
       const saved = result[id];
       // Typing on, or opening another item, while the save was on its way wins over the answer.
       setSelected((current) => (current === sentSelection ? id : current));
-      setDraft((current) => afterSave(current, sent, saved ? { ...saved, scope: saved.scope ?? 'global' } : null));
+      setDraft((current) => afterRevisionSave(current, sent, saved ? { ...saved, scope: saved.scope ?? 'global' } : null));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        const fresh = await items.refetch();
+        const latest = fresh.data?.[sent.id];
+        setDraft((current) => current === sent ? (latest ? { ...latest, scope: latest.scope ?? 'global' } : null) : current);
+      }
       fail(err);
     }
   }
@@ -398,7 +405,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   onClick={async () => {
                     if (!confirm(t('lib.delete_confirm', { id: draft.id }))) return;
                     try {
-                      qc.setQueryData(key, await del(`/api/image/library/${kind}/${draft.id}?scope=${draft.scope}&work=${workId}`));
+                      qc.setQueryData(key, await del(`/api/image/library/${kind}/${draft.id}?scope=${draft.scope}&work=${workId}&revision=${encodeURIComponent(draft.revision ?? "")}`));
                       setSelected(null);
                     } catch (err) {
                       fail(err);

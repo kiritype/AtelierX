@@ -3,6 +3,10 @@
 
 def _put(c, wid, ident, scope, from_scope=None, **item):
     body = {'scope': scope, 'work': wid, 'item': {'name': ident, 'prompt': [f'{ident} tag'], **item}}
+    current = (
+        c.get(f'/api/image/library/{"compositions"}', params={'work': wid} if wid else {}).json().get(ident)
+    )
+    body['revision'] = current and current['revision']
     if from_scope:
         body['from_scope'] = from_scope
     return c.put(f'/api/image/library/compositions/{ident}', json=body)

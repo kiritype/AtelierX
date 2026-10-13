@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { afterSave, followSelection } from './libraryDraft';
+import { afterRevisionSave, afterSave, followSelection } from './libraryDraft';
 
 describe('afterSave', () => {
   const sent = { id: 'my02', prompt: ['sent'] };
@@ -44,5 +44,26 @@ describe('followSelection', () => {
 
   it('clears the editor when nothing is selected', () => {
     expect(followSelection(edited, null, null)).toBeNull();
+  });
+});
+
+
+describe('afterRevisionSave', () => {
+  const sent = { id: 'one', revision: 'old', prompt: ['sent'] };
+  const saved = { ...sent, revision: 'new' };
+  it('advances the revision while preserving later edits', () => {
+    const later = { ...sent, prompt: ['later'] };
+    expect(afterRevisionSave(later, sent, saved)).toEqual({ ...later, revision: 'new' });
+  });
+  it('does not change another selection or an already advanced revision', () => {
+    const other = { ...sent, id: 'two' };
+    const newer = { ...sent, revision: 'newer' };
+    expect(afterRevisionSave(other, sent, saved)).toBe(other);
+    expect(afterRevisionSave(newer, sent, saved)).toBe(newer);
+  });
+  it('adopts the first revision for a newly created item with later edits', () => {
+    const fresh: { id: string; prompt: string[]; revision?: string } = { id: 'fresh', prompt: [] };
+    const typed = { ...fresh, prompt: ['later'] };
+    expect(afterRevisionSave(typed, fresh, { ...fresh, revision: 'first' })).toEqual({ ...typed, revision: 'first' });
   });
 });

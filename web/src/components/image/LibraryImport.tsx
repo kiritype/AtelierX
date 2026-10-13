@@ -12,6 +12,7 @@ type Kind = 'expressions' | 'compositions' | 'common' | 'outfits';
 type Change = { field: string; old: unknown; new: unknown };
 type Row = {
   id: string;
+  revision: string | null;
   name: string;
   scope: 'global' | 'work' | null;
   exists: boolean;
@@ -64,9 +65,11 @@ export default function LibraryImport({
         scope,
         work: workId,
         choices: body,
+        revisions: Object.fromEntries(rows.map((r) => [r.id, r.revision])),
       });
       onDone(done.written, done.items);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) await look.refetch();
       toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
     } finally {
       setBusy(false);
