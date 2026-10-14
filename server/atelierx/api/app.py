@@ -107,6 +107,9 @@ class State:
 # --- middleware ------------------------------------------------------------------------------------------------
 class Guard(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        # Only the local app's addresses may name this server, including static pages.
+        if request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+            return JSONResponse({'error': 'Invalid host'}, status_code=400)
         path = request.url.path
         if path.startswith('/api/'):
             if _unsafe_api_path(request.scope['path']):
