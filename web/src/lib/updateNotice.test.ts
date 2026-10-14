@@ -1,38 +1,21 @@
-// @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
-import { saveStartupUpdate, shouldReportUpdateResult, startupUpdateState, takeStartupUpdateNotice, UPDATE_CHECK_INTERVAL } from './updateNotice';
+import { describe, expect, it, vi } from 'vitest';
+import { beginStartupUpdateCheck, updateResultKey } from './updateNotice';
 
-describe('update notice browser preferences', () => {
-  it('limits automatic checks to once per day while retaining an available version for the badge', () => {
-    const storage = window.localStorage;
-    storage.clear();
-    const now = 10_000_000;
-    expect(startupUpdateState(storage, now).shouldCheck).toBe(true);
-    expect(saveStartupUpdate(storage, { current: '0.4.0', latest: '0.4.1', newer: true }, now)).toEqual({ available: true, shouldNotify: true });
-    expect(takeStartupUpdateNotice(storage)).toEqual({ current: '0.4.0', latest: '0.4.1', newer: true });
-    expect(startupUpdateState(storage, now + UPDATE_CHECK_INTERVAL - 1)).toEqual({ shouldCheck: false, availableVersion: '0.4.1', pendingNotice: false });
-    expect(saveStartupUpdate(storage, { current: '0.4.0', latest: '0.4.1', newer: true }, now + UPDATE_CHECK_INTERVAL)).toEqual({ available: true, shouldNotify: false });
-    expect(saveStartupUpdate(storage, { current: '0.4.1', latest: '0.4.1', newer: false }, now + UPDATE_CHECK_INTERVAL * 2)).toEqual({ available: false, shouldNotify: false });
-    expect(startupUpdateState(storage, now + UPDATE_CHECK_INTERVAL * 2).availableVersion).toBeNull();
+describe('startup update notice helpers', () => {
+  it('shares an active check across screen unmounts', async () => {
+    let resolve!: (value: { current: string; latest: string; newer: boolean }) => void;
+    const check = vi.fn(() => new Promise<{ current: string; latest: string; newer: boolean }>((done) => { resolve = done; }));
+    const first = beginStartupUpdateCheck(check);
+    const second = beginStartupUpdateCheck(check);
+    expect(first).toBe(second);
+    expect(check).toHaveBeenCalledTimes(0);
+    await Promise.resolve();
+    expect(check).toHaveBeenCalledTimes(1);
+    resolve({ current: '8.8.0', latest: '8.8.1', newer: true });
+    await expect(second).resolves.toEqual({ current: '8.8.0', latest: '8.8.1', newer: true });
   });
 
-  it('reports an update result only once, keyed by its outcome and version', () => {
-    const storage = window.localStorage;
-    storage.clear();
-    const result = { state: 'ok' as const, from: '0.4.0', version: '0.4.1' };
-    expect(shouldReportUpdateResult(storage, result)).toBe(true);
-    expect(shouldReportUpdateResult(storage, result)).toBe(false);
-    expect(shouldReportUpdateResult(storage, { ...result, version: '0.4.2' })).toBe(true);
-  });
-
-  it('uses memory to suppress repeated notices when browser storage cannot be accessed', () => {
-    const blocked = {
-      getItem: () => { throw new Error('blocked'); },
-      setItem: () => { throw new Error('blocked'); },
-      removeItem: () => { throw new Error('blocked'); },
-    } as unknown as Storage;
-    const result = { state: 'ok' as const, from: '0.4.0', version: '0.4.1' };
-    expect(shouldReportUpdateResult(blocked, result)).toBe(true);
-    expect(shouldReportUpdateResult(blocked, result)).toBe(false);
+  it('keys successful update notices by their outcome and versions', () => {
+    expect(updateResultKey({ state: 'ok', from: '8.8.0', version: '8.8.1' })).toBe('ok:8.8.1:8.8.0');
   });
 });

@@ -4,9 +4,7 @@ import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
 import {
   beginStartupUpdateCheck,
-  shouldReportUpdateResult,
-  startupUpdateState,
-  takeStartupUpdateNotice,
+  updateResultKey,
   type UpdateSummary,
 } from '../lib/updateNotice';
 import type { MenuEntry } from './MenuBar';
@@ -43,14 +41,6 @@ type UpdateState = {
 const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
 const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
-const browserStorage = () => {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-};
-
 export function useHelp() {
   const [dialog, setDialog] = useState<HelpDialog>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -237,10 +227,11 @@ export function useUpdateResult(openUpdate: () => void) {
   const toast = useToast();
   useEffect(() => {
     get<UpdateState>('/api/update/status')
-      .then((status) => {
+      .then(async (status) => {
         const result = status.last_result;
         if (!result) return;
-        if (!shouldReportUpdateResult(browserStorage(), result)) {
+        const claim = await post<{ claimed: boolean }>('/api/update/notice/claim-result', { key: updateResultKey(result) });
+        if (!claim.claimed) {
           post('/api/update/forget').catch(() => undefined);
           return;
         }
@@ -267,7 +258,7 @@ function NoticesDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Checks at most once a day and keeps the last available version in browser preferences.
+// Checks at most once a day and stores notice state under the app root, across browser origins.
 export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available: boolean) => void, onOpenUpdate: () => void) {
   const toast = useToast();
   useEffect(() => {
@@ -276,23 +267,30 @@ export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available:
       onAvailable(false);
       return () => { active = false; };
     }
-    const storage = browserStorage();
-    const initial = startupUpdateState(storage);
-    onAvailable(!!initial.availableVersion);
     const showNotice = (result: UpdateSummary) => {
       if (result.newer) {
         toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
       }
     };
-    const savedNotice = takeStartupUpdateNotice(storage);
-    if (savedNotice) showNotice(savedNotice);
-    const check = beginStartupUpdateCheck(storage, () => get<Update>('/api/update-check'));
-    if (!check) return () => { active = false; };
+    const check = beginStartupUpdateCheck(async () => {
+      const initial = await post<{ should_check: boolean; available_version: string | null }>('/api/update/notice/begin');
+      if (!initial.should_check) {
+        return { current: '', latest: initial.available_version ?? '', newer: !!initial.available_version };
+      }
+      try {
+        const result = await get<Update>('/api/update-check');
+        await post('/api/update/notice/result', { current: result.current, latest: result.latest, newer: result.newer });
+        return result;
+      } catch {
+        return { current: '', latest: initial.available_version ?? '', newer: !!initial.available_version };
+      }
+    });
     check
-      .then((result) => {
+      .then(async (result) => {
         if (!active) return;
         onAvailable(result.newer);
-        const notice = takeStartupUpdateNotice(storage);
+        const consumed = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
+        const notice = consumed.notice;
         if (notice) showNotice(notice);
       })
       .catch(() => undefined);

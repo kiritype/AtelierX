@@ -92,3 +92,26 @@ def test_only_the_desktop_window_opens_the_app_in_a_browser(unlocked, paths, mon
         assert desktop.get('/api/about').json()['desktop'] is True
         assert desktop.post('/api/open-in-browser', json={}).json()['url'] == 'http://127.0.0.1:8765/'
     assert opened == ['http://127.0.0.1:8765/']
+
+
+def test_update_notice_state_survives_a_new_client_on_a_different_port(paths):
+    app = build_app(paths, kdf=FAST_KDF)
+    with TestClient(app, base_url='http://127.0.0.1:8765') as first:
+        assert first.post('/api/auth/setup', json={'password': 'pass1234', 'language': 'ko'}).status_code == 200
+        begin = first.post('/api/update/notice/begin').json()
+        assert begin == {'should_check': True, 'available_version': None}
+        result = {'current': '8.8.0', 'latest': '8.8.1', 'newer': True}
+        assert first.post('/api/update/notice/result', json=result).json()['available_version'] == '8.8.1'
+        result_key = 'ok:8.8.1:8.8.0'
+        assert first.post('/api/update/notice/claim-result', json={'key': result_key}).json() == {'claimed': True}
+
+    # A new app state and a new browser origin still use the same app-root state file.
+    with TestClient(build_app(paths, kdf=FAST_KDF), base_url='http://127.0.0.1:49152') as second:
+        assert second.post('/api/auth/unlock', json={'password': 'pass1234'}).status_code == 200
+        assert second.post('/api/update/notice/begin').json() == {
+            'should_check': False,
+            'available_version': '8.8.1',
+        }
+        assert second.post('/api/update/notice/consume').json() == {'notice': result}
+        assert second.post('/api/update/notice/consume').json() == {'notice': None}
+        assert second.post('/api/update/notice/claim-result', json={'key': result_key}).json() == {'claimed': False}
