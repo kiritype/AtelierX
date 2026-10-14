@@ -364,6 +364,9 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .menu-root { position: relative; }
 .menu-title { border: 0; background: transparent; padding: 4px 10px; border-radius: var(--radius); }
 .menu-title:hover, .menu-title.on { background: var(--hover); }
+.update-badge { flex: 0 0 auto; padding: 2px 8px; border: 1px solid var(--accent); border-radius: 999px;
+  background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: 600; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px; }
 .menu-drop { position: absolute; top: calc(100% + 2px); left: 0; z-index: 70; min-width: 220px; background: var(--panel);
   border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15); padding: 4px 0; }
 .menu-drop.right { left: auto; right: 0; }
@@ -593,6 +596,7 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .editor-proposal { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .editor-proposal pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 850px) { .editor-proposal { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .update-badge-label { display: none; } .update-badge { padding: 4px; } }
 
 /* Keep run-level model controls usable in the chat toolbar on narrower windows. */
 .test-bar { flex-wrap: wrap; }

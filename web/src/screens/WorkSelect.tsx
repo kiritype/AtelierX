@@ -17,8 +17,8 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
   const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
   const help = useHelp();
   const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
-  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
-  useUpdateResult();
+  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start, help.setUpdateAvailable, help.openUpdate);
+  useUpdateResult(help.openUpdate);
   const ui = useQuery({ queryKey: ['ui-state'], queryFn: () => get('/api/ui-state') });
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<
@@ -60,6 +60,11 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
         <h2 className="grow">
           <AppMark size={28} />
         </h2>
+        {help.updateAvailable && (
+          <button className="update-badge" onClick={help.openUpdate} aria-label={t('help.update_badge')} title={t('help.update_badge')}>
+            <Icon name="release" size={14} /> <span className="update-badge-label">{t('help.update_badge')}</span>
+          </button>
+        )}
         <MenuButton className="ghost" label={t('menu.help')} items={help.entries} />
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}

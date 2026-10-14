@@ -91,7 +91,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [restored, setRestored] = useState(false);
   const help = useHelp();
   const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
-  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start);
+  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start, help.setUpdateAvailable, help.openUpdate);
   // Leaving the work or locking waits here while tabs have unsaved changes (the server cannot keep what only the page has).
   const [pending, setPending] = useState<{ run: () => Promise<void> } | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -369,6 +369,11 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
           {info.data.name} <Icon name="menu" size={14} />
         </span>
         <MenuBar menus={menus} />
+        {help.updateAvailable && (
+          <button className="update-badge" onClick={help.openUpdate} aria-label={t('help.update_badge')} title={t('help.update_badge')}>
+            <Icon name="release" size={14} /> <span className="update-badge-label">{t('help.update_badge')}</span>
+          </button>
+        )}
         {/* Set apart from the menus: the test screen is a mode of the window, not a menu. */}
         <span className="topbar-sep" />
         <button
