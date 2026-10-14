@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n';
 import type { FromFrame, GlobalStub, ToFrame } from '../preview/protocol';
+import { validReply } from '../preview/protocol';
 
 export type PreviewCall = { name: string; args: unknown[] };
 
@@ -33,6 +34,7 @@ export default function JsxPreview({
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [generation, setGeneration] = useState(0);
+  const channel = useMemo(() => crypto.randomUUID(), [generation]);
   const [ready, setReady] = useState(false);
   const [height, setHeight] = useState(60);
   const [error, setError] = useState<{ message: string; line: number | null } | null>(null);
@@ -47,11 +49,12 @@ export default function JsxPreview({
 
   useEffect(() => {
     const listen = (event: MessageEvent) => {
-      if (!frame.current || event.source !== frame.current.contentWindow) return;
+      if (!frame.current || event.source !== frame.current.contentWindow || event.origin !== 'null') return;
+      if (event.data?.channel !== channel || !validReply(event.data)) return;
       const message = event.data as FromFrame;
       if (message.type === 'ready') setReady(true);
-      if (message.type === 'size' && autoHeight) setHeight(Math.max(24, Math.ceil(message.height)));
-      if (message.type === 'call') callbacks.current.onCall?.({ name: message.name, args: message.args });
+      if (message.type === 'size' && autoHeight) setHeight(Math.min(10000, Math.max(24, Math.ceil(message.height))));
+      if (message.type === 'call' && message.id === latest.current && globals.some((g) => g.name === message.name)) callbacks.current.onCall?.({ name: message.name, args: message.args });
       if (message.type !== 'rendered' && message.type !== 'error') return;
       if (message.id !== latest.current) return;
       if (pending.current?.id === message.id) {
@@ -67,7 +70,7 @@ export default function JsxPreview({
     };
     window.addEventListener('message', listen);
     return () => window.removeEventListener('message', listen);
-  }, [autoHeight]);
+  }, [autoHeight, channel, globals]);
 
   // Some embedded browsers refuse sandboxed frames; say so instead of showing an empty box.
   useEffect(() => {
@@ -101,8 +104,8 @@ export default function JsxPreview({
     }, TIMEOUT_MS);
     pending.current = { id, timer };
     const message: ToFrame = { type: 'render', id, code, name, props, hooks, globals, theme };
-    frame.current.contentWindow.postMessage(message, '*');
-  }, [ready, payload]);
+    frame.current.contentWindow.postMessage({ ...message, channel }, '*');
+  }, [ready, payload, channel]);
 
   useEffect(
     () => () => {
@@ -132,7 +135,7 @@ export default function JsxPreview({
         key={generation}
         ref={frame}
         title={name}
-        src="/preview.html"
+        src={`/preview.html#${channel}`}
         sandbox="allow-scripts"
         style={{ width: '100%', height: autoHeight ? height : '100%', border: 0, display: 'block', background: 'transparent' }}
       />

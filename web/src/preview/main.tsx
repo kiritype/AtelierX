@@ -4,11 +4,14 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { transform } from 'sucrase';
 import type { FromFrame, GlobalStub, ToFrame } from './protocol';
+import { validRender } from './protocol';
 
 const root = createRoot(document.getElementById('root')!);
+const channel = location.hash.slice(1);
+const parentOrigin = location.origin;
 
 function send(message: FromFrame) {
-  parent.postMessage(message, '*');
+  if (parent !== window && /^[a-f0-9-]{36}$/.test(channel)) parent.postMessage({ ...message, channel }, parentOrigin);
 }
 
 function stub(spec: GlobalStub, id: number) {
@@ -78,9 +81,9 @@ function render(message: ToFrame) {
 }
 
 window.addEventListener('message', (event) => {
-  if (event.source !== parent) return;
-  const message = event.data as ToFrame;
-  if (message?.type === 'render') render(message);
+  if (parent === window || event.source !== parent || event.origin !== parentOrigin) return;
+  if (!/^[a-f0-9-]{36}$/.test(channel) || event.data?.channel !== channel || !validRender(event.data)) return;
+  render(event.data);
 });
 
 // Measure the content, not the frame: scrollHeight never drops below the frame's own height.

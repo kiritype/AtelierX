@@ -87,7 +87,7 @@ def test_a_download_resumes_checks_its_hash_and_remembers_civitai(paths, tmp_pat
         seen.append(dict(request.header_items()))
         return _Response(BODY[4000:], status=206)
 
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', fake_open)
+    monkeypatch.setattr(model_download, 'download_open', fake_open)
     downloads._worker()
     assert job['status'] == 'done', job.get('error')
     assert seen[0]['Range'] == 'bytes=4000-' and seen[0]['Authorization'] == 'Bearer k'
@@ -105,21 +105,21 @@ def test_a_download_resumes_checks_its_hash_and_remembers_civitai(paths, tmp_pat
 def test_a_wrong_file_fails_and_a_missing_key_is_named(paths, tmp_path, monkeypatch):
     downloads, loras = _downloads(paths, tmp_path, monkeypatch)
     job = _job(downloads, sha256='0' * 64)
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', lambda request, timeout=0: _Response(BODY))
+    monkeypatch.setattr(model_download, 'download_open', lambda request, timeout=0: _Response(BODY))
     downloads._worker()
     assert job['status'] == 'failed' and not (loras / 'anima' / 'ink.safetensors.part').exists()
 
     def refuse(request, timeout=0):
         raise urllib.error.HTTPError(URL, 401, 'Unauthorized', {}, None)
 
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', refuse)
+    monkeypatch.setattr(model_download, 'download_open', refuse)
     downloads.act(job['id'], 'resume')
     downloads._worker()
     assert job['status'] == 'failed' and 'API' in job['error']['text']
     # A sign-in page instead of the file is the same.
     monkeypatch.setattr(
-        model_download.urllib.request,
-        'urlopen',
+        model_download,
+        'download_open',
         lambda request, timeout=0: _Response(b'<html>', kind='text/html'),
     )
     downloads.act(job['id'], 'resume')
@@ -132,7 +132,7 @@ def test_not_enough_disk_space_stops_before_downloading(paths, tmp_path, monkeyp
     job = _job(downloads)
     usage = namedtuple('usage', 'total used free')
     monkeypatch.setattr(model_download.shutil, 'disk_usage', lambda path: usage(1, 1, 10))
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('downloaded'))
+    monkeypatch.setattr(model_download, 'download_open', lambda *a, **k: pytest.fail('downloaded'))
     downloads._worker()
     assert job['status'] == 'failed' and job['error']['key'] == 'server.models.no_space'
 
@@ -247,7 +247,7 @@ def test_a_file_put_at_the_target_meanwhile_is_never_overwritten(paths, tmp_path
     target.parent.mkdir(parents=True)
     # Another model was put there after the job was added: the download does not start.
     target.write_bytes(b'other model')
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', lambda *a, **k: pytest.fail('downloaded'))
+    monkeypatch.setattr(model_download, 'download_open', lambda *a, **k: pytest.fail('downloaded'))
     downloads._worker()
     assert job['status'] == 'failed' and job['error']['key'] == 'server.models.exists'
     assert target.read_bytes() == b'other model'
@@ -259,7 +259,7 @@ def test_a_file_put_at_the_target_meanwhile_is_never_overwritten(paths, tmp_path
         target.write_bytes(b'other model')
         return _Response(BODY)
 
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', arrive_meanwhile)
+    monkeypatch.setattr(model_download, 'download_open', arrive_meanwhile)
     downloads.act(job['id'], 'resume')
     downloads._worker()
     assert job['status'] == 'failed' and job['error']['key'] == 'server.models.exists'
@@ -272,7 +272,7 @@ def test_a_file_put_at_the_target_meanwhile_is_never_overwritten(paths, tmp_path
     def complete(request, timeout=0):
         raise urllib.error.HTTPError(URL, 416, 'Range Not Satisfiable', {}, None)
 
-    monkeypatch.setattr(model_download.urllib.request, 'urlopen', complete)
+    monkeypatch.setattr(model_download, 'download_open', complete)
     downloads.act(job['id'], 'resume')
     downloads._worker()
     assert job['status'] == 'done', job.get('error')

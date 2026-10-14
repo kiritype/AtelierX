@@ -8,7 +8,10 @@ from conftest import FAST_KDF
 def test_two_portable_roots_do_not_overwrite_each_others_cookie(tmp_path):
     first = build_app(AppPaths.for_dev(tmp_path / 'a'), kdf=FAST_KDF)
     second = build_app(AppPaths.for_dev(tmp_path / 'b'), kdf=FAST_KDF)
-    with TestClient(first) as a, TestClient(second) as b:
+    with (
+        TestClient(first, base_url='http://127.0.0.1:8765') as a,
+        TestClient(second, base_url='http://127.0.0.1:8766') as b,
+    ):
         a.post('/api/auth/setup', json={'password': 'demo-pass'})
         b.cookies.update(a.cookies)
         b.post('/api/auth/setup', json={'password': 'demo-pass'})
