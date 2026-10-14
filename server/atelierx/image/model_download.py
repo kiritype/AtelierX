@@ -28,6 +28,7 @@ import urllib.request
 import uuid
 from pathlib import Path, PureWindowsPath
 
+from ..core.download_http import download_open, origin
 from ..core.i18n import Msg, message_of, wire
 from .model_info import CIVITAI, LICENSE_KEYS, _from_civitai
 from .models import family_from_base_model
@@ -113,13 +114,13 @@ class ModelDownloads:
     def _request(self, url, headers=None):
         headers = {'User-Agent': 'AtelierX', **(headers or {})}
         key = self.key()
-        if key and url.startswith(CIVITAI):
+        if key and origin(url) == origin(CIVITAI):
             headers['Authorization'] = f'Bearer {key}'
         return urllib.request.Request(url, headers=headers)
 
     def _json(self, url):
         try:
-            with urllib.request.urlopen(self._request(url), timeout=30) as response:
+            with download_open(self._request(url), timeout=30) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             if error.code == 404:
@@ -386,7 +387,7 @@ class ModelDownloads:
             )
         headers = {'Range': f'bytes={have}-'} if have else {}
         try:
-            response = urllib.request.urlopen(self._request(job['url'], headers), timeout=60)
+            response = download_open(self._request(job['url'], headers), timeout=60)
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
                 raise ValueError(

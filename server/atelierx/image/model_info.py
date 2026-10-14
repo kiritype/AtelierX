@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path, PureWindowsPath
 
+from ..core.download_http import download_open, origin
 from ..core.i18n import Msg
 from .lora.link import LINK_NAME
 from .util import atomic_json, read_json
@@ -240,10 +241,10 @@ class ModelLibrary:
     def _get(self, url):
         headers = {'User-Agent': 'AtelierX'}
         key = self.key()
-        if key:
+        if key and origin(url) == origin(CIVITAI):
             headers['Authorization'] = f'Bearer {key}'
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+            with download_open(urllib.request.Request(url, headers=headers), timeout=30) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             if error.code == 404:
