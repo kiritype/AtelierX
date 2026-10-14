@@ -172,7 +172,14 @@ def spa(web_dir: Path):
         page = 'preview.html' if request.path_params.get('rest') == 'preview.html' else 'index.html'
         target = web_dir / page
         if target.is_file():
-            return FileResponse(target)
+            headers = {}
+            if page == 'preview.html':
+                headers['Content-Security-Policy'] = (
+                    "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-eval'; "
+                    "style-src 'self' 'unsafe-inline'; img-src data: blob:; font-src data:; "
+                    "connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+                )
+            return FileResponse(target, headers=headers)
         return Response(
             'Web UI is not built. Run the dev server (npm run dev) or build it (npm run build).',
             media_type='text/plain',
