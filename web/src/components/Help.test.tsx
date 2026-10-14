@@ -8,6 +8,9 @@ import { useStartupUpdateCheck } from './Help';
 
 const { get, toast } = vi.hoisted(() => ({ get: vi.fn(), toast: vi.fn() }));
 const openUpdate = () => {};
+const localStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage') ?? {
+  configurable: true, enumerable: true, writable: true, value: window.localStorage,
+};
 vi.mock('../api', () => ({ get, post: vi.fn() }));
 vi.mock('./Toasts', () => ({ useToast: () => toast }));
 
@@ -24,9 +27,11 @@ describe('startup update notice', () => {
   afterEach(async () => {
     if (root) await act(async () => root.unmount());
     host?.remove();
+    if (localStorageDescriptor) Object.defineProperty(window, 'localStorage', localStorageDescriptor);
     window.localStorage.clear();
     get.mockReset();
     toast.mockReset();
+    vi.restoreAllMocks();
   });
 
   async function mount(enabled = true) {
@@ -40,6 +45,7 @@ describe('startup update notice', () => {
     let resolve!: (result: unknown) => void;
     get.mockReturnValue(new Promise((done) => { resolve = done; }));
     await mount();
+    await act(async () => Promise.resolve());
     expect(host.textContent).toContain('work screen');
     expect(host.querySelector('.update')).toBeNull();
 
@@ -61,6 +67,7 @@ describe('startup update notice', () => {
     let resolve!: (result: unknown) => void;
     get.mockReturnValue(new Promise((done) => { resolve = done; }));
     await mount();
+    await act(async () => Promise.resolve());
     expect(host.querySelector('.update')).not.toBeNull();
     await act(async () => resolve({ current: '0.4.1', latest: '0.4.1', newer: false }));
     expect(host.querySelector('.update')).toBeNull();
@@ -70,7 +77,7 @@ describe('startup update notice', () => {
   it('keeps the screen usable and silent when the release service is offline', async () => {
     get.mockRejectedValue(new Error('offline'));
     await mount();
-    await act(async () => Promise.resolve());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(host.textContent).toContain('work screen');
     expect(toast).not.toHaveBeenCalled();
   });
@@ -79,5 +86,40 @@ describe('startup update notice', () => {
     await mount(false);
     expect(host.textContent).toContain('work screen');
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('delivers a pending result to the next screen after the first screen unmounts', async () => {
+    let resolve!: (result: unknown) => void;
+    get.mockReturnValue(new Promise((done) => { resolve = done; }));
+    await mount();
+    await act(async () => Promise.resolve());
+    expect(get).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(createElement(Harness)));
+    await act(async () => resolve({ current: '0.4.0', latest: '0.4.1', newer: true }));
+
+    expect(host.querySelector('.update')).not.toBeNull();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses session memory to prevent repeated checks and notices when local storage is blocked', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
+    Object.defineProperty(window, 'localStorage', { configurable: true, get: () => { throw new Error('blocked'); } });
+    get.mockResolvedValue({ current: '0.4.1', latest: '0.4.2', newer: true });
+    await mount();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector('.update')).not.toBeNull();
+    expect(toast).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    get.mockClear();
+    await act(async () => root.render(createElement(Harness)));
+    expect(host.querySelector('.update')).not.toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledTimes(1);
   });
 });

@@ -2,7 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
-import { saveStartupUpdate, shouldReportUpdateResult, startupUpdateState } from '../lib/updateNotice';
+import {
+  beginStartupUpdateCheck,
+  shouldReportUpdateResult,
+  startupUpdateState,
+  takeStartupUpdateNotice,
+  type UpdateSummary,
+} from '../lib/updateNotice';
 import type { MenuEntry } from './MenuBar';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
@@ -37,6 +43,13 @@ type UpdateState = {
 const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
 const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
+const browserStorage = () => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
 
 export function useHelp() {
   const [dialog, setDialog] = useState<HelpDialog>(null);
@@ -227,13 +240,9 @@ export function useUpdateResult(openUpdate: () => void) {
       .then((status) => {
         const result = status.last_result;
         if (!result) return;
-        try {
-          if (!shouldReportUpdateResult(window.localStorage, result)) {
-            post('/api/update/forget').catch(() => undefined);
-            return;
-          }
-        } catch {
-          // The updater's forget endpoint remains the fallback if browser storage is unavailable.
+        if (!shouldReportUpdateResult(browserStorage(), result)) {
+          post('/api/update/forget').catch(() => undefined);
+          return;
         }
         toast(
           result.state === 'ok'
@@ -267,29 +276,24 @@ export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available:
       onAvailable(false);
       return () => { active = false; };
     }
-    let storage: Storage | undefined;
-    try {
-      storage = window.localStorage;
-      const initial = startupUpdateState(storage);
-      onAvailable(!!initial.availableVersion);
-      if (!initial.shouldCheck) return () => { active = false; };
-      storage.setItem('atelierx.update-notice.checked-at', String(Date.now()));
-    } catch {
-      // Check even when browser preferences cannot be read or written.
-    }
-    get<Update>('/api/update-check')
+    const storage = browserStorage();
+    const initial = startupUpdateState(storage);
+    onAvailable(!!initial.availableVersion);
+    const showNotice = (result: UpdateSummary) => {
+      if (result.newer) {
+        toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
+      }
+    };
+    const savedNotice = takeStartupUpdateNotice(storage);
+    if (savedNotice) showNotice(savedNotice);
+    const check = beginStartupUpdateCheck(storage, () => get<Update>('/api/update-check'));
+    if (!check) return () => { active = false; };
+    check
       .then((result) => {
         if (!active) return;
-        let shouldNotify = false;
-        try {
-          if (storage) ({ shouldNotify } = saveStartupUpdate(storage, result));
-        } catch {
-          shouldNotify = result.newer;
-        }
         onAvailable(result.newer);
-        if (result.newer && shouldNotify) {
-          toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
-        }
+        const notice = takeStartupUpdateNotice(storage);
+        if (notice) showNotice(notice);
       })
       .catch(() => undefined);
     return () => { active = false; };

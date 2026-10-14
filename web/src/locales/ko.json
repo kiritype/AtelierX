@@ -1607,7 +1607,7 @@
   "help.open_release": "릴리스 페이지 열기",
   "help.update_how": "새 ZIP을 새 폴더에 풀고 이전 폴더의 config, state, data, output을 옮기세요. 자세한 절차는 설명서의 \"유지 관리\"에 있습니다.",
   "settings.update_check_on_start": "시작할 때 업데이트 확인",
-  "settings.update_check_note": "켜면 앱을 열 때 GitHub에 최신 릴리스를 하루에 한 번 확인합니다. 아무것도 내려받거나 설치하지 않습니다.",
+  "settings.update_check_note": "켜면 앱을 열 때 GitHub에 최신 릴리스를 하루에 한 번 확인합니다. 아무것도 내려받거나 설치하지 않습니다. 브라우저 저장소를 쓸 수 없으면 중복 제한은 현재 실행 세션에만 적용됩니다.",
   "common.close": "닫기",
   "help.open_in_browser": "웹 브라우저에서 열기",
   "help.open_in_browser_done": "기본 브라우저에서 열었습니다. 브라우저에서도 비밀번호로 잠금을 풀어야 하고, 이 앱 창을 닫으면 브라우저 화면도 연결이 끊깁니다.",
