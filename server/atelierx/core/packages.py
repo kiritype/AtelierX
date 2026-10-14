@@ -249,7 +249,7 @@ class Packages:
             entries = doc.get('works')
             if not isinstance(entries, list):
                 raise _bad_package()
-            for entry in entries:
+            for index, entry in enumerate(entries):
                 if not isinstance(entry, dict):
                     raise _bad_package()
                 name, work_id = entry.get('name'), entry.get('id')
@@ -257,6 +257,12 @@ class Packages:
                     raise _bad_package()
                 check_name(name)
                 check_id(work_id)
+                try:
+                    work_doc = json.loads(archive.read(f'works/{index}/work/{APP_DIR}/work.json'))
+                except (KeyError, ValueError):
+                    raise _bad_package() from None
+                if not isinstance(work_doc, dict) or work_doc.get('id') != work_id:
+                    raise _bad_package()
         for name in archive.namelist():
             _safe_member(name)
         return doc
