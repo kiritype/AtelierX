@@ -23,8 +23,8 @@ from ..core.packages import Packages
 from ..core.presets import Presets
 from ..core.settings import Settings
 from ..core.snapshots import Snapshots
-from ..core.updater import Updater
 from ..core.update_notice import UpdateNotices
+from ..core.updater import Updater
 from ..core.vault import Vault
 from ..core.work_jobs import WorkJobs
 from ..core.works import WorkStore

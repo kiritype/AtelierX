@@ -44,9 +44,7 @@ class UpdateNotices:
             state['available_version'] = latest
             if latest and latest != state.get('notified_version'):
                 state['pending_notice'] = result
-            elif latest:
-                state.pop('pending_notice', None)
-            elif not latest:
+            else:
                 state.pop('pending_notice', None)
             write_json(self.path, state)
             return {'available_version': latest}
