@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ApiError, get, post, put } from '../api';
+import { ApiError, get, post } from '../api';
 import AuxPanel, { type AuxTab } from '../components/AuxPanel';
 import type { Attachment } from '../components/AgentPanel';
 import { PackageExportDialog } from '../components/Packages';
@@ -24,6 +24,7 @@ import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
 import { unfinished } from '../lib/lifecycle';
+import { saveWorkUiState } from '../lib/uiState';
 import { TabScope } from '../components/Unsaved';
 import { UnsavedRegistry } from '../lib/unsaved';
 import { imageNavigation } from '../lib/imageNavigation';
@@ -119,22 +120,14 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   }, [workId]);
   useEffect(() => {
     if (!restored) return;
-    const timer = setTimeout(async () => {
-      const state = (await get('/api/ui-state').catch(() => ({}))) ?? {};
-      const savedWork = state.works?.[workId] ?? {};
-      await put('/api/ui-state', {
-        ...state,
-        works: {
-          ...(state.works ?? {}),
-          [workId]: {
-            ...savedWork,
-            tabs,
-            active,
-            pinned,
-            sidebar: { ...(savedWork.sidebar ?? {}), collapsed: sidebarCollapsed, width: sidebarWidth, folders: folderCollapsed },
-          },
-        },
-      });
+    const timer = setTimeout(() => {
+      // A failed read must not turn into a PUT of an empty, partial ui-state document. A later state change retries.
+      void saveWorkUiState(workId, {
+        tabs,
+        active,
+        pinned,
+        sidebar: { collapsed: sidebarCollapsed, width: sidebarWidth, folders: folderCollapsed },
+      }).catch(() => undefined);
     }, 500);
     return () => clearTimeout(timer);
   }, [tabs, active, pinned, workId, restored, sidebarCollapsed, sidebarWidth, folderCollapsed]);
