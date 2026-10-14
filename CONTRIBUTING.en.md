@@ -15,6 +15,46 @@ AtelierX is in its pre-1.0 releases (0.x). The design documents in [docs/](docs/
 - One issue, one branch; the PR body says `Closes #n`. PRs are merged into `dev`, which is not the default branch, so
   issues do not close by themselves: after merging, note what landed on the issue and close it.
 
+## Writing and maintaining task issues
+
+External reports follow the Discussions flow above. Maintainers may directly register confirmed bugs, improvements,
+or work agreed with the user after searching existing issues. Label an investigation as such instead of asserting an
+unconfirmed defect. Reading and reproduction may precede registration; implementation starts after it. Security
+findings follow the private reporting policy.
+
+- **Title**: use `<area>: <problem or intended outcome>`.
+- **Body**: describe the purpose/problem, current behavior and confirmed facts, expected behavior and scope, a completion
+  checklist, and references. Bugs include the version or commit, reproduction conditions/steps, and actual/expected
+  results. Improvements explain the user flow and friction; investigations state questions, measurements and deliverables.
+  State exclusions and dependencies when relevant.
+- **Evidence**: distinguish user reports, source inspection, mock reproduction and real-service verification. Do not state
+  suspected causes as facts. Prefer commit-pinned source links; remove credentials and private data from logs/screenshots.
+- **Duplicates and scope**: add evidence about the same problem in a comment on the existing issue. Separate follow-up work
+  with independent completion criteria into linked issues. Reopen a closed issue only for its unresolved original scope,
+  with evidence, rather than for a separate follow-up.
+- **Source**: write `Source: Discussion #n` only for an actual Discussion conversion. Link related issues and dependencies;
+  summarize requests from conversation so the issue stands on its own.
+
+Check the repository's existing label names and descriptions first. Ordinary tasks get one primary type, one priority,
+and one or more relevant areas. Do not invent new labels.
+
+| Category | Criteria |
+|---|---|
+| Type | `bug` for incorrect behavior/data loss, `enhancement` for features/usability, `documentation` for documentation work |
+| Priority | `priority: P1`: data loss/core failures to address before the next release; `P2`: ordinary defects/planned improvements; `P3`: deferrable improvements |
+| Area | `area: editor`, `llm`, `image`, `install`, `release`, `ui`, or `security`; every actual name has the `area: ` prefix |
+| Supporting | `accessibility`; `needs reproduction` for missing evidence; `needs verification` for implemented work awaiting real-service checks; `status: blocked` for external conditions/decisions |
+| Resolution/contribution | Explain `duplicate`, `invalid`, or `wontfix` in a comment with relevant links. Use `help wanted` and `good first issue` only when their contribution conditions apply |
+
+The existence of `area: security` does not authorize public disclosure of private findings. Remove supporting labels when
+their conditions no longer apply. Assign milestones only to work committed to the next release under the version policy
+below; leave tentative candidates unassigned.
+
+Keep the body aligned with the current scope and completion criteria; use comments for dated progress. When scope changes,
+update the body and explain why in a comment. Completion comments include the changes, validation commands/results/limits,
+commit and PR. Local implementation alone does not close an issue: verify the merge and completion criteria first. Record
+the shipped version after release.
+
 ## Development setup
 
 Requirements: Python 3.12 with [uv](https://github.com/astral-sh/uv), Node.js 24 (npm). Development happens on Windows.
