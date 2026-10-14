@@ -273,24 +273,26 @@ export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available:
       }
     };
     const check = beginStartupUpdateCheck(async () => {
-      const initial = await post<{ should_check: boolean; available_version: string | null }>('/api/update/notice/begin');
+      const initial = await post<{ should_check: boolean; available_version: string | null; current_version: string }>('/api/update/notice/begin');
+      let summary: UpdateSummary;
       if (!initial.should_check) {
-        return { current: '', latest: initial.available_version ?? '', newer: !!initial.available_version };
+        summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
+      } else {
+        try {
+          const result = await get<Update>('/api/update-check');
+          await post('/api/update/notice/result', { current: result.current, latest: result.latest, newer: result.newer });
+          summary = result;
+        } catch {
+          summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
+        }
       }
-      try {
-        const result = await get<Update>('/api/update-check');
-        await post('/api/update/notice/result', { current: result.current, latest: result.latest, newer: result.newer });
-        return result;
-      } catch {
-        return { current: '', latest: initial.available_version ?? '', newer: !!initial.available_version };
-      }
+      const consumed = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
+      return { summary, notice: consumed.notice };
     });
     check
-      .then(async (result) => {
+      .then(({ summary, notice }) => {
         if (!active) return;
-        onAvailable(result.newer);
-        const consumed = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
-        const notice = consumed.notice;
+        onAvailable(summary.newer);
         if (notice) showNotice(notice);
       })
       .catch(() => undefined);

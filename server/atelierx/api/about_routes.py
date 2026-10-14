@@ -33,7 +33,8 @@ async def update_check(request):
 
 
 async def update_notice_begin(request):
-    return ok(st(request).update_notices.begin(int(time.time() * 1000)))
+    current = about.info(st(request).paths)['version']
+    return ok(st(request).update_notices.begin(int(time.time() * 1000), current))
 
 
 async def update_notice_record(request):

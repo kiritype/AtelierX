@@ -1,11 +1,10 @@
 export type UpdateSummary = { current: string; latest: string; newer: boolean };
-export type UpdateNoticeState = { should_check: boolean; available_version: string | null };
 
-let inFlight: Promise<UpdateSummary> | null = null;
+let inFlight: Promise<unknown> | null = null;
 
 // A screen may unmount during the request. Keep the promise shared so the next screen can receive its result.
-export function beginStartupUpdateCheck(check: () => Promise<UpdateSummary>) {
-  if (inFlight) return inFlight;
+export function beginStartupUpdateCheck<T>(check: () => Promise<T>): Promise<T> {
+  if (inFlight) return inFlight as Promise<T>;
   const started = Promise.resolve()
     .then(check)
     .finally(() => {

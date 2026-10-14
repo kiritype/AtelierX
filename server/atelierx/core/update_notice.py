@@ -17,16 +17,25 @@ class UpdateNotices:
         value = read_json(self.path, {})
         return value if isinstance(value, dict) else {}
 
-    def begin(self, now):
+    def begin(self, now, current_version):
         with self.lock:
             state = self._read()
+            if state.get('checked_version') != current_version:
+                state['checked_version'] = current_version
+                state['checked_at'] = 0
+                state['available_version'] = None
+                state.pop('pending_notice', None)
             checked_at = state.get('checked_at', 0)
             valid_time = isinstance(checked_at, (int, float)) and math.isfinite(checked_at) and checked_at > 0
-            should_check = not valid_time or now - checked_at >= DAY_MS
+            should_check = not valid_time or now < checked_at or now - checked_at >= DAY_MS
             if should_check:
                 state['checked_at'] = now
                 write_json(self.path, state)
-            return {'should_check': should_check, 'available_version': state.get('available_version')}
+            return {
+                'should_check': should_check,
+                'available_version': state.get('available_version'),
+                'current_version': current_version,
+            }
 
     def record(self, result):
         with self.lock:

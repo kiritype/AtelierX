@@ -12,6 +12,7 @@ from atelierx.api import about_routes
 from atelierx.api.app import build_app
 from atelierx.core import about
 from atelierx.core.i18n import AppError
+from atelierx.core.update_notice import DAY_MS, UpdateNotices
 from conftest import FAST_KDF
 
 
@@ -99,7 +100,7 @@ def test_update_notice_state_survives_a_new_client_on_a_different_port(paths):
     with TestClient(app, base_url='http://127.0.0.1:8765') as first:
         assert first.post('/api/auth/setup', json={'password': 'pass1234', 'language': 'ko'}).status_code == 200
         begin = first.post('/api/update/notice/begin').json()
-        assert begin == {'should_check': True, 'available_version': None}
+        assert begin == {'should_check': True, 'available_version': None, 'current_version': __version__}
         result = {'current': '8.8.0', 'latest': '8.8.1', 'newer': True}
         assert first.post('/api/update/notice/result', json=result).json()['available_version'] == '8.8.1'
         result_key = 'ok:8.8.1:8.8.0'
@@ -111,7 +112,23 @@ def test_update_notice_state_survives_a_new_client_on_a_different_port(paths):
         assert second.post('/api/update/notice/begin').json() == {
             'should_check': False,
             'available_version': '8.8.1',
+            'current_version': __version__,
         }
         assert second.post('/api/update/notice/consume').json() == {'notice': result}
         assert second.post('/api/update/notice/consume').json() == {'notice': None}
         assert second.post('/api/update/notice/claim-result', json={'key': result_key}).json() == {'claimed': False}
+
+
+def test_update_notice_rechecks_after_app_version_changes_or_clock_moves_back(paths):
+    notices = UpdateNotices(paths)
+    assert notices.begin(2_000_000, '8.8.0')['should_check'] is True
+    notices.record({'current': '8.8.0', 'latest': '8.8.1', 'newer': True})
+    assert notices.begin(2_000_000 + DAY_MS - 1, '8.8.0') == {
+        'should_check': False,
+        'available_version': '8.8.1',
+        'current_version': '8.8.0',
+    }
+    changed = notices.begin(2_000_000 + 100, '8.8.1')
+    assert changed == {'should_check': True, 'available_version': None, 'current_version': '8.8.1'}
+    notices.record({'current': '8.8.1', 'latest': '8.8.2', 'newer': True})
+    assert notices.begin(2_000_000 + 50, '8.8.1')['should_check'] is True

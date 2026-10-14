@@ -39,7 +39,7 @@ describe('startup update notice', () => {
       if (url.endsWith('/begin')) {
         const should_check = !serverChecked;
         serverChecked = true;
-        return { should_check, available_version: serverAvailable };
+        return { should_check, available_version: serverAvailable, current_version: '8.8.1' };
       }
       if (url.endsWith('/result')) {
         serverAvailable = body?.newer ? body.latest ?? null : null;
@@ -97,7 +97,7 @@ describe('startup update notice', () => {
 
   it('restores the badge from app-root state without another release request', async () => {
     post.mockImplementation(async (url: string) => url.endsWith('/begin')
-      ? { should_check: false, available_version: '8.8.1' }
+      ? { should_check: false, available_version: '8.8.1', current_version: '8.8.1' }
       : { notice: null });
     await mount();
     expect(host.querySelector('.update')).not.toBeNull();
