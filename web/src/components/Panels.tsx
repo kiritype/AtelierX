@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { del, get, patch, post } from '../api';
 import { t } from '../i18n';
 import type { DraftSummary, ImageView, SearchHit, SnapshotSummary, Tab, TrashBundle, TreeEntry, WorkInfo } from '../types';
@@ -19,12 +19,15 @@ type Props = {
   open: (tab: Tab) => void;
   closeKey: (key: string) => void;
   renamePath: (from: string, to: string) => void;
+  collapsed?: Record<string, boolean>;
+  setCollapsed?: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onCollapse?: () => void;
 };
 
 export default function Panels(props: Props) {
   switch (props.panel) {
     case 'files':
-      return <FileTree workId={props.workId} activePath={props.activePath} open={props.open} renamePath={props.renamePath} closeKey={props.closeKey} />;
+      return <FileTree workId={props.workId} activePath={props.activePath} collapsed={props.collapsed ?? {}} setCollapsed={props.setCollapsed ?? (() => {})} onCollapse={props.onCollapse ?? (() => {})} open={props.open} renamePath={props.renamePath} closeKey={props.closeKey} />;
     case 'search':
       return <SearchPanel {...props} />;
     case 'image':

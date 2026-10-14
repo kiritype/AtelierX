@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ApiError, get, post, put } from '../api';
 import AuxPanel, { type AuxTab } from '../components/AuxPanel';
 import type { Attachment } from '../components/AgentPanel';
@@ -69,6 +69,10 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey | null>('files');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [folderCollapsed, setFolderCollapsed] = useState<Record<string, boolean>>({});
+  const sidebarFocusTarget = useRef<'expand' | 'collapse' | null>(null);
   const [aux, setAux] = useState<AuxTab | null>('check');
   const [agentAttach, setAgentAttach] = useState<Attachment | null>(null);
   useEffect(() => {
@@ -105,6 +109,11 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         setPinned(Array.isArray(saved.pinned) ? saved.pinned : []);
         setActive(saved.active ?? null);
       }
+      if (saved?.sidebar && typeof saved.sidebar === 'object') {
+        setSidebarCollapsed(!!saved.sidebar.collapsed);
+        setSidebarWidth(Number.isFinite(saved.sidebar.width) ? Math.min(420, Math.max(180, saved.sidebar.width)) : 240);
+        setFolderCollapsed(saved.sidebar.folders && typeof saved.sidebar.folders === 'object' ? saved.sidebar.folders : {});
+      }
       setRestored(true);
     });
   }, [workId]);
@@ -112,10 +121,31 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     if (!restored) return;
     const timer = setTimeout(async () => {
       const state = (await get('/api/ui-state').catch(() => ({}))) ?? {};
-      await put('/api/ui-state', { ...state, works: { ...(state.works ?? {}), [workId]: { tabs, active, pinned } } });
+      const savedWork = state.works?.[workId] ?? {};
+      await put('/api/ui-state', {
+        ...state,
+        works: {
+          ...(state.works ?? {}),
+          [workId]: {
+            ...savedWork,
+            tabs,
+            active,
+            pinned,
+            sidebar: { ...(savedWork.sidebar ?? {}), collapsed: sidebarCollapsed, width: sidebarWidth, folders: folderCollapsed },
+          },
+        },
+      });
     }, 500);
     return () => clearTimeout(timer);
-  }, [tabs, active, pinned, workId, restored]);
+  }, [tabs, active, pinned, workId, restored, sidebarCollapsed, sidebarWidth, folderCollapsed]);
+
+  useEffect(() => {
+    const target = sidebarFocusTarget.current;
+    if (!target) return;
+    const selector = target === 'expand' ? '[data-sidebar-expand]' : '[data-sidebar-collapse]';
+    document.querySelector<HTMLButtonElement>(selector)?.focus();
+    sidebarFocusTarget.current = null;
+  }, [sidebarCollapsed, panel]);
 
   const open = useCallback((tab: Tab) => {
     const key = tabKey(tab);
@@ -417,15 +447,35 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       </div>
       <div
         className={`main${aux ? '' : ' no-aux'}`}
-        style={{ ['--side' as string]: panel ? '240px' : '0px', display: testing ? 'none' : undefined }}
+        style={{ ['--side' as string]: panel && !sidebarCollapsed ? `${sidebarWidth}px` : '0px', display: testing ? 'none' : undefined }}
       >
         <div className="activity">
+          {sidebarCollapsed && (
+            <button
+              data-sidebar-expand
+              className="ghost icon-button"
+              title={t('tree.expand_panel')}
+              aria-label={t('tree.expand_panel')}
+              aria-expanded="false"
+              aria-controls="work-side-panel"
+              onClick={() => {
+                sidebarFocusTarget.current = 'collapse';
+                setPanel('files');
+                setSidebarCollapsed(false);
+              }}
+            >
+              <Icon name="expand" size={20} />
+            </button>
+          )}
           {PANELS.map((a) => (
             <button
               key={a.key}
               className={panel === a.key ? 'on' : ''}
               title={t(`panel.${a.key}`)}
-              onClick={() => setPanel(panel === a.key ? null : a.key)}
+              onClick={() => {
+                if (sidebarCollapsed) setSidebarCollapsed(false);
+                setPanel(sidebarCollapsed ? a.key : panel === a.key ? null : a.key);
+              }}
             >
               <Icon name={a.icon} size={20} />
               <span className="label">{t(`panel.${a.key}`)}</span>
@@ -445,8 +495,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
             <span className="label">{t('aux.toggle')}</span>
           </button>
         </div>
-        <div className="side">
-          {panel && (
+        <div className="side" id="work-side-panel">
+          {panel && !sidebarCollapsed && (
             <Panels
               panel={panel}
               workId={workId}
@@ -455,6 +505,15 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
               open={open}
               closeKey={close}
               renamePath={renamePath}
+              {...(panel === 'files' ? {
+                collapsed: folderCollapsed,
+                setCollapsed: setFolderCollapsed,
+                onCollapse: () => {
+                  sidebarFocusTarget.current = 'expand';
+                  setSidebarCollapsed(true);
+                  setPanel('files');
+                },
+              } : {})}
             />
           )}
         </div>

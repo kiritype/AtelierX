@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { ApiError, del, get, post, q } from '../api';
 import { t, tm } from '../i18n';
 import type { Tab, TreeEntry } from '../types';
@@ -16,12 +16,18 @@ type Pending = { parent: string; type: 'file' | 'folder' } | { rename: string } 
 export default function FileTree({
   workId,
   activePath,
+  collapsed,
+  setCollapsed,
+  onCollapse,
   open,
   renamePath,
   closeKey,
 }: {
   workId: string;
   activePath: string | null;
+  collapsed: Record<string, boolean>;
+  setCollapsed: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onCollapse: () => void;
   open: (tab: Tab) => void;
   renamePath: (from: string, to: string) => void;
   closeKey: (key: string) => void;
@@ -29,7 +35,6 @@ export default function FileTree({
   const qc = useQueryClient();
   const toast = useToast();
   const tree = useQuery<TreeEntry[]>({ queryKey: ['tree', workId], queryFn: () => get(`/api/works/${workId}/tree`) });
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<{ x: number; y: number; entry: TreeEntry | null } | null>(null);
   const [pending, setPending] = useState<Pending>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -147,6 +152,9 @@ export default function FileTree({
       rows.push(
         <div
           key={entry.path}
+          role="treeitem"
+          aria-expanded={isFolder ? !isCollapsed : undefined}
+          aria-selected={entry.path === activePath}
           className={[
             'tree-row',
             entry.path === activePath ? 'sel' : '',
@@ -176,7 +184,14 @@ export default function FileTree({
             e.stopPropagation();
             setMenu({ x: e.clientX, y: e.clientY, entry });
           }}
-          onKeyDown={(e) => e.key === 'F2' && setPending({ rename: entry.path })}
+          onKeyDown={(e) => {
+            if (e.key === 'F2') setPending({ rename: entry.path });
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              if (isFolder) setCollapsed((c) => ({ ...c, [entry.path]: !c[entry.path] }));
+              else if (entry.type === 'item') open({ type: 'item', path: entry.path });
+            }
+          }}
           tabIndex={0}
         >
           <span className="twisty">{isFolder && <Icon name={isCollapsed ? 'expand' : 'collapse'} size={14} />}</span>
@@ -212,6 +227,9 @@ export default function FileTree({
     >
       <div className="side-head">
         <span className="grow">{t('panel.files')}</span>
+        <button data-sidebar-collapse className="ghost icon-button" title={t('tree.collapse_panel')} aria-label={t('tree.collapse_panel')} aria-expanded="true" aria-controls="work-side-panel" onClick={onCollapse}>
+          <Icon name="collapse" />
+        </button>
         <button className="ghost icon-button" title={t('authoring.title')} aria-label={t('authoring.title')} onClick={() => setAuthoring(true)}>
           <Icon name="authoring" />
         </button>
@@ -221,8 +239,14 @@ export default function FileTree({
         <button className="ghost icon-button" title={t('tree.new_folder')} aria-label={t('tree.new_folder')} onClick={() => setPending({ parent: '', type: 'folder' })}>
           <Icon name="newFolder" />
         </button>
+        <button className="ghost icon-button" title={t('tree.collapse_all')} aria-label={t('tree.collapse_all')} onClick={() => {
+          const paths = (entries: TreeEntry[]): string[] => entries.flatMap((entry) => entry.type === 'folder' ? [entry.path, ...paths(entry.children ?? [])] : []);
+          setCollapsed(Object.fromEntries(paths(tree.data ?? []).map((path) => [path, true])));
+        }}>
+          <Icon name="collapse" />
+        </button>
       </div>
-      <div className="tree">
+      <div className="tree" role="tree" aria-label={t('panel.files')}>
         {tree.data && tree.data.length === 0 && !pending && (
           <div className="empty">
             <p>{t('tree.empty')}</p>
