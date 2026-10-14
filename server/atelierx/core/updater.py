@@ -3,8 +3,8 @@ data, then let a small script swap the program files after the app has closed an
 
 Only the packaged app updates itself. The program files are the top-level entries of the release ZIP's ``AtelierX/``
 folder (the executable, ``_internal``, the manual, notices …); the user data folders beside them (config, state, data,
-output) are never touched. The replaced entries stay as ``<name>.old`` until the new version starts and removes them,
-so a failed swap can be rolled back.
+output) are never touched. Replaced entries stay in a unique update backup directory until the new version starts
+and removes that directory, so a failed swap can be rolled back without colliding with user files.
 """
 
 import asyncio
@@ -42,22 +42,37 @@ $p = [System.IO.File]::ReadAllText($Params) | ConvertFrom-Json
 $AppPid = [int]$p.app_pid; $Root = [string]$p.root; $New = [string]$p.new; $Result = [string]$p.result
 $keep = @('config', 'state', 'data', 'output')
 function Write-Result([string]$State, [string]$Detail) {
-  $json = @{ state = $State; detail = $Detail; at = (Get-Date).ToString('o') } | ConvertTo-Json -Compress
+  $json = @{ state = $State; detail = $Detail; at = (Get-Date).ToString('o'); backup_id = $backupId } | ConvertTo-Json -Compress
   [System.IO.File]::WriteAllText($Result, $json)
+}
+function Move-Entry([string]$Source, [string]$Destination) {
+  if ([System.IO.Directory]::Exists($Source)) {
+    [System.IO.Directory]::Move($Source, $Destination)
+  } else {
+    [System.IO.File]::Move($Source, $Destination)
+  }
 }
 try { Wait-Process -Id $AppPid -Timeout 120 -ErrorAction SilentlyContinue } catch {}
 Start-Sleep -Milliseconds 700
 $names = @(Get-ChildItem -LiteralPath $New | ForEach-Object { $_.Name } | Where-Object { $keep -notcontains $_ })
 $moved = @(); $placed = @()
 try {
+  $backupRoot = Join-Path (Split-Path -Path $Result -Parent) 'backups'
+  New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+  do {
+    $backupId = [Guid]::NewGuid().ToString('N')
+    $backupDir = Join-Path $backupRoot $backupId
+  } while (Test-Path -LiteralPath $backupDir)
+  New-Item -ItemType Directory -Path $backupDir | Out-Null
   foreach ($n in $names) {
     $target = Join-Path $Root $n
-    $old = "$target.old"
-    if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-    if (Test-Path -LiteralPath $target) { Move-Item -LiteralPath $target -Destination $old; $moved += $n }
+    if (Test-Path -LiteralPath $target) {
+      Move-Entry $target (Join-Path $backupDir $n)
+      $moved += $n
+    }
   }
   foreach ($n in $names) {
-    Move-Item -LiteralPath (Join-Path $New $n) -Destination (Join-Path $Root $n)
+    Move-Entry (Join-Path $New $n) (Join-Path $Root $n)
     $placed += $n
   }
   Write-Result 'ok' ''
@@ -67,8 +82,9 @@ try {
   foreach ($n in $moved) {
     $target = Join-Path $Root $n
     if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue }
-    Move-Item -LiteralPath "$target.old" -Destination $target -ErrorAction SilentlyContinue
+    try { Move-Entry (Join-Path $backupDir $n) $target } catch {}
   }
+  if ($backupDir) { try { [System.IO.Directory]::Delete($backupDir) } catch {} }
   Write-Result 'failed' $err
 }
 if (-not $NoStart) { Start-Process -FilePath (Join-Path $Root 'AtelierX.exe') -WorkingDirectory $Root }
@@ -365,11 +381,11 @@ def finish_update(paths):
     pending = read_json(folder / 'pending.json')
     if not pending:
         return None
-    root = Path(paths.root)
     result = read_json(folder / 'result.json') or {}
     if result.get('state') == 'ok':
-        for old in root.glob('*.old'):
-            shutil.rmtree(old, ignore_errors=True) if old.is_dir() else old.unlink(missing_ok=True)
+        backup_id = result.get('backup_id')
+        if isinstance(backup_id, str) and re.fullmatch(r'[0-9a-f]{32}', backup_id):
+            shutil.rmtree(folder / 'backups' / backup_id, ignore_errors=True)
         shutil.rmtree(folder / 'new', ignore_errors=True)
         for archive in folder.glob('AtelierX-*.zip'):
             archive.unlink(missing_ok=True)
