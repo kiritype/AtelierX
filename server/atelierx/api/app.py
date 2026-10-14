@@ -23,6 +23,7 @@ from ..core.packages import Packages
 from ..core.presets import Presets
 from ..core.settings import Settings
 from ..core.snapshots import Snapshots
+from ..core.update_notice import UpdateNotices
 from ..core.updater import Updater
 from ..core.vault import Vault
 from ..core.work_jobs import WorkJobs
@@ -76,6 +77,7 @@ class State:
         self.packages = Packages(paths, self.works, self.image, self.vault)
         self.admission = Admission()
         self.updater = Updater(paths, busy=self.busy_work, admission=self.admission)
+        self.update_notices = UpdateNotices(paths)
         self.maintain()
 
     def busy_work(self):

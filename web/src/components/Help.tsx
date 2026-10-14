@@ -1,7 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
+import {
+  beginStartupUpdateCheck,
+  updateResultKey,
+  type UpdateSummary,
+} from '../lib/updateNotice';
 import type { MenuEntry } from './MenuBar';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
@@ -36,10 +41,11 @@ type UpdateState = {
 const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
 const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
-
 export function useHelp() {
   const [dialog, setDialog] = useState<HelpDialog>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const toast = useToast();
+  const openUpdate = useCallback(() => setDialog('update'), []);
   const about = useQuery<About>({ queryKey: ['about'], queryFn: () => get('/api/about'), staleTime: Infinity });
   const entries: MenuEntry[] = [
     { label: t('help.manual'), run: () => open(about.data?.links.manual ?? 'https://atelierx.cftm.net/') },
@@ -56,7 +62,7 @@ export function useHelp() {
         }]
       : []),
     null,
-    { label: t('help.check_update'), run: () => setDialog('update') },
+    { label: t('help.check_update'), run: openUpdate },
     { label: t('help.releases'), run: () => open(about.data?.links.releases ?? 'https://github.com/kiritype/AtelierX/releases') },
     null,
     // Opened in Discussions; nothing is sent from the app.
@@ -79,7 +85,7 @@ export function useHelp() {
       {dialog === 'notices' && <NoticesDialog onClose={close} />}
     </>
   );
-  return { entries, element };
+  return { entries, element, openUpdate, updateAvailable, setUpdateAvailable };
 }
 
 export function AboutContent({ about, onNotices }: { about: About; onNotices?: () => void }) {
@@ -193,7 +199,12 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
               ? t('help.update_available', { latest: check.data.latest, current: check.data.current })
               : t('help.up_to_date', { current: check.data.current })}
           </p>
-          {check.data.newer && check.data.notes && <pre className="update-notes">{check.data.notes}</pre>}
+          {check.data.notes && (
+            <>
+              <h4>{t('help.release_notes', { version: check.data.latest })}</h4>
+              <pre className="update-notes">{check.data.notes}</pre>
+            </>
+          )}
           {check.data.newer && !u?.packaged && <p className="faint small">{t('help.update_how')}</p>}
           {check.data.newer && u?.packaged && u.state === 'idle' && <p className="faint small">{t('update.about')}</p>}
           {u && PREPARING.includes(u.state) && (
@@ -212,22 +223,27 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
 }
 
 // After an update the new version says how it went, once.
-export function useUpdateResult() {
+export function useUpdateResult(openUpdate: () => void) {
   const toast = useToast();
   useEffect(() => {
     get<UpdateState>('/api/update/status')
-      .then((status) => {
+      .then(async (status) => {
         const result = status.last_result;
         if (!result) return;
+        const claim = await post<{ claimed: boolean }>('/api/update/notice/claim-result', { key: updateResultKey(result) });
+        if (!claim.claimed) {
+          post('/api/update/forget').catch(() => undefined);
+          return;
+        }
         toast(
           result.state === 'ok'
-            ? { text: t('update.done', { version: result.version ?? status.current }) }
+            ? { text: t('update.done', { version: result.version ?? status.current }), action: { label: t('update.view_changes'), run: openUpdate } }
             : { text: t('update.rolled_back', { detail: result.detail ?? '' }), tone: 'error' },
         );
         post('/api/update/forget').catch(() => undefined);
       })
       .catch(() => undefined);
-  }, [toast]);
+  }, [openUpdate, toast]);
 }
 
 function NoticesDialog({ onClose }: { onClose: () => void }) {
@@ -242,23 +258,44 @@ function NoticesDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Once per app session, when Settings → General → "check for updates at start" is on.
-export function useStartupUpdateCheck(enabled: boolean) {
+// Checks at most once a day and stores notice state under the app root, across browser origins.
+export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available: boolean) => void, onOpenUpdate: () => void) {
   const toast = useToast();
   useEffect(() => {
-    if (!enabled) return;
-    try {
-      if (sessionStorage.getItem('atelierx-update-checked')) return;
-      sessionStorage.setItem('atelierx-update-checked', '1');
-    } catch {
-      /* storage may be unavailable; check anyway */
+    let active = true;
+    if (!enabled) {
+      onAvailable(false);
+      return () => { active = false; };
     }
-    get<Update>('/api/update-check')
-      .then((result) => {
-        if (result.newer) {
-          toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.open_release'), run: () => open(result.url) } });
+    const showNotice = (result: UpdateSummary) => {
+      if (result.newer) {
+        toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
+      }
+    };
+    const check = beginStartupUpdateCheck(async () => {
+      const initial = await post<{ should_check: boolean; available_version: string | null; current_version: string }>('/api/update/notice/begin');
+      let summary: UpdateSummary;
+      if (!initial.should_check) {
+        summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
+      } else {
+        try {
+          const result = await get<Update>('/api/update-check');
+          await post('/api/update/notice/result', { current: result.current, latest: result.latest, newer: result.newer });
+          summary = result;
+        } catch {
+          summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
         }
+      }
+      const consumed = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
+      return { summary, notice: consumed.notice };
+    });
+    check
+      .then(({ summary, notice }) => {
+        if (!active) return;
+        onAvailable(summary.newer);
+        if (notice) showNotice(notice);
       })
       .catch(() => undefined);
-  }, [enabled, toast]);
+    return () => { active = false; };
+  }, [enabled, onAvailable, onOpenUpdate, toast]);
 }
