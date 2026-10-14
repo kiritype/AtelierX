@@ -22,13 +22,13 @@ import shutil
 import time
 import zipfile
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .. import __version__
 from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
 from .vault import Vault
-from .works import APP_DIR, Work
+from .works import APP_DIR, Work, check_id, check_name
 
 MANIFEST = 'atelierx-package.json'
 FORMAT = 'atelierx-package'
@@ -63,9 +63,22 @@ def _safe_member(name):
     if '\\' in name or name.startswith('/') or ':' in name:
         raise _bad_package()
     parts = PurePosixPath(name).parts
-    if not parts or any(p in ('', '.', '..') for p in parts):
+    if not parts or any(
+        p in ('', '.', '..')
+        or p.endswith(('.', ' '))
+        or PureWindowsPath(p).is_reserved()
+        or any(ord(c) < 32 for c in p)
+        for p in parts
+    ):
         raise _bad_package()
     return parts
+
+
+def _contained(root, target):
+    root, target = Path(root).resolve(), Path(target).resolve()
+    if target == root or not target.is_relative_to(root):
+        raise _bad_package()
+    return target
 
 
 def _write_member(archive, name, target):
@@ -226,8 +239,24 @@ class Packages:
             doc = json.loads(archive.read(MANIFEST))
         except (KeyError, ValueError):
             raise _bad_package() from None
-        if doc.get('format') != FORMAT or doc.get('kind') not in ('works', 'settings'):
+        if (
+            not isinstance(doc, dict)
+            or doc.get('format') != FORMAT
+            or doc.get('kind') not in ('works', 'settings')
+        ):
             raise _bad_package()
+        if doc['kind'] == 'works':
+            entries = doc.get('works')
+            if not isinstance(entries, list):
+                raise _bad_package()
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise _bad_package()
+                name, work_id = entry.get('name'), entry.get('id')
+                if not isinstance(name, str) or len(_safe_member(name)) != 1:
+                    raise _bad_package()
+                check_name(name)
+                check_id(work_id)
         for name in archive.namelist():
             _safe_member(name)
         return doc
@@ -298,7 +327,7 @@ class Packages:
         name, k = base, 2
         while (self.paths.works / name).exists():
             name, k = f'{base} ({k})', k + 1
-        folder = self.paths.works / name
+        folder = _contained(self.paths.works, self.paths.works / name)
         output = Path(self.paths.output)
         lora_dir = self._lora_dir()
         try:
@@ -307,11 +336,11 @@ class Packages:
                     continue
                 parts = _safe_member(member)[2:]
                 if parts[0] == 'work':
-                    _write_member(archive, member, folder.joinpath(*parts[1:]))
+                    _write_member(archive, member, _contained(folder, folder.joinpath(*parts[1:])))
                 elif parts[0] == 'output':
                     rel = PurePosixPath(*parts[1:])
                     rel = PurePosixPath(new_id, *rel.parts[1:]) if rel.parts[0] == old_id else rel
-                    target = output.joinpath(*rel.parts)
+                    target = _contained(output, output.joinpath(*rel.parts))
                     if target.exists():
                         continue  # never overwrite an image already here
                     if target.suffix == '.json':
@@ -324,7 +353,7 @@ class Packages:
                     if lora_dir is None or (lora_dir / parts[1]).exists():
                         skipped_loras.append(parts[1])
                     else:
-                        _write_member(archive, member, lora_dir / parts[1])
+                        _write_member(archive, member, _contained(lora_dir, lora_dir / parts[1]))
             if not (folder / APP_DIR / 'work.json').is_file():
                 raise _bad_package()
             work = Work(folder)
@@ -435,7 +464,7 @@ class Packages:
                     if kind is True or kind == 'files':
                         if kind == 'files' and len(rel) != 1:
                             continue
-                        _write_member(archive, member, target.joinpath(*rel))
+                        _write_member(archive, member, _contained(target, target.joinpath(*rel)))
                     else:
                         _write_member(archive, member, target)
                 if members:

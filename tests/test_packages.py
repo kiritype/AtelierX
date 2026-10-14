@@ -4,6 +4,7 @@ import io
 import json
 import zipfile
 
+import pytest
 from starlette.testclient import TestClient
 
 from atelierx.api.app import build_app
@@ -162,3 +163,38 @@ def test_settings_travel_with_or_without_the_vault(unlocked, tmp_path):
         assert (other_paths.state / 'packages' / 'backups' / done['backup']).is_file()
     finally:
         other.__exit__(None, None, None)
+
+
+@pytest.mark.parametrize(
+    'field,value',
+    [
+        ('name', '../outside'),
+        ('name', 'nested/name'),
+        ('name', 'C:/outside'),
+        ('name', 'NUL'),
+        ('name', 'folder.'),
+        ('name', '...'),
+        ('id', '../outside'),
+        ('id', 'C:outside'),
+        ('name', None),
+    ],
+)
+def test_package_manifest_rejects_unsafe_identity_before_import(unlocked, field, value):
+    entry = {'id': 'W009', 'name': 'Safe work'}
+    entry[field] = value
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr(
+            'atelierx-package.json',
+            json.dumps(
+                {
+                    'format': 'atelierx-package',
+                    'kind': 'works',
+                    'works': [entry],
+                }
+            ),
+        )
+        archive.writestr('works/0/work/note.md', 'synthetic fixture')
+    before = list(unlocked.app.state.app.paths.works.glob('*'))
+    assert _upload(unlocked, buffer.getvalue()).status_code == 400
+    assert list(unlocked.app.state.app.paths.works.glob('*')) == before
