@@ -134,6 +134,10 @@ def test_the_swap_script_replaces_program_files_and_keeps_user_data(paths, tmp_p
     (root / 'AtelierX.exe').write_bytes(b'old exe')
     (root / 'config').mkdir()
     (root / 'config' / 'settings.json').write_text('{}', encoding='utf-8')
+    (root / '_internal.old').mkdir()
+    (root / '_internal.old' / 'personal.dll').write_bytes(b'personal')
+    (root / 'AtelierX.exe.old').write_bytes(b'personal exe')
+    (root / 'personal-notes.old').write_bytes(b'notes')
     new = tmp_path / 'new' / 'AtelierX'
     (new / '_internal').mkdir(parents=True)
     (new / '_internal' / 'new.dll').write_bytes(b'new')
@@ -141,7 +145,10 @@ def test_the_swap_script_replaces_program_files_and_keeps_user_data(paths, tmp_p
     (new / 'manual').mkdir()
     (new / 'manual' / 'index.html').write_text('m', encoding='utf-8')
     script = Updater(paths).write_script()
-    result = tmp_path / 'result.json'
+    result = paths.state / 'update' / 'result.json'
+    unrelated_backup = result.parent / 'backups' / ('f' * 32)
+    unrelated_backup.mkdir(parents=True)
+    (unrelated_backup / 'personal.txt').write_bytes(b'personal backup')
     done = subprocess.run(
         [
             'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
@@ -150,20 +157,30 @@ def test_the_swap_script_replaces_program_files_and_keeps_user_data(paths, tmp_p
         capture_output=True, timeout=120, check=False,
     )  # fmt: skip
     assert done.returncode == 0, done.stderr.decode(errors='replace')
-    assert json.loads(result.read_text(encoding='utf-8'))['state'] == 'ok'
+    swap_result = json.loads(result.read_text(encoding='utf-8'))
+    assert swap_result['state'] == 'ok'
+    backup = result.parent / 'backups' / swap_result['backup_id']
     assert (root / 'AtelierX.exe').read_bytes() == b'new exe' and (root / '_internal' / 'new.dll').is_file()
-    assert (root / '_internal.old' / 'old.dll').is_file() and (root / 'AtelierX.exe.old').is_file()
+    assert (backup / '_internal' / 'old.dll').read_bytes() == b'old'
+    assert (backup / 'AtelierX.exe').read_bytes() == b'old exe'
+    assert (root / '_internal.old' / 'personal.dll').read_bytes() == b'personal'
+    assert (root / 'AtelierX.exe.old').read_bytes() == b'personal exe'
+    assert (root / 'personal-notes.old').read_bytes() == b'notes'
     assert (root / 'config' / 'settings.json').is_file() and (root / 'manual' / 'index.html').is_file()
 
     # The new version starts: the replaced files go, the result stays for the screen.
-    (paths.state / 'update').mkdir(parents=True, exist_ok=True)
     (paths.state / 'update' / 'pending.json').write_text(
         '{"version": "v9.9.9", "from": "0.0.6"}', encoding='utf-8'
     )
-    (paths.state / 'update' / 'result.json').write_text(result.read_text(encoding='utf-8'), encoding='utf-8')
     fake = type('P', (), {'state': paths.state, 'root': root})()
     assert finish_update(fake)['state'] == 'ok'
-    assert not (root / '_internal.old').exists() and not (root / 'AtelierX.exe.old').exists()
+    assert not backup.exists()
+    assert (unrelated_backup / 'personal.txt').read_bytes() == b'personal backup'
+    assert (root / '_internal.old' / 'personal.dll').read_bytes() == b'personal'
+    assert (root / 'AtelierX.exe.old').read_bytes() == b'personal exe'
+    assert (root / 'personal-notes.old').read_bytes() == b'notes'
+    assert finish_update(fake) is None
+    assert (root / 'personal-notes.old').read_bytes() == b'notes'
     assert (
         json.loads((paths.state / 'update' / 'result.json').read_text(encoding='utf-8'))['version']
         == 'v9.9.9'
@@ -176,12 +193,13 @@ def test_the_swap_script_rolls_back_when_a_file_is_in_use(paths, tmp_path):
     (root / '_internal').mkdir(parents=True)
     (root / '_internal' / 'old.dll').write_bytes(b'old')
     (root / 'AtelierX.exe').write_bytes(b'old exe')
+    (root / 'AtelierX.exe.old').write_bytes(b'personal exe')
     new = tmp_path / 'new' / 'AtelierX'
     (new / '_internal').mkdir(parents=True)
     (new / '_internal' / 'new.dll').write_bytes(b'new')
     (new / 'AtelierX.exe').write_bytes(b'new exe')
     script = Updater(paths).write_script()
-    result = tmp_path / 'result.json'
+    result = paths.state / 'update' / 'result.json'
     with (root / '_internal' / 'old.dll').open('rb'):  # still loaded: the folder cannot move
         done = subprocess.run(
             [
@@ -193,7 +211,28 @@ def test_the_swap_script_rolls_back_when_a_file_is_in_use(paths, tmp_path):
     assert done.returncode == 0, done.stderr.decode(errors='replace')
     assert json.loads(result.read_text(encoding='utf-8'))['state'] == 'failed'
     assert (root / 'AtelierX.exe').read_bytes() == b'old exe' and (root / '_internal' / 'old.dll').is_file()
-    assert not (root / 'AtelierX.exe.old').exists()
+    assert (root / 'AtelierX.exe.old').read_bytes() == b'personal exe'
+    (result.parent / 'pending.json').write_text('{"version": "v9.9.9"}', encoding='utf-8')
+    fake = type('P', (), {'state': paths.state, 'root': root})()
+    assert finish_update(fake)['state'] == 'failed'
+    assert finish_update(fake) is None
+    assert (root / 'AtelierX.exe.old').read_bytes() == b'personal exe'
+
+
+def test_legacy_update_result_does_not_claim_old_files(paths):
+    root = paths.root
+    (root / '_internal.old').mkdir()
+    (root / '_internal.old' / 'backup.dll').write_bytes(b'legacy or personal')
+    (root / 'personal-notes.old').write_bytes(b'personal')
+    update = paths.state / 'update'
+    update.mkdir(parents=True)
+    (update / 'pending.json').write_text('{"version": "v0.4.1", "from": "0.4.0"}', encoding='utf-8')
+    (update / 'result.json').write_text('{"state": "ok"}', encoding='utf-8')
+
+    assert finish_update(paths)['state'] == 'ok'
+    assert (root / '_internal.old' / 'backup.dll').read_bytes() == b'legacy or personal'
+    assert (root / 'personal-notes.old').read_bytes() == b'personal'
+    assert finish_update(paths) is None
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='the swap script is PowerShell on Windows')
