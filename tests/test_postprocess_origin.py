@@ -153,3 +153,67 @@ def test_postprocess_without_origin_or_service_rejects_regeneration(unlocked):
     refused = client.post('/api/image/gallery/regenerate', json={'items': [processed]})
     assert refused.status_code == 400
     assert refused.json()['error']['key'] == 'server.gallery.no_generation_origin'
+
+
+def test_cycle_and_uploaded_image_do_not_invent_a_generation_origin(unlocked):
+    client = unlocked
+    wid, runtime = _setup(client)
+    original = _generated(runtime, wid, 'single', 'comfyui')
+    processed, path = _process(runtime, original)
+    record = runtime.gallery.metadata(processed)
+    record['source']['path'] = processed
+    atomic_json(path.with_suffix('.json'), record)
+    refused = client.post('/api/image/gallery/regenerate', json={'items': [processed]})
+    assert refused.status_code == 400
+    assert refused.json()['error']['key'] == 'server.gallery.no_generation_origin'
+
+    item = runtime.tools.upload('external.png', _png())['added'][0]
+    url, _ = runtime._store_result(
+        item,
+        Image.new('RGB', (32, 24), (70, 110, 170)),
+        'upscale',
+        {},
+        None,
+        'post-job',
+        made={'positive': 'redrawn prompt', 'settings': {'seed': 3}},
+    )
+    external = url.removeprefix('/api/image/files/')
+    refused = client.post('/api/image/gallery/regenerate', json={'items': [external]})
+    assert refused.status_code == 400
+    assert refused.json()['error']['key'] == 'server.gallery.no_generation_origin'
+
+
+def test_character_without_explicit_service_is_not_reassigned(unlocked):
+    client = unlocked
+    wid, runtime = _setup(client)
+    original = _generated(runtime, wid, 'character', 'novelai')
+    path = runtime.gallery.safe_path(original)
+    record = runtime.gallery.metadata(original)
+    record.pop('service')
+    atomic_json(path.with_suffix('.json'), record)
+    refused = client.post('/api/image/gallery/regenerate', json={'items': [original]})
+    assert refused.status_code == 400
+    assert refused.json()['error']['key'] == 'server.gallery.unknown_generation_service'
+
+
+def test_regeneration_queue_reload_and_retry_keep_source_in_snapshot(unlocked):
+    client = unlocked
+    wid, runtime = _setup(client)
+    original = _generated(runtime, wid, 'single', 'novelai')
+    processed, _ = _process(runtime, original)
+    response = client.post('/api/image/gallery/regenerate', json={'items': [processed], 'review': False})
+    assert response.status_code == 200, response.text
+    runtime.queue.load()
+    job = runtime.jobs[-1]
+    assert job['snapshot']['source_path'] == processed
+    job['status'] = 'failed'
+    runtime.queue.persist()
+    retried = client.post(f'/api/image/jobs/{job["id"]}/retry')
+    assert retried.status_code == 200, retried.text
+    retry_job = runtime.queue.get(retried.json()['job_id'])
+    assert retry_job['kind'] == 'single' and retry_job['service'] == 'novelai'
+    assert retry_job['snapshot']['source_path'] == processed
+    saved = runtime.save_result(retry_job, _png(), {}, 'fake-id')
+    record = runtime.gallery.metadata(saved.removeprefix('/api/image/files/'))
+    assert record['source_path'] == processed
+    assert record['kind'] == 'single' and record['service'] == 'novelai'
