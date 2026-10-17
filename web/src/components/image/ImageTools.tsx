@@ -73,6 +73,35 @@ const tp = (key: string, ...values: unknown[]) => t(key, Object.fromEntries(valu
 const size = (n: number) => (n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`);
 const norm = (tag: string) => tag.toLowerCase().replace(/_/g, ' ').replace(/^@/, '').trim();
 
+function useBatchSubmit(fail: (error: unknown) => void) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const run = async (operation: string, body: Record<string, unknown>, accepted: (n: number, id: string) => string, prepare?: () => Promise<void>, rerun = false) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    try {
+      await prepare?.();
+      const result = await submitToolBatch(operation, body, rerun);
+      await qc.invalidateQueries({ queryKey: ['tool-batches'] });
+      window.dispatchEvent(new CustomEvent('tool-batch-focus', { detail: result.id }));
+      if (result.reused) {
+        toast({ text: t('bulk.already_running', { n: result.accepted, id: result.id.slice(0, 8) }), action: {
+          label: t('bulk.run_again'), run: () => { void run(operation, body, accepted, prepare, true); },
+        } });
+      } else {
+        toast({ text: accepted(result.accepted, result.id.slice(0, 8)) });
+      }
+      qc.invalidateQueries({ queryKey: ['image-queue'] });
+      return result;
+    } catch (error) { fail(error); }
+    finally { pending.current = false; setBusy(false); }
+  };
+  return { busy, run };
+}
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="col tool-field">
@@ -717,8 +746,8 @@ function ConvertForm({ ids, fail }: { ids: string[]; fail: (e: unknown) => void 
 }
 
 function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: ToolItem[]; info?: TaggerInfo; fail: (e: unknown) => void; onExcludes: () => void }) {
-  const qc = useQueryClient();
   const toast = useToast();
+  const submit = useBatchSubmit(fail);
   const [form, setForm] = useState({ model: '', threshold: 0.35, character_threshold: 0.85 });
   const [exclude, setExclude] = useState<string | null>(null);
   if (!info) return <div className="faint">{t('tools.reading_tagger')}</div>;
@@ -742,18 +771,10 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
       </Field>
       <button
         className="primary"
-        disabled={!ids.length}
-        onClick={async () => {
-          try {
-            await submitToolBatch('tag', { ...form, model, ids });
-            toast({ text: tp('tools.queued_tagging', ids.length) });
-            qc.invalidateQueries({ queryKey: ['image-queue'] });
-          } catch (err) {
-            fail(err);
-          }
-        }}
+        disabled={!ids.length || submit.busy}
+        onClick={() => submit.run('tag', { ...form, model, ids }, (n) => tp('tools.queued_tagging', n))}
       >
-        {tp('tools.tag_selected', ids.length)}
+        {submit.busy ? t('bulk.submitting') : tp('tools.tag_selected', ids.length)}
       </button>
       <span className="faint small">{t('tools.shares_queue')}</span>
       <div className="section-title">{t('tools.excluded_tags')}</div>
@@ -792,8 +813,7 @@ function TagForm({ ids, list, info, fail, onExcludes }: { ids: string[]; list: T
 }
 
 function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; info?: PostInfo; method: Method; fail: (e: unknown) => void; openSettings?: OpenSettings }) {
-  const qc = useQueryClient();
-  const toast = useToast();
+  const submit = useBatchSubmit(fail);
   const [op, setOp] = useState('upscale');
   const [upscale, setUpscale] = useState({ model: '', scale: 2 });
   const [detail, setDetail] = useState({ face: true, eye: true, mouth: false, hand: true, denoise: 0.4, steps: 20 });
@@ -859,18 +879,10 @@ function PostForm({ ids, info, method, fail, openSettings }: { ids: string[]; in
       )}
       <button
         className="primary"
-        disabled={!ids.length}
-        onClick={async () => {
-          try {
-            const result = await submitToolBatch('postprocess', { ids, op, method, options: op === 'detail' ? detail : { ...upscale, model } });
-            toast({ text: tp('tools.queued_post', result.accepted) });
-            qc.invalidateQueries({ queryKey: ['image-queue'] });
-          } catch (err) {
-            fail(err);
-          }
-        }}
+        disabled={!ids.length || submit.busy}
+        onClick={() => submit.run('postprocess', { ids, op, method, options: op === 'detail' ? detail : { ...upscale, model } }, (n) => tp('tools.queued_post', n))}
       >
-        {tp('tools.process_selected', ids.length)}
+        {submit.busy ? t('bulk.submitting') : tp('tools.process_selected', ids.length)}
       </button>
       <span className="faint small">{t('tools.shares_queue')}</span>
       <span className="faint small">{t('tools.where_saved')}</span>
@@ -903,8 +915,8 @@ function MaskForm({
   reload: () => void;
   rerender: () => void;
 }) {
-  const qc = useQueryClient();
   const toast = useToast();
+  const submit = useBatchSubmit(fail);
   const [censor, setCensor] = useState({ treatment: 'mosaic', intensity: 15, color: '#ffffff', opacity: 100, grow: 0, feather: 0, confidence: 0.35, labels: [] as string[] });
   const [alpha, setAlpha] = useState({ method: 'isnet', confidence: 0.35, grow: 0, feather: 1 });
   const [inpaint, setInpaint] = useState({ positive: '', negative: '', denoise: 0.6, steps: 0, grow: 8, feather: 8, area: 'crop', padding: 64, for: '' });
@@ -932,16 +944,8 @@ function MaskForm({
   const flush = async () => {
     if (editor.current?.isDirty()) await editor.current.save();
   };
-  const queue = async (op: string, options: any, targetIds: string[], done: string) => {
-    try {
-      await flush();
-      const result = await submitToolBatch('postprocess', { ids: targetIds, op, method, options });
-      toast({ text: tp(done, result.accepted) });
-      qc.invalidateQueries({ queryKey: ['image-queue'] });
-    } catch (err) {
-      fail(err);
-    }
-  };
+  const queue = (op: string, options: any, targetIds: string[], done: string) =>
+    submit.run('postprocess', { ids: targetIds, op, method, options }, (n) => tp(done, n), flush);
   const confirmOverwrite = (targetIds: string[]) => {
     if (targetIds.some((id) => !list.some((item) => item.id === id)))
       return confirm(tp('tools.overwrite_masks', targetIds.length));
@@ -953,27 +957,13 @@ function MaskForm({
       ? { treatment: censor.treatment, intensity: censor.intensity, color: censor.color, opacity: censor.opacity, grow: censor.grow, feather: censor.feather }
       : { grow: alpha.grow, feather: alpha.feather };
   const applyOne = async () => {
-    try {
-      await flush();
-      const result = await submitToolBatch(kind, { ids: [item!.id], ...bodyOf() });
-      toast({ text: t('bulk.accepted', { n: result.accepted, id: result.id.slice(0, 8) }) });
-      reload();
-    } catch (err) {
-      fail(err);
-    }
+    const result = await submit.run(kind, { ids: [item!.id], ...bodyOf() }, (n, id) => t('bulk.accepted', { n, id }), flush);
+    if (result) reload();
   };
   const withMask = ids;
   const applyChosen = async () => {
-    try {
-      await flush();
-    } catch (err) {
-      return fail(err);
-    }
-    try {
-      const result = await submitToolBatch(kind, { ids, ...bodyOf() });
-      toast({ text: t('bulk.accepted', { n: result.accepted, id: result.id.slice(0, 8) }) });
-    } catch (err) { fail(err); }
-    reload();
+    const result = await submit.run(kind, { ids, ...bodyOf() }, (n, id) => t('bulk.accepted', { n, id }), flush);
+    if (result) reload();
   };
   const markText = item?.[field] ? tp('tools.mask_state', item[field]!.source === 'detected' ? t('tools.detected') : t('tools.edited_by_hand')) : t('tools.no_mask');
   const step2 = (
@@ -1021,12 +1011,12 @@ function MaskForm({
           <Num value={censor.confidence} min={0} max={1} step={0.05} onChange={(v) => setCensor({ ...censor, confidence: v })} />
         </Field>
         <button
-          disabled={!ids.length || unavailable || !info?.ops?.detect}
+          disabled={!ids.length || unavailable || !info?.ops?.detect || submit.busy}
           onClick={() =>
             confirmOverwrite(ids) && queue('detect', { confidence: censor.confidence, ...(censor.labels.length ? { labels: censor.labels } : {}) }, ids, 'tools.queued_detect')
           }
         >
-          {tp('tools.detect_selected', ids.length)}
+          {submit.busy ? t('bulk.submitting') : tp('tools.detect_selected', ids.length)}
         </button>
         {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}
         <span className="faint small">{t('tools.paint_instead')}</span>
@@ -1056,11 +1046,11 @@ function MaskForm({
           </Field>
         )}
         {shape(censor, setCensor)}
-        <button className="primary" disabled={!item || (!item[field] && !dirty)} onClick={applyOne}>
-          {t('tools.apply_this')}
+        <button className="primary" disabled={!item || (!item[field] && !dirty) || submit.busy} onClick={applyOne}>
+          {submit.busy ? t('bulk.submitting') : t('tools.apply_this')}
         </button>
-        <button disabled={!withMask.length} onClick={applyChosen}>
-          {tp('tools.apply_chosen', withMask.length)}
+        <button disabled={!withMask.length || submit.busy} onClick={applyChosen}>
+          {submit.busy ? t('bulk.submitting') : tp('tools.apply_chosen', withMask.length)}
         </button>
         <span className="faint small">{t('tools.censor_keeps_original')}</span>
         <span className="faint small">{t('tools.where_saved')}</span>
@@ -1083,20 +1073,20 @@ function MaskForm({
           </Field>
         )}
         <button
-          disabled={!ids.length || unavailable || !info?.ops?.alpha}
+          disabled={!ids.length || unavailable || !info?.ops?.alpha || submit.busy}
           onClick={() => confirmOverwrite(ids) && queue('alpha', { method: alpha.method, confidence: alpha.confidence }, ids, 'tools.queued_split')}
         >
-          {tp('tools.split_selected', ids.length)}
+          {submit.busy ? t('bulk.submitting') : tp('tools.split_selected', ids.length)}
         </button>
         {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}
         {step2}
         <div className="section-title">{t('tools.step.apply')}</div>
         {shape(alpha, setAlpha)}
-        <button className="primary" disabled={!item || (!item[field] && !dirty)} onClick={applyOne}>
-          {t('tools.apply_this')}
+        <button className="primary" disabled={!item || (!item[field] && !dirty) || submit.busy} onClick={applyOne}>
+          {submit.busy ? t('bulk.submitting') : t('tools.apply_this')}
         </button>
-        <button disabled={!withMask.length} onClick={applyChosen}>
-          {tp('tools.apply_chosen', withMask.length)}
+        <button disabled={!withMask.length || submit.busy} onClick={applyChosen}>
+          {submit.busy ? t('bulk.submitting') : tp('tools.apply_chosen', withMask.length)}
         </button>
         <span className="faint small">{t('tools.alpha_result')}</span>
         <span className="faint small">{t('tools.where_saved')}</span>
@@ -1134,7 +1124,7 @@ function MaskForm({
       {shape(inpaint, setInpaint)}
       <button
         className="primary"
-        disabled={!item || !recorded || (!item.inpaint_mask && !dirty) || unavailable || !info?.ops?.inpaint}
+        disabled={!item || !recorded || (!item.inpaint_mask && !dirty) || unavailable || !info?.ops?.inpaint || submit.busy}
         onClick={() => {
           const { for: filledFor, ...options } = inpaint;
           const body: any = { ...options };
@@ -1146,7 +1136,7 @@ function MaskForm({
           queue('inpaint', body, [item!.id], 'tools.queued_inpaint');
         }}
       >
-        {t('tools.inpaint_this')}
+        {submit.busy ? t('bulk.submitting') : t('tools.inpaint_this')}
       </button>
       {item && analysis && !recorded && <span className="error-text small">{t('tools.inpaint_needs_record')}</span>}
       {unavailable && info && <span className="error-text small">{msgText(info.error)}</span>}

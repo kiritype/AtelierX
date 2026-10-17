@@ -90,8 +90,9 @@ class ToolBatches:
         settings = {
             k: copy.deepcopy(v)
             for k, v in body.items()
-            if k not in ('paths', 'ids', 'request_id', 'operation')
+            if k not in ('paths', 'ids', 'request_id', 'operation', 'rerun')
         }
+        rerun = body.get('rerun') is True
         if len(encoded(settings).encode()) > 65536:
             raise ValueError(Msg('server.bulk.settings_large', 'Bulk settings are too large.'))
         fingerprint = hashlib.sha256(
@@ -151,6 +152,37 @@ class ToolBatches:
                 mask_kind = None
             else:
                 mask_kind = operation if operation in ('censor', 'alpha') else None
+            # A request ID identifies an HTTP attempt. This separate key identifies
+            # the user's unfinished work across tabs and process restarts. Mask
+            # content is part of the key so a newly edited mask is a new action.
+            mask_versions = {}
+            if mask_kind:
+                for target in set(targets):
+                    try:
+                        path = self.rt.tools.mask_path(target, mask_kind)
+                        mask_versions[target] = hashlib.sha256(path.read_bytes()).hexdigest()
+                    except (OSError, ValueError):
+                        mask_versions[target] = None
+            submission_key = hashlib.sha256(
+                encoded(
+                    {
+                        'operation': operation,
+                        'targets': sorted(set(targets)),
+                        'settings': {k: v for k, v in settings.items() if not k.startswith('_')},
+                        'masks': mask_versions,
+                    }
+                ).encode()
+            ).hexdigest()
+            if not rerun:
+                for row in self.db.execute(
+                    'SELECT DISTINCT b.id,b.settings FROM batches b JOIN items i ON i.batch=b.id '
+                    "WHERE i.status IN ('pending','queued','running','cancelling') "
+                    'ORDER BY b.created_at DESC'
+                ):
+                    previous_settings = json.loads(row['settings'])
+                    if previous_settings.get('_submission_key') == submission_key:
+                        return {**self.public(row['id']), 'reused': True}
+            settings['_submission_key'] = submission_key
             ident = uuid.uuid4().hex
             batch_dir = self.folder / ident
             snapshots = []

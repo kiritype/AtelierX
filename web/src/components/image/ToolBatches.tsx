@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { get, post } from '../../api';
 import { msgText, t } from '../../i18n';
 import type { ToolBatch } from '../../lib/toolBatches';
@@ -12,6 +12,19 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
   const batches = useQuery<{ batches: ToolBatch[] }>({ queryKey: ['tool-batches'], queryFn: () => get('/api/image/tools/batches'), refetchInterval: active ? 1500 : false, enabled: active });
   const [selected, setSelected] = useState('');
   const [offset, setOffset] = useState(0);
+  const container = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const focus = (event: Event) => {
+      setSelected((event as CustomEvent<string>).detail);
+      setOffset(0);
+      if (container.current) {
+        container.current.open = true;
+        container.current.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    window.addEventListener('tool-batch-focus', focus);
+    return () => window.removeEventListener('tool-batch-focus', focus);
+  }, []);
   const details = useQuery<{ items: Detail[] }>({ queryKey: ['tool-batch', selected, offset], queryFn: () => get(`/api/image/tools/batches/${selected}?offset=${offset}&limit=50`), enabled: !!selected && active, refetchInterval: active ? 2000 : false });
   async function action(id: string, name: 'cancel' | 'retry') {
     try {
@@ -22,7 +35,7 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
   }
   if (!batches.data?.batches?.length) return null;
   const current = batches.data.batches.find((batch) => batch.id === selected);
-  return <details className="pad col" open>
+  return <details ref={container} className="pad col" open>
     <summary>{t('bulk.title')}</summary>
     <p className="faint small">{t('bulk.about')}</p>
     {batches.data.batches.map((batch) => <div key={batch.id} className="col" style={{ gap: 4 }}>
