@@ -433,8 +433,15 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .queue-row.status-failed, .queue-row.status-interrupted { border-color: var(--danger); }
 .queue-row.status-running { border-color: var(--accent); }
 .ok-text { color: var(--success); }
-.gallery { display: grid; grid-template-columns: 220px 1fr; height: 100%; min-height: 0; }
+.gallery { display: grid; grid-template-columns: 220px minmax(0, 1fr); height: 100%; min-height: 0; }
+.gallery.tree-collapsed { grid-template-columns: minmax(0, 1fr); }
 .gallery-tree { border-right: 1px solid var(--border); overflow: auto; gap: 1px; }
+.gallery-tree-row { display: flex; align-items: center; min-width: 0; }
+.gallery-tree-row .tree-link { min-width: 0; flex: 1; }
+.gallery-branch-toggle { flex: 0 0 24px; padding: 2px; border: 0; background: transparent; }
+.gallery-scopebar { padding: 6px 10px; border-bottom: 1px solid var(--border); gap: 10px; min-width: 0; }
+.gallery-scopebar button { flex: 0 0 32px; padding: 4px; }
+.gallery-scope-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* flex-shrink: 0 — in a scrolling column list the list scrolls instead of squeezing the rows (overflow: hidden lets them shrink, #149). */
 .tree-link { border: 0; background: transparent; text-align: left; padding: 3px 6px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
 .tree-link:hover { background: var(--panel-2); }
