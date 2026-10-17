@@ -36,6 +36,7 @@ RETRY_KEYS = (
     'lab_variant',
     'lab_sweep',
     'lab_source',
+    'preset_preview',
     'review_requested',
     'tool_item',
     'tag_settings',
@@ -218,6 +219,11 @@ class JobQueue:
             # Keep admission and append under the same lock, before attach can change related state.
             self.check_room(1)
             job = {k: copy.deepcopy(v) for k, v in old.items() if k in RETRY_KEYS}
+            # Older retries lost the top-level marker but retained it in their request snapshot.
+            if not job.get('preset_preview') and job.get('kind') == 'lab':
+                preview = (job.get('snapshot') or {}).get('preset_preview')
+                if preview:
+                    job['preset_preview'] = copy.deepcopy(preview)
             job.update(id=uuid.uuid4().hex, status='queued', created_at=now())
             if attach:
                 attach(old, job)
