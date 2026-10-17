@@ -20,8 +20,6 @@
   "check.meta_error": "메타데이터 머리를 읽을 수 없습니다.",
   "check.no_id": "ID가 없습니다.",
   "check.no_keywords": "키워드가 없고 항상 넣기도 아닙니다.",
-  "check.shared_keyword": "키워드 \"{k}\"를 여러 항목이 함께 씁니다.",
-  "check.short_keyword": "키워드 \"{k}\"가 너무 짧습니다.",
   "common.add": "추가",
   "common.back": "뒤로",
   "common.cancel": "취소",

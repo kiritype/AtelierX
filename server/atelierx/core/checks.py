@@ -137,7 +137,6 @@ def run(work, effective):
             )
         )
 
-    keyword_owner = defaultdict(list)
     for item in enabled:
         if item['kind'] in ('lorebook', 'character'):
             keywords = item['meta'].get('keywords') or []
@@ -147,26 +146,6 @@ def run(work, effective):
                         'warning',
                         item['path'],
                         Msg('check.no_keywords', 'No keywords and not always included.'),
-                    )
-                )
-            for keyword in keywords:
-                keyword_owner[str(keyword).lower()].append(item['path'])
-                if len(str(keyword)) == 1:
-                    issues.append(
-                        _issue(
-                            'warning',
-                            item['path'],
-                            Msg('check.short_keyword', 'Keyword "{k}" is very short.', k=keyword),
-                        )
-                    )
-    for keyword, owners in keyword_owner.items():
-        if len(owners) > 1:
-            for path in owners:
-                issues.append(
-                    _issue(
-                        'warning',
-                        path,
-                        Msg('check.shared_keyword', 'Keyword "{k}" is shared by several items.', k=keyword),
                     )
                 )
 
