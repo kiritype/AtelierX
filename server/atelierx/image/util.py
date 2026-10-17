@@ -78,6 +78,8 @@ def atomic_json(path, value, indent=2):
 
 
 def code(value):
+    if value is None:
+        raise ValueError(Msg('server.image.invalid_code', 'Invalid code.'))
     value = str(value)
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', value):
         raise ValueError(Msg('server.image.invalid_code', 'Invalid code.'))
