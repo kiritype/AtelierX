@@ -1,3 +1,4 @@
+import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -76,13 +77,19 @@ def test_concurrent_duplicate_admission_capacity_cancel_and_retry(paths):
     bulk.db.close()
 
 
-def test_unfinished_equivalent_work_is_reused_across_requests_and_restart(paths):
+def test_unfinished_equivalent_work_is_reused_across_requests_and_restart(paths, monkeypatch):
     rt = runtime(paths)
     bulk = ToolBatches(rt)
     first = bulk.submit({'operation': 'gallery', 'request_id': 'first-run', 'paths': ['b', 'a']})
     again = bulk.submit({'operation': 'gallery', 'request_id': 'second-run', 'paths': ['a', 'b']})
     assert again['id'] == first['id'] and again['reused'] is True
     assert bulk.db.execute('SELECT count(*) FROM batches').fetchone()[0] == 1
+    monkeypatch.setattr('atelierx.image.tools.batches.MAX_TARGETS', 2)
+    assert (
+        bulk.submit({'operation': 'gallery', 'request_id': 'third-run', 'paths': ['a', 'b']})['id']
+        == first['id']
+    )
+    monkeypatch.undo()
     bulk.db.close()
 
     restored = ToolBatches(rt)
@@ -96,6 +103,12 @@ def test_unfinished_equivalent_work_is_reused_across_requests_and_restart(paths)
     assert explicit['id'] != first['id']
     restored.cancel(first['id'])
     restored.cancel(explicit['id'])
+    assert (
+        restored.submit({'operation': 'gallery', 'request_id': 'second-run', 'paths': ['a', 'b']})['id']
+        == first['id']
+    )
+    with pytest.raises(AppError):
+        restored.submit({'operation': 'gallery', 'request_id': 'second-run', 'paths': ['a', 'different']})
     fresh = restored.submit({'operation': 'gallery', 'request_id': 'after-cancel', 'paths': ['a', 'b']})
     assert fresh['id'] not in (first['id'], explicit['id'])
     assert (
@@ -268,6 +281,13 @@ def test_bulk_api_freezes_mask_and_recovers_output(unlocked, paths):
     accepted = response.json()
     assert unlocked.post('/api/image/tools/batches', json=body).json()['id'] == accepted['id']
     assert unlocked.post('/api/image/tools/batches', json={**body, 'opacity': 50}).status_code == 409
+    # Simulate a receipt persisted by 0.4.1 before the new matching key existed.
+    with rt.bulk.db:
+        previous = json.loads(
+            rt.bulk.db.execute('SELECT settings FROM batches WHERE id=?', (accepted['id'],)).fetchone()[0]
+        )
+        previous.pop('_submission_key')
+        rt.bulk.db.execute('UPDATE batches SET settings=? WHERE id=?', (json.dumps(previous), accepted['id']))
     reused = unlocked.post('/api/image/tools/batches', json={**body, 'request_id': 'second-censor'}).json()
     assert reused['id'] == accepted['id'] and reused['reused'] is True
     other_settings = unlocked.post(
@@ -315,6 +335,18 @@ def test_bulk_tag_and_postprocess_api_use_frozen_settings(unlocked):
         response = unlocked.post('/api/image/tools/batches', json=body)
         assert response.status_code == 200, response.text
         accepted = response.json()
+        with rt.bulk.db:
+            saved = json.loads(
+                rt.bulk.db.execute('SELECT settings FROM batches WHERE id=?', (accepted['id'],)).fetchone()[0]
+            )
+            saved.pop('_submission_key')
+            rt.bulk.db.execute(
+                'UPDATE batches SET settings=? WHERE id=?', (json.dumps(saved), accepted['id'])
+            )
+        repeated = unlocked.post(
+            '/api/image/tools/batches', json={**body, 'request_id': f'legacy-{operation}'}
+        ).json()
+        assert repeated['id'] == accepted['id'] and repeated['reused'] is True
         rt.bulk.pump()
         job = rt.queue.jobs[0]
         rt.queue.update(job, status='running')

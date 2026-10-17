@@ -82,8 +82,10 @@ function useBatchSubmit(fail: (error: unknown) => void) {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
+    let submitted = false;
     try {
       await prepare?.();
+      submitted = true;
       const result = await submitToolBatch(operation, body, rerun);
       await qc.invalidateQueries({ queryKey: ['tool-batches'] });
       window.dispatchEvent(new CustomEvent('tool-batch-focus', { detail: result.id }));
@@ -96,7 +98,13 @@ function useBatchSubmit(fail: (error: unknown) => void) {
       }
       qc.invalidateQueries({ queryKey: ['image-queue'] });
       return result;
-    } catch (error) { fail(error); }
+    } catch (error) {
+      if (submitted && !(error instanceof ApiError)) {
+        toast({ text: t('bulk.submission_unknown'), action: {
+          label: t('bulk.retry_submission'), run: () => { void run(operation, body, accepted, undefined, rerun); },
+        } });
+      } else fail(error);
+    }
     finally { pending.current = false; setBusy(false); }
   };
   return { busy, run };

@@ -10,8 +10,8 @@ const submissions = new Map<string, Submission>();
 
 // A double-click shares one request; retrying an uncertain transport failure keeps its idempotency key.
 export function submitToolBatch(operation: string, body: Record<string, unknown>, rerun = false): Promise<ToolBatch> {
-  const signature = JSON.stringify({ operation, ...body });
-  const submission = (rerun ? undefined : submissions.get(signature)) ?? { requestId: crypto.randomUUID() };
+  const signature = JSON.stringify({ operation, ...body, rerun });
+  const submission = submissions.get(signature) ?? { requestId: crypto.randomUUID() };
   if (submission.pending) return submission.pending;
   submissions.set(signature, submission);
   submission.pending = post<ToolBatch>('/api/image/tools/batches', { ...body, operation, request_id: submission.requestId, rerun })

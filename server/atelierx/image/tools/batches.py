@@ -71,6 +71,43 @@ class ToolBatches:
     def _storage(self):
         return sum(p.stat().st_size for p in self.folder.rglob('*') if p.is_file())
 
+    def _matches_legacy(self, row, operation, targets, settings, mask_versions):
+        """Match an unfinished 0.4.1 receipt without changing its stored format."""
+        if row['operation'] != operation:
+            return False
+        previous = json.loads(row['settings'])
+        if '_submission_key' in previous:
+            return False
+        comparable = {key: value for key, value in previous.items() if not key.startswith('_')}
+        requested = dict(settings)
+        if operation == 'postprocess':
+            try:
+                processor = processors.get(requested.get('op'), requested.get('method') or 'local')
+                requested['options'] = processor.check(requested.get('options') or {}, previous['_info'])
+            except (KeyError, ValueError):
+                return False
+        if comparable != requested:
+            return False
+        snapshots = [
+            json.loads(item[0])
+            for item in self.db.execute(
+                'SELECT target FROM items WHERE batch=? ORDER BY ordinal', (row['id'],)
+            )
+        ]
+        if sorted(snapshot['id'] for snapshot in snapshots) != sorted(set(targets)):
+            return False
+        for snapshot in snapshots:
+            mask = snapshot.get('mask')
+            try:
+                saved_version = (
+                    hashlib.sha256((self.folder / mask).read_bytes()).hexdigest() if mask else None
+                )
+            except OSError:
+                return False
+            if saved_version != mask_versions.get(snapshot['id']):
+                return False
+        return True
+
     def submit(self, body):
         operation = body.get('operation')
         request_id = body.get('request_id')
@@ -102,6 +139,17 @@ class ToolBatches:
             previous = self.db.execute(
                 'SELECT id, fingerprint FROM batches WHERE request_id=?', (request_id,)
             ).fetchone()
+            if previous is None:
+                # The existing history table also stores request aliases for a
+                # reused receipt. Job IDs never contain a colon.
+                alias = self.db.execute(
+                    'SELECT batch,result FROM history WHERE job_id=?', (f'request:{request_id}',)
+                ).fetchone()
+                if alias:
+                    previous = {
+                        'id': alias['batch'],
+                        'fingerprint': json.loads(alias['result'])['fingerprint'],
+                    }
             if previous:
                 if previous['fingerprint'] != fingerprint:
                     raise AppError(
@@ -113,6 +161,56 @@ class ToolBatches:
                     )
                 return self.public(previous['id'])
             targets = list(dict.fromkeys(targets))
+            mask_kind = (
+                processors.get(settings.get('op'), settings.get('method') or 'local').mask_input
+                if operation == 'postprocess'
+                else operation
+                if operation in ('censor', 'alpha')
+                else None
+            )
+            # Match the original request body before provider checks: an existing
+            # job remains viewable if the provider or capacity is now unavailable.
+            mask_versions = {}
+            if mask_kind:
+                for target in set(targets):
+                    try:
+                        path = self.rt.tools.mask_path(target, mask_kind)
+                        mask_versions[target] = hashlib.sha256(path.read_bytes()).hexdigest()
+                    except (OSError, ValueError):
+                        mask_versions[target] = None
+            submission_key = hashlib.sha256(
+                encoded(
+                    {
+                        'operation': operation,
+                        'targets': sorted(set(targets)),
+                        'settings': settings,
+                        'masks': mask_versions,
+                    }
+                ).encode()
+            ).hexdigest()
+            if not rerun:
+                for row in self.db.execute(
+                    'SELECT DISTINCT b.id,b.operation,b.settings FROM batches b JOIN items i ON i.batch=b.id '
+                    "WHERE i.status IN ('pending','queued','running','cancelling') "
+                    'ORDER BY b.created_at DESC'
+                ):
+                    if json.loads(row['settings']).get(
+                        '_submission_key'
+                    ) == submission_key or self._matches_legacy(
+                        row, operation, targets, settings, mask_versions
+                    ):
+                        with self.db:
+                            self.db.execute(
+                                'INSERT INTO history(job_id,batch,ordinal,result) VALUES(?,?,?,?)',
+                                (
+                                    f'request:{request_id}',
+                                    row['id'],
+                                    -1,
+                                    encoded({'fingerprint': fingerprint}),
+                                ),
+                            )
+                        return {**self.public(row['id']), 'reused': True}
+            settings['_submission_key'] = submission_key
             waiting = self.db.execute(
                 "SELECT count(*) FROM items WHERE status IN ('pending','queued','running','cancelling')"
             ).fetchone()[0]
@@ -144,45 +242,10 @@ class ToolBatches:
                 settings['_info'] = info
                 if processor.needs_record:
                     settings['_catalog'] = self.rt.comfy.catalog()
-                mask_kind = processor.mask_input
             elif operation == 'tag':
                 settings['_info'] = self.rt.tagger_info()
                 if not settings['_info']['available']:
                     raise ValueError(settings['_info']['error'])
-                mask_kind = None
-            else:
-                mask_kind = operation if operation in ('censor', 'alpha') else None
-            # A request ID identifies an HTTP attempt. This separate key identifies
-            # the user's unfinished work across tabs and process restarts. Mask
-            # content is part of the key so a newly edited mask is a new action.
-            mask_versions = {}
-            if mask_kind:
-                for target in set(targets):
-                    try:
-                        path = self.rt.tools.mask_path(target, mask_kind)
-                        mask_versions[target] = hashlib.sha256(path.read_bytes()).hexdigest()
-                    except (OSError, ValueError):
-                        mask_versions[target] = None
-            submission_key = hashlib.sha256(
-                encoded(
-                    {
-                        'operation': operation,
-                        'targets': sorted(set(targets)),
-                        'settings': {k: v for k, v in settings.items() if not k.startswith('_')},
-                        'masks': mask_versions,
-                    }
-                ).encode()
-            ).hexdigest()
-            if not rerun:
-                for row in self.db.execute(
-                    'SELECT DISTINCT b.id,b.settings FROM batches b JOIN items i ON i.batch=b.id '
-                    "WHERE i.status IN ('pending','queued','running','cancelling') "
-                    'ORDER BY b.created_at DESC'
-                ):
-                    previous_settings = json.loads(row['settings'])
-                    if previous_settings.get('_submission_key') == submission_key:
-                        return {**self.public(row['id']), 'reused': True}
-            settings['_submission_key'] = submission_key
             ident = uuid.uuid4().hex
             batch_dir = self.folder / ident
             snapshots = []

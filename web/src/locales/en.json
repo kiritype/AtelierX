@@ -2513,6 +2513,8 @@
   "bulk.submitting": "Submitting…",
   "bulk.already_running": "Matching job {id} for {n} images is still running. Its progress is open.",
   "bulk.run_again": "Run again",
+  "bulk.submission_unknown": "The connection was lost before submission was confirmed. Check again with the same request.",
+  "bulk.retry_submission": "Check submission",
   "bulk.op.gallery": "Import from gallery",
   "bulk.op.tag": "Tag images",
   "bulk.op.postprocess": "Post-process images",
