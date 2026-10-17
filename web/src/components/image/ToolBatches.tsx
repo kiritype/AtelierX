@@ -68,15 +68,15 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
     finally { setClearing(false); }
   }
   function renderBatch(batch: ToolBatch) {
-    return <div key={batch.id} className="col" style={{ gap: 4 }}>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        <button onClick={() => { setSelected(batch.id); setOffset(0); }}>{t(`bulk.op.${batch.operation}`)} · {batch.id.slice(0, 8)}</button>
+    return <div key={batch.id} className="col" style={{ gap: 4, minWidth: 0 }}>
+      <div className="row" style={{ flexWrap: 'wrap', minWidth: 0 }}>
+        <button style={{ maxWidth: '100%', minWidth: 0, whiteSpace: 'normal', overflowWrap: 'anywhere', textAlign: 'left' }} onClick={() => { setSelected(batch.id); setOffset(0); }}>{t(`bulk.op.${batch.operation}`)} · {batch.id.slice(0, 8)}</button>
         <span>{t('bulk.total', { n: batch.total })}</span>
         {batch.paused && !finished(batch) && <span className="warn-text">{t('bulk.paused')}</span>}
         {!finished(batch) && <button disabled={batch.progress === 1 || batch.cancelled} onClick={() => action(batch.id, 'cancel')}>{t('common.cancel')}</button>}
         {!finished(batch) && <button disabled={!(batch.counts.failed + batch.counts.cancelled + batch.counts.interrupted)} onClick={() => action(batch.id, 'retry')}>{t('bulk.retry')}</button>}
       </div>
-      <progress max={1} value={batch.progress} aria-label={t('bulk.progress')} />
+      <progress max={1} value={batch.progress} aria-label={t('bulk.progress')} style={{ width: '100%', maxWidth: '100%', minWidth: 0 }} />
       <div className="row small" style={{ flexWrap: 'wrap' }}>{STATES.filter((state) => batch.counts[state]).map((state) => <span key={state}>{t(`bulk.state.${state}`)} {batch.counts[state]}</span>)}</div>
       {selected === batch.id && <div className="col small">
         <div className="row">
