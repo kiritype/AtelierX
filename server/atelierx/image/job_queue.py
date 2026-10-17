@@ -37,6 +37,7 @@ RETRY_KEYS = (
     'lab_sweep',
     'lab_source',
     'preset_preview',
+    'source_path',
     'review_requested',
     'tool_item',
     'tag_settings',

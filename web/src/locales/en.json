@@ -806,6 +806,8 @@
   "lab.preset_saved": "Saved style preset {id}.",
   "lab.baseline": "Nothing added (baseline)",
   "lab.seed_n": "Seed {seed}",
+  "lab.regenerations": "Results with a new seed",
+  "server.lab.missing_cell": "This comparison image has no reliable run and cell position to regenerate.",
   "lab.from_gallery": "From the gallery",
   "lab.positive": "Positive",
   "lab.negative": "Negative",
