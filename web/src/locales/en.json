@@ -786,6 +786,8 @@
   "llm.task.image_review": "Image review",
   "server.pipeline.generation_did_not_finish_check_it": "Generation did not finish. Check it, then use Retry in the queue.",
   "server.pipeline.post_processed_images_are_regenerated_from": "Post-processed images are regenerated from their original settings; later corrections are not reproduced.",
+  "server.gallery.no_generation_origin": "The original generation record for this processed image is unavailable.",
+  "server.gallery.unknown_generation_service": "The original image service is unknown; this image cannot be regenerated safely.",
   "server.pipeline.vlm_review_is_using_the_gpu": "VLM review is using the GPU. Change this after it finishes.",
   "server.api.not_found": "Unknown API address.",
   "gallery.fail_reason": "Reason",

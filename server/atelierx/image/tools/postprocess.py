@@ -706,6 +706,27 @@ class PostprocessMixin:
             return None, None
         return path, meta
 
+    def _generation_origin(self, item):
+        """Find the generation record behind gallery tool results, including old records."""
+        if item['source'] != 'gallery':
+            return None
+        relative = item['path']
+        seen = set()
+        while isinstance(relative, str) and relative not in seen and len(seen) < 32:
+            seen.add(relative)
+            try:
+                record = self.gallery.metadata(relative)
+            except ValueError:
+                return None
+            if record.get('kind') != 'postprocess':
+                if record.get('positive') and isinstance(record.get('settings'), dict):
+                    return record
+                return None
+            source = record.get('source')
+            source = source if isinstance(source, dict) else {}
+            relative = source.get('path')
+        return None
+
     def _store_result(self, item, image, op, options, graph_used, job_id, made=None):
         """``made``: the prompts and settings a redraw (detailer, inpaint) used."""
         source_path, meta = self._asset_source(item)
@@ -762,6 +783,13 @@ class PostprocessMixin:
                 'image_size': list(image.size),
                 'workflow': graph_used,
             }
+            origin = self._generation_origin(item)
+            if origin:
+                service = origin.get('service') or ('comfyui' if origin.get('kind') == 'lab' else None)
+                if service:
+                    record['service'] = service
+                if origin.get('work_id'):
+                    record['work_id'] = origin['work_id']
             # The result records the prompts and settings it was redrawn with, or else
             # those of its source, so it can be redrawn (detailer, inpaint) again.
             made = made or self.tools.analyze(item['id']).get('studio') or {}
