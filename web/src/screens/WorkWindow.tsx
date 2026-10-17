@@ -19,7 +19,7 @@ import { Icon, type IconName } from '../components/icons';
 import { useHelp, useStartupUpdateCheck } from '../components/Help';
 import WorkSettings from '../components/WorkSettings';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
-import { bulkCloseKeys, nextActiveKey } from './tabActions';
+import { bulkCloseKeys, nextActiveKey, openQueueKey } from './tabActions';
 import { useServerEvents } from '../events';
 import { t, tm } from '../i18n';
 import { snapshotTime, tabKey, type ImageView, type Job, type Tab, type WorkInfo } from '../types';
@@ -141,12 +141,23 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   }, [sidebarCollapsed, panel]);
 
   const open = useCallback((tab: Tab) => {
+    // The queue view has no character-specific state. Reuse even an older
+    // character-scoped queue tab instead of opening a second queue.
+    if (tab.type === 'image' && tab.view === 'queue') {
+      const existing = openQueueKey(tabs);
+      if (existing) {
+        setActive(existing);
+        setTesting(false);
+        return;
+      }
+      tab = { type: 'image', view: 'queue' };
+    }
     const key = tabKey(tab);
     // An open tab takes the new request too (a settings tab asked for another section).
     setTabs((list) => (list.some((x) => tabKey(x) === key) ? list.map((x) => (tabKey(x) === key ? { ...x, ...tab } : x)) : [...list, tab]));
     setActive(key);
     setTesting(false);
-  }, []);
+  }, [tabs]);
 
   const confirmClose = useCallback((keys: string[]) => {
     const dirty = tabs.filter((tab) => keys.includes(tabKey(tab)) && unsaved.dirty(tabKey(tab)));

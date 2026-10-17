@@ -50,8 +50,11 @@ export default function JobsPopover({
   const activity = useActivity(2000);
   useEffect(() => {
     const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
-    setTimeout(() => window.addEventListener('mousedown', close));
-    return () => window.removeEventListener('mousedown', close);
+    const timer = window.setTimeout(() => window.addEventListener('mousedown', close));
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('mousedown', close);
+    };
   }, [onClose]);
   const others = activity.data?.items ?? [];
   return (
