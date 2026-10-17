@@ -11,6 +11,7 @@ import { DeploymentExport } from './DeploymentExport';
 import { DeployUpload } from './DeployUpload';
 import GalleryToolSend from './GalleryToolSend';
 import GalleryDetailFrame from './GalleryDetailFrame';
+import GalleryRecord from './GalleryRecord';
 import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
 
 export type GalleryItem = {
@@ -652,11 +653,7 @@ function Detail({
                     </div>
                   ))}
               </dl>
-              <div className="row">
-                <a href={item.image_url.replace(/\.[^.]+$/, '.json')} target="_blank" rel="noreferrer">
-                  {t('gallery.open_record')}
-                </a>
-              </div>
+              <GalleryRecord key={item.path} record={record} />
               <SavePreset key={item.path} record={record} />
             </>
           )}

@@ -733,7 +733,7 @@
   "gallery.prompts": "Prompts",
   "gallery.click_copy": "Click to copy",
   "gallery.settings": "Generation settings",
-  "gallery.open_record": "Open record JSON",
+  "gallery.open_record": "View record JSON",
   "gallery.history": "Verdict history",
   "gallery.review_off": "Auto review is off (Settings → Image).",
   "gallery.dismiss_rounds": "Clear finished",
@@ -2553,5 +2553,7 @@
   "presets.preview_about_random": "Random seed mode (-1). Each generation chooses a seed; presets generated together share it. The base subject is 1girl, solo, safe; common prompts and artist tags come from each preset.",
   "presets.preview_actual_seed": "Current preview seed: {seed}",
   "presets.seed_invalid": "Enter -1 (random) or an integer from 0 to 4294967295.",
-  "server.image.presets.preview_seed": "Preview seed must be an integer from 0 to 4294967295."
+  "server.image.presets.preview_seed": "Preview seed must be an integer from 0 to 4294967295.",
+  "gallery.close_record": "Hide record JSON",
+  "gallery.record_json": "Image generation record JSON"
 }

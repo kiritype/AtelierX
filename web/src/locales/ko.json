@@ -814,7 +814,7 @@
   "gallery.prompts": "프롬프트",
   "gallery.click_copy": "누르면 복사",
   "gallery.settings": "생성 설정",
-  "gallery.open_record": "기록 JSON 열기",
+  "gallery.open_record": "기록 JSON 보기",
   "gallery.history": "판정 기록",
   "gallery.review_off": "자동 검수가 꺼져 있습니다(설정 → 이미지).",
   "gallery.dismiss_rounds": "끝난 것 정리",
@@ -2724,5 +2724,7 @@
   "presets.preview_about_random": "랜덤 시드 모드(-1)입니다. 생성할 때마다 시드를 뽑으며, 한 번에 생성하는 프리셋들은 같은 시드를 씁니다. 기본 피사체는 1girl, solo, safe이며 공통 프롬프트·artist 태그는 프리셋별로 적용합니다.",
   "presets.preview_actual_seed": "현재 미리보기 시드: {seed}",
   "presets.seed_invalid": "미리보기 시드는 -1(랜덤) 또는 0~4294967295의 정수로 입력하세요.",
-  "server.image.presets.preview_seed": "미리보기 실행 시드는 0~4294967295의 정수여야 합니다."
+  "server.image.presets.preview_seed": "미리보기 실행 시드는 0~4294967295의 정수여야 합니다.",
+  "gallery.close_record": "기록 JSON 접기",
+  "gallery.record_json": "이미지 생성 기록 JSON"
 }
