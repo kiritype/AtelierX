@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from atelierx.image import library
 from test_image import FakeComfy
 
@@ -246,3 +248,58 @@ def test_preview_batch_seed_and_validation(unlocked):
     assert c.post('/api/image/presets/one/preview', json=[]).status_code == 400
     c.put('/api/image/settings/presets', json={'preview_seed': 0})
     assert c.post('/api/image/presets/one/preview', json={'seed': 123}).json()['seeds'] == [0]
+
+
+@pytest.mark.parametrize('status', ['failed', 'cancelled', 'interrupted'])
+@pytest.mark.parametrize('change', ['none', 'artist', 'seed', 'delete'])
+def test_preview_retry_preserves_marker_and_actual_seed_after_reload(unlocked, status, change):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    preset = {
+        'name': 'retry',
+        'service': 'comfyui',
+        'family': 'anima',
+        'settings': {'model': 'anima/m.safetensors', 'steps': 20},
+    }
+    assert c.put('/api/image/presets/retry', json=preset).status_code == 200
+    c.put('/api/image/settings/presets', json={'preview_seed': -1})
+    assert c.post('/api/image/presets/retry/preview', json={'seed': 81}).status_code == 200
+    original = runtime.jobs[-1]
+    original['status'] = status
+    marker = dict(original['preset_preview'])
+    # Cover pre-fix retry records as well as new requests.
+    if status == 'interrupted':
+        del original['preset_preview']
+    runtime.queue.persist()
+    runtime.queue.load()
+    retry = runtime.queue.retry(original['id'])
+    assert retry['preset_preview'] == marker
+    assert retry['preset_preview'] is not original.get('preset_preview')
+    retry['status'] = 'running'
+    runtime.queue.persist()
+    runtime.queue.load()
+    assert runtime.queue.get(retry['id'])['status'] == 'interrupted'
+    retry = runtime.queue.retry(retry['id'])
+    assert retry['preset_preview'] == marker
+    assert retry['seed'] == 81
+
+    if change == 'artist':
+        c.put('/api/image/presets/retry', json={**preset, 'artist': {'positive': '@changed'}})
+    elif change == 'seed':
+        c.put('/api/image/settings/presets', json={'preview_seed': 42})
+    elif change == 'delete':
+        c.delete('/api/image/presets/retry')
+    retry['status'] = 'running'
+    runtime.run_job(retry)
+    assert retry['status'] == 'done', retry.get('error')
+    listed = c.get('/api/image/presets').json()
+    if change == 'delete':
+        assert not listed
+        assert not library.preview_file(runtime.paths, 'retry').exists()
+    else:
+        item = next(p for p in listed if p['id'] == 'retry')
+        assert item['preview']['seed'] == 81
+        assert item['preview_stale'] is (change != 'none')
+        assert c.get(item['preview_url']).status_code == 200
