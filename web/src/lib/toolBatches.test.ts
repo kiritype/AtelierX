@@ -19,3 +19,22 @@ it('shares concurrent submissions without truncating 8000 targets and reuses unc
   await submitToolBatch('tag', { ids });
   expect((vi.mocked(post).mock.calls[1][1] as { request_id: string }).request_id).toBe(body.request_id);
 });
+
+it('uses a fresh request ID only for an explicit rerun after acceptance', async () => {
+  vi.mocked(post).mockResolvedValue({ id: 'accepted' });
+  await submitToolBatch('tag', { ids: ['rerun-target'] });
+  await submitToolBatch('tag', { ids: ['rerun-target'] }, true);
+  const calls = vi.mocked(post).mock.calls.slice(-2);
+  expect((calls[0][1] as { request_id: string }).request_id).not.toBe((calls[1][1] as { request_id: string }).request_id);
+  expect((calls[1][1] as { rerun: boolean }).rerun).toBe(true);
+});
+
+it('keeps the explicit rerun request ID after an uncertain response', async () => {
+  vi.mocked(post).mockRejectedValueOnce(new TypeError('connection lost'));
+  await expect(submitToolBatch('tag', { ids: ['uncertain-rerun'] }, true)).rejects.toThrow('connection lost');
+  const first = (vi.mocked(post).mock.calls.at(-1)![1] as { request_id: string }).request_id;
+  vi.mocked(post).mockResolvedValueOnce({ id: 'accepted' });
+  await submitToolBatch('tag', { ids: ['uncertain-rerun'] }, true);
+  const retried = (vi.mocked(post).mock.calls.at(-1)![1] as { request_id: string }).request_id;
+  expect(retried).toBe(first);
+});
