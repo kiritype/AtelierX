@@ -1983,6 +1983,7 @@
   "server.tests.no_run": "그런 실행 기록이 없습니다.",
   "tests.start_missing": "세트의 시작 상황 파일 \"{path}\"을(를) 읽을 수 없습니다. 지워지거나 이름이 바뀌었으면 세트를 고친 뒤 실행하세요.",
   "server.request.invalid_json": "요청 내용을 읽을 수 없습니다(JSON 형식이 아님).",
+  "server.request.invalid_ui_state": "화면 상태 변경 요청이 올바르지 않습니다.",
   "lib.group": "묶음",
   "lib.group_hint": "예: 품질, 배경, 조명",
   "lib.no_group": "묶음 없음",

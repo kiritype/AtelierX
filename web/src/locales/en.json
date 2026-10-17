@@ -1861,6 +1861,7 @@
   "server.tests.no_run": "This run does not exist.",
   "tests.start_missing": "The start situation \"{path}\" of this set cannot be read. If it was deleted or renamed, edit the set first.",
   "server.request.invalid_json": "The request body is not valid JSON.",
+  "server.request.invalid_ui_state": "Invalid UI state update.",
   "lib.group": "Group",
   "lib.group_hint": "e.g. quality, background, lighting",
   "lib.no_group": "No group",

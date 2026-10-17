@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { ApiError, get, put } from '../api';
+import { ApiError, get, patch, put } from '../api';
 import { t, tm } from '../i18n';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
@@ -20,14 +20,8 @@ export function usePersona(workId: string) {
   const selectedId: string | null = ui.data?.persona_by_work?.[workId] ?? null;
   const persona = list.data?.personas.find((p) => p.id === selectedId) ?? null;
   async function choose(id: string | null) {
-    // Read the latest state first: other screens keep their own keys in the same file.
-    const state: Record<string, any> = (await get('/api/ui-state').catch(() => ({}))) ?? {};
-    const byWork = { ...(state.persona_by_work ?? {}) };
-    if (id) byWork[workId] = id;
-    else delete byWork[workId];
-    const next = { ...state, persona_by_work: byWork };
-    await put('/api/ui-state', next);
-    qc.setQueryData(['ui-state'], next);
+    const state = await patch<Record<string, unknown>>('/api/ui-state', { persona_by_work: { [workId]: id } });
+    qc.setQueryData(['ui-state'], state);
   }
   return { persona, selectedId, choose, list: list.data };
 }

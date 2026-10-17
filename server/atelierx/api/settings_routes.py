@@ -6,6 +6,7 @@ from starlette.routing import Route
 
 from ..core import guidelines, personas
 from ..core.fsutil import read_json, write_json
+from ..core.i18n import AppError, Msg
 from .common import body, ok, st
 
 
@@ -40,6 +41,52 @@ async def ui_state_get(request):
 async def ui_state_put(request):
     write_json(st(request).paths.state / 'ui.json', await body(request))
     return ok()
+
+
+async def ui_state_patch(request):
+    """Merge only the supplied screen state after reading the latest file.
+
+    The read/merge/write section has no await: requests on this server's event loop
+    cannot interleave there. The persisted ui.json shape stays unchanged.
+    """
+    changes = await body(request)
+    if not isinstance(changes, dict) or set(changes) - {'works', 'last_work', 'persona_by_work'}:
+        raise AppError(Msg('server.request.invalid_ui_state', 'Invalid UI state update.'), 400)
+    for key in ('works', 'persona_by_work'):
+        if key in changes and (
+            not isinstance(changes[key], dict) or not all(isinstance(k, str) and k for k in changes[key])
+        ):
+            raise AppError(Msg('server.request.invalid_ui_state', 'Invalid UI state update.'), 400)
+    if 'works' in changes and not all(isinstance(value, dict) for value in changes['works'].values()):
+        raise AppError(Msg('server.request.invalid_ui_state', 'Invalid UI state update.'), 400)
+    if 'persona_by_work' in changes and not all(
+        value is None or isinstance(value, str) for value in changes['persona_by_work'].values()
+    ):
+        raise AppError(Msg('server.request.invalid_ui_state', 'Invalid UI state update.'), 400)
+    if 'last_work' in changes and not isinstance(changes['last_work'], str):
+        raise AppError(Msg('server.request.invalid_ui_state', 'Invalid UI state update.'), 400)
+
+    path = st(request).paths.state / 'ui.json'
+    state = read_json(path, {})
+    if 'last_work' in changes:
+        state['last_work'] = changes['last_work']
+    if 'works' in changes:
+        works = state.setdefault('works', {})
+        for work_id, update in changes['works'].items():
+            current = works.get(work_id, {})
+            merged = {**current, **update}
+            if isinstance(current.get('sidebar'), dict) and isinstance(update.get('sidebar'), dict):
+                merged['sidebar'] = {**current['sidebar'], **update['sidebar']}
+            works[work_id] = merged
+    if 'persona_by_work' in changes:
+        personas_by_work = state.setdefault('persona_by_work', {})
+        for work_id, persona_id in changes['persona_by_work'].items():
+            if persona_id is None:
+                personas_by_work.pop(work_id, None)
+            else:
+                personas_by_work[work_id] = persona_id
+    write_json(path, state)
+    return ok(state)
 
 
 async def vault_list(request):
@@ -98,6 +145,7 @@ def routes():
         Route('/api/personas', personas_put, methods=['PUT']),
         Route('/api/ui-state', ui_state_get),
         Route('/api/ui-state', ui_state_put, methods=['PUT']),
+        Route('/api/ui-state', ui_state_patch, methods=['PATCH']),
         Route('/api/vault', vault_list),
         Route('/api/vault', vault_put, methods=['POST']),
         Route('/api/vault/password', vault_password, methods=['POST']),

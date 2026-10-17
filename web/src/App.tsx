@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { get, patch, put, setConsentHandler, setUnauthorizedHandler } from './api';
+import { get, patch, setConsentHandler, setUnauthorizedHandler } from './api';
 import { Toasts, ToastProvider } from './components/Toasts';
 import TooltipLayer from './components/TooltipLayer';
 import { setLanguage, t, tm } from './i18n';
@@ -49,8 +49,7 @@ export default function App() {
 
   const openWork = useCallback(async (id: string | null) => {
     setWorkId(id);
-    const state = await get('/api/ui-state').catch(() => ({}));
-    await put('/api/ui-state', { ...state, last_work: id ?? state.last_work });
+    if (id) await patch('/api/ui-state', { last_work: id });
   }, []);
 
   if (!status) return null;
