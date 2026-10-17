@@ -23,7 +23,7 @@ from PIL import Image
 
 from ..core.i18n import AppError, Msg, message_of
 from ..core.llm import parse_json
-from .util import atomic_json, now, read_json, settings_file, state_file
+from .util import atomic_json, code, now, read_json, settings_file, state_file
 
 log = logging.getLogger(__name__)
 
@@ -274,8 +274,14 @@ class ReviewRounds:
         job['service'] = meta.get('service') or 'comfyui'
         job['source_path'] = relative
         job['postprocessed'] = bool((meta.get('postprocessing') or {}).get('applied'))
-        if meta.get('kind') == 'lab':
+        if meta.get('kind') == 'single':
+            code(job['work_id'])
+            job.update(kind='single', review_requested=False)
+        elif meta.get('kind') == 'lab':
             job.update(kind='lab', lab_group=meta.get('lab_group') or uuid.uuid4().hex, lab_index=1)
+        else:
+            for field in ('work_id', 'character_id', 'outfit_id', 'expression_id'):
+                code(job[field])
         return job
 
     @staticmethod
@@ -307,7 +313,7 @@ class ReviewRounds:
             postprocessed = postprocessed or source['postprocessed']
             job = self.fresh_job(source)
             round_ = None
-            if reviewing and job.get('kind') != 'lab':
+            if reviewing and job.get('kind') not in ('lab', 'single'):
                 round_ = self._new_round(job, relative, manual=True)
                 job['review_round_id'] = round_['id']
             prepared.append((round_, job))

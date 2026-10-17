@@ -129,3 +129,55 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
     repeated = runtime.queue.get(second.json()['job_id'])['snapshot']
     assert repeated['positive'] == snapshot['positive'] and repeated['negative'] == snapshot['negative']
     assert repeated['settings'] == snapshot['settings']
+
+
+@pytest.mark.parametrize('service', ['comfyui', 'novelai', 'pixai'])
+def test_gallery_regeneration_keeps_single_kind_and_history(unlocked, monkeypatch, service):
+    client = unlocked
+    wid, runtime = _setup(client)
+    adapter = runtime.services[service]
+    monkeypatch.setattr(adapter, 'busy', lambda: False)
+    monkeypatch.setattr(adapter, 'submit', lambda job: {'id': 'fake-id', 'record': {}})
+    monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
+    client.put('/api/image/review/settings', json={'enabled': True})
+
+    first = client.post(f'/api/works/{wid}/image/single', json={
+        'service': service, 'positive': 'a lantern at dusk', 'settings': {'seed': 17},
+    }).json()['job_id']
+    paths = []
+    for index in range(3):
+        job = runtime.queue.get(first) if index == 0 else runtime.jobs[-1]
+        assert job['kind'] == 'single' and job['service'] == service
+        assert job.get('review_requested') is False
+        job['status'] = 'running'
+        runtime.run_job(job)
+        assert job['status'] == 'done', job.get('error')
+        path = runtime.gallery.metadata(job['image_url'].removeprefix('/api/image/files/'))
+        assert path['kind'] == 'single' and path['service'] == service
+        assert path['work_id'] == wid and path['request']['positive'] == 'a lantern at dusk'
+        paths.append(job['image_url'].removeprefix('/api/image/files/'))
+        if index < 2:
+            response = client.post('/api/image/gallery/regenerate', json={'items': [paths[-1]]})
+            assert response.status_code == 200, response.text
+            assert response.json()['reviewing'] is False
+            fresh = runtime.jobs[-1]
+            assert fresh['seed'] != job['seed']
+            assert fresh['snapshot']['settings']['seed'] == fresh['seed']
+            assert fresh['snapshot']['request']['settings']['seed'] == 17
+
+    assert all(path.startswith(f'_single/{wid}/') for path in paths)
+    for job in list(runtime.jobs):
+        runtime.remove_finished(job['id'])
+    saved = client.get(f'/api/works/{wid}/image/single/runs').json()['runs']
+    assert {run['path'] for run in saved} == set(paths)
+    assert not runtime.rounds.rounds
+
+
+def test_missing_character_identity_cannot_create_none_folder(unlocked):
+    _, runtime = _setup(unlocked)
+    with pytest.raises(ValueError):
+        runtime.save_result({
+            'id': 'invalid', 'work_id': 'W001', 'character_id': None,
+            'outfit_id': 'O001', 'expression_id': 'E001',
+        }, _png(), {}, 'fake-id')
+    assert not (runtime.paths.output / 'W001' / 'None').exists()
