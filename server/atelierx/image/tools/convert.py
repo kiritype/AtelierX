@@ -91,6 +91,7 @@ class ConvertTasks:
         self.gallery = gallery
         self.lock = threading.Lock()
         self.tasks = {}
+        self.inputs = {}
 
     def start(self, body):
         options = options_of(body)
@@ -114,9 +115,16 @@ class ConvertTasks:
             finished = [k for k, t in self.tasks.items() if t['status'] != 'running']
             for key in finished[: max(0, len(self.tasks) - MAX_TASKS + 1)]:
                 del self.tasks[key]
+                self.inputs.pop(key, None)
             self.tasks[task['id']] = task
+            self.inputs[task['id']] = set(ids)
         threading.Thread(target=self._run, args=(task, items), daemon=True).start()
         return {'ok': True, 'task': task}
+
+    def in_use(self, ids):
+        wanted = set(ids)
+        with self.lock:
+            return any(wanted.intersection(inputs) for inputs in self.inputs.values())
 
     def _target(self, item, suffix, folder):
         stem = PurePosixPath(item['name']).stem or item['id']
@@ -161,6 +169,7 @@ class ConvertTasks:
         with self.lock:
             task['status'] = 'done'
             task['finished_at'] = now()
+            self.inputs.pop(task['id'], None)
 
     def get(self, task_id):
         with self.lock:

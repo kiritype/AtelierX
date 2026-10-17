@@ -8,6 +8,7 @@ from starlette.responses import Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg
+from ..core.lifecycle import UNFINISHED
 from ..image.tools import processors
 from .image_routes import _as_msg, _body, _runtime, call
 
@@ -157,8 +158,55 @@ def _post(attr, key=None):
     return handler
 
 
+def _protected_post(attr):
+    async def handler(request):
+        runtime = _runtime(request)
+        body = await _body(request)
+
+        def run():
+            with runtime.lock:
+                return getattr(runtime, attr)(body) if attr != 'convert' else runtime.convert.start(body)
+
+        return await call(run)
+
+    return handler
+
+
 async def batches(request):
     return await call(_runtime(request).bulk.list)
+
+
+async def clear_completed_batches(request):
+    return await call(_runtime(request).bulk.clear_completed)
+
+
+async def remove_items(request):
+    runtime = _runtime(request)
+    body = await _body(request)
+    ids = body.get('ids')
+    if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
+        raise AppError(Msg('server.bulk.targets_invalid', 'Invalid bulk targets.'), 400)
+
+    def remove():
+        with runtime.lock:
+            if (
+                runtime.bulk.active_targets(ids)
+                or any(
+                    job.get('tool_item') in ids and job.get('status') in UNFINISHED
+                    for job in runtime.queue.jobs
+                )
+                or runtime.convert.in_use(ids)
+            ):
+                raise AppError(
+                    Msg(
+                        'server.bulk.image_in_use',
+                        'An unfinished image tool job still uses a selected image.',
+                    ),
+                    409,
+                )
+            return runtime.tools.remove(ids)
+
+    return await call(remove)
 
 
 async def batch_details(request):
@@ -185,6 +233,7 @@ def routes():
         Route(f'{p}/ids', item_ids),
         Route(f'{p}/batches', batches),
         Route(f'{p}/batches', _post('bulk.submit'), methods=['POST']),
+        Route(f'{p}/batches/clear-completed', clear_completed_batches, methods=['POST']),
         Route(f'{p}/batches/{{batch}}', batch_details),
         Route(f'{p}/batches/{{batch}}/{{action}}', batch_action, methods=['POST']),
         Route(f'{p}/analyze', analyze),
@@ -201,10 +250,10 @@ def routes():
         Route(f'{p}/convert/task', convert_task),
         Route(f'{p}/convert/zip', convert_zip),
         Route(f'{p}/gallery', _post('tools.add_gallery', 'paths'), methods=['POST']),
-        Route(f'{p}/remove', _post('tools.remove', 'ids'), methods=['POST']),
-        Route(f'{p}/convert', _post('convert.start'), methods=['POST']),
-        Route(f'{p}/censor', _post('apply_censor'), methods=['POST']),
-        Route(f'{p}/alpha', _post('apply_alpha'), methods=['POST']),
-        Route(f'{p}/tag', _post('enqueue_tags'), methods=['POST']),
-        Route(f'{p}/postprocess', _post('enqueue_postprocess'), methods=['POST']),
+        Route(f'{p}/remove', remove_items, methods=['POST']),
+        Route(f'{p}/convert', _protected_post('convert'), methods=['POST']),
+        Route(f'{p}/censor', _protected_post('apply_censor'), methods=['POST']),
+        Route(f'{p}/alpha', _protected_post('apply_alpha'), methods=['POST']),
+        Route(f'{p}/tag', _protected_post('enqueue_tags'), methods=['POST']),
+        Route(f'{p}/postprocess', _protected_post('enqueue_postprocess'), methods=['POST']),
     ]
