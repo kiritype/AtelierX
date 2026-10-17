@@ -2310,7 +2310,7 @@
   "explorer.clear": "체크 모두 풀기",
   "explorer.none_match": "조건에 맞는 항목이 없습니다.",
   "presets.about": "그림체 프리셋은 서비스·모델·LoRA·샘플러·크기와 artist 태그를 한 묶음으로 저장합니다. 카드를 누르면 여기서 편집하고, 생성 화면에 바로 적용할 수 있습니다.",
-  "presets.preview_about": "미리보기는 프리셋마다 한 장이고, 모두 같은 프롬프트(공통 프롬프트 + artist 태그 + 1girl, solo, safe)와 같은 시드({seed})로 만들어 나란히 비교할 수 있습니다. 설정을 바꾸면 \"오래됨\"으로 표시됩니다.",
+  "presets.preview_about": "프리셋별 공통 프롬프트·artist 태그에 기본 피사체(1girl, solo, safe)와 시드({seed})를 적용합니다. 시드를 저장한 뒤 미리보기를 다시 생성해야 이미지에 반영됩니다.",
   "presets.empty": "그림체 프리셋이 없습니다. [새 프리셋]으로 만들거나, 갤러리 이미지의 설정을 프리셋으로 저장하세요.",
   "presets.new": "새 프리셋",
   "presets.bad_id": "id에는 영문, 숫자, _, - 만 쓸 수 있습니다.",
@@ -2330,7 +2330,7 @@
   "presets.preview_all": "없거나 오래된 미리보기 만들기 ({n})",
   "presets.preview_all_confirm": "미리보기 {n}장을 대기열에 넣을까요? ComfyUI에서 차례로 만듭니다.",
   "presets.seed": "미리보기 시드",
-  "presets.seed_hint": "모든 프리셋의 미리보기가 같은 시드를 씁니다. 바꾸면 모든 미리보기가 오래됨이 됩니다.",
+  "presets.seed_hint": "-1은 랜덤, 0~4294967295는 고정 시드입니다. Enter 또는 포커스 해제 후 확인하면 저장됩니다. 한 번에 생성하는 프리셋은 같은 시드를 씁니다.",
   "presets.seed_confirm": "미리보기 시드를 바꾸면 모든 미리보기가 \"오래됨\"이 됩니다. 바꿀까요?",
   "presets.apply": "생성 화면에 적용",
   "presets.duplicate": "복제",
@@ -2720,5 +2720,9 @@
   "single.view_all": "전체 결과를 갤러리에서 보기",
   "single.history_page": "{current} / {total}",
   "single.previous_page": "이전 페이지",
-  "single.next_page": "다음 페이지"
+  "single.next_page": "다음 페이지",
+  "presets.preview_about_random": "랜덤 시드 모드(-1)입니다. 생성할 때마다 시드를 뽑으며, 한 번에 생성하는 프리셋들은 같은 시드를 씁니다. 기본 피사체는 1girl, solo, safe이며 공통 프롬프트·artist 태그는 프리셋별로 적용합니다.",
+  "presets.preview_actual_seed": "현재 미리보기 시드: {seed}",
+  "presets.seed_invalid": "미리보기 시드는 -1(랜덤) 또는 0~4294967295의 정수로 입력하세요.",
+  "server.image.presets.preview_seed": "미리보기 실행 시드는 0~4294967295의 정수여야 합니다."
 }

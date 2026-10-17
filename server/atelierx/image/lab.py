@@ -144,7 +144,7 @@ def _variants(settings, sweep, positive):
 class LabMixin:
     """Lab part of ``ImageRuntime`` (expects comfy, lock, jobs, persist, gallery)."""
 
-    def enqueue_preset_preview(self, ident):
+    def enqueue_preset_preview(self, ident, body=None):
         """One preview image for a ComfyUI style preset (#169), queued like a lab run and kept next to the preset."""
         preset = next((p for p in library.presets(self.paths) if p['id'] == ident), None)
         if preset is None:
@@ -157,7 +157,27 @@ class LabMixin:
                     service=preset['service'],
                 )
             )
-        seed = image_settings.get(self.paths, 'presets')['preview_seed']
+        configured_seed = image_settings.get(self.paths, 'presets')['preview_seed']
+        if body is None:
+            body = {}
+        if not isinstance(body, dict):
+            raise ValueError(Msg('server.image.settings.values_object', 'values must be an object.'))
+        # A UI batch may share one concrete seed; fixed mode always uses the saved setting.
+        supplied_seed = body.get('seed')
+        if supplied_seed is not None and (
+            isinstance(supplied_seed, bool)
+            or not isinstance(supplied_seed, int)
+            or not 0 <= supplied_seed <= 2**32 - 1
+        ):
+            raise ValueError(
+                Msg(
+                    'server.image.presets.preview_seed',
+                    'Preview seed must be an integer from 0 to 4294967295.',
+                )
+            )
+        seed = configured_seed
+        if configured_seed == -1:
+            seed = supplied_seed if supplied_seed is not None else secrets.randbits(32)
         positive, negative = library.preview_prompts(self.paths, preset)
         body = {
             'positive': positive,
@@ -165,7 +185,7 @@ class LabMixin:
             'settings': {**preset['settings'], 'family': preset['family'], 'seed': seed},
             'count': 1,
         }
-        marker = {'id': ident, 'seed': seed, 'hash': library.preview_hash(preset, seed)}
+        marker = {'id': ident, 'seed': seed, 'hash': library.preview_hash(preset, configured_seed)}
         return self.enqueue_lab(body, preset_preview=marker)
 
     def enqueue_lab(self, body, preset_preview=None):

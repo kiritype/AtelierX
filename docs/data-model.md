@@ -821,7 +821,9 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - `tags`: 사용자 태그(최대 20개, 각 40자). `common`: 기본으로 켤 공통 프롬프트 id(비면 "기본으로 켬" 항목).
 - `preview`: 미리보기를 만든 때의 `{seed, hash, created_at}`(서버가 씀). 그림은 같은 폴더의 `<id>.webp`(긴 변 1024).
   `hash`는 서비스·계열·설정(시드 제외)·artist 태그·공통 id·미리보기 시드에서 나오고, 지금 값과 다르면 "오래됨"이다.
-  미리보기 시드는 `config/image/presets.json`의 `preview_seed`(기본 1234567). 프롬프트는 공통 + artist 태그 + `1girl, solo, safe`,
+  미리보기 시드는 `config/image/presets.json`의 `preview_seed`(기본 1234567, `-1` 랜덤 또는 `0~4294967295` 고정).
+  랜덤 모드에서는 실행 시 실제 시드를 뽑아 `preview.seed`와 생성 기록에 저장한다. 한 번의 UI 일괄 생성은 요청의 선택적 `seed`(비음수 32비트 정수)를 공유하며 고정 모드는 저장값을 우선한다.
+  `hash`에는 실제 난수 대신 설정값 `-1`을 사용해 완료된 랜덤 미리보기가 즉시 오래됨이 되지 않게 한다. 기존 필드 구조와 고정 시드 해시는 유지한다. 프롬프트는 공통 + artist 태그 + `1girl, solo, safe`,
   negative에 노출 제외 태그가 붙는다.
 - 공유 꾸러미(ZIP): `atelierx-presets.json`(`{kind: "atelierx-style-presets", schema_version: 1, app_version, presets: [{id, name,
   service, family, preview, resources: [{kind: model·text_encoder·vae·lora·upscale_model, name, sha256?, civitai?}]}]}`),
