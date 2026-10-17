@@ -252,6 +252,7 @@ class LabMixin:
                     {
                         'id': uuid.uuid4().hex,
                         'kind': 'lab',
+                        'service': 'comfyui',
                         'status': 'queued',
                         'created_at': created,
                         'seed': seed,
@@ -259,6 +260,7 @@ class LabMixin:
                         **lab,
                         'snapshot': {
                             'kind': 'lab',
+                            'service': 'comfyui',
                             'positive': prompt,
                             'negative': negative,
                             'settings': {**settings, 'seed': seed},

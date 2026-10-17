@@ -247,6 +247,32 @@ class ReviewRounds:
     def source_job(self, relative):
         """A queue job rebuilt from an image's record, ready to run again with a new seed."""
         meta = self.rt.gallery.metadata(relative)
+        postprocessed = bool((meta.get('postprocessing') or {}).get('applied'))
+        if meta.get('kind') == 'postprocess':
+            postprocessed = True
+            seen = {relative}
+            record = meta
+            for _ in range(32):
+                source = record.get('source')
+                source = source if isinstance(source, dict) else {}
+                path = source.get('path')
+                if not isinstance(path, str) or path in seen:
+                    break
+                seen.add(path)
+                try:
+                    record = self.rt.gallery.metadata(path)
+                except ValueError:
+                    break
+                if record.get('kind') != 'postprocess':
+                    meta = record
+                    break
+            if meta.get('kind') == 'postprocess':
+                raise ValueError(
+                    Msg(
+                        'server.gallery.no_generation_origin',
+                        'The original generation record for this processed image is unavailable.',
+                    )
+                )
         if not isinstance(meta.get('settings'), dict) or not meta.get('positive'):
             raise ValueError(
                 Msg('server.gallery.no_snapshot', 'This image has no generation settings to repeat.')
@@ -270,10 +296,20 @@ class ReviewRounds:
             )
         }
         job['snapshot'] = snapshot
-        # Made again where it was made (#41); records from before services were ComfyUI's.
-        job['service'] = meta.get('service') or 'comfyui'
+        service = meta.get('service')
+        if not service and meta.get('kind') == 'lab':
+            # Older lab records omit the service; lab has only ever used ComfyUI.
+            service = 'comfyui'
+        if not isinstance(service, str) or service not in self.rt.services:
+            raise ValueError(
+                Msg(
+                    'server.gallery.unknown_generation_service',
+                    'The original image service is unknown; this image cannot be regenerated safely.',
+                )
+            )
+        job['service'] = service
         job['source_path'] = relative
-        job['postprocessed'] = bool((meta.get('postprocessing') or {}).get('applied'))
+        job['postprocessed'] = postprocessed
         if meta.get('kind') == 'single':
             code(job['work_id'])
             job.update(kind='single', review_requested=False)
