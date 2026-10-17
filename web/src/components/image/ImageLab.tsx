@@ -7,15 +7,24 @@ import { useToast } from '../Toasts';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
 import { settingsFromPreset } from '../../lib/presetSettings';
 
+type CellAttempt = {
+  seed: number;
+  status: string;
+  job_id?: string;
+  image_url?: string;
+  path?: string;
+  error?: unknown;
+};
 type Cell = {
   row: number;
   column: number;
   seed: number;
   status: string;
-  lab_variant?: any;
+  lab_variant?: unknown;
   image_url?: string;
   path?: string;
-  error?: any;
+  error?: unknown;
+  regenerations?: CellAttempt[];
 };
 type Run = { id: string; created_at: string; sweep?: string; source?: string; source_url?: string; rows: number; columns: number; cells: Cell[] };
 type Preset = { id: string; name: string; service: string; family: 'anima' | 'sdxl'; settings: GenerationSettings };
@@ -419,6 +428,22 @@ export default function ImageLab({ workId, active = true }: { workId?: string; a
                           <button className="ghost small" onClick={() => setReference(side(cell))}>
                             {t('lab.set_reference')}
                           </button>
+                        )}
+                        {!!cell.regenerations?.length && (
+                          <div className="lab-regenerations">
+                            <span className="faint small">{t('lab.regenerations')}</span>
+                            {cell.regenerations.map((again) => (
+                              <div className="lab-regeneration" key={again.job_id ?? again.path}>
+                                {again.image_url ? (
+                                  <img src={again.image_url} alt="" loading="lazy" onClick={() => setResult(side({ ...cell, ...again }))} />
+                                ) : (
+                                  <span className="small" title={msgText(again.error)}>{t(`queue.status.${again.status}`)}</span>
+                                )}
+                                <span className="small mono">{t('lab.seed_n', { seed: again.seed })}</span>
+                                {again.image_url && <button className="ghost small" onClick={() => setReference(side({ ...cell, ...again }))}>{t('lab.set_reference')}</button>}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     );

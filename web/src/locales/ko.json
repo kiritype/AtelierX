@@ -898,6 +898,8 @@
   "lab.preset_saved": "그림체 프리셋 {id}을(를) 저장했습니다.",
   "lab.baseline": "추가 없음(기준)",
   "lab.seed_n": "시드 {seed}",
+  "lab.regenerations": "새 시드로 다시 생성한 결과",
+  "server.lab.missing_cell": "이 비교 이미지의 실행·셀 위치를 확인할 수 없어 다시 생성할 수 없습니다.",
   "lab.from_gallery": "갤러리에서 가져옴",
   "lab.positive": "positive",
   "lab.negative": "negative",

@@ -510,6 +510,9 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .lab-cell img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; cursor: pointer; }
 .lab-cell.picked { border-color: var(--accent); }
 .lab-cell.ref { border-color: var(--success); }
+.lab-regenerations { display: grid; gap: 3px; padding: 3px; border-top: 1px solid var(--border); }
+.lab-regeneration { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.lab-cell .lab-regeneration img { width: 40px; height: 40px; aspect-ratio: 1; }
 /* Brush mask editor (lib/maskEditor.js) */
 .mask-editor { display: grid; gap: 6px; }
 .mask-toolbar { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }

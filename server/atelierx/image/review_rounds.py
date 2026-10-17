@@ -314,7 +314,35 @@ class ReviewRounds:
             code(job['work_id'])
             job.update(kind='single', review_requested=False)
         elif meta.get('kind') == 'lab':
-            job.update(kind='lab', lab_group=meta.get('lab_group') or uuid.uuid4().hex, lab_index=1)
+            group, row, column = meta.get('lab_group'), meta.get('lab_row'), meta.get('lab_column')
+            if (
+                not isinstance(group, str)
+                or not group
+                or isinstance(row, bool)
+                or not isinstance(row, int)
+                or row < 0
+                or isinstance(column, bool)
+                or not isinstance(column, int)
+                or column < 0
+            ):
+                raise ValueError(
+                    Msg(
+                        'server.lab.missing_cell',
+                        'This comparison image has no reliable run and cell position to regenerate.',
+                    )
+                )
+            index = meta.get('lab_index')
+            job.update(
+                kind='lab',
+                lab_group=group,
+                lab_index=index if isinstance(index, int) and index > 0 else 1,
+                lab_row=row,
+                lab_column=column,
+                lab_variant=meta.get('lab_variant'),
+                lab_sweep=meta.get('lab_sweep'),
+                lab_source=meta.get('lab_source'),
+                review_requested=False,
+            )
         else:
             for field in ('work_id', 'character_id', 'outfit_id', 'expression_id'):
                 code(job[field])

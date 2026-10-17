@@ -281,7 +281,14 @@ class LabMixin:
                 run_id, {'id': run_id, 'created_at': created, 'sweep': entry.get('lab_sweep'), 'cells': {}}
             )
             key = (entry.get('lab_row') or 0, entry.get('lab_column') or 0)
-            run['cells'].setdefault(key, {}).update({k: v for k, v in entry.items() if v is not None})
+            current = run['cells'].setdefault(key, {})
+            if entry.get('regenerated_from'):
+                attempts = current.setdefault('regenerations', {})
+                ident = entry.get('job_id') or entry.get('path')
+                attempt = attempts.setdefault(ident, {})
+                attempt.update({k: v for k, v in entry.items() if v is not None})
+            else:
+                current.update({k: v for k, v in entry.items() if v is not None})
 
         for item in self.gallery.snapshot_items():
             if item['kind'] != 'lab':
@@ -301,32 +308,45 @@ class LabMixin:
                     'lab_variant': meta.get('lab_variant'),
                     'lab_sweep': meta.get('lab_sweep'),
                     'seed': meta.get('seed'),
+                    'job_id': meta.get('job_id'),
                     'status': 'done',
                     'path': item['path'],
                     'image_url': item['image_url'],
                     'source': meta.get('lab_source'),
+                    'regenerated_from': meta.get('source_path'),
+                    'created_at': meta.get('created_at'),
                 },
             )
         live = self.queue.select(lambda j: j.get('kind') == 'lab' and j.get('lab_group'))
         for job in live:
+            snapshot = job.get('snapshot') or {}
             cell(
                 job['lab_group'],
                 job['created_at'],
                 {
-                    'lab_row': job.get('lab_row'),
-                    'lab_column': job.get('lab_column'),
-                    'lab_variant': job.get('lab_variant'),
-                    'lab_sweep': job.get('lab_sweep'),
+                    'lab_row': job.get('lab_row', snapshot.get('lab_row')),
+                    'lab_column': job.get('lab_column', snapshot.get('lab_column')),
+                    'lab_variant': job.get('lab_variant', snapshot.get('lab_variant')),
+                    'lab_sweep': job.get('lab_sweep', snapshot.get('lab_sweep')),
                     'seed': job['seed'],
                     'status': job['status'],
                     'job_id': job['id'],
                     'error': job.get('error'),
                     'image_url': job.get('image_url'),
-                    'source': job.get('lab_source'),
+                    'source': job.get('lab_source', snapshot.get('lab_source')),
+                    'regenerated_from': job.get('source_path', snapshot.get('source_path')),
+                    'created_at': job['created_at'],
                 },
             )
         out = []
         for run in runs.values():
+            for value in run['cells'].values():
+                attempts = value.get('regenerations')
+                if attempts:
+                    value['regenerations'] = sorted(
+                        attempts.values(),
+                        key=lambda attempt: (attempt.get('created_at') or '', attempt.get('job_id') or ''),
+                    )
             cells = [
                 {**value, 'row': key[0], 'column': key[1]} for key, value in sorted(run['cells'].items())
             ]
