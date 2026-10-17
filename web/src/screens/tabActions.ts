@@ -1,3 +1,10 @@
+import { tabKey, type Tab } from '../types';
+
+export function openQueueKey(tabs: Tab[]): string | null {
+  const existing = tabs.find((tab) => tab.type === 'image' && tab.view === 'queue');
+  return existing ? tabKey(existing) : null;
+}
+
 export function bulkCloseKeys(keys: string[], anchor: string, pinned: string[], mode: 'others' | 'right') {
   const anchorIndex = keys.indexOf(anchor);
   return keys.filter((key, index) => key !== anchor && !pinned.includes(key) && (mode === 'others' || index > anchorIndex));
