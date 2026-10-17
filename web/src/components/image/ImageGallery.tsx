@@ -1,6 +1,6 @@
 import { submitToolBatch } from '../../lib/toolBatches';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
 import { PRESET_ID, presetFromRecord } from '../../lib/presetFromRecord';
 import { t, tm, msgText } from '../../i18n';
@@ -113,6 +113,11 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   const [uploading, setUploading] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [showRounds, setShowRounds] = useState(false);
+  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [collapsedWorks, setCollapsedWorks] = useState<Record<string, boolean>>({});
+  const [collapsedCharacters, setCollapsedCharacters] = useState<Record<string, boolean>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollAnchor = useRef<{ path: string; offset: number } | null>(null);
 
   const params = useMemo(() => {
     const p = new URLSearchParams({
@@ -155,6 +160,34 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     queryFn: () => get(`/api/works/${workId}/image/designs`),
   });
   const names = useMemo(() => Object.fromEntries((designs.data ?? []).map((d) => [d.id, d.name])), [designs.data]);
+  const scopePath = useMemo(() => {
+    if (scope.folder) return `${t('gallery.other_folders')} → ${scope.folder}`;
+    if (!scope.work) return t('gallery.all_images');
+    const work = tree.data?.works.find((w) => w.id === scope.work);
+    const character = work?.characters.find((c) => c.id === scope.character);
+    const outfit = character?.outfits.find((o) => o.id === scope.outfit);
+    return [scope.work, scope.character && (scope.work === workId ? names[scope.character] : undefined) || scope.character,
+      outfit?.name || scope.outfit].filter(Boolean).join(' → ');
+  }, [scope, tree.data, workId, names]);
+
+  const toggleTree = () => {
+    const scroll = scrollRef.current;
+    const top = scroll?.getBoundingClientRect().top ?? 0;
+    const anchor = [...(scroll?.querySelectorAll<HTMLElement>('[data-gallery-path]') ?? [])]
+      .find((cell) => cell.getBoundingClientRect().bottom > top);
+    scrollAnchor.current = anchor ? { path: anchor.dataset.galleryPath!, offset: anchor.getBoundingClientRect().top - top } : null;
+    setTreeCollapsed((value) => !value);
+  };
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    const scroll = scrollRef.current;
+    if (anchor && scroll) {
+      const cell = [...scroll.querySelectorAll<HTMLElement>('[data-gallery-path]')]
+        .find((item) => item.dataset.galleryPath === anchor.path);
+      if (cell) scroll.scrollTop += cell.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
+    }
+    scrollAnchor.current = null;
+  }, [treeCollapsed]);
 
   // The page keeps its snapshot so paging is stable; new images show as a refresh hint.
   useEffect(() => {
@@ -251,36 +284,49 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   const attention = (rounds.data?.rounds ?? []).filter((r) => r.status === 'needs_attention' || r.status === 'limit_reached').length;
 
   return (
-    <div className="gallery">
-      <aside className="gallery-tree pad col">
+    <div className={`gallery${treeCollapsed ? ' tree-collapsed' : ''}`}>
+      {!treeCollapsed && <aside className="gallery-tree pad col" aria-label={t('gallery.tree')}>
         <button className={`tree-link ${!scope.work && !scope.folder ? 'on' : ''}`} onClick={() => changeScope({})}>
           {t('gallery.all_images')}
         </button>
         {(tree.data?.works ?? []).map((w) => (
           <div key={w.id} className="col" style={{ gap: 1 }}>
-            <button className={`tree-link ${scope.work === w.id && !scope.character ? 'on' : ''}`} onClick={() => changeScope({ work: w.id })}>
-              {w.id === workId ? t('gallery.this_work') : w.id} <span className="faint">{w.count}</span>
-            </button>
-            {w.characters.map((c) => (
-              <div key={c.id} className="col" style={{ gap: 1, paddingLeft: 12 }}>
-                <button
-                  className={`tree-link ${scope.work === w.id && scope.character === c.id && !scope.outfit ? 'on' : ''}`}
-                  onClick={() => changeScope({ work: w.id, character: c.id })}
-                >
-                  {(w.id === workId && names[c.id]) || c.id} <span className="faint">{c.count}</span>
-                </button>
-                {c.outfits.map((o) => (
+            <div className="gallery-tree-row">
+              <button className="gallery-branch-toggle" aria-label={t(collapsedWorks[w.id] ? 'gallery.expand_work' : 'gallery.collapse_work', { name: w.id })}
+                aria-expanded={!collapsedWorks[w.id]} onClick={() => setCollapsedWorks((prev) => ({ ...prev, [w.id]: !prev[w.id] }))}>
+                {collapsedWorks[w.id] ? '▸' : '▾'}
+              </button>
+              <button className={`tree-link ${scope.work === w.id && !scope.character ? 'on' : ''}`} onClick={() => changeScope({ work: w.id })}>
+                {w.id === workId ? t('gallery.this_work') : w.id} <span className="faint">{w.count}</span>
+              </button>
+            </div>
+            {!collapsedWorks[w.id] && w.characters.map((c) => {
+              const branch = `${w.id}\u0000${c.id}`;
+              return <div key={c.id} className="col" style={{ gap: 1, paddingLeft: 12 }}>
+                <div className="gallery-tree-row">
+                  <button className="gallery-branch-toggle" aria-label={t(collapsedCharacters[branch] ? 'gallery.expand_character' : 'gallery.collapse_character', { name: (w.id === workId && names[c.id]) || c.id })}
+                    aria-expanded={!collapsedCharacters[branch]} onClick={() => setCollapsedCharacters((prev) => ({ ...prev, [branch]: !prev[branch] }))}>
+                    {collapsedCharacters[branch] ? '▸' : '▾'}
+                  </button>
+                  <button
+                    className={`tree-link ${scope.work === w.id && scope.character === c.id && !scope.outfit ? 'on' : ''}`}
+                    onClick={() => changeScope({ work: w.id, character: c.id })}
+                  >
+                    {(w.id === workId && names[c.id]) || c.id} <span className="faint">{c.count}</span>
+                  </button>
+                </div>
+                {!collapsedCharacters[branch] && c.outfits.map((o) => (
                   <button
                     key={o.id}
                     style={{ paddingLeft: 24 }}
-                    className={`tree-link ${scope.character === c.id && scope.outfit === o.id ? 'on' : ''}`}
+                    className={`tree-link ${scope.work === w.id && scope.character === c.id && scope.outfit === o.id ? 'on' : ''}`}
                     onClick={() => changeScope({ work: w.id, character: c.id, outfit: o.id })}
                   >
                     {o.name || o.id} <span className="faint">{o.count}</span>
                   </button>
                 ))}
-              </div>
-            ))}
+              </div>;
+            })}
           </div>
         ))}
         {(tree.data?.folders ?? []).length > 0 && <div className="section-title">{t('gallery.other_folders')}</div>}
@@ -294,9 +340,17 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
             {f.path.split('/').pop()} <span className="faint">{f.count}</span>
           </button>
         ))}
-      </aside>
+      </aside>}
 
       <div className="gallery-main col">
+        <div className="gallery-scopebar row">
+          <button onClick={toggleTree} aria-expanded={!treeCollapsed}
+            aria-label={t(treeCollapsed ? 'gallery.show_tree' : 'gallery.hide_tree')}
+            title={t(treeCollapsed ? 'gallery.show_tree' : 'gallery.hide_tree')}>
+            {treeCollapsed ? '▸' : '◂'}
+          </button>
+          <strong className="gallery-scope-path" title={scopePath}>{scopePath}</strong>
+        </div>
         <div className="gallery-toolbar row">
           <select value={filters.expression} onChange={(e) => changeFilter({ expression: e.target.value })}>
             <option value="">{t('gallery.all_expressions')}</option>
@@ -394,12 +448,12 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
           )}
         </div>
 
-        <div className="gallery-scroll">
+        <div className="gallery-scroll" ref={scrollRef}>
           {showRounds && <RoundsPanel data={rounds.data} names={names} onChange={reload} fail={fail} />}
 
           <div className="gallery-grid">
             {results.map((item, index) => (
-              <div key={item.path} className={`gallery-cell ${selected.has(item.path) ? 'selected' : ''} human-${item.human_status}`}>
+              <div key={item.path} data-gallery-path={item.path} className={`gallery-cell ${selected.has(item.path) ? 'selected' : ''} human-${item.human_status}`}>
                 <button className="gallery-open" onClick={() => setOpen(index)}>
                   <img src={item.thumbnail_url} alt="" loading="lazy" />
                   <span className="gallery-caption" title={item.path}>
