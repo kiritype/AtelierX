@@ -190,3 +190,59 @@ def test_previews_are_made_with_comfyui_only(unlocked):
     refused = c.post('/api/image/presets/nai/preview')
     assert refused.status_code == 400
     assert refused.json()['error']['key'] == 'server.image.presets.preview_comfy_only'
+
+
+def test_random_preview_seed_records_actual_seed_and_keeps_mode_hash(unlocked, monkeypatch):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    preset = {
+        'name': 'ink',
+        'service': 'comfyui',
+        'family': 'anima',
+        'settings': {'model': 'anima\\m.safetensors', 'steps': 20},
+    }
+    c.put('/api/image/presets/ink', json=preset)
+    assert c.put('/api/image/settings/presets', json={'preview_seed': -1}).status_code == 200
+    assert c.get('/api/image/settings/presets').json()['preview_seed'] == -1
+    seeds = iter([81, 92])
+    monkeypatch.setattr('atelierx.image.lab.secrets.randbits', lambda bits: next(seeds))
+    for expected in (81, 92):
+        response = c.post('/api/image/presets/ink/preview')
+        assert response.status_code == 200, response.text
+        assert response.json()['seeds'] == [expected]
+        job = runtime.jobs[-1]
+        assert job['snapshot']['settings']['seed'] == expected
+        job['status'] = 'running'
+        runtime.run_job(job)
+        assert job['status'] == 'done', job.get('error')
+        listed = c.get('/api/image/presets').json()[0]
+        assert listed['preview']['seed'] == expected
+        assert listed['preview_stale'] is False
+    c.put('/api/image/settings/presets', json={'preview_seed': 92})
+    assert c.get('/api/image/presets').json()[0]['preview_stale'] is True
+
+
+def test_preview_batch_seed_and_validation(unlocked):
+    c = unlocked
+    runtime = c.app.state.app.image
+    runtime.comfy = FakeComfy()
+    runtime.set_paused(True)
+    for ident in ('one', 'two'):
+        c.put(
+            f'/api/image/presets/{ident}',
+            json={'service': 'comfyui', 'family': 'anima', 'settings': {'model': 'anima\\m.safetensors'}},
+        )
+    c.put('/api/image/settings/presets', json={'preview_seed': -1})
+    for ident in ('one', 'two'):
+        assert c.post(f'/api/image/presets/{ident}/preview', json={'seed': 4294967295}).json()['seeds'] == [
+            4294967295
+        ]
+    for invalid in (-2, 1.5, True, 4294967296):
+        assert c.put('/api/image/settings/presets', json={'preview_seed': invalid}).status_code == 400
+    for invalid in (-1, 1.5, True, 4294967296, '42'):
+        assert c.post('/api/image/presets/one/preview', json={'seed': invalid}).status_code == 400
+    assert c.post('/api/image/presets/one/preview', json=[]).status_code == 400
+    c.put('/api/image/settings/presets', json={'preview_seed': 0})
+    assert c.post('/api/image/presets/one/preview', json={'seed': 123}).json()['seeds'] == [0]

@@ -2155,7 +2155,7 @@
   "explorer.clear": "Uncheck all",
   "explorer.none_match": "Nothing matches.",
   "presets.about": "A style preset keeps the service, model, LoRAs, sampler, size and artist tags together. Click a card to edit it here or send it to the generate screen.",
-  "presets.preview_about": "Each preset has one preview, all made with the same prompt (common prompts + artist tags + 1girl, solo, safe) and the same seed ({seed}) so they compare side by side. Changing the settings marks it stale.",
+  "presets.preview_about": "Each preset combines its common prompts and artist tags with the base subject (1girl, solo, safe) and seed ({seed}). Save the seed, then regenerate previews to update the images.",
   "presets.empty": "No style presets yet. Make one with [New preset], or save a gallery image's settings as a preset.",
   "presets.new": "New preset",
   "presets.bad_id": "Use letters, digits, _ and - for the id.",
@@ -2175,7 +2175,7 @@
   "presets.preview_all": "Make missing or stale previews ({n})",
   "presets.preview_all_confirm": "Queue {n} previews? ComfyUI makes them in turn.",
   "presets.seed": "Preview seed",
-  "presets.seed_hint": "Every preview uses this seed. Changing it makes all previews stale.",
+  "presets.seed_hint": "-1 chooses a random seed; 0–4294967295 fixes it. Press Enter or leave the field and confirm to save. Previews generated together share one seed.",
   "presets.seed_confirm": "Changing the preview seed makes every preview stale. Change it?",
   "presets.apply": "Use on the generate screen",
   "presets.duplicate": "Duplicate",
@@ -2549,5 +2549,9 @@
   "single.view_all": "Browse all in the gallery",
   "single.history_page": "{current} / {total}",
   "single.previous_page": "Previous page",
-  "single.next_page": "Next page"
+  "single.next_page": "Next page",
+  "presets.preview_about_random": "Random seed mode (-1). Each generation chooses a seed; presets generated together share it. The base subject is 1girl, solo, safe; common prompts and artist tags come from each preset.",
+  "presets.preview_actual_seed": "Current preview seed: {seed}",
+  "presets.seed_invalid": "Enter -1 (random) or an integer from 0 to 4294967295.",
+  "server.image.presets.preview_seed": "Preview seed must be an integer from 0 to 4294967295."
 }

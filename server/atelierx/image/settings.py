@@ -104,7 +104,7 @@ def _training(values, current):
 def _presets(values, current):
     result = {**current}
     if 'preview_seed' in values:
-        result['preview_seed'] = _integer(values['preview_seed'], 'preview_seed', 0, 2**32 - 1)
+        result['preview_seed'] = _integer(values['preview_seed'], 'preview_seed', -1, 2**32 - 1)
     return result
 
 

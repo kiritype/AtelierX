@@ -82,11 +82,14 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
     }
   }
   async function makePreview(ids: string[]) {
+    // One invocation compares presets with one seed, even in random mode.
+    const body = previewSettings.data?.preview_seed === -1
+      ? { seed: crypto.getRandomValues(new Uint32Array(1))[0] } : {};
     const before: Record<string, string> = {};
     let queued = 0;
     for (const id of ids) {
       try {
-        await post(`/api/image/presets/${id}/preview`);
+        await post<{ count: number; seeds: number[] }>(`/api/image/presets/${id}/preview`, body);
         before[id] = presets.data?.find((p) => p.id === id)?.preview?.created_at ?? '';
         queued += 1;
       } catch (err) {
@@ -99,16 +102,26 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
       toast({ text: t('presets.preview_queued', { n: queued }) });
     }
   }
+  const savingSeed = useRef(false);
   async function saveSeed() {
+    if (savingSeed.current) return;
     const value = Number(seed);
-    if (!Number.isInteger(value) || value < 0 || value === previewSettings.data?.preview_seed) return;
-    if (!confirm(t('presets.seed_confirm'))) return setSeed(String(previewSettings.data?.preview_seed ?? ''));
+    if (!seed.trim() || !Number.isInteger(value) || value < -1 || value > 4294967295) {
+      toast({ text: t('presets.seed_invalid'), tone: 'error' });
+      return;
+    }
+    if (value === previewSettings.data?.preview_seed) return;
+    savingSeed.current = true;
     try {
+      if (!confirm(t('presets.seed_confirm'))) return setSeed(String(previewSettings.data?.preview_seed ?? ''));
       await put('/api/image/settings/presets', { preview_seed: value });
       await qc.invalidateQueries({ queryKey: ['image-settings', 'presets'] });
       await qc.invalidateQueries({ queryKey: ['image-presets'] });
+      toast({ text: t('common.saved') });
     } catch (err) {
       fail(err);
+    } finally {
+      savingSeed.current = false;
     }
   }
 
@@ -166,7 +179,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
   const detail = !draft ? (
     <div className="col pad" style={{ gap: 8 }}>
       <p className="faint">{t('presets.about')}</p>
-      <p className="faint small">{t('presets.preview_about', { seed: previewSettings.data?.preview_seed ?? '' })}</p>
+      <p className="faint small">{t(previewSettings.data?.preview_seed === -1 ? 'presets.preview_about_random' : 'presets.preview_about', { seed: previewSettings.data?.preview_seed ?? '' })}</p>
     </div>
   ) : (
     <div className="col pad" style={{ gap: 8 }}>
@@ -177,6 +190,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
         </button>
       </div>
       {storedPreset?.preview_url && <img className="preset-detail-img" src={storedPreset.preview_url} alt="" />}
+      {storedPreset?.preview && <p className="faint small">{t('presets.preview_actual_seed', { seed: storedPreset.preview.seed })}</p>}
       <PresetEditor workId={workId} draft={draft} onChange={setDraft} />
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="primary" disabled={!dirty} onClick={() => save(draft)}>
@@ -275,7 +289,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
           />
           <label className="row small" style={{ gap: 4 }} title={t('presets.seed_hint')}>
             <span className="muted">{t('presets.seed')}</span>
-            <input type="number" style={{ width: 110 }} value={seed} onChange={(e) => setSeed(e.target.value)} onBlur={saveSeed} onKeyDown={(e) => e.key === 'Enter' && saveSeed()} />
+            <input type="number" min={-1} max={4294967295} step={1} aria-label={t('presets.seed')} style={{ width: 110 }} value={seed} onChange={(e) => setSeed(e.target.value)} onBlur={saveSeed} onKeyDown={(e) => e.key === 'Enter' && saveSeed()} />
           </label>
           <button disabled={!missing.length} onClick={() => confirm(t('presets.preview_all_confirm', { n: missing.length })) && makePreview(missing.map((p) => p.id))}>
             {t('presets.preview_all', { n: missing.length })}

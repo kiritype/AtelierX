@@ -258,7 +258,7 @@ async def preset_put(request):
 
 async def preset_preview(request):
     runtime = _runtime(request)
-    return await call(runtime.enqueue_preset_preview, request.path_params['ident'])
+    return await call(runtime.enqueue_preset_preview, request.path_params['ident'], await _body(request))
 
 
 async def preset_preview_file(request):
