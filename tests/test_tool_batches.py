@@ -313,6 +313,77 @@ def test_bulk_api_freezes_mask_and_recovers_output(unlocked, paths):
     )
 
 
+def test_clear_completed_receipts_preserves_images_masks_and_retries(unlocked, monkeypatch):
+    from test_tools import png, upload
+
+    rt = unlocked.app.state.app.image
+    rt.stop.set()
+    rt._thread.join(timeout=5)
+    item = upload(unlocked, 'keep.png', png())['added'][0]
+    rt.tools.set_mask(item['id'], Image.new('L', (40, 30), 255), 'edited')
+    original = rt.tools.file(rt.tools.get(item['id']))
+    mask = rt.tools.mask_path(item['id'], 'censor')
+    body = {'operation': 'censor', 'request_id': 'clear-success', 'ids': [item['id']], 'treatment': 'color'}
+    accepted = unlocked.post('/api/image/tools/batches', json=body).json()
+    assert unlocked.post('/api/image/tools/batches/clear-completed', json={}).json()['cleared'] == 0
+    assert unlocked.post('/api/image/tools/remove', json={'ids': [item['id']]}).status_code == 409
+    assert original.is_file() and mask.is_file()
+    rt.bulk.pump()
+    rt.bulk.run_cpu(rt.queue.jobs[0])
+    rt.bulk.reconcile()
+    result = rt.tools.file(rt.tools.items[-1])
+    assert rt.bulk.public(accepted['id'])['counts']['done'] == 1
+    assert unlocked.post('/api/image/tools/batches/clear-completed', json={}).json()['cleared'] == 1
+    assert accepted['id'] not in [
+        batch['id'] for batch in unlocked.get('/api/image/tools/batches').json()['batches']
+    ]
+    assert original.is_file() and mask.is_file() and result.is_file()
+    assert unlocked.post('/api/image/tools/batches', json=body).json()['id'] == accepted['id']
+    assert unlocked.post('/api/image/tools/batches/clear-completed', json={}).json()['cleared'] == 0
+    rt.queue.jobs.append({'id': 'legacy-tool-job', 'tool_item': item['id'], 'status': 'queued'})
+    assert unlocked.post('/api/image/tools/remove', json={'ids': [item['id']]}).status_code == 409
+    rt.queue.jobs.pop()
+    monkeypatch.setattr(rt.convert, 'in_use', lambda ids: True)
+    assert unlocked.post('/api/image/tools/remove', json={'ids': [item['id']]}).status_code == 409
+    monkeypatch.setattr(rt.convert, 'in_use', lambda ids: False)
+    assert unlocked.post('/api/image/tools/remove', json={'ids': [item['id']]}).json()['removed'] == 1
+    assert not original.exists() and not mask.exists() and result.is_file()
+
+
+def test_clear_completed_keeps_cancelled_and_retriable_receipts(paths):
+    rt = runtime(paths)
+    bulk = ToolBatches(rt)
+    accepted = bulk.submit({'operation': 'gallery', 'request_id': 'clear-cancelled', 'paths': ['a']})
+    bulk.cancel(accepted['id'])
+    assert bulk.clear_completed()['cleared'] == 0
+    assert accepted['id'] in [batch['id'] for batch in bulk.list()['batches']]
+    bulk.retry(accepted['id'])
+    assert bulk.public(accepted['id'])['counts']['pending'] == 1
+    bulk.db.close()
+
+
+def test_many_completed_receipts_do_not_hide_an_older_active_job(paths):
+    rt = runtime(paths)
+    bulk = ToolBatches(rt)
+    active = bulk.submit({'operation': 'gallery', 'request_id': 'older-active', 'paths': ['a']})
+    with bulk.db:
+        for n in range(120):
+            ident = f'completed-{n}'
+            bulk.db.execute(
+                'INSERT INTO batches(id,request_id,fingerprint,operation,settings,created_at) VALUES(?,?,?,?,?,?)',
+                (ident, f'completed-request-{n}', 'fingerprint', 'gallery', '{}', f'9999-{n:03}'),
+            )
+            bulk.db.execute(
+                "INSERT INTO items(batch,ordinal,target,status) VALUES(?,0,?,'done')",
+                (ident, '{"id":"a"}'),
+            )
+    listed = bulk.list()
+    assert listed['batches'][0]['id'] == active['id']
+    assert len(listed['batches']) == 101 and listed['more_completed'] is True
+    assert listed['running_count'] == 1 and listed['failed_count'] == 0
+    bulk.db.close()
+
+
 def test_bulk_tag_and_postprocess_api_use_frozen_settings(unlocked):
     from test_tools import ToolComfy, png, upload
 

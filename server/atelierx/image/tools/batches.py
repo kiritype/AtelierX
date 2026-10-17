@@ -333,12 +333,64 @@ class ToolBatches:
 
     def list(self):
         with self.lock:
+            working, completed = [], []
+            more_working = more_completed = False
+            for row in self.db.execute('SELECT id,settings FROM batches ORDER BY created_at DESC'):
+                if json.loads(row['settings']).get('_receipt_hidden'):
+                    continue
+                unfinished = self.db.execute(
+                    "SELECT 1 FROM items WHERE batch=? AND status!='done' LIMIT 1", (row['id'],)
+                ).fetchone()
+                group = working if unfinished else completed
+                if len(group) < 100:
+                    group.append(self.public(row['id']))
+                elif unfinished:
+                    more_working = True
+                else:
+                    more_completed = True
+                if more_working and more_completed:
+                    break
+            counts = dict(
+                self.db.execute("SELECT status,count(*) FROM items WHERE status!='done' GROUP BY status")
+            )
             return {
-                'batches': [
-                    self.public(row[0])
-                    for row in self.db.execute('SELECT id FROM batches ORDER BY created_at DESC LIMIT 100')
-                ]
+                'batches': working + completed,
+                'running_count': sum(
+                    counts.get(key, 0) for key in ('pending', 'queued', 'running', 'cancelling')
+                ),
+                'failed_count': sum(counts.get(key, 0) for key in ('failed', 'cancelled', 'interrupted')),
+                'more_working': more_working,
+                'more_completed': more_completed,
             }
+
+    def clear_completed(self):
+        """Hide successful receipts only; preserve idempotency, retries and output files."""
+        cleared = 0
+        with self.lock, self.db:
+            rows = self.db.execute(
+                'SELECT b.id,b.settings FROM batches b WHERE EXISTS '
+                '(SELECT 1 FROM items i WHERE i.batch=b.id) AND NOT EXISTS '
+                "(SELECT 1 FROM items i WHERE i.batch=b.id AND i.status!='done')"
+            )
+            for row in rows:
+                settings = json.loads(row['settings'])
+                if settings.get('_receipt_hidden'):
+                    continue
+                settings['_receipt_hidden'] = True
+                self.db.execute('UPDATE batches SET settings=? WHERE id=?', (encoded(settings), row['id']))
+                cleared += 1
+        return {'cleared': cleared}
+
+    def active_targets(self, ids):
+        """Find tool images still referenced by unfinished receipts."""
+        wanted = set(ids)
+        with self.lock:
+            return wanted.intersection(
+                json.loads(row[0]).get('id')
+                for row in self.db.execute(
+                    "SELECT target FROM items WHERE status IN ('pending','queued','running','cancelling')"
+                )
+            )
 
     def details(self, ident, offset=0, limit=100):
         with self.lock:

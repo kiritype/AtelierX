@@ -58,7 +58,15 @@ const SOURCE_LABELS: Record<string, string> = { atelierx: 'tools.source.atelierx
 const ACCEPT = '.png,.webp,.jpg,.jpeg,.zip';
 // Tabs that run in ComfyUI. WebP conversion and prompt formats work without it.
 const METHOD_KEY = 'atelierx.tools.method';
+const HIDDEN_KEY = 'atelierx.tools.hidden';
 const COMFY_TABS: Tab[] = ['tag', 'post', 'censor', 'alpha', 'inpaint'];
+
+function readHidden(): Set<string> {
+  try {
+    const ids: unknown = JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]');
+    return new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []);
+  } catch { return new Set(); }
+}
 
 function readMethods(): Partial<Record<Tab, Method>> {
   try {
@@ -152,11 +160,18 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
   const [offset, setOffset] = useState(0);
+  const [hiddenIds, setHiddenIds] = useState(readHidden);
+  const [showHidden, setShowHidden] = useState(false);
+  useEffect(() => {
+    const sync = (event: StorageEvent) => { if (event.key === HIDDEN_KEY) setHiddenIds(readHidden()); };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
   const items = useQuery<{ items: ToolItem[]; total: number }>({ queryKey: ['tool-items', offset], queryFn: () => get(`/api/image/tools/items?offset=${offset}&limit=200`), refetchInterval: active ? 3000 : false });
   const tagger = useQuery<TaggerInfo>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
   const postInfo = useQuery<PostInfo>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
   const methods = useQuery<ToolMethods>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
-  const list = items.data?.items ?? [];
+  const list = (items.data?.items ?? []).filter((item) => showHidden || !hiddenIds.has(item.id));
   // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
   const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
   const blocked = (key: Tab) => {
@@ -224,7 +239,7 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   useEffect(() => {
     if (!currentId && list.length) setCurrentId(list[list.length - 1].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items.data]);
+  }, [items.data, hiddenIds, showHidden]);
 
   const reload = () => qc.invalidateQueries({ queryKey: ['tool-items'] });
   const leaveEditor = () => {
@@ -281,15 +296,44 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   }
 
   async function removeChosen() {
+    if (chosenIds.includes(currentId) && editor.current?.isDirty()) {
+      toast({ text: t('tools.save_mask_before_cleanup'), tone: 'error' });
+      return;
+    }
     if (!chosenIds.length || !confirm(tp('tools.remove_confirm', chosenIds.length))) return;
     try {
       await post('/api/image/tools/remove', { ids: chosenIds });
       if (chosenIds.includes(currentId)) setCurrentId('');
+      const nextHidden = new Set(hiddenIds);
+      chosenIds.forEach((id) => nextHidden.delete(id));
+      saveHidden(nextHidden);
       setChosen(new Set());
       reload();
     } catch (err) {
       fail(err);
     }
+  }
+
+  function saveHidden(ids: Set<string>) {
+    setHiddenIds(ids);
+    try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...ids])); } catch { /* Display preference only */ }
+  }
+
+  function hideChosen() {
+    if (chosenIds.includes(currentId) && editor.current?.isDirty()) {
+      toast({ text: t('tools.save_mask_before_cleanup'), tone: 'error' });
+      return;
+    }
+    saveHidden(new Set([...hiddenIds, ...chosenIds]));
+    if (chosenIds.includes(currentId)) setCurrentId('');
+    setChosen(new Set());
+  }
+
+  function showChosen() {
+    const next = new Set(hiddenIds);
+    chosenIds.forEach((id) => next.delete(id));
+    saveHidden(next);
+    setChosen(new Set());
   }
 
   const switchTab = (next: Tab) => {
@@ -318,12 +362,17 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
             <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => upload([...(e.target.files ?? [])])} />
             <button onClick={async () => {
               if (chosen.size) { setChosen(new Set()); return; }
-              try { setChosen(new Set((await get<{ ids: string[] }>('/api/image/tools/ids')).ids)); } catch (error) { fail(error); }
+              try { setChosen(new Set((await get<{ ids: string[] }>('/api/image/tools/ids')).ids.filter((id) => showHidden || !hiddenIds.has(id)))); } catch (error) { fail(error); }
             }}>
               {chosen.size ? t('gallery.clear_selection') : t('tools.select_all')}
             </button>
+            <button disabled={!chosenIds.length} onClick={hideChosen}>{t('tools.hide_from_workspace')}</button>
+            {showHidden && <button disabled={!chosenIds.some((id) => hiddenIds.has(id))} onClick={showChosen}>{t('tools.restore_hidden')}</button>}
+            <button onClick={() => { setShowHidden(!showHidden); setChosen(new Set()); }}>
+              {showHidden ? t('tools.hide_hidden') : t('tools.show_hidden', { n: hiddenIds.size })}
+            </button>
             <button disabled={!chosenIds.length} onClick={removeChosen}>
-              {t('tools.remove_from_list')}
+              {t('tools.delete_work_copies')}
             </button>
             <a className={`button ${!chosenIds.length ? 'disabled' : ''}`} href={chosenIds.length ? `/api/image/tools/zip?ids=${chosenIds.join(',')}` : undefined}>
               {tp('tools.download_zip', chosenIds.length)}
@@ -343,6 +392,7 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
                 <div className="row tools-caption">
                   <input type="checkbox" checked={chosen.has(item.id)} onChange={(e) => toggle(item.id, e.target.checked)} />
                   <span className="grow ellipsis">{item.name.split('/').pop()}</span>
+                  {hiddenIds.has(item.id) && <span className="chip small">{t('tools.hidden')}</span>}
                   <span className={`chip small ${item.source === 'gallery' ? 'scope-work' : ''}`}>{item.source === 'gallery' ? t('tools.from_gallery') : t('tools.upload')}</span>
                   {item.tags && <span className="chip small">{t('tools.tags')}</span>}
                 </div>
