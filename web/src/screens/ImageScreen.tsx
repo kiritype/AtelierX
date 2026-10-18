@@ -7,6 +7,7 @@ import ImageLora from '../components/image/ImageLora';
 import ImageLibrary from '../components/image/ImageLibrary';
 import ImageQueue from '../components/image/ImageQueue';
 import ImageTools from '../components/image/ImageTools';
+import ImageInfoViewer from '../components/image/ImageInfoViewer';
 import PresetExplorer from '../components/image/PresetExplorer';
 import ModelsScreen from '../components/image/ModelsScreen';
 import { t } from '../i18n';
@@ -46,6 +47,7 @@ export default function ImageScreen({
   if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
   if (view === 'lab') return <ImageLab workId={workId} active={active} />;
   if (view === 'tools') return <ImageTools active={active} openLab={() => openView('lab')} openSettings={openSettings} />;
+  if (view === 'info') return <ImageInfoViewer active={active} />;
   if (view === 'lora') return <ImageLora workId={workId} initialCharacterId={characterId} initialOutfitId={outfitId} openLab={() => openView('lab')} />;
   return (
     <div className="pad col" style={{ maxWidth: 720 }}>

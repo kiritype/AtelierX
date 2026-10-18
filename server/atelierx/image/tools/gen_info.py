@@ -340,6 +340,8 @@ def _graph_prompts(graph):
 
 def _novelai(text):
     comment = _json(text.get('Comment')) or {}
+    if not isinstance(comment, dict):
+        comment = {}
     out = {'model': {'name': text.get('Source', '')}} if text.get('Source') else {}
     for key, name in (
         ('steps', 'steps'),
