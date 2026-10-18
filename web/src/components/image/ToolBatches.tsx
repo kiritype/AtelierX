@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { get, post } from '../../api';
 import { msgText, t } from '../../i18n';
 import type { ToolBatch } from '../../lib/toolBatches';
 
 const STATES = ['pending', 'queued', 'running', 'cancelling', 'done', 'failed', 'cancelled', 'interrupted'] as const;
 const OPEN_KEY = 'atelierx.tools.batches.open';
+const HISTORY_OPEN_KEY = 'atelierx.tools.batches.history.open';
 type Detail = { ordinal: number; status: string; target: { id: string }; result?: { error?: unknown; image_url?: string } };
 type BatchList = { batches: ToolBatch[]; running_count: number; failed_count: number; more_working: boolean; more_completed: boolean };
 
@@ -17,39 +18,14 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
   const [selected, setSelected] = useState('');
   const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState(() => { try { return localStorage.getItem(OPEN_KEY) === 'true'; } catch { return false; } });
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(() => { try { return localStorage.getItem(HISTORY_OPEN_KEY) === 'true'; } catch { return false; } });
   const [clearing, setClearing] = useState(false);
-  const container = useRef<HTMLDetailsElement>(null);
-  const historyContainer = useRef<HTMLDetailsElement>(null);
-  const firstLoad = useRef(true);
-  useEffect(() => {
-    const focus = (event: Event) => {
-      const id = (event as CustomEvent<string>).detail;
-      setSelected(id);
-      setOffset(0);
-      const completed = batches.data?.batches.find((batch) => batch.id === id);
-      const target = completed && finished(completed) ? historyContainer.current : container.current;
-      if (target) {
-        target.open = true;
-        target.scrollIntoView({ block: 'nearest' });
-        if (target === historyContainer.current) setHistoryOpen(true);
-        else setOpen(true);
-      }
-    };
-    window.addEventListener('tool-batch-focus', focus);
-    return () => window.removeEventListener('tool-batch-focus', focus);
-  }, [batches.data]);
   const details = useQuery<{ items: Detail[] }>({ queryKey: ['tool-batch', selected, offset], queryFn: () => get(`/api/image/tools/batches/${selected}?offset=${offset}&limit=50`), enabled: !!selected && active, refetchInterval: active ? 2000 : false });
   const all = batches.data?.batches ?? [];
   const working = all.filter((batch) => !finished(batch));
   const completed = all.filter(finished);
   const runningCount = batches.data?.running_count ?? working.reduce((n, batch) => n + batch.counts.pending + batch.counts.queued + batch.counts.running + batch.counts.cancelling, 0);
   const failedCount = batches.data?.failed_count ?? working.reduce((n, batch) => n + batch.counts.failed + batch.counts.cancelled + batch.counts.interrupted, 0);
-  useEffect(() => {
-    if (!batches.data || !firstLoad.current) return;
-    firstLoad.current = false;
-    if (!working.length) setOpen(false);
-  }, [batches.data]);
   async function action(id: string, name: 'cancel' | 'retry') {
     try {
       await post(`/api/image/tools/batches/${id}/${name}`, {});
@@ -90,7 +66,7 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
   }
 
   return <div className="col" style={{ gap: 0 }}>
-    <details ref={container} className="pad col" open={open} onToggle={(event) => {
+    <details className="pad col" open={open} onToggle={(event) => {
       setOpen(event.currentTarget.open);
       try { localStorage.setItem(OPEN_KEY, String(event.currentTarget.open)); } catch { /* UI preference only */ }
     }}>
@@ -99,7 +75,10 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
       {working.length ? working.map(renderBatch) : <span className="faint small">{t('bulk.no_active')}</span>}
       {batches.data?.more_working && <span className="faint small">{t('bulk.latest_100')}</span>}
     </details>
-    {completed.length > 0 && <details ref={historyContainer} className="pad col" onToggle={(event) => setHistoryOpen(event.currentTarget.open)}>
+    {completed.length > 0 && <details className="pad col" open={historyOpen} onToggle={(event) => {
+      setHistoryOpen(event.currentTarget.open);
+      try { localStorage.setItem(HISTORY_OPEN_KEY, String(event.currentTarget.open)); } catch { /* UI preference only */ }
+    }}>
       <summary aria-expanded={historyOpen}>{t('bulk.completed_history', { n: completed.length })}</summary>
       <p className="faint small">{t('bulk.clear_about')}</p>
       <button disabled={clearing} onClick={clearCompleted}>{t('bulk.clear_completed')}</button>

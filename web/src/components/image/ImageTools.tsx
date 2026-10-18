@@ -96,7 +96,6 @@ function useBatchSubmit(fail: (error: unknown) => void) {
       submitted = true;
       const result = await submitToolBatch(operation, body, rerun);
       await qc.invalidateQueries({ queryKey: ['tool-batches'] });
-      window.dispatchEvent(new CustomEvent('tool-batch-focus', { detail: result.id }));
       if (result.reused) {
         toast({ text: t('bulk.already_running', { n: result.accepted, id: result.id.slice(0, 8) }), action: {
           label: t('bulk.run_again'), run: () => { void run(operation, body, accepted, prepare, true); },
