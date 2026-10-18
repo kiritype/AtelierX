@@ -101,7 +101,7 @@ export default function LibraryImport({
         {rows.map((row) => (
           <div key={row.id} className="col gen-patch" style={{ gap: 4 }}>
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-              <strong>{row.name}</strong>
+              <strong>{row.name.trim() || row.id}</strong>
               <span className="faint mono small">{row.id}</span>
               {row.exists ? (
                 <span className="chip small warn">{t('lib.share.exists', { scope: t(`lib.scope.${row.here_scope ?? 'global'}`) })}</span>

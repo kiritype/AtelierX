@@ -75,3 +75,29 @@ it('keeps the saved seed when confirmation is cancelled', async () => {
   await act(async () => input().dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
   expect(put).not.toHaveBeenCalled(); expect(input().value).toBe('1234567');
 });
+it('shows names first with IDs to distinguish duplicates and falls back to IDs for blank names', async () => {
+  await act(async () => qc.setQueryData(['image-presets'], [
+    { ...presets[0], name: 'Shared' },
+    { ...presets[1], name: 'Shared' },
+    { ...presets[1], id: 'blank', name: ' ' },
+  ]));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  const cards = [...host.querySelectorAll('.explorer-card')];
+  expect(cards.map((card) => card.textContent)).toEqual(expect.arrayContaining([
+    expect.stringContaining('Sharedone'),
+    expect.stringContaining('Sharedtwo'),
+    expect.stringContaining('blank'),
+  ]));
+  await act(async () => (cards[1] as HTMLElement).click());
+  expect(host.querySelector('.explorer-detail strong')?.textContent).toBe('Shared');
+  expect(host.querySelector('.explorer-detail .faint.mono')?.textContent).toBe('two');
+  const nameInput = host.querySelector('.explorer-detail input:not([type="number"])') as HTMLInputElement;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(nameInput, 'Renamed');
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(host.querySelector('.explorer-detail strong')?.textContent).toBe('Renamed');
+  vi.mocked(put).mockImplementation(async (_url, body) => [{ ...body as typeof presets[number] }]);
+  await act(async () => ([...host.querySelectorAll('.explorer-detail button')].find(b => b.textContent === t('common.save')) as HTMLButtonElement).click());
+  expect(put).toHaveBeenCalledWith('/api/image/presets/two', expect.objectContaining({ id: 'two', name: 'Renamed' }));
+});

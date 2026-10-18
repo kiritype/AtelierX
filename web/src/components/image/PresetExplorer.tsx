@@ -15,6 +15,7 @@ import PresetImport, { readPackage, type ImportLook } from './PresetImport';
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop() ?? name;
 const loraNames = (p: Preset) => ((p.settings.loras as { name: string; enabled?: boolean }[] | undefined) ?? []).filter((l) => l.enabled !== false).map((l) => base(l.name));
+const displayName = (p: Pick<Preset, 'name' | 'id'>) => p.name.trim() || p.id;
 
 const facets = (): Facet<Preset>[] => [
   { id: 'target', label: t('presets.facet.target'), values: (p) => [presetTarget(p)] },
@@ -126,6 +127,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
   }
 
   const all = presets.data ?? [];
+  const duplicateName = (p: Preset) => !!p.name.trim() && all.some((other) => other.id !== p.id && other.name.trim() === p.name.trim());
   const missing = all.filter((p) => p.service === 'comfyui' && (!p.preview_url || p.preview_stale));
   const card = (p: Preset) => (
     <>
@@ -135,7 +137,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
         {waiting[p.id] !== undefined && p.preview_url && <span className="chip small preset-stale">{t('presets.preview_making')}</span>}
       </div>
       <div className="col" style={{ gap: 2, padding: '6px 8px' }}>
-        <strong className="ellipsis">{p.name}</strong>
+        <strong className="ellipsis" title={displayName(p)}>{displayName(p)}</strong>
+        {duplicateName(p) && <span className="faint mono small ellipsis" title={p.id}>{p.id}</span>}
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
           <span className="chip small">{presetTarget(p)}</span>
           {p.tags.map((tag) => (
@@ -162,7 +165,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
       {items.map((p) => (
         <div key={p.id} className="col" style={{ gap: 6 }}>
           <div className="preset-thumb large">{p.preview_url ? <img src={p.preview_url} alt="" /> : <span className="faint">{t('presets.preview_none')}</span>}</div>
-          <strong>{p.name}</strong>
+          <strong style={{ overflowWrap: 'anywhere' }}>{displayName(p)}</strong>
+          {duplicateName(p) && <span className="faint mono small">{p.id}</span>}
           <dl className="kv small">
             {rows.map(([label, value]) => (
               <div key={label}>
@@ -184,7 +188,10 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
   ) : (
     <div className="col pad" style={{ gap: 8 }}>
       <div className="row">
-        <strong className="grow mono">{draft.id}</strong>
+        <div className="col grow" style={{ minWidth: 0, gap: 2 }}>
+          <strong style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
+          {draft.name.trim() && <span className="faint mono small" style={{ overflowWrap: 'anywhere' }}>{draft.id}</span>}
+        </div>
         <button className="ghost small" onClick={() => leave() && setDraft(null)}>
           ×
         </button>

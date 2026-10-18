@@ -66,6 +66,26 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+it('shows names first and keeps same-name and unnamed items distinct by ID and scope', async () => {
+  await act(async () => qc.setQueryData(key, {
+    one: initial,
+    two: { ...initial, id: 'two', scope: 'global' },
+    three: { ...initial, id: 'three', name: ' ', scope: 'work' },
+  }));
+  await advance();
+  const rows = [...host.querySelectorAll('.image-lib-list .list-row')];
+  expect(rows).toHaveLength(3);
+  expect(rows[0].textContent).toContain('Original');
+  expect(rows[0].textContent).toContain('one');
+  expect(rows[1].textContent).toContain('two');
+  expect(rows[1].textContent).toContain(t('lib.scope.global'));
+  expect(rows[2].textContent).toContain('three');
+  await act(async () => (rows[1] as HTMLElement).click());
+  expect(host.querySelector('.image-lib-edit strong')?.textContent).toBe('Original');
+  expect(host.querySelector('.image-lib-edit .faint.small')?.textContent).toContain('two');
+  expect(name().value).toBe('Original');
+});
+
 it('preserves actual editor input, dirty state and stale revision after a rejected save', async () => {
   await edit('My unsaved input');
   await click(t('common.save'));
