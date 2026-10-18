@@ -12,10 +12,32 @@ from ..core.i18n import AppError, Msg, message_of, wire
 from ..image import library, library_share
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
+from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
 
 
 def _runtime(request):
     return request.app.state.app.image
+
+
+async def inspect_external_image(request):
+    """Inspect an uploaded image in memory; no gallery or tool workspace writes."""
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise AppError(Msg('server.image.inspect_too_large', 'The image must be 32 MB or less.'), 413)
+    try:
+        return await call(inspect_image, bytes(raw))
+    except AppError as error:
+        if error.status == 400:
+            raise AppError(
+                Msg(
+                    'server.image.inspect_invalid',
+                    'The image could not be read. Choose a PNG, WebP, or JPEG file.',
+                ),
+                400,
+            ) from error
+        raise
 
 
 async def _body(request):
@@ -641,6 +663,7 @@ async def designs(request):
 def routes():
     p = '/api/image'
     return [
+        Route(f'{p}/inspect', inspect_external_image, methods=['POST']),
         Route(f'{p}/connection', connection_get),
         Route(f'{p}/connection', connection_put, methods=['PUT']),
         Route(f'{p}/connection/control', connection_control, methods=['POST']),

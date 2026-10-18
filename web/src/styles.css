@@ -771,3 +771,14 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .gen-table th { text-align: left; color: var(--text-3); font-weight: normal; width: 92px; vertical-align: top; padding: 2px 6px 2px 0; }
 .gen-table td { padding: 2px 6px 2px 0; vertical-align: top; word-break: break-all; }
 .gen-table td.mono { cursor: copy; }
+
+.image-info-viewer { max-width: 1400px; margin: auto; }
+.image-info-drop { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px; border: 2px dashed var(--border); border-radius: 8px; }
+.image-info-drop.dragging { border-color: var(--accent); }
+.image-info-content { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr); gap: 20px; min-width: 0; }
+.image-info-content figure { margin: 0; min-width: 0; }
+.image-info-content figure img { display: block; width: 100%; max-height: 70vh; object-fit: contain; background: var(--bg-2); }
+.image-info-content figcaption { margin-top: 6px; overflow-wrap: anywhere; }
+.image-info-content section { min-width: 0; }
+.image-info-raw { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+@media (max-width: 850px) { .image-info-content { grid-template-columns: 1fr; } }
