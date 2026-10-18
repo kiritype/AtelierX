@@ -121,7 +121,7 @@ export default function DeploySettings() {
           <div key={id} className="card col" style={{ gap: 6, width: 'auto', padding: 16 }}>
             <div className="row">
               <strong className="grow">
-                {target.name || id} <span className="faint mono small">{id}</span>
+                <span style={{ overflowWrap: 'anywhere' }}>{target.name?.trim() || target.bucket?.trim() || id}</span> <span className="faint mono small" title={id}>{id}</span>
               </strong>
               <span className={`chip${saved?.ready ? ' ok' : ''}`}>{saved ? (saved.ready ? t('deploy.ready') : t('deploy.no_keys')) : t('deploy.unsaved')}</span>
               <button disabled={!saved?.ready || dirty || checking === id} onClick={() => check(id)} title={dirty ? t('deploy.save_first') : undefined}>

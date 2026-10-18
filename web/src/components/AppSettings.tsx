@@ -106,7 +106,7 @@ function General() {
             .filter((p: any) => p.id !== 'generic')
             .map((p: any) => (
               <option key={p.id} value={p.id}>
-                {p.name} ({p.id})
+                {p.name?.trim() || p.id}{(presets.data ?? []).filter((other: any) => other.name?.trim() === p.name?.trim()).length > 1 ? ` (${p.id})` : ''}
               </option>
             ))}
         </select>
@@ -145,7 +145,7 @@ function Presets() {
         }}>
           {(list.data ?? []).map((p: any) => (
             <option key={p.id} value={p.id}>
-              {p.name} ({p.id}){p.readonly ? ` · ${t('settings.readonly')}` : ''}
+              {p.name?.trim() || p.id}{(list.data ?? []).filter((other: any) => other.name?.trim() === p.name?.trim()).length > 1 ? ` (${p.id})` : ''}{p.readonly ? ` · ${t('settings.readonly')}` : ''}
             </option>
           ))}
         </select>
@@ -171,6 +171,7 @@ function Presets() {
         </button>
       </div>
       <p className="faint">{t('settings.platform_independent_note')}</p>
+      <span className="faint mono small" title={selected}>{selected}</span>
       {doc && (
         <div className="col" style={{ maxWidth: 520 }}>
           <label className="col"><span className="muted">{t('settings.platform_name')}</span>

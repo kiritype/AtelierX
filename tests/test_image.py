@@ -169,6 +169,10 @@ def test_gallery_review_export_and_vlm_round(unlocked):
 
     tree = c.get('/api/image/gallery/tree').json()
     assert tree['works'][0]['characters'][0]['outfits'][0]['count'] == 2
+    assert tree['works'][0]['name'] == next(work['name'] for work in c.get('/api/works').json()['works'] if work['id'] == wid)
+    assert tree['works'][0]['characters'][0]['name'] == next(
+        design['name'] for design in c.get(f'/api/works/{wid}/image/designs').json() if design['id'] == 'C001'
+    )
     page = c.get('/api/image/gallery', params={'work': wid, 'sort': 'code'}).json()
     assert page['total'] == 2 and page['results'][0]['human_status'] == 'unreviewed'
     first, second = page['results']

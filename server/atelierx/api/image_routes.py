@@ -462,7 +462,22 @@ async def gallery_list(request):
 
 
 async def gallery_tree(request):
-    return await call(_runtime(request).gallery.tree)
+    runtime = _runtime(request)
+
+    def named_tree():
+        tree = runtime.gallery.tree()
+        works = {work.doc().get('id'): work for work in runtime.works.all()}
+        for branch in tree['works']:
+            work = works.get(branch['id'])
+            if work is None:
+                continue
+            branch['name'] = work.name
+            characters = {design['id']: design['name'] for design in _designs(work)}
+            for character in branch['characters']:
+                character['name'] = characters.get(character['id'], '')
+        return tree
+
+    return await call(named_tree)
 
 
 async def gallery_detail(request):

@@ -26,6 +26,20 @@ def runtime(paths):
     )
 
 
+def test_gallery_receipt_exposes_filename_without_changing_target_reference(paths):
+    rt = runtime(paths)
+    bulk = ToolBatches(rt)
+    accepted = bulk.submit({
+        'operation': 'gallery', 'request_id': 'display-name',
+        'paths': ['W001/C001/images/o01/portrait.png'],
+    })
+    item = bulk.details(accepted['id'])['items'][0]
+    assert item['display_name'] == 'portrait.png'
+    assert item['thumbnail_url'].endswith('W001%2FC001%2Fimages%2Fo01%2Fportrait.png')
+    assert item['target']['id'] == 'W001/C001/images/o01/portrait.png'
+    bulk.db.close()
+
+
 def test_8000_receipt_runs_in_bounded_chunks_and_preserves_all_results(paths):
     rt = runtime(paths)
     bulk = ToolBatches(rt)
