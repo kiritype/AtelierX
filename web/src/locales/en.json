@@ -732,6 +732,8 @@
   "gallery.copied": "Copied.",
   "gallery.prev": "Previous (←)",
   "gallery.next": "Next (→)",
+  "gallery.position": "Image {current} of {total}",
+  "gallery.outside_filter": "Outside the current filter · This image stays open until you navigate or close it",
   "gallery.adopted_this": "The adopted image of this combination.",
   "gallery.adopted_other": "Another image is adopted for this combination. Passing this one replaces it.",
   "gallery.vlm_note": "The AI verdict is advice; only a person's pass adopts.",

@@ -47,11 +47,16 @@ type Page = {
   results: GalleryItem[];
   total: number;
   page: number;
+  page_size?: number;
   pages: number;
   snapshot: string;
   newer: number;
   paths?: string[];
+  anchor_index?: number;
+  anchor_in_results?: boolean;
+  target_index?: number | null;
 };
+type ActiveImage = { item: GalleryItem; anchorIndex: number; included: boolean; total: number; snapshot: string };
 type Tree = {
   works: {
     id: string;
@@ -109,7 +114,11 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   const [page, setPage] = useState(1);
   const [snapshot, setSnapshot] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [open, setOpen] = useState<number | null>(null);
+  const [active, setActive] = useState<ActiveImage | null>(null);
+  const activeRef = useRef<ActiveImage | null>(null);
+  const navigationEpoch = useRef(0);
+  const navigationPending = useRef(false);
+  const [navigating, setNavigating] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -196,17 +205,82 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     if (list.data && !list.isPlaceholderData && !snapshot) setSnapshot(list.data.snapshot);
   }, [list.data, list.isPlaceholderData, snapshot]);
   const newer = list.data?.newer ?? 0;
+  const selectActive = (next: ActiveImage | null) => { activeRef.current = next; setActive(next); };
+  const closeDetail = () => {
+    navigationEpoch.current += 1;
+    navigationPending.current = false;
+    setNavigating(false);
+    selectActive(null);
+  };
+  const galleryParams = (current: ActiveImage) => {
+    const query = new URLSearchParams(params);
+    query.set('snapshot', current.snapshot);
+    query.set('anchor', current.item.path);
+    return query;
+  };
+  const moveDetail = async (step: number) => {
+    const current = activeRef.current;
+    if (!current || navigationPending.current) return;
+    navigationPending.current = true;
+    setNavigating(true);
+    const epoch = navigationEpoch.current;
+    const query = galleryParams(current);
+    query.set('direction', step < 0 ? 'prev' : 'next');
+    try {
+      const target = await get<Page>(`/api/image/gallery?${query}`);
+      if (navigationEpoch.current !== epoch || activeRef.current?.item.path !== current.item.path) return;
+      const index = target.target_index;
+      const item = index === null || index === undefined ? undefined : target.results[index % (target.page_size ?? 60)];
+      if (index === null || index === undefined) {
+        selectActive({ ...current, anchorIndex: target.anchor_index ?? current.anchorIndex,
+          included: target.anchor_in_results ?? current.included, total: target.total });
+        return;
+      }
+      if (!item) return;
+      selectActive({ item, anchorIndex: index, included: true, total: target.total, snapshot: target.snapshot });
+      setPage(target.page);
+    } catch (error) {
+      if (navigationEpoch.current === epoch) fail(error);
+    } finally {
+      if (navigationEpoch.current === epoch) {
+        navigationPending.current = false;
+        setNavigating(false);
+      }
+    }
+  };
+  const reviewDetail = async (paths: string[], verdict: string, note?: string) => {
+    const result = await review(paths, verdict, note);
+    const current = activeRef.current;
+    if (!result || paths.length !== 1 || current?.item.path !== paths[0]) return result;
+    navigationEpoch.current += 1;
+    navigationPending.current = false;
+    setNavigating(false);
+    const epoch = navigationEpoch.current;
+    try {
+      const located = await get<Page>(`/api/image/gallery?${galleryParams(current)}`);
+      if (navigationEpoch.current === epoch && activeRef.current?.item.path === current.item.path) {
+        selectActive({ ...current, anchorIndex: located.anchor_index!, included: !!located.anchor_in_results,
+          total: located.total });
+        setPage(located.page);
+      }
+    } catch (error) {
+      if (navigationEpoch.current === epoch) fail(error);
+    }
+    return result;
+  };
   const refresh = () => {
     setSnapshot('');
     qc.invalidateQueries({ queryKey: ['gallery'] });
   };
   const changeScope = (next: Scope) => {
+    closeDetail();
     setScope(next);
     setPage(1);
     setSnapshot('');
     setSelected(new Set());
   };
   const changeFilter = (patch: Partial<typeof filters>) => {
+    closeDetail();
     setFilters({ ...filters, ...patch });
     setPage(1);
     setSnapshot('');
@@ -273,7 +347,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     setSelected(new Set(all.paths ?? []));
   };
 
-  const results = list.data?.results ?? [];
+  const results = list.data?.page === page ? list.data.results : [];
   const chosen = [...selected];
   const toggle = (path: string, on: boolean) => {
     const next = new Set(selected);
@@ -455,7 +529,11 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
           <div className="gallery-grid">
             {results.map((item, index) => (
               <div key={item.path} data-gallery-path={item.path} className={`gallery-cell ${selected.has(item.path) ? 'selected' : ''} human-${item.human_status}`}>
-                <button className="gallery-open" onClick={() => setOpen(index)}>
+                <button className="gallery-open" onClick={() => {
+                  navigationEpoch.current += 1;
+                  selectActive({ item, anchorIndex: (page - 1) * 60 + index, included: true,
+                    total: list.data?.total ?? results.length, snapshot: list.data?.snapshot ?? snapshot });
+                }}>
                   <img src={item.thumbnail_url} alt="" loading="lazy" />
                   <span className="gallery-caption" title={item.path}>
                     {item.kind === 'image'
@@ -481,7 +559,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
               </div>
             ))}
           </div>
-          {results.length === 0 && !list.isLoading && <div className="empty">{t('gallery.empty')}</div>}
+          {results.length === 0 && !list.isLoading && !list.isPlaceholderData && <div className="empty">{t('gallery.empty')}</div>}
           {(list.data?.pages ?? 0) > 1 && (
             <div className="row" style={{ justifyContent: 'center', padding: 8 }}>
               <button disabled={page <= 1} onClick={() => setPage(page - 1)}>
@@ -498,20 +576,22 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
         </div>
       </div>
 
-      {open !== null && results[open] && (
+      {active && (
         <Detail
-          item={results[open]}
+          item={active.item}
           names={names}
           workId={workId}
-          hasPrev={open > 0}
-          hasNext={open < results.length - 1}
-          move={(step) => setOpen(open + step)}
-          close={() => setOpen(null)}
-          review={review}
+          hasPrev={active.anchorIndex > 0}
+          hasNext={active.anchorIndex + (active.included ? 1 : 0) < active.total}
+          moving={navigating}
+          position={active.included ? t('gallery.position', { current: active.anchorIndex + 1, total: active.total }) : t('gallery.outside_filter')}
+          move={moveDetail}
+          close={closeDetail}
+          review={reviewDetail}
           regenerate={regenerate}
           openLab={openLab}
-          openTools={() => { setOpen(null); openTools(); }}
-          remove={(paths) => remove(paths).then((done) => done && setOpen(null))}
+          openTools={() => { closeDetail(); openTools(); }}
+          remove={(paths) => remove(paths).then((done) => done && closeDetail())}
         />
       )}
       {exporting && <DeploymentExport scope={scope} close={() => setExporting(false)} fail={fail} />}
@@ -527,6 +607,8 @@ function Detail({
   workId,
   hasPrev,
   hasNext,
+  moving,
+  position,
   move,
   close,
   review,
@@ -540,6 +622,8 @@ function Detail({
   workId: string;
   hasPrev: boolean;
   hasNext: boolean;
+  moving: boolean;
+  position: string;
   move: (step: number) => void;
   close: () => void;
   review: (paths: string[], verdict: string, note?: string) => Promise<any>;
@@ -585,12 +669,12 @@ function Detail({
   return (
     <GalleryDetailFrame imageUrl={item.image_url} label={item.filename} close={close} imageOverlay={<>
           {hasPrev && (
-            <button className="nav prev" onClick={() => move(-1)} title={t('gallery.prev')}>
+            <button className="nav prev" disabled={moving} onClick={() => move(-1)} title={t('gallery.prev')}>
               ‹
             </button>
           )}
           {hasNext && (
-            <button className="nav next" onClick={() => move(1)} title={t('gallery.next')}>
+            <button className="nav next" disabled={moving} onClick={() => move(1)} title={t('gallery.next')}>
               ›
             </button>
           )}
@@ -606,6 +690,7 @@ function Detail({
             </button>
           </div>
           <div className="faint mono small">{item.path}</div>
+          <div className="faint small">{position}</div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             {(['pass', 'fail', 'unreviewed'] as const).map((v, n) => (
               <button key={v} className={data.human_status === v ? 'primary' : ''} onClick={() => review([item.path], v)}>

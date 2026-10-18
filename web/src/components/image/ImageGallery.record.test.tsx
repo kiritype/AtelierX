@@ -34,7 +34,13 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   vi.mocked(get).mockImplementation(async (url) => {
     if (url === '/api/image/gallery/tree') return { works: [], folders: [], expressions: [], revision: 1 };
-    if (url.startsWith('/api/image/gallery?')) return { results: items, total: items.length, page: 1, pages: 1, snapshot: 'snap', newer: 0 };
+    if (url.startsWith('/api/image/gallery?')) {
+      const query = new URL(url, 'http://localhost').searchParams;
+      const index = items.findIndex(item => item.path === query.get('anchor'));
+      return { results: items, total: items.length, page: 1, page_size: 60, pages: 1, snapshot: 'snap', newer: 0,
+        anchor_index: index, anchor_in_results: index >= 0,
+        target_index: query.get('direction') === 'next' ? index + 1 : query.get('direction') === 'prev' ? index - 1 : null };
+    }
     if (url.startsWith('/api/image/gallery/detail?')) {
       const path = new URL(url, 'http://localhost').searchParams.get('path')!;
       const item = items.find(value => value.path === path)!;
