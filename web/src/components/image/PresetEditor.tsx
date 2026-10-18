@@ -97,7 +97,7 @@ export default function PresetEditor({ workId, draft, onChange }: { workId: stri
           {Object.values(commons.data ?? {}).map((c) => (
             <label key={c.id} className="row" style={{ gap: 4 }}>
               <input type="checkbox" checked={draft.common.includes(c.id)} onChange={(e) => set({ common: toggle(draft.common, c.id, e.target.checked) })} />
-              {c.name}
+              {c.name.trim() || c.id}{c.name.trim() && <span className="faint"> ({c.id})</span>}
             </label>
           ))}
         </div>

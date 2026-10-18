@@ -31,6 +31,7 @@ type Item = {
   targets?: string[];
 };
 type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[]; targets: Target[] };
+const displayName = (item: Pick<Item, 'name' | 'id'>) => item.name.trim() || item.id;
 
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
 export default function ImageLibrary({ workId }: { workId: string }) {
@@ -102,7 +103,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
     kind === 'expressions' && draft?.code?.trim()
       ? Object.values(items.data ?? {})
           .filter((i) => i.id !== draft.id && (i.code ?? '').trim() === draft.code!.trim())
-          .map((i) => `${i.name} (${i.id})`)
+          .map((i) => `${displayName(i)} (${i.id})`)
       : [];
   const dirty = !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft));
   useUnsaved(`library-${kind}`, dirty);
@@ -243,7 +244,8 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   aria-label={t('lib.share.check')}
                 />
                 <span className="grow">
-                  {item.name} <span className="faint mono">{item.id}</span>
+                  <span title={displayName(item)} style={{ overflowWrap: 'anywhere' }}>{displayName(item)}</span>
+                  {item.name.trim() && <span className="faint mono small" style={{ overflowWrap: 'anywhere' }}> {item.id}</span>}
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
                   {kind === 'compositions' && item.hide_outfit && <span className="chip small" title={t('lib.hide_outfit_hint')}>{t('lib.hide_outfit')}</span>}
                   {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
@@ -274,10 +276,13 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
         ) : (
           <>
             <div className="row">
-              <strong className="grow">
-                {draft.id}
-                {draft.overrides && <span className="faint"> · {t('lib.overrides')}</span>}
-              </strong>
+              <div className="col grow" style={{ minWidth: 0, gap: 2 }}>
+                <strong style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
+                <span className="faint small" style={{ overflowWrap: 'anywhere' }}>
+                  {draft.name.trim() && <span className="mono">{draft.id} · </span>}{t(`lib.scope.${draft.scope}`)}
+                  {draft.overrides && <> · {t('lib.overrides')}</>}
+                </span>
+              </div>
               <select value={draft.scope} onChange={(e) => setDraft({ ...draft, scope: e.target.value as 'global' | 'work' })}>
                 <option value="work">{t('lib.scope.work')}</option>
                 <option value="global">{t('lib.scope.global')}</option>
@@ -325,7 +330,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                     <option value="">—</option>
                     {Object.values(compositions.data ?? {}).map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {displayName(c)}{c.name.trim() && ` (${c.id})`}
                       </option>
                     ))}
                   </select>

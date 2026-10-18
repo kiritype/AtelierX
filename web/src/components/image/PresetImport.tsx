@@ -62,7 +62,7 @@ export default function PresetImport({ look, onClose, onDone }: { look: ImportLo
         {look.items.map((item) => (
           <div key={item.id} className="col gen-patch" style={{ gap: 4 }}>
             <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
-              <strong>{item.name}</strong>
+              <strong>{item.name.trim() || item.id}</strong>
               <span className="faint mono small">{item.id}</span>
               <span className="chip small">{presetTarget(item)}</span>
               {item.preview && <span className="chip small faint">{t('presets.share.has_preview')}</span>}
