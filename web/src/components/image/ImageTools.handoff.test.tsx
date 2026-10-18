@@ -42,7 +42,7 @@ it('selects the handed image and censor tab before mount and while already open'
     const later = { ...items[0], id: 'page-two', name: 'page-two', path: 'page-two.png' };
     vi.mocked(get).mockImplementation(async url => {
       if (url.startsWith('/api/image/tools/items')) return { items: url.includes('offset=200') ? [later] : items, total: 201 };
-      if (url === '/api/image/tools/ids') return { ids: [...Array.from({ length: 200 }, (_, i) => String(i)), later.id] };
+      if (url.startsWith('/api/image/tools/ids')) return { ids: ['first', 'second', ...Array.from({ length: 198 }, (_, i) => String(i)), later.id] };
       if (url === '/api/image/tools/methods') return { methods: ['local'], features: {} };
       if (url.includes('/analyze')) return { item: later, prompt: { source: '', positive: '', negative: '', settings: {} }, text_keys: [], exif: {} };
       return { available: false };
@@ -52,5 +52,11 @@ it('selects the handed image and censor tab before mount and while already open'
     expect(vi.mocked(get).mock.calls.some(([url]) => url.includes('/tools/items?offset=200'))).toBe(true);
     expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('page-two');
     expect((target.querySelector('.tools-card.current input') as HTMLInputElement).checked).toBe(true);
+    await act(async () => [...target.querySelectorAll('button')].find(b => b.textContent === t('tools.show_archived', { n: 0 }))!.click());
+    expect([...target.querySelectorAll('button')].some(b => b.textContent === t('tools.show_active'))).toBe(true);
+    await act(async () => sendToTools('first'));
+    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
+    expect([...target.querySelectorAll('button')].some(b => b.textContent === t('tools.show_archived', { n: 0 }))).toBe(true);
+    expect(target.querySelector('.tools-card.current')?.getAttribute('title')).toContain('first');
   } finally { await act(async () => root.unmount()); qc.clear(); host.remove(); }
 });

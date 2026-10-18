@@ -40,6 +40,11 @@ it('allows sending the current censored image instead of its source', async () =
   await act(async () => host.querySelector('input')!.click()); await send();
   expect(post).toHaveBeenCalledWith('/api/image/tools/gallery', { paths: ['image_censor.png'] });
 });
+it('reports that an archived gallery image was restored', async () => {
+  vi.mocked(post).mockResolvedValue({ ok: true, added: [], restored: 1, items: [{ id: 'existing', path: 'image_censor.png' }] });
+  await render(); await send();
+  expect(toast.mock.calls[0][0].text).toBe(t('gallery.restored_in_tools'));
+});
 it('reports a full list in the selected language without navigating', async () => {
   vi.mocked(post).mockRejectedValue(new ApiError(400, { key: 'server.workspace.the_image_tools_list_holds_up', text: 'Full', values: { max_items: 2000 } }));
   await render(); await send();

@@ -42,7 +42,7 @@ export default function GalleryToolSend({ path, record, openTools, shortcut = fa
       const result = await post<GalleryToolsResponse>('/api/image/tools/gallery', { paths: [original && source ? source : path] });
       const item = result.items[0];
       await qc.invalidateQueries({ queryKey: ['tool-items'] });
-      toast({ text: t(result.added.length ? 'gallery.sent_to_tools' : 'gallery.already_in_tools', { n: result.added.length }), action: {
+      toast({ text: t(result.restored ? 'gallery.restored_in_tools' : result.added.length ? 'gallery.sent_to_tools' : 'gallery.already_in_tools', { n: result.added.length }), action: {
         label: t('image_menu.tools'), run: () => { sendToTools(item.id); openTools(); },
       } });
     } catch (error) {

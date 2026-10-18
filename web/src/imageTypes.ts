@@ -91,7 +91,7 @@ export type SingleRuns = { runs: SingleRun[] };
 
 export type ReviewHistoryEntry = { at: string; path: string; from: string; to: string; source?: string };
 
-export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[] };
+export type GalleryToolsResponse = { ok: boolean; added: { id: string; path: string }[]; items: { id: string; path: string }[]; restored?: number };
 export type DeployTarget = { id: string; name: string; ready: boolean; path_format: string; public_url: string };
 export type DeployRow = {
   source: string;
