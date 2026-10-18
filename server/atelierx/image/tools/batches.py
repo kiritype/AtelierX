@@ -8,6 +8,7 @@ import secrets
 import shutil
 import sqlite3
 import uuid
+from urllib.parse import quote
 
 from ...core.i18n import AppError, Msg, message_of, wire
 from ...core.lifecycle import FINISHED
@@ -399,16 +400,29 @@ class ToolBatches:
                 'SELECT ordinal,target,status,attempt,result FROM items WHERE batch=? ORDER BY ordinal LIMIT ? OFFSET ?',
                 (ident, min(max(limit, 1), 500), max(offset, 0)),
             )
-            return {
-                'items': [
-                    {
-                        **dict(row),
-                        'target': json.loads(row['target']),
-                        'result': json.loads(row['result']) if row['result'] else None,
-                    }
-                    for row in rows
-                ]
-            }
+            items = []
+            for row in rows:
+                target = json.loads(row['target'])
+                target_id = target['id']
+                if target.get('source'):
+                    name = target_id.replace('\\', '/').split('/')[-1]
+                    thumbnail = '/api/image/gallery/thumbnail?path=' + quote(target_id, safe='')
+                else:
+                    try:
+                        tool = self.rt.tools.get(target_id)
+                        name = tool.get('name') or tool.get('path') or target_id
+                        thumbnail = '/api/image/tools/thumbnail?id=' + quote(target_id, safe='')
+                    except ValueError:
+                        name = target_id
+                        thumbnail = None
+                items.append({
+                    **dict(row),
+                    'target': target,
+                    'display_name': name,
+                    'thumbnail_url': thumbnail,
+                    'result': json.loads(row['result']) if row['result'] else None,
+                })
+            return {'items': items}
 
     def _record(self, row, job):
         result = encoded(job)

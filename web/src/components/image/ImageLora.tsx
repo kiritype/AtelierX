@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, del, get, post, put } from '../../api';
-import { t, tm, msgText } from '../../i18n';
+import { getLanguage, t, tm, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
 import { useCatalog } from './GenSettings';
 import { compareLorasInLab } from './ImageLab';
@@ -42,6 +42,12 @@ type Model = {
   source?: { run?: string; epoch?: number; external?: boolean };
 };
 type Overview = { datasets: Dataset[]; runs: Run[]; models: Model[]; busy: boolean };
+
+const named = (name: string | undefined, id: string) => name?.trim() || id;
+const shownTime = (value: string) => {
+  const date = new Date(value);
+  return value && !Number.isNaN(date.getTime()) ? date.toLocaleString(getLanguage()) : value;
+};
 
 
 // Image menu → LoRA: per character, a dataset of adopted images with captions, training runs, and the LoRAs it uses.
@@ -158,7 +164,7 @@ function DatasetTab({ base, design, datasets, initialOutfitId }: { base: string;
             <option value="">{t('lora.new_dataset')}</option>
             {datasets.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.id} · {d.name} ({d.items.length})
+                {named(d.name, d.id)} · {d.items.length} ({d.id})
               </option>
             ))}
           </select>
@@ -334,7 +340,7 @@ function TrainTab({ base, data, openLab }: { base: string; data: Overview; openL
           <select value={form.dataset_id} onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}>
             {data.datasets.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.id} · {d.name} ({d.items.length})
+                {named(d.name, d.id)} · {d.items.length} ({d.id})
               </option>
             ))}
           </select>
@@ -419,10 +425,10 @@ function RunCard({ base, run, act, openLab, dataset, showLog, logOpen, log }: { 
   return (
     <div className={`compose-card run-${run.status}`}>
       <div className="row">
-        <strong>{run.id}</strong>
+        <strong style={{ overflowWrap: 'anywhere' }}>{named(dataset?.name || run.dataset_name, run.dataset)} · {shownTime(run.created_at) || run.id}</strong>
         <span className={`chip ${run.status === 'done' ? 'status-new' : run.status === 'failed' ? 'type-mismatch' : ''}`}>{t(`lora.status.${run.phase ?? run.status}`)}</span>
         <span className="faint small grow">
-          {run.dataset_name ?? run.dataset} · {run.base_model} · {run.settings.method} · {run.settings.epochs} ep · lr {run.settings.learning_rate}
+          <span title={run.id} className="mono">{run.id}</span> · {run.base_model} · {run.settings.method} · {run.settings.epochs} ep · lr {run.settings.learning_rate}
         </span>
         <button className="ghost" onClick={showLog}>
           {t('lora.log')}

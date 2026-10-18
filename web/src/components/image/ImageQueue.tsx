@@ -5,6 +5,7 @@ import { t, tm, msgText, type ServerMsg } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
 import { finished } from '../../lib/lifecycle';
+import { useReferenceNames } from './useReferenceNames';
 
 type Job = {
   id: string;
@@ -39,6 +40,7 @@ export default function ImageQueue() {
   const [show, setShow] = useState<'all' | 'active' | 'done'>('all');
   const [big, setBig] = useState<string | null>(null);
   const data = queue.data;
+  const names = useReferenceNames(data?.jobs.map((job) => job.work_id) ?? []);
   const act = async (url: string) => {
     try {
       await post(url);
@@ -101,7 +103,7 @@ export default function ImageQueue() {
                   </>
                 ) : (
                   <>
-                    <strong>{job.character_id}</strong> · {job.outfit_name ?? job.outfit_id} · {job.expression_name ?? job.expression_id}
+                    <strong title={`${job.work_id} · ${job.character_id}`}>{names.workName(job.work_id)} · {names.characterName(job.work_id, job.character_id)}</strong> · {job.outfit_name?.trim() || names.outfitName(job.work_id, job.character_id, job.outfit_id)} · {job.expression_name?.trim() || job.expression_id}
                   </>
                 )}
                 {job.service && job.service !== 'comfyui' && <span className="service-badge">{SERVICE_NAMES[job.service] ?? job.service}</span>}

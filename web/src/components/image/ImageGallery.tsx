@@ -13,6 +13,7 @@ import GalleryToolSend from './GalleryToolSend';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import GalleryRecord from './GalleryRecord';
 import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
+import { useReferenceNames } from './useReferenceNames';
 
 export type GalleryItem = {
   path: string;
@@ -60,9 +61,11 @@ type ActiveImage = { item: GalleryItem; anchorIndex: number; included: boolean; 
 type Tree = {
   works: {
     id: string;
+    name?: string;
     count: number;
     characters: {
       id: string;
+      name?: string;
       count: number;
       outfits: { id: string; name: string; count: number }[];
     }[];
@@ -170,15 +173,21 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     queryFn: () => get(`/api/works/${workId}/image/designs`),
   });
   const names = useMemo(() => Object.fromEntries((designs.data ?? []).map((d) => [d.id, d.name])), [designs.data]);
+  const workName = (id: string) => tree.data?.works.find((work) => work.id === id)?.name?.trim() || id;
+  const characterName = (workId: string, id: string) => {
+    const branch = tree.data?.works.find((work) => work.id === workId);
+    const name = branch?.characters.find((character) => character.id === id)?.name?.trim();
+    return name ? `${name}${branch!.characters.filter((character) => character.name?.trim() === name).length > 1 ? ` (${id})` : ''}` : id;
+  };
   const scopePath = useMemo(() => {
     if (scope.folder) return `${t('gallery.other_folders')} → ${scope.folder}`;
     if (!scope.work) return t('gallery.all_images');
     const work = tree.data?.works.find((w) => w.id === scope.work);
     const character = work?.characters.find((c) => c.id === scope.character);
     const outfit = character?.outfits.find((o) => o.id === scope.outfit);
-    return [scope.work, scope.character && (scope.work === workId ? names[scope.character] : undefined) || scope.character,
+    return [workName(scope.work), scope.character && characterName(scope.work, scope.character),
       outfit?.name || scope.outfit].filter(Boolean).join(' → ');
-  }, [scope, tree.data, workId, names]);
+  }, [scope, tree.data]);
 
   const toggleTree = () => {
     const scroll = scrollRef.current;
@@ -367,27 +376,27 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
         {(tree.data?.works ?? []).map((w) => (
           <div key={w.id} className="col" style={{ gap: 1 }}>
             <div className="gallery-tree-row">
-              <button className="gallery-branch-toggle" aria-label={t(collapsedWorks[w.id] ? 'gallery.expand_work' : 'gallery.collapse_work', { name: w.id })}
+              <button className="gallery-branch-toggle" aria-label={t(collapsedWorks[w.id] ? 'gallery.expand_work' : 'gallery.collapse_work', { name: workName(w.id) })}
                 aria-expanded={!collapsedWorks[w.id]} onClick={() => setCollapsedWorks((prev) => ({ ...prev, [w.id]: !prev[w.id] }))}>
                 {collapsedWorks[w.id] ? '▸' : '▾'}
               </button>
-              <button className={`tree-link ${scope.work === w.id && !scope.character ? 'on' : ''}`} onClick={() => changeScope({ work: w.id })}>
-                {w.id === workId ? t('gallery.this_work') : w.id} <span className="faint">{w.count}</span>
+              <button title={w.id} className={`tree-link ${scope.work === w.id && !scope.character ? 'on' : ''}`} onClick={() => changeScope({ work: w.id })}>
+                {workName(w.id)} {w.id === workId && <span className="faint">· {t('gallery.this_work')}</span>} <span className="faint">{w.count}</span>
               </button>
             </div>
             {!collapsedWorks[w.id] && w.characters.map((c) => {
               const branch = `${w.id}\u0000${c.id}`;
               return <div key={c.id} className="col" style={{ gap: 1, paddingLeft: 12 }}>
                 <div className="gallery-tree-row">
-                  <button className="gallery-branch-toggle" aria-label={t(collapsedCharacters[branch] ? 'gallery.expand_character' : 'gallery.collapse_character', { name: (w.id === workId && names[c.id]) || c.id })}
+                  <button className="gallery-branch-toggle" aria-label={t(collapsedCharacters[branch] ? 'gallery.expand_character' : 'gallery.collapse_character', { name: characterName(w.id, c.id) })}
                     aria-expanded={!collapsedCharacters[branch]} onClick={() => setCollapsedCharacters((prev) => ({ ...prev, [branch]: !prev[branch] }))}>
                     {collapsedCharacters[branch] ? '▸' : '▾'}
                   </button>
                   <button
-                    className={`tree-link ${scope.work === w.id && scope.character === c.id && !scope.outfit ? 'on' : ''}`}
+                    title={c.id} className={`tree-link ${scope.work === w.id && scope.character === c.id && !scope.outfit ? 'on' : ''}`}
                     onClick={() => changeScope({ work: w.id, character: c.id })}
                   >
-                    {(w.id === workId && names[c.id]) || c.id} <span className="faint">{c.count}</span>
+                    {characterName(w.id, c.id)} <span className="faint">{c.count}</span>
                   </button>
                 </div>
                 {!collapsedCharacters[branch] && c.outfits.map((o) => (
@@ -537,7 +546,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
                   <img src={item.thumbnail_url} alt="" loading="lazy" />
                   <span className="gallery-caption" title={item.path}>
                     {item.kind === 'image'
-                      ? `${(item.work_id === workId && names[item.character_id]) || item.character_id} · ${item.expression_name || item.expression_id}`
+                      ? `${characterName(item.work_id, item.character_id)} · ${item.expression_name || item.expression_id}`
                       : item.filename}
                   </span>
                 </button>
@@ -579,8 +588,6 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
       {active && (
         <Detail
           item={active.item}
-          names={names}
-          workId={workId}
           hasPrev={active.anchorIndex > 0}
           hasNext={active.anchorIndex + (active.included ? 1 : 0) < active.total}
           moving={navigating}
@@ -603,8 +610,6 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
 
 function Detail({
   item,
-  names,
-  workId,
   hasPrev,
   hasNext,
   moving,
@@ -618,8 +623,6 @@ function Detail({
   remove,
 }: {
   item: GalleryItem;
-  names: Record<string, string>;
-  workId: string;
   hasPrev: boolean;
   hasNext: boolean;
   moving: boolean;
@@ -633,6 +636,7 @@ function Detail({
   remove: (paths: string[]) => void;
 }) {
   const toast = useToast();
+  const references = useReferenceNames([item.work_id]);
   const detail = useQuery<GalleryDetail>({
     queryKey: ['gallery-detail', item.path],
     queryFn: () => get(`/api/image/gallery/detail?path=${q(item.path)}`),
@@ -682,7 +686,7 @@ function Detail({
           <div className="row">
             <strong className="grow">
               {item.kind === 'image'
-                ? `${(item.work_id === workId && names[item.character_id]) || item.character_id} · ${item.outfit_name || item.outfit_id} · ${item.expression_name || item.expression_id}`
+                ? `${references.characterName(item.work_id, item.character_id)} · ${item.outfit_name || item.outfit_id} · ${item.expression_name || item.expression_id}`
                 : item.filename}
             </strong>
             <button className="ghost" onClick={close}>

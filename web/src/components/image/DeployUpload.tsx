@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api';
 import { t, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
+import { useReferenceNames } from './useReferenceNames';
 
 type Scope = { work?: string; character?: string; outfit?: string };
 import type { DeployTarget as Target, DeployRow as Row, DeployPlan as Plan, DeployRun as Run, DeployHistory as History } from '../../imageTypes';
@@ -24,6 +25,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   const qc = useQueryClient();
   const toast = useToast();
   const work = scope.work;
+  const names = useReferenceNames(work ? [work] : []);
   const history = useQuery<History>({ queryKey: ['deploy-history', work], queryFn: () => get(`/api/works/${work}/image/deploy/history`), enabled: !!work });
   const targets = useQuery<{ targets: Target[] }>({ queryKey: ['deploy-targets'], queryFn: () => get('/api/image/deploy/targets') });
   const saved = useQuery<{ target: string | null; path_format: string | null }>({
@@ -188,7 +190,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                 <select value={target} disabled={locked} onChange={(e) => { changed(); setTarget(e.target.value); }}>
                   {list.map((x) => (
                     <option key={x.id} value={x.id}>
-                      {x.name} {x.ready ? '' : `(${t('deploy.no_keys')})`}
+                      {x.name?.trim() || x.id} {x.ready ? '' : `(${t('deploy.no_keys')})`}
                     </option>
                   ))}
                 </select>
@@ -274,7 +276,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                     <tr key={row.source}>
                       <td>{row.thumbnail_url && <img src={row.thumbnail_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />}</td>
                       <td className="small">
-                        {row.character_id} · {row.outfit_id}
+                        <span title={`${work} · ${row.character_id} · ${row.outfit_id}`}>{names.workName(work ?? '')} · {names.characterName(work ?? '', row.character_id)} · {names.outfitName(work ?? '', row.character_id, row.outfit_id)}</span>
                         {row.outfit_code ? <span className="faint mono"> ({row.outfit_code})</span> : <span className="warn-text"> ({t('deploy.no_code_short')})</span>} · {row.expression_name || row.expression_id}
                         {row.expression_code ? <span className="faint mono"> ({row.expression_code})</span> : <span className="warn-text"> ({t('deploy.no_code_short')})</span>}
                       </td>
