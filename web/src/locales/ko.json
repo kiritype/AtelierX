@@ -811,6 +811,8 @@
   "gallery.copied": "복사했습니다.",
   "gallery.prev": "이전 (←)",
   "gallery.next": "다음 (→)",
+  "gallery.position": "{current} / {total}번째 이미지",
+  "gallery.outside_filter": "현재 필터에서 제외됨 · 이동하거나 닫을 때까지 이 이미지를 표시합니다",
   "gallery.adopted_this": "이 조합의 채택 이미지입니다.",
   "gallery.adopted_other": "이 조합은 다른 이미지가 채택되어 있습니다. 통과하면 이 이미지로 바뀝니다.",
   "gallery.vlm_note": "AI 판정은 참고용입니다. 채택은 사람이 통과를 눌러야 합니다.",

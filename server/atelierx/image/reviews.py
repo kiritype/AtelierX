@@ -238,11 +238,36 @@ class ReviewStore:
                 and (not auto or i['auto_status'] == auto)
                 and (not adopted_only or i['adopted'])
             ]
-            page_items = [self.annotate(i) for i in matched[(page - 1) * size : page * size]]
         else:
             matched = items
-            page_items = [self.annotate(i) for i in items[(page - 1) * size : page * size]]
         total = len(matched)
+        anchor = params.get('anchor')
+        direction = params.get('direction')
+        anchor_index = None
+        anchor_in_results = False
+        target_index = None
+        if anchor:
+            # Keep the image's original sorted position when a review removes it from the active filter.
+            ranks = {item['path']: index for index, item in enumerate(items)}
+            if anchor not in ranks or direction not in (None, 'prev', 'next'):
+                raise ValueError(Msg('server.gallery.invalid_query', 'Invalid gallery query.'))
+            rank = ranks[anchor]
+            anchor_index = sum(ranks[item['path']] < rank for item in matched)
+            anchor_in_results = anchor_index < total and matched[anchor_index]['path'] == anchor
+            if direction:
+                candidate = anchor_index - 1 if direction == 'prev' else anchor_index + int(anchor_in_results)
+                target_index = candidate if 0 <= candidate < total else None
+                if target_index is not None:
+                    page = target_index // size + 1
+                elif not total:
+                    page = 1
+            elif total:
+                page = min(anchor_index, total - 1) // size + 1
+            else:
+                page = 1
+        elif direction:
+            raise ValueError(Msg('server.gallery.invalid_query', 'Invalid gallery query.'))
+        page_items = [self.annotate(i) for i in matched[(page - 1) * size : page * size]]
         self.flush_hashes()
         # "Select all filtered" asks for every matching path at once.
         paths = [i['path'] for i in matched] if _flag(params, 'paths_only') else None
@@ -254,6 +279,15 @@ class ReviewStore:
             'pages': (total + size - 1) // size,
             'snapshot': str(cutoff),
             'newer': newer,
+            **(
+                {
+                    'anchor_index': anchor_index,
+                    'anchor_in_results': anchor_in_results,
+                    'target_index': target_index,
+                }
+                if anchor
+                else {}
+            ),
             **({'paths': paths} if paths is not None else {}),
         }
 

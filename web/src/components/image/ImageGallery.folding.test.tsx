@@ -32,7 +32,7 @@ beforeEach(() => {
     if (url.startsWith('/api/image/gallery?')) return {
       results: [{ path: 'image.png', filename: 'image.png', thumbnail_url: '/thumb', kind: 'image', work_id: 'w0',
         character_id: 'c0', expression_id: 'e0', expression_name: 'Smile', human_status: 'unreviewed', auto_status: 'pending' }],
-      total: 120, page: 1, pages: 2, snapshot: 'snap', newer: 0,
+      total: 120, page: Number(new URL(url, 'http://localhost').searchParams.get('page') ?? 1), pages: 2, snapshot: 'snap', newer: 0,
     };
     if (url === '/api/image/review/rounds') return { rounds: [], enabled: false };
     if (url === '/api/works/w0/image/designs') return [];
@@ -58,6 +58,7 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
   });
   const nextPage = [...host.querySelectorAll<HTMLButtonElement>('.gallery-scroll button')].find((b) => b.textContent === '›')!;
   await act(async () => nextPage.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   await act(async () => host.querySelector<HTMLInputElement>('.gallery-check')!.click());
   expect(host.textContent).toContain(t('gallery.selected', { n: 1 }));
 
