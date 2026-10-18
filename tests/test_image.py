@@ -4,6 +4,7 @@ import json
 from PIL import Image
 
 from atelierx.image.deployment_export import plan_paths
+from image_ids import image_id
 
 
 def test_deployment_export_uses_expression_metadata_and_reports_collisions():
@@ -96,7 +97,10 @@ def test_library_compose_queue_and_save(unlocked, tmp_path):
             'item': {'name': '부드럽게', 'target': 'positive', 'prompt': 'soft lighting, soft lighting'},
         },
     ).json()
-    assert saved['soft']['prompt'] == ['soft lighting'] and saved['soft']['scope'] == 'work'
+    assert (
+        saved[image_id(c, 'common', 'soft', wid)]['prompt'] == ['soft lighting']
+        and saved[image_id(c, 'common', 'soft', wid)]['scope'] == 'work'
+    )
 
     target = {'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
     preview = c.post(
@@ -131,7 +135,7 @@ def test_library_compose_queue_and_save(unlocked, tmp_path):
     )
     record = c.get(job['metadata_url']).json()
     assert record['seed'] == job['seed'] and record['outfit_id'] == 'o01'
-    assert '/images/o01/smile/001.png' in job['image_url']
+    assert f'/images/o01/{image_id(c, "expressions", "smile", wid)}/001.png' in job['image_url']
 
     assert c.post(f'/api/image/jobs/{runtime.jobs[1]["id"]}/cancel').status_code == 200
     assert c.post('/api/image/queue/clear-finished').json()['removed'] == 2
@@ -169,7 +173,9 @@ def test_gallery_review_export_and_vlm_round(unlocked):
 
     tree = c.get('/api/image/gallery/tree').json()
     assert tree['works'][0]['characters'][0]['outfits'][0]['count'] == 2
-    assert tree['works'][0]['name'] == next(work['name'] for work in c.get('/api/works').json()['works'] if work['id'] == wid)
+    assert tree['works'][0]['name'] == next(
+        work['name'] for work in c.get('/api/works').json()['works'] if work['id'] == wid
+    )
     assert tree['works'][0]['characters'][0]['name'] == next(
         design['name'] for design in c.get(f'/api/works/{wid}/image/designs').json() if design['id'] == 'C001'
     )
@@ -178,7 +184,10 @@ def test_gallery_review_export_and_vlm_round(unlocked):
     first, second = page['results']
     assert c.get(first['thumbnail_url']).headers['content-type'] == 'image/webp'
     detail = c.get('/api/image/gallery/detail', params={'path': first['path']}).json()
-    assert detail['record']['expression_id'] == 'smile' and 'workflow' not in detail['record']
+    assert (
+        detail['record']['expression_id'] == image_id(c, 'expressions', 'smile', wid)
+        and 'workflow' not in detail['record']
+    )
 
     # The mock connection passes everything; a person still adopts.
     runtime.set_paused(False)
@@ -189,7 +198,9 @@ def test_gallery_review_export_and_vlm_round(unlocked):
 
     plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
     # Needed combinations without an adopted image: the generated one and, from the completeness board, never made ones.
-    assert plan['count'] == 0 and {f'{wid}/C001/o01/smile', f'{wid}/C001/o01/neutral'} <= set(plan['missing'])
+    assert plan['count'] == 0 and {
+        f'{wid}/C001/o01/{image_id(c, "expressions", ident, wid)}' for ident in ('smile', 'neutral')
+    } <= set(plan['missing'])
     reviewed = c.post(
         '/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': second['path']}]}
     ).json()
@@ -203,15 +214,19 @@ def test_gallery_review_export_and_vlm_round(unlocked):
     import zipfile
 
     names = zipfile.ZipFile(io.BytesIO(exported.content)).namelist()
-    assert names == ['C001/o01/smile.png', 'manifest.json']
+    assert names == [f'C001/o01/{image_id(c, "expressions", "smile", wid)}.png', 'manifest.json']
     manifest = json.loads(zipfile.ZipFile(io.BytesIO(exported.content)).read('manifest.json'))
-    assert list(manifest['source_to_export'].values()) == ['C001/o01/smile.png']
+    assert list(manifest['source_to_export'].values()) == [
+        f'C001/o01/{image_id(c, "expressions", "smile", wid)}.png'
+    ]
     stripped = c.post(
         '/api/image/gallery/export',
         json={'filters': {'work': wid}, 'strip_metadata': True, 'allow_partial': True},
     )
     with zipfile.ZipFile(io.BytesIO(stripped.content)) as archive:
-        clean = Image.open(io.BytesIO(archive.read('C001/o01/smile.png')))
+        clean = Image.open(
+            io.BytesIO(archive.read(f'C001/o01/{image_id(c, "expressions", "smile", wid)}.png'))
+        )
     assert clean.size == (32, 32) and not getattr(clean, 'text', {})
     assert (runtime.paths.output / 'reviews.json').is_file()
 
@@ -448,19 +463,30 @@ def test_the_completeness_board_counts_needed_combinations(unlocked):
         f'/api/works/{wid}/image/jobs',
         json={'targets': [{'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}]},
     )
-    assert c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells']['o01/smile']['queued'] == 1
+    assert (
+        c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells'][
+            f'o01/{image_id(c, "expressions", "smile", wid)}'
+        ]['queued']
+        == 1
+    )
     for job in list(runtime.jobs):
         job['status'] = 'running'
         runtime.run_job(job)
-    cell = c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells']['o01/smile']
+    cell = c.get(f'/api/works/{wid}/image/board').json()['characters'][0]['cells'][
+        f'o01/{image_id(c, "expressions", "smile", wid)}'
+    ]
     assert cell == {'state': 'generated', 'images': 1, 'queued': 0}
 
     path = c.get('/api/image/gallery', params={'work': wid}).json()['results'][0]['path']
     c.post('/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': path}]})
     board = c.get(f'/api/works/{wid}/image/board').json()
-    assert board['characters'][0]['cells']['o01/smile']['state'] == 'adopted' and board['adopted'] == 1
+    assert (
+        board['characters'][0]['cells'][f'o01/{image_id(c, "expressions", "smile", wid)}']['state']
+        == 'adopted'
+        and board['adopted'] == 1
+    )
 
-    others = [f'o01/{e}' for e in expressions if e != 'smile']
+    others = [f'o01/{e}' for e in expressions if e != image_id(c, 'expressions', 'smile', wid)]
     board = c.put(
         f'/api/works/{wid}/image/board/exclude',
         json={'character_id': 'C001', 'combos': others[:1], 'excluded': True},
@@ -469,7 +495,10 @@ def test_the_completeness_board_counts_needed_combinations(unlocked):
     assert board['characters'][0]['required'] == len(outfits) * len(expressions) - 1
     plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
     assert f'{wid}/C001/{others[0]}' not in plan['missing'] and f'{wid}/C001/{others[1]}' in plan['missing']
-    assert f'{wid}/C001/o01/smile' not in plan['missing'] and plan['count'] == 1
+    assert (
+        f'{wid}/C001/o01/{image_id(c, "expressions", "smile", wid)}' not in plan['missing']
+        and plan['count'] == 1
+    )
 
     board = c.put(
         f'/api/works/{wid}/image/board/exclude',
@@ -495,15 +524,21 @@ def test_a_lab_result_comes_into_the_gallery_as_a_combination(unlocked):
 
     combo = {'work_id': wid, 'character_id': 'C001', 'outfit_id': 'o01', 'expression_id': 'smile'}
     imported = c.post('/api/image/lab/import', json={'path': lab_path, **combo}).json()
-    assert imported['path'] == f'{wid}/C001/images/o01/smile/001.png'
+    assert imported['path'] == f'{wid}/C001/images/o01/{image_id(c, "expressions", "smile", wid)}/001.png'
     detail = c.get('/api/image/gallery/detail', params={'path': imported['path']}).json()
     record = detail['record']
-    assert record['expression_id'] == 'smile' and record['imported_from'] == lab_path and 'kind' not in record
+    assert (
+        record['expression_id'] == image_id(c, 'expressions', 'smile', wid)
+        and record['imported_from'] == lab_path
+        and 'kind' not in record
+    )
     assert (runtime.paths.output / lab_path).is_file()  # the lab copy stays
 
     c.post('/api/image/gallery/review', json={'verdict': 'pass', 'items': [{'path': imported['path']}]})
     plan = c.post('/api/image/gallery/export/plan', json={'filters': {'work': wid}}).json()
-    assert plan['count'] == 1 and list(plan['files']) == ['C001/o01/smile.png']
+    assert plan['count'] == 1 and list(plan['files']) == [
+        f'C001/o01/{image_id(c, "expressions", "smile", wid)}.png'
+    ]
 
     second = c.post('/api/image/lab/import', json={'path': lab_path, **combo}).json()
     assert second['path'].endswith('/002.png')

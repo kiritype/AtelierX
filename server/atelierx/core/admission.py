@@ -17,6 +17,18 @@ class Admission:
         self.lock = threading.Lock()
         self.active = 0
         self.stopping = False
+        self.quarantined = False
+
+    def seal(self):
+        """Keep an inconsistent imported data set inaccessible until a clean restart."""
+        with self.lock:
+            self.quarantined = True
+            self.stopping = True
+
+    def unseal(self):
+        """Reopen after the original files and in-memory stores were restored."""
+        with self.lock:
+            self.quarantined = False
 
     @contextmanager
     def enter(self):
@@ -57,6 +69,24 @@ class Admission:
             with self.lock:
                 self.stopping = False
             raise
+
+    @contextmanager
+    def exclusive(self, busy):
+        """Run an in-process data conversion after the current request is alone."""
+        with self.lock:
+            if self.stopping or self.active != 1:
+                raise AppError(
+                    Msg('server.update.active_requests', 'Wait for active requests to finish.'), 409
+                )
+            pending = busy()
+            if pending:
+                raise busy_error(', '.join(str(value) for value in pending))
+            self.stopping = True
+        try:
+            yield
+        finally:
+            with self.lock:
+                self.stopping = self.quarantined
 
 
 class AdmissionMiddleware:

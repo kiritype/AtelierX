@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../../api';
 import { t } from '../../i18n';
+import { nameLabel } from '../../lib/nameLabels';
 import { ChipsInput } from '../ui';
 import GenSettings, { type GenerationSettings } from './GenSettings';
 import NovelAISettings from './NovelAISettings';
@@ -50,6 +51,7 @@ type Common = { id: string; name: string };
 
 export default function PresetEditor({ workId, draft, onChange }: { workId: string; draft: Preset; onChange: (draft: Preset) => void }) {
   const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
+  const commonItems = Object.values(commons.data ?? {});
   const set = (patch: Partial<Preset>) => onChange({ ...draft, ...patch });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
   return (
@@ -94,10 +96,10 @@ export default function PresetEditor({ workId, draft, onChange }: { workId: stri
       <div className="col" style={{ gap: 2 }}>
         <span className="muted">{t('lib.kind.common')}</span>
         <div className="row" style={{ flexWrap: 'wrap' }}>
-          {Object.values(commons.data ?? {}).map((c) => (
-            <label key={c.id} className="row" style={{ gap: 4 }}>
+          {commonItems.map((c) => (
+            <label key={c.id} className="row" title={c.id} style={{ gap: 4 }}>
               <input type="checkbox" checked={draft.common.includes(c.id)} onChange={(e) => set({ common: toggle(draft.common, c.id, e.target.checked) })} />
-              {c.name.trim() || c.id}{c.name.trim() && <span className="faint"> ({c.id})</span>}
+              {nameLabel(c, commonItems)}
             </label>
           ))}
         </div>

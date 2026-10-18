@@ -2,7 +2,7 @@ import { submitToolBatch } from '../../lib/toolBatches';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
-import { PRESET_ID, presetFromRecord } from '../../lib/presetFromRecord';
+import { presetFromRecord } from '../../lib/presetFromRecord';
 import { t, tm, msgText } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
@@ -824,9 +824,7 @@ function SavePreset({ record }: { record: GenerationRecord }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
-  const [id, setId] = useState('');
   const [name, setName] = useState('');
-  const presets = useQuery<{ id: string }[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets'), enabled: open });
   if (!open) {
     return (
       <div>
@@ -847,12 +845,11 @@ function SavePreset({ record }: { record: GenerationRecord }) {
     ['gallery.preset_common', draft.common.join(', ')],
     ['gen.artist', draft.artist.positive],
   ];
-  const valid = PRESET_ID.test(id);
   async function save() {
-    if ((presets.data ?? []).some((p) => p.id === id) && !confirm(t('gallery.preset_overwrite', { id }))) return;
+    const id = crypto.randomUUID();
     try {
       await put(`/api/image/presets/${encodeURIComponent(id)}`, {
-        name: name.trim() || id,
+        name: name.trim(),
         service: draft.service,
         family: draft.family,
         settings: draft.settings,
@@ -860,7 +857,7 @@ function SavePreset({ record }: { record: GenerationRecord }) {
         artist: draft.artist,
       });
       qc.invalidateQueries({ queryKey: ['image-presets'] });
-      toast({ text: t('gallery.preset_saved', { name: name.trim() || id }) });
+      toast({ text: t('gallery.preset_saved', { name: name.trim() }) });
       setOpen(false);
     } catch (err) {
       toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
@@ -884,12 +881,10 @@ function SavePreset({ record }: { record: GenerationRecord }) {
         {draft.droppedLoras.length > 0 && ` ${t('gallery.preset_left_loras', { names: draft.droppedLoras.join(', ') })}`}
       </p>
       <div className="row wrap">
-        <input aria-label={t('gallery.preset_id')} placeholder={t('gallery.preset_id')} value={id} onChange={(e) => setId(e.target.value.trim())} style={{ width: 140 }} />
         <input aria-label={t('gallery.preset_name')} placeholder={t('gallery.preset_name')} value={name} onChange={(e) => setName(e.target.value)} className="grow" />
       </div>
-      {id && !valid && <span className="error-text small">{t('gallery.preset_id_rule')}</span>}
       <div className="row">
-        <button className="primary" disabled={!valid} onClick={save}>
+        <button className="primary" disabled={!name.trim()} onClick={save}>
           {t('common.save')}
         </button>
         <button className="ghost" onClick={() => setOpen(false)}>

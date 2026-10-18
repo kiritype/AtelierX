@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, del, get, post, put } from '../../api';
 import { t, tm } from '../../i18n';
-import { PRESET_ID } from '../../lib/presetFromRecord';
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
+import { displayName, nameIdHint } from '../../lib/nameLabels';
 import Explorer, { type Facet } from '../explorer/Explorer';
 import { useToast } from '../Toasts';
 import { useUnsaved } from '../Unsaved';
@@ -15,8 +15,6 @@ import PresetImport, { readPackage, type ImportLook } from './PresetImport';
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop() ?? name;
 const loraNames = (p: Preset) => ((p.settings.loras as { name: string; enabled?: boolean }[] | undefined) ?? []).filter((l) => l.enabled !== false).map((l) => base(l.name));
-const displayName = (p: Pick<Preset, 'name' | 'id'>) => p.name.trim() || p.id;
-
 const facets = (): Facet<Preset>[] => [
   { id: 'target', label: t('presets.facet.target'), values: (p) => [presetTarget(p)] },
   { id: 'tag', label: t('presets.facet.tag'), values: (p) => p.tags },
@@ -62,13 +60,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
     const p = presets.data?.find((x) => x.id === id);
     if (p) setDraft(opened(p));
   };
-  const newId = (suggested = '') => {
-    const ident = prompt(t('lib.new_id'), suggested)?.trim();
-    if (!ident) return null;
-    if (!PRESET_ID.test(ident)) return alert(t('presets.bad_id')), null;
-    if ((presets.data ?? []).some((p) => p.id === ident)) return alert(t('lib.id_taken', { id: ident })), null;
-    return ident;
-  };
+  const newId = () => crypto.randomUUID();
 
   async function save(next: Preset) {
     try {
@@ -127,7 +119,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
   }
 
   const all = presets.data ?? [];
-  const duplicateName = (p: Preset) => !!p.name.trim() && all.some((other) => other.id !== p.id && other.name.trim() === p.name.trim());
+  const idHint = (p: Preset) => nameIdHint(p, all);
   const missing = all.filter((p) => p.service === 'comfyui' && (!p.preview_url || p.preview_stale));
   const card = (p: Preset) => (
     <>
@@ -137,8 +129,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
         {waiting[p.id] !== undefined && p.preview_url && <span className="chip small preset-stale">{t('presets.preview_making')}</span>}
       </div>
       <div className="col" style={{ gap: 2, padding: '6px 8px' }}>
-        <strong className="ellipsis" title={displayName(p)}>{displayName(p)}</strong>
-        {duplicateName(p) && <span className="faint mono small ellipsis" title={p.id}>{p.id}</span>}
+        <strong className="ellipsis" title={p.id}>{displayName(p)}</strong>
+        {idHint(p) && <span className="faint mono small ellipsis" title={p.id}>{idHint(p)}</span>}
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
           <span className="chip small">{presetTarget(p)}</span>
           {p.tags.map((tag) => (
@@ -165,8 +157,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
       {items.map((p) => (
         <div key={p.id} className="col" style={{ gap: 6 }}>
           <div className="preset-thumb large">{p.preview_url ? <img src={p.preview_url} alt="" /> : <span className="faint">{t('presets.preview_none')}</span>}</div>
-          <strong style={{ overflowWrap: 'anywhere' }}>{displayName(p)}</strong>
-          {duplicateName(p) && <span className="faint mono small">{p.id}</span>}
+          <strong title={p.id} style={{ overflowWrap: 'anywhere' }}>{displayName(p)}</strong>
+          {idHint(p) && <span className="faint mono small" title={p.id}>{idHint(p)}</span>}
           <dl className="kv small">
             {rows.map(([label, value]) => (
               <div key={label}>
@@ -189,8 +181,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
     <div className="col pad" style={{ gap: 8 }}>
       <div className="row">
         <div className="col grow" style={{ minWidth: 0, gap: 2 }}>
-          <strong style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
-          {draft.name.trim() && <span className="faint mono small" style={{ overflowWrap: 'anywhere' }}>{draft.id}</span>}
+          <strong title={draft.id} style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
+          {idHint(draft) && <span className="faint mono small" title={draft.id}>{idHint(draft)}</span>}
         </div>
         <button className="ghost small" onClick={() => leave() && setDraft(null)}>
           ×
@@ -228,7 +220,7 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
           disabled={!storedPreset}
           onClick={async () => {
             if (!leave() || !storedPreset) return;
-            const ident = newId(`${draft.id}_copy`);
+            const ident = newId();
             if (!ident) return;
             const next = { ...editable(storedPreset), id: ident, name: `${storedPreset.name} (${t('presets.copy')})` } as Preset;
             if (await save(next)) setDraft(opened(next));
@@ -305,8 +297,8 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
             className="primary"
             onClick={() => {
               if (!leave()) return;
-              const ident = newId();
-              if (ident) setDraft(blankPreset(ident));
+              const name = prompt(t('lib.new_name'))?.trim();
+              if (name) setDraft({ ...blankPreset(newId()), name });
             }}
           >
             {t('presets.new')}

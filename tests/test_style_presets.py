@@ -5,6 +5,7 @@ import json
 import pytest
 
 from atelierx.image import library
+from image_ids import image_id
 from test_image import FakeComfy
 
 
@@ -18,7 +19,7 @@ def test_presets_from_before_read_as_comfyui_presets_without_artist_tags():
         {'name': 'old', 'family': 'sdxl', 'settings': {'steps': 28}, 'common': ['quality']}, 'old'
     )
     assert doc == {
-        'schema_version': 2,
+        'schema_version': 3,
         'name': 'old',
         'service': 'comfyui',
         'family': 'sdxl',
@@ -87,7 +88,7 @@ def test_style_fragments_fold_into_presets_once(paths):
     assert presets['w002_anima']['artist'] == {'positive': '(@topu:2.4), @kyokucho', 'negative': '@bad'}
     assert presets['w002_anima']['settings'] == {'steps': 32}
     stored = json.loads((image / 'presets' / 'w002_anima.json').read_text(encoding='utf-8'))
-    assert 'styles' not in stored and stored['schema_version'] == 2
+    assert 'styles' not in stored and stored['schema_version'] == 3
     # Styles no preset used become presets of their own, for the service or family they were written for.
     assert (presets['my02']['name'], presets['my02']['service'], presets['my02']['tags']) == (
         '수채 느낌',
@@ -157,7 +158,7 @@ def test_a_preview_is_made_once_kept_as_webp_and_marked_stale_when_the_preset_ch
         'common': ['quality'],
     }
     c.put('/api/image/presets/ink', json=preset)
-    queued = c.post('/api/image/presets/ink/preview').json()
+    queued = c.post('/api/image/presets/' + image_id(c, 'presets', 'ink') + '/preview').json()
     assert queued['count'] == 1 and queued['seeds'] == [1234567]
     (job,) = runtime.jobs
     # The fixed subject, rated safe, after the preset's common prompts and artist tags.
@@ -189,7 +190,7 @@ def test_a_preview_is_made_once_kept_as_webp_and_marked_stale_when_the_preset_ch
 def test_previews_are_made_with_comfyui_only(unlocked):
     c = unlocked
     c.put('/api/image/presets/nai', json={'name': 'nai', 'service': 'novelai'})
-    refused = c.post('/api/image/presets/nai/preview')
+    refused = c.post('/api/image/presets/' + image_id(c, 'presets', 'nai') + '/preview')
     assert refused.status_code == 400
     assert refused.json()['error']['key'] == 'server.image.presets.preview_comfy_only'
 
@@ -211,7 +212,7 @@ def test_random_preview_seed_records_actual_seed_and_keeps_mode_hash(unlocked, m
     seeds = iter([81, 92])
     monkeypatch.setattr('atelierx.image.lab.secrets.randbits', lambda bits: next(seeds))
     for expected in (81, 92):
-        response = c.post('/api/image/presets/ink/preview')
+        response = c.post('/api/image/presets/' + image_id(c, 'presets', 'ink') + '/preview')
         assert response.status_code == 200, response.text
         assert response.json()['seeds'] == [expected]
         job = runtime.jobs[-1]
@@ -238,16 +239,26 @@ def test_preview_batch_seed_and_validation(unlocked):
         )
     c.put('/api/image/settings/presets', json={'preview_seed': -1})
     for ident in ('one', 'two'):
-        assert c.post(f'/api/image/presets/{ident}/preview', json={'seed': 4294967295}).json()['seeds'] == [
-            4294967295
-        ]
+        assert c.post(
+            ('/api/image/presets/' + image_id(c, 'presets', ident) + '/preview'), json={'seed': 4294967295}
+        ).json()['seeds'] == [4294967295]
     for invalid in (-2, 1.5, True, 4294967296):
         assert c.put('/api/image/settings/presets', json={'preview_seed': invalid}).status_code == 400
     for invalid in (-1, 1.5, True, 4294967296, '42'):
-        assert c.post('/api/image/presets/one/preview', json={'seed': invalid}).status_code == 400
-    assert c.post('/api/image/presets/one/preview', json=[]).status_code == 400
+        assert (
+            c.post(
+                ('/api/image/presets/' + image_id(c, 'presets', 'one') + '/preview'), json={'seed': invalid}
+            ).status_code
+            == 400
+        )
+    assert (
+        c.post(('/api/image/presets/' + image_id(c, 'presets', 'one') + '/preview'), json=[]).status_code
+        == 400
+    )
     c.put('/api/image/settings/presets', json={'preview_seed': 0})
-    assert c.post('/api/image/presets/one/preview', json={'seed': 123}).json()['seeds'] == [0]
+    assert c.post(
+        ('/api/image/presets/' + image_id(c, 'presets', 'one') + '/preview'), json={'seed': 123}
+    ).json()['seeds'] == [0]
 
 
 @pytest.mark.parametrize('status', ['failed', 'cancelled', 'interrupted'])
@@ -265,7 +276,12 @@ def test_preview_retry_preserves_marker_and_actual_seed_after_reload(unlocked, s
     }
     assert c.put('/api/image/presets/retry', json=preset).status_code == 200
     c.put('/api/image/settings/presets', json={'preview_seed': -1})
-    assert c.post('/api/image/presets/retry/preview', json={'seed': 81}).status_code == 200
+    assert (
+        c.post(
+            ('/api/image/presets/' + image_id(c, 'presets', 'retry') + '/preview'), json={'seed': 81}
+        ).status_code
+        == 200
+    )
     original = runtime.jobs[-1]
     original['status'] = status
     marker = dict(original['preset_preview'])
@@ -299,7 +315,7 @@ def test_preview_retry_preserves_marker_and_actual_seed_after_reload(unlocked, s
         assert not listed
         assert not library.preview_file(runtime.paths, 'retry').exists()
     else:
-        item = next(p for p in listed if p['id'] == 'retry')
+        item = next(p for p in listed if p['id'] == image_id(c, 'presets', 'retry'))
         assert item['preview']['seed'] == 81
         assert item['preview_stale'] is (change != 'none')
         assert c.get(item['preview_url']).status_code == 200

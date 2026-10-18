@@ -306,25 +306,33 @@ class Packages:
     def import_works(self, token, choices):
         """Bring in the chosen works. A work whose ID is taken comes in under a new ID; its image paths, records and
         reviews follow. Nothing already here is overwritten."""
+        self._last_work_import = None
         path = self._upload(token)
         chosen = {int(c['index']) for c in choices or [] if isinstance(c, dict) and c.get('import', True)}
-        imported, skipped_loras = [], []
-        with zipfile.ZipFile(path) as archive:
-            doc = self._manifest(archive)
-            if doc['kind'] != 'works':
-                raise _bad_package()
-            names = archive.namelist()
-            for n, entry in enumerate(doc.get('works') or []):
-                if n not in chosen:
-                    continue
-                result = self._import_one(archive, names, n, entry, skipped_loras)
-                imported.append(result)
+        imported, skipped_loras, created = [], [], []
+        reviews_path = self.paths.output / 'reviews.json'
+        old_reviews = reviews_path.read_bytes() if reviews_path.is_file() else None
+        try:
+            with zipfile.ZipFile(path) as archive:
+                doc = self._manifest(archive)
+                if doc['kind'] != 'works':
+                    raise _bad_package()
+                names = archive.namelist()
+                for n, entry in enumerate(doc.get('works') or []):
+                    if n not in chosen:
+                        continue
+                    result = self._import_one(archive, names, n, entry, skipped_loras, created)
+                    imported.append(result)
+        except BaseException:
+            self._rollback_imported_works(imported, created, old_reviews)
+            raise
+        self._last_work_import = (imported, created, old_reviews)
         path.unlink(missing_ok=True)
         if imported:
             self.image.gallery.scan(force=True)
         return {'imported': imported, 'skipped_loras': skipped_loras}
 
-    def _import_one(self, archive, names, n, entry, skipped_loras):
+    def _import_one(self, archive, names, n, entry, skipped_loras, created):
         prefix = f'works/{n}/'
         old_id = str(entry.get('id') or '')
         taken = {w.doc().get('id', '').lower() for w in self.works.all()}
@@ -336,6 +344,7 @@ class Packages:
         folder = _contained(self.paths.works, self.paths.works / name)
         output = Path(self.paths.output)
         lora_dir = self._lora_dir()
+        start = len(created)
         try:
             for member in names:
                 if not member.startswith(prefix) or member.endswith('/'):
@@ -349,6 +358,7 @@ class Packages:
                     target = _contained(output, output.joinpath(*rel.parts))
                     if target.exists():
                         continue  # never overwrite an image already here
+                    created.append(target)
                     if target.suffix == '.json':
                         record = json.loads(archive.read(member))
                         target.parent.mkdir(parents=True, exist_ok=True)
@@ -359,7 +369,9 @@ class Packages:
                     if lora_dir is None or (lora_dir / parts[1]).exists():
                         skipped_loras.append(parts[1])
                     else:
-                        _write_member(archive, member, _contained(lora_dir, lora_dir / parts[1]))
+                        target = _contained(lora_dir, lora_dir / parts[1])
+                        created.append(target)
+                        _write_member(archive, member, target)
             if not (folder / APP_DIR / 'work.json').is_file():
                 raise _bad_package()
             work = Work(folder)
@@ -374,10 +386,32 @@ class Packages:
                         if changed != data:
                             write_json(path, changed)
             self._merge_reviews(archive, prefix, old_id, new_id)
-        except Exception:
+        except BaseException:
             shutil.rmtree(folder, ignore_errors=True)  # the folder was made here under a fresh name
+            for target in created[start:]:
+                target.unlink(missing_ok=True)
+            del created[start:]
             raise
         return {'id': new_id, 'name': name, 'renumbered': new_id != old_id}
+
+    def _rollback_imported_works(self, imported, created, old_reviews):
+        for target in reversed(created):
+            target.unlink(missing_ok=True)
+        for entry in imported:
+            shutil.rmtree(self.paths.works / entry['name'])
+        reviews_path = self.paths.output / 'reviews.json'
+        if old_reviews is None:
+            reviews_path.unlink(missing_ok=True)
+        else:
+            reviews_path.parent.mkdir(parents=True, exist_ok=True)
+            reviews_path.write_bytes(old_reviews)
+        self.image.reviews.state = read_json(reviews_path, {}) or {'records': {}, 'adopted': {}}
+        self.image.gallery.scan(force=True)
+
+    def rollback_last_work_import(self):
+        if self._last_work_import is not None:
+            self._rollback_imported_works(*self._last_work_import)
+            self._last_work_import = None
 
     def _merge_reviews(self, archive, prefix, old_id, new_id):
         try:
@@ -414,7 +448,13 @@ class Packages:
             )
         if kind == 'files':
             return (
-                [(p.name, p) for p in sorted(target.glob('*.json')) if p.is_file()] if target.is_dir() else []
+                [
+                    (p.name, p)
+                    for p in sorted(target.glob('*.json'))
+                    if p.is_file() and p.name != 'uuid-map.json'
+                ]
+                if target.is_dir()
+                else []
             )
         return [(target.name, target)] if target.is_file() else []
 
@@ -470,6 +510,8 @@ class Packages:
                     if kind is True or kind == 'files':
                         if kind == 'files' and len(rel) != 1:
                             continue
+                        if kind == 'files' and rel[0] == 'uuid-map.json':
+                            continue  # ID aliases belong to this app root, never an imported settings package.
                         _write_member(archive, member, _contained(target, target.joinpath(*rel)))
                     else:
                         _write_member(archive, member, target)

@@ -42,6 +42,7 @@ def invalid_path():
 
 class Gallery:
     def __init__(self, paths):
+        self.paths = paths
         self.root = Path(paths.output)
         self.cache = state_file(paths, 'thumbnails')
         self.lock = threading.RLock()
@@ -215,12 +216,14 @@ class Gallery:
             'folder': '/'.join(parts[:-1]),
             'kind': kind,
             'image_url': self.url(relative),
-            'thumbnail_url': '/api/image/gallery/thumbnail?path=' + quote(relative, safe='') + f'&v={mtime_ns}-{size}',
+            'thumbnail_url': '/api/image/gallery/thumbnail?path='
+            + quote(relative, safe='')
+            + f'&v={mtime_ns}-{size}',
             'has_record': bool(meta),
             'work_id': parts[0] if asset else str(meta.get('work_id') or ''),
             'character_id': parts[1] if asset else str(meta.get('character_id') or ''),
             'outfit_id': parts[3] if asset else str(meta.get('outfit_id') or ''),
-            'expression_id': str(meta.get('expression_id') or (parts[4] if asset else '')),
+            'expression_id': str(self._expression_id(meta, parts, asset)),
             'outfit_name': str(meta.get('outfit_name') or ''),
             'expression_name': str(meta.get('expression_name') or ''),
             'rating': str(meta.get('rating') or ''),
@@ -233,6 +236,13 @@ class Gallery:
             '_mtime_ns': mtime_ns,
             '_bytes': size,
         }
+
+    def _expression_id(self, meta, parts, asset):
+        from .uuid_migration import resolve
+
+        ident = meta.get('expression_id') or (parts[4] if asset else '')
+        work_id = parts[0] if asset else meta.get('work_id')
+        return resolve(self.paths, 'expressions', ident, work_id)
 
     @staticmethod
     def public(item):

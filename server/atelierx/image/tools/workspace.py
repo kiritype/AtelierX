@@ -65,7 +65,8 @@ class ToolWorkspace:
         known = {item['id'] for item in self.items}
         saved_ids = saved.get('ids', []) if isinstance(saved, dict) else []
         self.archived = {
-            item for item in (saved_ids if isinstance(saved_ids, list) else [])
+            item
+            for item in (saved_ids if isinstance(saved_ids, list) else [])
             if isinstance(item, str) and item in known
         }
 
@@ -109,7 +110,9 @@ class ToolWorkspace:
         with self.lock:
             known = {item['id'] for item in self.items}
             if wanted - known:
-                raise ValueError(Msg('server.workspace.not_in_the_image_tools_list', 'Not in the image tools list.'))
+                raise ValueError(
+                    Msg('server.workspace.not_in_the_image_tools_list', 'Not in the image tools list.')
+                )
             updated = self.archived | wanted if archived else self.archived - wanted
             if updated != self.archived:
                 previous = self.archived
@@ -344,7 +347,9 @@ class ToolWorkspace:
                 except OSError:
                     # Deleted IDs are ignored on restart. The sidecar must not interrupt
                     # file deletion after the database row has been removed.
-                    logging.getLogger(__name__).warning('Could not update tool archive state after deletion', exc_info=True)
+                    logging.getLogger(__name__).warning(
+                        'Could not update tool archive state after deletion', exc_info=True
+                    )
         for item in gone:
             if item['source'] == 'upload':
                 (self.folder / item['path']).unlink(missing_ok=True)

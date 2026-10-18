@@ -383,6 +383,9 @@ class LabMixin:
             code(body.get('outfit_id')),
             code(body.get('expression_id')),
         )
+        from .uuid_migration import resolve
+
+        expression_id = resolve(self.paths, 'expressions', expression_id, work.id)
         design = read_json(work.app / 'image' / 'characters' / character_id / 'design.json') or {}
         outfit = (design.get('outfits') or {}).get(outfit_id)
         expression = library.items(self.paths, work, 'expressions').get(expression_id)

@@ -1,5 +1,7 @@
 """Compositions with a background, and one that hides the outfit (#162)."""
 
+from image_ids import image_id
+
 
 def _put(c, wid, kind, ident, item):
     response = c.put(f'/api/image/library/{kind}/{ident}', json={'scope': 'work', 'work': wid, 'item': item})
@@ -53,4 +55,4 @@ def test_a_composition_without_outfit_leaves_the_outfit_out_for_its_expression(u
     assert not set(smile['parts']['outfit'].split(', ')) & set(shower['positive'].split(', '))
 
     saved = c.get('/api/image/library/compositions', params={'work': wid}).json()
-    assert saved['bath']['hide_outfit'] is True
+    assert saved[image_id(c, 'compositions', 'bath', wid)]['hide_outfit'] is True

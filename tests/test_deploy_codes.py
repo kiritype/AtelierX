@@ -3,6 +3,7 @@
 import json
 
 from atelierx.image import library
+from image_ids import image_id
 
 
 def _expression(c, wid, ident, **item):
@@ -16,13 +17,18 @@ def test_default_expressions_have_codes_and_any_path_text_is_a_code(unlocked):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     expressions = c.get(f'/api/image/library/expressions?work={wid}').json()
-    assert [expressions[i]['code'] for i in ('neutral', 'smile', 'thinking')] == ['001', '002', '008']
+    assert [
+        expressions[image_id(c, 'expressions', i, wid)]['code'] for i in ('neutral', 'smile', 'thinking')
+    ] == ['001', '002', '008']
 
     saved = _expression(c, wid, 'grin', code=' smile_a ')
-    assert saved.status_code == 200 and saved.json()['grin']['code'] == 'smile_a'
+    assert (
+        saved.status_code == 200
+        and saved.json()[image_id(c, 'expressions', 'grin', wid)]['code'] == 'smile_a'
+    )
     # The same code twice is allowed; the screen points it out.
     assert _expression(c, wid, 'grin2', code='002').status_code == 200
-    assert _expression(c, wid, 'empty').json()['empty']['code'] == ''
+    assert _expression(c, wid, 'empty').json()[image_id(c, 'expressions', 'empty', wid)]['code'] == ''
     for bad in ('a/b', '..', 'x:y', 'q?'):
         assert _expression(c, wid, 'bad', code=bad).status_code == 400, bad
 

@@ -728,13 +728,28 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "items": {
-    "neutral": {"name": "무표정", "code": "001", "rating": "general", "prompt": ["expressionless", "closed mouth"],
-                "negative": [], "composition": "upper_front"}
+    "7d9546be-d620-5d58-a411-7d7553167200": {"name": "무표정", "code": "001", "rating": "general", "prompt": ["expressionless", "closed mouth"],
+                "negative": [], "composition": "6e4e4826-8825-4d30-bf6f-9f306dbf90bb"}
   }
 }
 ```
+
+0.5.0부터 라이브러리 항목 키와 그림체 프리셋 파일 이름은 UUID다. 이름은 화면에 표시하는 별도 필드이며 중복될 수 있다. 기본 라이브러리 항목은 고정 namespace `49b40af4-7a73-548b-a7d2-737c7d09d84a`와 `image-library/<종류>/<기존 ID>`를 사용한 UUIDv5로 앱 폴더 사이에서 동일하게 정한다. 사용자 항목은 UUIDv4를 발급하고 기존 정상 UUID는 보존한다. 전역 항목을 작품이 덮어쓰면 UUID를 공유하되 `global:`·`work:` 범위는 유지한다. 작품끼리 우연히 같은 옛 ID를 쓴 독립 항목은 별개 UUID가 된다.
+
+첫 시작 변환은 `data/image/uuid-map.json`에 종류·범위·작품별 옛 ID 대응을 저장한다. 옛 형식의 API 입력과 과거 이미지 경로는 이 대응으로 해석하지만 목록의 활성 키는 UUID만 반환한다. 매핑 파일은 앱 폴더 전용 상태이므로 설정 꾸러미에 싣지 않는다. 변환 완료 상태에서는 시작 시 라이브러리·프리셋만 빠르게 검사하고, 꾸러미 가져오기나 복원은 전체 참조를 다시 검사한다.
+
+| 참조 위치 | 변환 대상 | 보존 대상 |
+|---|---|---|
+| `image/{expressions,compositions,common,outfits}.json`, `image/presets/*.json` | 항목 키, 프리셋 파일명, 표정의 구도 참조, 프리셋의 공통 참조 | 이름·프롬프트·배포 코드·미리보기 그림 바이트 |
+| 작품 `design.json`, `board.json`, LoRA 데이터셋·실행 기록 | `global:`·`work:` 의상 참조, 제외 조합의 표정, 기록의 표정·구도·프리셋 참조 | 작품 ID·캐릭터 ID·의상 ID·학습 이미지 경로 |
+| 생성 대기열·검수 라운드·검수/채택 기록·이미지 JSON 곁파일 | 표현 ID, 프리셋 ID, 공통 목록, 4요소 조합의 표정 ID | 이미지·마스크 파일과 기존 출력 경로·해시·검수 결과 |
+| 꾸러미/공유 파일 | 가져온 옛 참조를 대상 앱에서 정규화, 공유 종속 조각 전달 | 원본 꾸러미 파일과 다른 PC의 앱 전용 매핑 |
+
+변경 파일은 교체 전 `state/image/uuid-migration/<실행 ID>/`에 원본 바이트를 남기고 `journal.json`에 기록한다. 중단되면 다음 시작에서 먼저 원본을 복원한 뒤 다시 변환한다. 백업은 최초 변환 후에도 남겨 사용자가 원본을 확인할 수 있다. 변환할 것이 없으면 새 백업을 만들지 않는다. 손상된 원본·매핑·백업은 추측해서 고치지 않고 시작을 멈춘다.
+
+이미 삭제되어 현재 라이브러리에서 찾을 수 없는 참조는 임의 UUID를 만들거나 지우지 않고 원문을 보존한다. 이런 참조는 기존과 같이 해당 항목을 사용할 때 누락으로 처리하며, 다른 정상 데이터의 시작·변환은 계속된다.
 
 모든 종류의 항목은 다음 두 필드를 더 가질 수 있다(선택).
 
@@ -791,8 +806,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 ```
 
 - `library`: `expressions`·`compositions`·`common`·`outfits` 중 하나. 항목 필드는 위 라이브러리 파일과 같고, 내보낼 때의 범위 `scope`가 더해진다.
-- 가져올 때 `scope`는 넣을 곳의 기본값을 정하는 데만 쓴다(모두 `work`면 이 작품). 이 PC에 없는 `targets`·`slot`·`rating`·`composition`
-  값도 그대로 저장한다.
+- 가져올 때 `scope`는 넣을 곳의 기본값을 정하는 데만 쓴다(모두 `work`면 이 작품). 이 PC에 없는 `targets`·`slot`·`rating` 값은 그대로 저장한다. 0.5.0 공유 파일은 표정이 참조하는 구도 항목을 선택적 `dependencies.compositions`에 함께 담아 다른 앱 폴더에서도 참조를 복원한다.
 
 #### 그림체 프리셋
 
@@ -800,7 +814,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "먹선 Anima",
   "service": "comfyui",
   "family": "anima",
@@ -808,7 +822,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   "settings": {"model": "…", "sampler": "er_sde", "scheduler": "simple", "steps": 32, "cfg": 5,
                "width": 1536, "height": 1536, "loras": []},
   "artist": {"positive": "(@ink artist:1.2), @sketchy, year 2025", "negative": "@bad artist"},
-  "common": ["quality"]
+  "common": ["61b0e4f4-8a89-5848-aa8f-722aac8f2b68"]
 }
 ```
 

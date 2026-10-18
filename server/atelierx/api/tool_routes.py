@@ -42,7 +42,9 @@ def _download(raw, name, kind):
 async def items(request):
     offset = _number(request, 'offset', 0)
     limit = _number(request, 'limit', None)
-    return await call(_runtime(request).tools.public, offset, limit, request.query_params.get('archived') == '1')
+    return await call(
+        _runtime(request).tools.public, offset, limit, request.query_params.get('archived') == '1'
+    )
 
 
 async def item_ids(request):
@@ -198,10 +200,7 @@ async def remove_items(request):
 def _check_in_use(runtime, ids):
     if (
         runtime.bulk.active_targets(ids)
-        or any(
-            job.get('tool_item') in ids and job.get('status') in UNFINISHED
-            for job in runtime.queue.jobs
-        )
+        or any(job.get('tool_item') in ids and job.get('status') in UNFINISHED for job in runtime.queue.jobs)
         or runtime.convert.in_use(ids)
     ):
         raise AppError(
@@ -215,8 +214,13 @@ async def archive_items(request):
     body = await _body(request)
     ids = body.get('ids')
     archived = body.get('archived')
-    if (not isinstance(ids, list) or not ids or len(ids) > 50000
-            or not all(isinstance(item, str) for item in ids) or not isinstance(archived, bool)):
+    if (
+        not isinstance(ids, list)
+        or not ids
+        or len(ids) > 50000
+        or not all(isinstance(item, str) for item in ids)
+        or not isinstance(archived, bool)
+    ):
         raise AppError(Msg('server.bulk.targets_invalid', 'Invalid bulk targets.'), 400)
 
     def update():

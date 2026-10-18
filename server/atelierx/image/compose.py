@@ -9,6 +9,7 @@ from ..core.i18n import Msg
 from . import library
 from .comments import strip_tag, strip_text
 from .util import read_json
+from .uuid_migration import resolve
 
 OVERRIDABLE = ('common', 'artist', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative')
 MAX_OVERRIDE = 30000
@@ -59,7 +60,7 @@ class Composer:
         return any(m.get('enabled', True) for m in models.get('models', []))
 
     def _pick(self, kind, ident, label):
-        item = self.lib[kind].get(ident)
+        item = self.lib[kind].get(resolve(self.paths, kind, ident, self.work.id))
         if item is None:
             raise ValueError(
                 Msg('server.image.compose.not_found', '{label} not found: {id}', label=label, id=ident)
@@ -70,7 +71,7 @@ class Composer:
         entry = (outfit.get('slots') or {}).get(slot) or {}
         if entry.get('ref'):
             ident = str(entry['ref']).split(':', 1)[-1]
-            part = self.lib['outfits'].get(ident)
+            part = self.lib['outfits'].get(resolve(self.paths, 'outfits', ident, self.work.id))
             if part is None:
                 raise ValueError(
                     Msg(
@@ -117,6 +118,8 @@ class Composer:
         common_ids = options.get('common_ids')
         if common_ids is None:
             common_ids = [i for i, c in self.lib['common'].items() if c.get('default', True)]
+        else:
+            common_ids = [resolve(self.paths, 'common', i, self.work.id) for i in common_ids]
         commons = [self._pick('common', i, 'Common prompt') for i in common_ids]
         # The style preset's artist tags (#169): free text, notes left out.
         artist = options.get('artist') if isinstance(options.get('artist'), dict) else {}

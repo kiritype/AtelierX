@@ -1,3 +1,5 @@
+from image_ids import image_id
+
 """Uploading adopted images (decision 0023): the plan's paths and states, the upload, unchanged files, clashes."""
 
 import time
@@ -210,8 +212,8 @@ def test_edited_paths_clashes_ratings_and_retrying_only_some(unlocked):
     _set_outfit_code(c, wid, 'uniform')
     body = {'work': wid, 'target': 'main'}
     plan = c.post('/api/image/deploy/plan', json=body).json()
-    smile = next(r for r in plan['rows'] if r['expression_id'] == 'smile')
-    laugh = next(r for r in plan['rows'] if r['expression_id'] == 'laugh')
+    smile = next(r for r in plan['rows'] if r['expression_id'] == image_id(c, 'expressions', 'smile', wid))
+    laugh = next(r for r in plan['rows'] if r['expression_id'] == image_id(c, 'expressions', 'laugh', wid))
 
     # Two images at one path: both held back.
     clash = {**body, 'paths': {laugh['source']: smile['path']}}
