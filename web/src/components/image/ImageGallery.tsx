@@ -707,8 +707,8 @@ function Detail({
                     </div>
                   ))}
               </dl>
-              <GalleryRecord key={item.path} record={record} />
-              <SavePreset key={item.path} record={record} />
+              <GalleryRecord key={`record:${item.path}`} record={record} />
+              <SavePreset key={`preset:${item.path}`} record={record} />
             </>
           )}
           {(detail.data?.history ?? []).length > 0 && (
