@@ -163,6 +163,13 @@ def test_workspace_migrates_legacy_and_pages_without_truncating(paths):
     restored = ToolWorkspace(paths, gallery)
     assert len(restored.items) == 2501 and restored.get('2500')['tags']['tags'] == ['sample']
     assert path.is_file()
+    restored.set_archived([str(i) for i in range(2000)], True)
+    assert restored.public(0, 200)['total'] == 501
+    assert len(restored.public(0, 200)['items']) == 200
+    assert restored.public(1999, 200, True)['items'][0]['id'] == '1999'
+    assert len(ToolWorkspace(paths, gallery).ids(archived=True)['ids']) == 2000
+    restored.set_archived(['1999'], False)
+    assert restored.ids()['total'] == 502
 
 
 def test_2501_gallery_targets_are_all_added_to_sqlite_workspace(paths):
@@ -348,6 +355,30 @@ def test_clear_completed_receipts_preserves_images_masks_and_retries(unlocked, m
     monkeypatch.setattr(rt.convert, 'in_use', lambda ids: False)
     assert unlocked.post('/api/image/tools/remove', json={'ids': [item['id']]}).json()['removed'] == 1
     assert not original.exists() and not mask.exists() and result.is_file()
+
+
+def test_archive_rejects_any_unfinished_reference_and_preserves_batch_retry(unlocked):
+    from test_tools import png, upload
+
+    rt = unlocked.app.state.app.image
+    rt.stop.set()
+    rt._thread.join(timeout=5)
+    item = upload(unlocked, 'shared.png', png())['added'][0]
+    rt.tools.set_mask(item['id'], Image.new('L', (40, 30), 255), 'edited')
+    first = rt.bulk.submit({'operation': 'censor', 'request_id': 'archive-first', 'ids': [item['id']], 'treatment': 'color'})
+    second = rt.bulk.submit({'operation': 'censor', 'request_id': 'archive-second', 'ids': [item['id']], 'treatment': 'color', 'opacity': 50})
+    response = unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True})
+    assert response.status_code == 409
+    rt.bulk.cancel(first['id'])
+    assert unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code == 409
+    rt.bulk.cancel(second['id'])
+    assert unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code == 200
+    rt.bulk.retry(first['id'])
+    rt.bulk.pump()
+    rt.bulk.run_cpu(rt.queue.jobs[0])
+    rt.bulk.reconcile()
+    assert rt.bulk.public(first['id'])['counts']['done'] == 1
+    assert rt.tools.ids(archived=True)['ids'] == [item['id']]
 
 
 def test_clear_completed_keeps_cancelled_and_retriable_receipts(paths):

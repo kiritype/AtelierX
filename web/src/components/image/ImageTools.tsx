@@ -159,6 +159,9 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   const toast = useToast();
   const fail = useCallback((err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err instanceof Error ? err.message : err), tone: 'error' }), [toast]);
   const [offset, setOffset] = useState(0);
+  const [showArchived, setShowArchived] = useState(false);
+  const viewToken = useRef(0);
+  const suppressAutoSelection = useRef(false);
   const [hiddenIds, setHiddenIds] = useState(readHidden);
   const [showHidden, setShowHidden] = useState(false);
   useEffect(() => {
@@ -166,11 +169,18 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
   }, []);
-  const items = useQuery<{ items: ToolItem[]; total: number }>({ queryKey: ['tool-items', offset], queryFn: () => get(`/api/image/tools/items?offset=${offset}&limit=200`), refetchInterval: active ? 3000 : false });
+  const items = useQuery<{ items: ToolItem[]; total: number; archived_total: number }>({ queryKey: ['tool-items', offset, showArchived], queryFn: () => get(`/api/image/tools/items?offset=${offset}&limit=200&archived=${showArchived ? 1 : 0}`), refetchInterval: active ? 3000 : false });
+  useEffect(() => {
+    if (items.data && offset >= items.data.total && offset > 0) {
+      const next = Math.max(0, Math.floor((items.data.total - 1) / 200) * 200);
+      qc.removeQueries({ queryKey: ['tool-items', next, showArchived], exact: true });
+      setOffset(next);
+    }
+  }, [items.data, offset, qc, showArchived]);
   const tagger = useQuery<TaggerInfo>({ queryKey: ['tool-tagger'], queryFn: () => get('/api/image/tools/tagger') });
   const postInfo = useQuery<PostInfo>({ queryKey: ['tool-post'], queryFn: () => get('/api/image/tools/postprocess') });
   const methods = useQuery<ToolMethods>({ queryKey: ['tool-methods'], queryFn: () => get('/api/image/tools/methods') });
-  const list = (items.data?.items ?? []).filter((item) => showHidden || !hiddenIds.has(item.id));
+  const list = (items.data?.items ?? []).filter((item) => showArchived || showHidden || !hiddenIds.has(item.id));
   // A ComfyUI tab whose tool cannot run: dimmed, and its panel explains why instead of showing the form.
   const infoOf = (key: Tab): ToolInfo | undefined => (key === 'tag' ? tagger.data : COMFY_TABS.includes(key) ? postInfo.data : undefined);
   const blocked = (key: Tab) => {
@@ -191,6 +201,9 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
     const receive = () => {
       const id = takeToolHandoff();
       if (id) {
+        viewToken.current += 1;
+        setShowArchived(false);
+        suppressAutoSelection.current = false;
         setPendingSelection(id);
         qc.invalidateQueries({ queryKey: ['tool-items'] });
         get<{ ids: string[] }>('/api/image/tools/ids').then(({ ids }) => {
@@ -227,16 +240,17 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   const rerender = () => setTick((n) => n + 1);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const chosenIds = [...chosen];
+  const selectedIds = [...chosen];
+  const chosenIds = showArchived ? [] : selectedIds;
   const analysis = useQuery<Analysis>({
     queryKey: ['tool-analyze', currentId],
     queryFn: () => get(`/api/image/tools/analyze?id=${currentId}`),
     enabled: !!currentId,
   });
 
-  const current = list.find((i) => i.id === currentId) ?? (analysis.data?.item?.id === currentId ? analysis.data.item : undefined);
+  const current = showArchived ? undefined : list.find((i) => i.id === currentId) ?? (analysis.data?.item?.id === currentId ? analysis.data.item : undefined);
   useEffect(() => {
-    if (!currentId && list.length) setCurrentId(list[list.length - 1].id);
+    if (!currentId && list.length && !showArchived && !suppressAutoSelection.current) setCurrentId(list[list.length - 1].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.data, hiddenIds, showHidden]);
 
@@ -249,6 +263,7 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
   };
   const show = (id: string) => {
     if (id !== currentId && !leaveEditor()) return;
+    suppressAutoSelection.current = false;
     setCurrentId(id);
   };
   useEffect(() => {
@@ -291,26 +306,49 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
     if (fileInput.current) fileInput.current.value = '';
     setUploadStatus(tp('tools.added', added, problems.length ? tp('tools.skipped', problems.length) : ''));
     if (problems.length) toast({ text: problems.slice(0, 3).join(' / '), tone: 'error' });
+    if (added && showArchived) {
+      viewToken.current += 1;
+      setShowArchived(false);
+      setOffset(0);
+      setChosen(new Set());
+    }
     reload();
   }
 
   async function removeChosen() {
-    if (chosenIds.includes(currentId) && editor.current?.isDirty()) {
+    if (selectedIds.includes(currentId) && editor.current?.isDirty()) {
       toast({ text: t('tools.save_mask_before_cleanup'), tone: 'error' });
       return;
     }
-    if (!chosenIds.length || !confirm(tp('tools.remove_confirm', chosenIds.length))) return;
+    if (!selectedIds.length || !confirm(tp('tools.remove_confirm', selectedIds.length))) return;
     try {
-      await post('/api/image/tools/remove', { ids: chosenIds });
-      if (chosenIds.includes(currentId)) setCurrentId('');
+      await post('/api/image/tools/remove', { ids: selectedIds });
+      if (selectedIds.includes(currentId)) setCurrentId('');
       const nextHidden = new Set(hiddenIds);
-      chosenIds.forEach((id) => nextHidden.delete(id));
+      selectedIds.forEach((id) => nextHidden.delete(id));
       saveHidden(nextHidden);
       setChosen(new Set());
       reload();
     } catch (err) {
       fail(err);
     }
+  }
+
+  async function archiveChosen(archived: boolean) {
+    if (selectedIds.includes(currentId) && editor.current?.isDirty()) {
+      toast({ text: t('tools.save_mask_before_cleanup'), tone: 'error' });
+      return;
+    }
+    if (!selectedIds.length) return;
+    try {
+      await post('/api/image/tools/archive', { ids: selectedIds, archived });
+      if (selectedIds.includes(currentId)) {
+        suppressAutoSelection.current = true;
+        setCurrentId('');
+      }
+      setChosen(new Set());
+      await qc.invalidateQueries({ queryKey: ['tool-items'] });
+    } catch (err) { fail(err); }
   }
 
   function saveHidden(ids: Set<string>) {
@@ -361,27 +399,40 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
             <input ref={fileInput} type="file" accept={ACCEPT} multiple hidden onChange={(e) => upload([...(e.target.files ?? [])])} />
             <button onClick={async () => {
               if (chosen.size) { setChosen(new Set()); return; }
-              try { setChosen(new Set((await get<{ ids: string[] }>('/api/image/tools/ids')).ids.filter((id) => showHidden || !hiddenIds.has(id)))); } catch (error) { fail(error); }
+              const token = viewToken.current;
+              try {
+                const ids = (await get<{ ids: string[] }>(`/api/image/tools/ids?archived=${showArchived ? 1 : 0}`)).ids;
+                if (token === viewToken.current) setChosen(new Set(ids.filter((id) => showArchived || showHidden || !hiddenIds.has(id))));
+              } catch (error) { fail(error); }
             }}>
               {chosen.size ? t('gallery.clear_selection') : t('tools.select_all')}
             </button>
-            <button disabled={!chosenIds.length} onClick={hideChosen}>{t('tools.hide_from_workspace')}</button>
-            {showHidden && <button disabled={!chosenIds.some((id) => hiddenIds.has(id))} onClick={showChosen}>{t('tools.restore_hidden')}</button>}
-            <button onClick={() => { setShowHidden(!showHidden); setChosen(new Set()); }}>
+            {showArchived ? <button disabled={!selectedIds.length} onClick={() => archiveChosen(false)}>{t('tools.restore_archived')}</button>
+              : <button disabled={!selectedIds.length} onClick={() => archiveChosen(true)}>{t('tools.archive_selected')}</button>}
+            <button onClick={() => {
+              if (!leaveEditor()) return;
+              viewToken.current += 1;
+              suppressAutoSelection.current = false;
+              setShowArchived(!showArchived); setOffset(0); setChosen(new Set()); setCurrentId('');
+            }}>{showArchived ? t('tools.show_active') : t('tools.show_archived', { n: items.data?.archived_total ?? 0 })}</button>
+            {!showArchived && <button disabled={!selectedIds.length} onClick={hideChosen}>{t('tools.hide_from_workspace')}</button>}
+            {!showArchived && showHidden && <button disabled={!selectedIds.some((id) => hiddenIds.has(id))} onClick={showChosen}>{t('tools.restore_hidden')}</button>}
+            {!showArchived && <button onClick={() => { setShowHidden(!showHidden); setChosen(new Set()); }}>
               {showHidden ? t('tools.hide_hidden') : t('tools.show_hidden', { n: hiddenIds.size })}
-            </button>
-            <button disabled={!chosenIds.length} onClick={removeChosen}>
+            </button>}
+            <button disabled={!selectedIds.length} onClick={removeChosen}>
               {t('tools.delete_work_copies')}
             </button>
-            <a className={`button ${!chosenIds.length ? 'disabled' : ''}`} href={chosenIds.length ? `/api/image/tools/zip?ids=${chosenIds.join(',')}` : undefined}>
-              {tp('tools.download_zip', chosenIds.length)}
+            <a className={`button ${!selectedIds.length ? 'disabled' : ''}`} href={selectedIds.length ? `/api/image/tools/zip?ids=${selectedIds.join(',')}` : undefined}>
+              {tp('tools.download_zip', selectedIds.length)}
             </a>
           </div>
           {uploadStatus && <div className="faint small">{uploadStatus}</div>}
-          {!list.length && <div className="empty">{t('tools.drop_hint')}</div>}
+          {showArchived && <div className="faint small">{t('tools.archived_hint')}</div>}
+          {!list.length && <div className="empty">{showArchived ? t('tools.show_archived', { n: 0 }) : t('tools.drop_hint')}</div>}
           <div className="row">
             <button disabled={!offset} onClick={() => setOffset(Math.max(0, offset - 200))}>{t('bulk.previous')}</button>
-            <span>{offset + 1}–{offset + list.length} / {items.data?.total ?? list.length}</span>
+            <span>{items.data?.total ? offset + 1 : 0}–{Math.min(offset + (items.data?.items.length ?? 0), items.data?.total ?? 0)} / {items.data?.total ?? 0}</span>
             <button disabled={offset + 200 >= (items.data?.total ?? list.length)} onClick={() => setOffset(offset + 200)}>{t('bulk.next')}</button>
           </div>
           <div className="tools-grid">
@@ -391,6 +442,7 @@ export default function ImageTools({ openLab, openSettings, active = true }: { o
                 <div className="row tools-caption">
                   <input type="checkbox" checked={chosen.has(item.id)} onChange={(e) => toggle(item.id, e.target.checked)} />
                   <span className="grow ellipsis">{item.name.split('/').pop()}</span>
+                  {showArchived && <span className="chip small">{t('tools.archived')}</span>}
                   {hiddenIds.has(item.id) && <span className="chip small">{t('tools.hidden')}</span>}
                   <span className={`chip small ${item.source === 'gallery' ? 'scope-work' : ''}`}>{item.source === 'gallery' ? t('tools.from_gallery') : t('tools.upload')}</span>
                   {item.tags && <span className="chip small">{t('tools.tags')}</span>}

@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import time
@@ -5,6 +6,7 @@ import zipfile
 
 from PIL import Image, PngImagePlugin
 
+from atelierx.image.tools.workspace import ToolWorkspace
 from test_image import FakeComfy
 
 
@@ -52,6 +54,59 @@ def png(color=(10, 120, 200), size=(40, 30), text=None):
 
 def upload(c, name, raw):
     return c.post('/api/image/tools/upload', content=raw, headers={'X-File-Name': name}).json()
+
+
+def test_archive_restores_without_changing_files_masks_or_gallery_references(unlocked, paths, monkeypatch):
+    c = unlocked
+    rt = c.app.state.app.image
+    uploaded = upload(c, 'keep.png', png())['added'][0]
+    paths.output.mkdir(parents=True, exist_ok=True)
+    gallery_path = paths.output / 'gallery.png'
+    gallery_path.write_bytes(png((200, 10, 10)))
+    gallery_item = c.post('/api/image/tools/gallery', json={'paths': ['gallery.png']}).json()['items'][0]
+    rt.tools.set_mask(uploaded['id'], Image.new('L', (40, 30), 255), 'edited')
+    assert c.post('/api/image/tools/censor', json={'id': uploaded['id'], 'treatment': 'color'}).status_code == 200
+    result_path = rt.tools.file(rt.tools.items[-1])
+    files = [rt.tools.file(uploaded), rt.tools.mask_path(uploaded['id'], 'censor'), gallery_path, result_path]
+    before = [hashlib.sha256(path.read_bytes()).hexdigest() for path in files]
+    ids = [uploaded['id'], gallery_item['id']]
+
+    archived = c.post('/api/image/tools/archive', json={'ids': ids, 'archived': True})
+    assert archived.status_code == 200 and archived.json()['archived_total'] == 2
+    assert c.get('/api/image/tools/items').json()['total'] == 1
+    assert c.get('/api/image/tools/ids').json()['ids'] == [rt.tools.items[-1]['id']]
+    assert c.get('/api/image/tools/items?archived=1&limit=1').json()['total'] == 2
+    assert c.get('/api/image/tools/ids?archived=1').json()['ids'] == ids
+    assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in files] == before
+
+    restarted = ToolWorkspace(paths, rt.gallery)
+    assert restarted.ids(archived=True)['ids'] == ids
+    assert restarted.get(uploaded['id'])['mask']['source'] == 'edited'
+    assert c.post('/api/image/tools/gallery', json={'paths': ['gallery.png']}).json()['restored'] == 1
+    assert c.get('/api/image/tools/items?archived=1').json()['total'] == 1
+    assert c.post('/api/image/tools/archive', json={'ids': [uploaded['id']], 'archived': False}).status_code == 200
+    assert c.get('/api/image/tools/items').json()['total'] == 3
+    assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in files] == before
+
+    c.post('/api/image/tools/archive', json={'ids': [uploaded['id']], 'archived': True})
+    monkeypatch.setattr(rt.tools, '_save_archive', lambda: (_ for _ in ()).throw(OSError('read-only sidecar')))
+    assert c.post('/api/image/tools/remove', json={'ids': [uploaded['id']]}).status_code == 200
+    assert not files[0].exists() and not files[1].exists()
+    assert uploaded['id'] not in ToolWorkspace(paths, rt.gallery).ids(archived=True)['ids']
+
+
+def test_archive_ignores_corrupt_and_missing_runtime_state(paths):
+    from types import SimpleNamespace
+
+    gallery = SimpleNamespace(safe_path=lambda name: paths.output / name)
+    tools = ToolWorkspace(paths, gallery)
+    tools.archive_path.parent.mkdir(parents=True, exist_ok=True)
+    tools.archive_path.write_text('{bad', encoding='utf-8')
+    assert ToolWorkspace(paths, gallery).ids(archived=True)['ids'] == []
+    tools.archive_path.write_text(json.dumps({'ids': ['missing', 1]}), encoding='utf-8')
+    assert ToolWorkspace(paths, gallery).ids(archived=True)['ids'] == []
+    tools.archive_path.write_text(json.dumps({'ids': 7}), encoding='utf-8')
+    assert ToolWorkspace(paths, gallery).ids(archived=True)['ids'] == []
 
 
 def test_gallery_send_returns_existing_selection_at_capacity(unlocked, paths, monkeypatch):

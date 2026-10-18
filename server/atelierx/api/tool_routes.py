@@ -42,11 +42,11 @@ def _download(raw, name, kind):
 async def items(request):
     offset = _number(request, 'offset', 0)
     limit = _number(request, 'limit', None)
-    return await call(_runtime(request).tools.public, offset, limit)
+    return await call(_runtime(request).tools.public, offset, limit, request.query_params.get('archived') == '1')
 
 
 async def item_ids(request):
-    return await call(_runtime(request).tools.ids)
+    return await call(_runtime(request).tools.ids, request.query_params.get('archived') == '1')
 
 
 async def analyze(request):
@@ -189,24 +189,43 @@ async def remove_items(request):
 
     def remove():
         with runtime.lock:
-            if (
-                runtime.bulk.active_targets(ids)
-                or any(
-                    job.get('tool_item') in ids and job.get('status') in UNFINISHED
-                    for job in runtime.queue.jobs
-                )
-                or runtime.convert.in_use(ids)
-            ):
-                raise AppError(
-                    Msg(
-                        'server.bulk.image_in_use',
-                        'An unfinished image tool job still uses a selected image.',
-                    ),
-                    409,
-                )
+            _check_in_use(runtime, ids)
             return runtime.tools.remove(ids)
 
     return await call(remove)
+
+
+def _check_in_use(runtime, ids):
+    if (
+        runtime.bulk.active_targets(ids)
+        or any(
+            job.get('tool_item') in ids and job.get('status') in UNFINISHED
+            for job in runtime.queue.jobs
+        )
+        or runtime.convert.in_use(ids)
+    ):
+        raise AppError(
+            Msg('server.bulk.image_in_use', 'An unfinished image tool job still uses a selected image.'),
+            409,
+        )
+
+
+async def archive_items(request):
+    runtime = _runtime(request)
+    body = await _body(request)
+    ids = body.get('ids')
+    archived = body.get('archived')
+    if (not isinstance(ids, list) or not ids or len(ids) > 50000
+            or not all(isinstance(item, str) for item in ids) or not isinstance(archived, bool)):
+        raise AppError(Msg('server.bulk.targets_invalid', 'Invalid bulk targets.'), 400)
+
+    def update():
+        with runtime.lock:
+            if archived:
+                _check_in_use(runtime, ids)
+            return runtime.tools.set_archived(ids, archived)
+
+    return await call(update)
 
 
 async def batch_details(request):
@@ -251,6 +270,7 @@ def routes():
         Route(f'{p}/convert/zip', convert_zip),
         Route(f'{p}/gallery', _post('tools.add_gallery', 'paths'), methods=['POST']),
         Route(f'{p}/remove', remove_items, methods=['POST']),
+        Route(f'{p}/archive', archive_items, methods=['POST']),
         Route(f'{p}/convert', _protected_post('convert'), methods=['POST']),
         Route(f'{p}/censor', _protected_post('apply_censor'), methods=['POST']),
         Route(f'{p}/alpha', _protected_post('apply_alpha'), methods=['POST']),

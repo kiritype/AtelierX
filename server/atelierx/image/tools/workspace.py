@@ -8,6 +8,7 @@ path in the output root and never copied. The list and the masks live next to th
 import hashlib
 import io
 import json
+import logging
 import re
 import shutil
 import sqlite3
@@ -21,7 +22,7 @@ from typing import ClassVar
 from PIL import Image, ImageOps
 
 from ...core.i18n import Msg, message_of, wire
-from ..util import now, read_json, replace_file
+from ..util import atomic_json, now, read_json, replace_file, state_file
 from . import censor
 from .metadata import describe
 
@@ -43,6 +44,7 @@ class ToolWorkspace:
         self.path = self.base / 'tools.json'
         self.lock = threading.RLock()
         self.database = self.base / 'tools.sqlite3'
+        self.archive_path = state_file(paths, 'tools-archive.json')
         self.base.mkdir(parents=True, exist_ok=True)
         self._dirty = {}
         self._deleted = set()
@@ -59,6 +61,16 @@ class ToolWorkspace:
                     )
                     db.execute('PRAGMA user_version=2')
             self.items = [json.loads(row[0]) for row in db.execute('SELECT data FROM items ORDER BY rowid')]
+        saved = read_json(self.archive_path, {})
+        known = {item['id'] for item in self.items}
+        saved_ids = saved.get('ids', []) if isinstance(saved, dict) else []
+        self.archived = {
+            item for item in (saved_ids if isinstance(saved_ids, list) else [])
+            if isinstance(item, str) and item in known
+        }
+
+    def _save_archive(self):
+        atomic_json(self.archive_path, {'ids': sorted(self.archived)})
 
     def _persist(self, changed=()):
         self._dirty.update({item['id']: item for item in changed})
@@ -75,19 +87,39 @@ class ToolWorkspace:
         self._dirty.clear()
         self._deleted.clear()
 
-    def public(self, offset=0, limit=None):
+    def public(self, offset=0, limit=None, archived=False):
         with self.lock:
             offset = max(0, offset)
             end = None if limit is None else offset + min(max(limit, 1), 500)
+            visible = [item for item in self.items if (item['id'] in self.archived) == archived]
             return {
-                'items': [self._public_item(item) for item in self.items[offset:end]],
-                'total': len(self.items),
+                'items': [self._public_item(item) for item in visible[offset:end]],
+                'total': len(visible),
+                'archived_total': len(self.archived),
                 'offset': offset,
             }
 
-    def ids(self):
+    def ids(self, archived=False):
         with self.lock:
-            return {'ids': [item['id'] for item in self.items], 'total': len(self.items)}
+            ids = [item['id'] for item in self.items if (item['id'] in self.archived) == archived]
+            return {'ids': ids, 'total': len(ids)}
+
+    def set_archived(self, ids, archived):
+        wanted = set(ids)
+        with self.lock:
+            known = {item['id'] for item in self.items}
+            if wanted - known:
+                raise ValueError(Msg('server.workspace.not_in_the_image_tools_list', 'Not in the image tools list.'))
+            updated = self.archived | wanted if archived else self.archived - wanted
+            if updated != self.archived:
+                previous = self.archived
+                self.archived = updated
+                try:
+                    self._save_archive()
+                except OSError:
+                    self.archived = previous
+                    raise
+            return {'ok': True, 'changed': len(wanted), 'archived_total': len(self.archived)}
 
     def _public_item(self, item):
         result = dict(item)
@@ -292,7 +324,10 @@ class ToolWorkspace:
             # Existing entries let a repeated single-image send select its original item.
             selected = {i['path']: i for i in self.items if i['source'] == 'gallery'}
             items = [dict(selected[p]) for p in dict.fromkeys(paths)]
-        return {'ok': True, 'added': added, 'items': items}
+            restored = {item['id'] for item in items} & self.archived
+            if restored:
+                self.set_archived(list(restored), False)
+        return {'ok': True, 'added': added, 'items': items, 'restored': len(restored)}
 
     def remove(self, ids):
         """Take images off the list; uploaded copies are deleted, gallery files are kept."""
@@ -302,6 +337,14 @@ class ToolWorkspace:
             self.items = [i for i in self.items if i['id'] not in wanted]
             self._deleted.update(i['id'] for i in gone)
             self._persist()
+            if self.archived.intersection(wanted):
+                self.archived.difference_update(wanted)
+                try:
+                    self._save_archive()
+                except OSError:
+                    # Deleted IDs are ignored on restart. The sidecar must not interrupt
+                    # file deletion after the database row has been removed.
+                    logging.getLogger(__name__).warning('Could not update tool archive state after deletion', exc_info=True)
         for item in gone:
             if item['source'] == 'upload':
                 (self.folder / item['path']).unlink(missing_ok=True)
