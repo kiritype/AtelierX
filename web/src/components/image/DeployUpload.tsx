@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../../api';
 import { t, msgText } from '../../i18n';
 import { useToast } from '../Toasts';
@@ -38,7 +38,13 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadPending, setUploadPending] = useState(false);
+  const submitting = useRef(false);
   const [run, setRun] = useState<Run | null>(null);
+  const [stage, setStage] = useState<'settings' | 'preview' | 'progress' | 'result'>('settings');
+  const [planBody, setPlanBody] = useState<ReturnType<typeof body> | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const request = useRef(0);
 
   // The work's saved choice first, else the first target with keys.
   useEffect(() => {
@@ -53,21 +59,28 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   // Follow a running upload.
   useEffect(() => {
     if (!run || !['running', 'cancelling'].includes(run.status)) return;
+    let active = true;
+    let pending = false;
+    const id = run.id;
     const timer = setInterval(async () => {
+      if (pending) return;
+      pending = true;
       try {
-        setRun(await get<Run>(`/api/image/deploy/runs/${run.id}`));
+        const next = await get<Run>(`/api/image/deploy/runs/${id}`);
+        if (active) setRun((current) => current?.id === id ? next : current);
       } catch (err) {
-        fail(err);
+        if (active) fail(err);
+      } finally {
+        pending = false;
       }
     }, 700);
-    return () => clearInterval(timer);
+    return () => { active = false; clearInterval(timer); };
   }, [run, fail]);
 
-  // After an upload, the preview shows what the bucket holds now.
   const finishedId = run && !['running', 'cancelling'].includes(run.status) ? run.id : '';
   useEffect(() => {
     if (finishedId) {
-      preview();
+      setStage('result');
       qc.invalidateQueries({ queryKey: ['deploy-history', work] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -84,25 +97,51 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
     paths: Object.fromEntries(Object.entries(paths).filter(([, v]) => v.trim())),
   });
   const noRatings = ratings !== null && ratings.length === 0;
+  const currentBody = JSON.stringify(body());
+  const freshPlan = !!plan && !!planBody && JSON.stringify(planBody) === currentBody;
+  function changed() {
+    request.current += 1;
+    setPlan(null);
+    setPlanBody(null);
+    setBusy(false);
+  }
+  function backToSettings() {
+    request.current += 1;
+    setBusy(false);
+    setStage('settings');
+  }
 
   async function preview() {
+    const token = ++request.current;
+    const input = body();
     setBusy(true);
     try {
-      setPlan(await post<Plan>('/api/image/deploy/plan', body()));
+      const next = await post<Plan>('/api/image/deploy/plan', input);
+      if (token !== request.current) return;
+      setPlan(next);
+      setPlanBody(input);
+      setStage('preview');
     } catch (err) {
-      fail(err);
+      if (token === request.current) fail(err);
     } finally {
-      setBusy(false);
+      if (token === request.current) setBusy(false);
     }
   }
 
   async function upload(only?: string[]) {
+    if (!planBody || !freshPlan || !plan || busy || submitting.current) return;
+    submitting.current = true;
+    setUploadPending(true);
     setBusy(true);
     try {
-      setRun(await post<Run>('/api/image/deploy/upload', { ...body(), ...(only ? { only } : {}) }));
+      const next = await post<Run>('/api/image/deploy/upload', { ...planBody, ...(only ? { only } : {}) });
+      setRun(next);
+      setStage(['running', 'cancelling'].includes(next.status) ? 'progress' : 'result');
     } catch (err) {
       fail(err);
     } finally {
+      submitting.current = false;
+      setUploadPending(false);
       setBusy(false);
     }
   }
@@ -121,18 +160,21 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
   const chosen = list.find((x) => x.id === target);
   const sendable = plan ? plan.rows.filter((r) => r.status === 'new' || r.status === 'existing').length : 0;
   const running = !!run && ['running', 'cancelling'].includes(run.status);
+  const locked = running || uploadPending;
   const finished = !!run && !running;
   const failed = run?.results.filter((r) => !r.ok) ?? [];
   const uploaded = run?.results.filter((r) => r.ok && r.status !== 'unchanged') ?? [];
   const skipped = run?.results.filter((r) => r.status === 'unchanged') ?? [];
   const overwritten = uploaded.filter((r) => r.overwrote);
   const resultStates = new Map(run?.results.map((r) => [r.source, r.status]));
-  const urls = (plan?.rows ?? []).filter((r) => r.url && r.status !== 'no_code' && r.status !== 'clash').map((r) => r.url!);
+  const urls = (run?.results ?? []).filter((r) => r.ok && r.url).map((r) => r.url);
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !running && close()}>
-      <div className="dialog col" style={{ width: 'min(1100px, 94vw)', maxWidth: 'none', maxHeight: '90vh', overflow: 'auto' }}>
+    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && !locked && close()}>
+      <div className="dialog col deploy-dialog" role="dialog" aria-label={t('deploy.upload_title')} data-stage={stage}>
         <h3>{t('deploy.upload_title')}</h3>
+        <p className="faint small">{t(`deploy.stage.${stage}`)}</p>
+        {stage === 'settings' && <>
         <p className="faint small">{t('deploy.upload_about')}</p>
         {!work ? (
           <div className="warn-text">{t('deploy.choose_work')}</div>
@@ -143,7 +185,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             <div className="row" style={{ flexWrap: 'wrap', alignItems: 'end' }}>
               <label>
                 {t('settings.deploy')}
-                <select value={target} disabled={running} onChange={(e) => (setTarget(e.target.value), setPlan(null))}>
+                <select value={target} disabled={locked} onChange={(e) => { changed(); setTarget(e.target.value); }}>
                   {list.map((x) => (
                     <option key={x.id} value={x.id}>
                       {x.name} {x.ready ? '' : `(${t('deploy.no_keys')})`}
@@ -153,9 +195,9 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
               </label>
               <label style={{ flex: 1, minWidth: 260 }}>
                 {t('deploy.path_format')}
-                <input className="mono" value={format} disabled={running} onChange={(e) => (setFormat(e.target.value), setPlan(null))} />
+                <input className="mono" value={format} disabled={locked} onChange={(e) => { changed(); setFormat(e.target.value); }} />
               </label>
-              <button disabled={running} onClick={keepForWork} title={t('deploy.keep_for_work_hint')}>
+              <button disabled={locked} onClick={keepForWork} title={t('deploy.keep_for_work_hint')}>
                 {t('deploy.keep_for_work')}
               </button>
             </div>
@@ -166,7 +208,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                 <label key={r.id} className="row" style={{ flexDirection: 'row', gap: 4 }}>
                   <input
                     type="checkbox"
-                    disabled={running}
+                    disabled={locked}
                     checked={!ratings || ratings.includes(r.id)}
                     onChange={(e) => {
                       const all = (rules.data?.ratings ?? []).map((x) => x.id);
@@ -174,7 +216,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                       if (e.target.checked) now.add(r.id);
                       else now.delete(r.id);
                       setRatings(now.size === all.length ? null : [...now]);
-                      setPlan(null);
+                      changed();
                     }}
                   />
                   {r.name}
@@ -186,7 +228,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
               {chosen && /\.r2\.dev(\/|$)/i.test(chosen.public_url) && <span className="warn-text">{t('deploy.r2dev')}</span>}
             </div>
             <div className="row">
-              <button className="primary" disabled={busy || running || !target || noRatings} onClick={() => { setRun(null); preview(); }}>
+              <button className="primary" disabled={busy || locked || !target || noRatings} onClick={() => { setRun(null); preview(); }}>
                 {plan ? t('deploy.preview_again') : t('deploy.preview')}
               </button>
               {noRatings && <span className="warn-text small">{t('deploy.no_ratings')}</span>}
@@ -198,9 +240,15 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             </div>
           </>
         )}
+        </>}
 
-        {plan && (
+        {(stage === 'preview' || (stage === 'result' && showPreview)) && plan && (
           <>
+            {stage === 'preview' && <div className="row deploy-stage-actions">
+              <button disabled={locked} onClick={backToSettings}>{t('deploy.back_settings')}</button>
+              <button disabled={busy || locked} onClick={preview}>{t('deploy.preview_again')}</button>
+              <span className="faint small">{STATUSES.filter((s) => plan.counts[s]).map((s) => `${t(`deploy.status.${s}`)} ${plan.counts[s]}`).join(' · ')}</span>
+            </div>}
             {plan.missing.length > 0 && (
               <details>
                 <summary className="warn-text small">{t('gallery.export_missing', { n: plan.missing.length })}</summary>
@@ -211,7 +259,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             )}
             {(plan.counts.no_code ?? 0) > 0 && <span className="warn-text small">{t('deploy.no_code_hint')}</span>}
             {(plan.counts.clash ?? 0) > 0 && <span className="warn-text small">{t('deploy.clash_hint')}</span>}
-            <div style={{ maxHeight: '38vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+            <div className="deploy-preview-list">
               <table className="plain deploy-rows">
                 <thead>
                   <tr>
@@ -234,10 +282,10 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                         <input
                           className="mono small"
                           style={{ width: '100%', minWidth: 260 }}
-                          disabled={running}
+                          disabled={stage !== 'preview' || locked}
                           placeholder={row.auto_path ?? t('deploy.type_path')}
                           value={paths[row.source] ?? (row.edited ? row.path ?? '' : '')}
-                          onChange={(e) => setPaths({ ...paths, [row.source]: e.target.value })}
+                          onChange={(e) => { request.current += 1; setBusy(false); setPaths({ ...paths, [row.source]: e.target.value }); setPlanBody(null); }}
                           title={row.path ?? ''}
                         />
                       </td>
@@ -249,11 +297,12 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                 </tbody>
               </table>
             </div>
+            {!freshPlan && stage === 'preview' && <span className="warn-text small">{t('deploy.preview_stale')}</span>}
             {Object.keys(paths).length > 0 && <span className="faint small">{t('deploy.edited_hint')}</span>}
           </>
         )}
 
-        {run && (
+        {(stage === 'progress' || stage === 'result') && run && (
           <div className="col" style={{ gap: 6 }}>
             <div className="row">
               <span className="grow">
@@ -266,9 +315,17 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             <div className="progress">
               <div style={{ width: `${run.total ? (run.done * 100) / run.total : 0}%` }} />
             </div>
+            {running && run.current && <span className="small mono" style={{ overflowWrap: 'anywhere' }}>{run.current.path} · {t(`deploy.status.${run.current.status}`)}</span>}
             {finished && (
               <>
                 <span className="small">{t('deploy.result', { ok: uploaded.length, failed: failed.length })} · {t('deploy.skipped', { n: skipped.length })}</span>
+                {run.results.length > 0 && <div className="deploy-result-list small">
+                  {run.results.map((r) => <div key={`${r.source}-${r.path}`} className="deploy-result-row">
+                    <span className={`chip small ${r.ok ? 'ok' : 'warn'}`}>{t(`deploy.status.${r.status}`)}</span>
+                    <span className="mono" style={{ overflowWrap: 'anywhere' }}>{r.path}</span>
+                    {r.ok && r.url && <a href={r.url} target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>{r.url}</a>}
+                  </div>)}
+                </div>}
                 {run.results.filter((r) => r.log_error).map((r) => <span key={r.path} className="warn-text small">{t('deploy.log_failed')}: {r.path} — {msgText(r.log_error)}</span>)}
                 {failed.length > 0 && (
                   <div className="col small">
@@ -302,8 +359,8 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
             {(history.data?.records ?? []).map((r, i) => <div key={`${r.at}-${i}`}><span className="faint">{r.at} · {r.target_name}</span> · <span className="mono">{r.path}</span> · {t(`deploy.status.${r.status}`)}{r.error && <span className="error-text"> — {msgText(r.error)}</span>}</div>)}
           </div>
         </details>
-        <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          {plan && urls.length > 0 && (
+        <div className="row deploy-footer" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {stage === 'result' && urls.length > 0 && (
             <>
               <button onClick={() => navigator.clipboard.writeText(urls.join('\n')).then(() => toast({ text: t('deploy.urls_copied', { n: urls.length }) }))}>
                 {t('deploy.copy_urls')}
@@ -311,12 +368,17 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
               <button onClick={() => saveText(`${work}-urls.txt`, urls.join('\n') + '\n')}>{t('deploy.save_urls')}</button>
             </>
           )}
-          <button disabled={running} onClick={close}>
+          <button disabled={locked} onClick={close}>
             {t('common.close')}
           </button>
-          <button className="primary" disabled={busy || running || !plan || sendable === 0 || noRatings} onClick={() => upload()}>
+          {stage === 'preview' && <button className="primary" disabled={busy || locked || !freshPlan || sendable === 0 || noRatings} onClick={() => upload()}>
             {t('deploy.upload_candidates', { n: sendable, m: plan?.counts.existing ?? 0 })}
-          </button>
+          </button>}
+          {stage === 'result' && <>
+            <button disabled={locked} onClick={() => setShowPreview((value) => !value)}>{t(showPreview ? 'deploy.hide_preview' : 'deploy.show_preview')}</button>
+            <button disabled={locked} onClick={() => { setShowPreview(false); setStage('settings'); }}>{t('deploy.back_settings')}</button>
+            <button className="primary" disabled={busy || locked} onClick={() => { setShowPreview(false); setRun(null); setStage('settings'); preview(); }}>{t('deploy.preview_again')}</button>
+          </>}
         </div>
       </div>
     </div>
