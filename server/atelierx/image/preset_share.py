@@ -12,13 +12,16 @@ import io
 import json
 import secrets
 import time
+import uuid
 import zipfile
 from pathlib import Path, PureWindowsPath
 
 from .. import __version__
 from ..core.i18n import Msg
+from ..core.works import WorkStore
 from . import library
-from .util import atomic_json
+from .util import atomic_json, read_json
+from .uuid_migration import canonical_for_save, resolve
 
 MANIFEST = 'atelierx-presets.json'
 KIND = 'atelierx-style-presets'
@@ -73,6 +76,7 @@ def export(paths, ids, index=None):
         raise ValueError(Msg('server.presets.share.none', 'Choose the style presets to export.'))
     out = io.BytesIO()
     listing = []
+    commons = {}
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
         for preset in chosen:
             ident = preset['id']
@@ -92,10 +96,31 @@ def export(paths, ids, index=None):
                     'resources': _resources(doc, index),
                 }
             )
+            for common_id in doc['common']:
+                if common_id in commons:
+                    continue
+                global_items = (read_json(paths.data / 'image' / 'common.json', {}) or {}).get('items') or {}
+                item = global_items.get(common_id)
+                if item is None:
+                    for work in WorkStore(paths).all():
+                        items = (read_json(work.app / 'image' / 'common.json', {}) or {}).get('items') or {}
+                        if common_id in items:
+                            item = items[common_id]
+                            break
+                if isinstance(item, dict):
+                    commons[common_id] = item
+        for common_id, item in commons.items():
+            archive.writestr(f'common/{common_id}.json', json.dumps(item, ensure_ascii=False, indent=2))
         archive.writestr(
             MANIFEST,
             json.dumps(
-                {'kind': KIND, 'schema_version': 1, 'app_version': __version__, 'presets': listing},
+                {
+                    'kind': KIND,
+                    'schema_version': 2,
+                    'app_version': __version__,
+                    'presets': listing,
+                    'common': list(commons),
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
@@ -177,6 +202,16 @@ class PresetImports:
             )
         }
         items, docs = [], {}
+        commons = {}
+        for ident in manifest.get('common') or []:
+            if not isinstance(ident, str) or not library.ITEM_ID.fullmatch(ident):
+                continue
+            try:
+                item = json.loads(_read(archive, f'common/{ident}.json', MAX_PRESET_FILE, budget))
+            except (KeyError, ValueError):
+                continue
+            if isinstance(item, dict):
+                commons[ident] = item
         for entry in manifest['presets'][:MAX_PRESETS]:
             ident = str((entry or {}).get('id', ''))
             if not library.ITEM_ID.match(ident) or any(_key(ident) == _key(seen) for seen in docs):
@@ -212,7 +247,7 @@ class PresetImports:
                     'name': docs[ident][0]['name'],
                     'service': docs[ident][0]['service'],
                     'family': docs[ident][0]['family'],
-                    'exists': _key(ident) in here,
+                    'exists': _key(resolve(self.paths, 'presets', ident)) in here,
                     'preview': preview is not None,
                     'missing': missing,
                 }
@@ -222,7 +257,7 @@ class PresetImports:
         now = time.monotonic()
         self.pending = {k: v for k, v in self.pending.items() if now - v['at'] < PENDING_SECONDS}
         token = secrets.token_hex(12)
-        self.pending[token] = {'at': now, 'docs': docs}
+        self.pending[token] = {'at': now, 'docs': docs, 'common': commons}
         return {
             'token': token,
             'app_version': manifest.get('app_version'),
@@ -230,6 +265,7 @@ class PresetImports:
             'checked': bool(catalog.get('connected')),
         }
 
+    @library.locked
     def apply(self, token, choices):
         """``choices``: ``{id: 'add' | 'replace' | 'skip' | {'as': new id}}``. Returns the ids written."""
         pending = self.pending.get(token)
@@ -245,18 +281,20 @@ class PresetImports:
         plan, claimed = [], set()
         for ident, (doc, preview, preview_meta) in pending['docs'].items():
             choice = (choices or {}).get(ident, 'add')
-            target = ident
+            target = resolve(self.paths, 'presets', ident)
             if isinstance(choice, dict):
                 target = str(choice.get('as', ''))
                 if not library.ITEM_ID.match(target) or _key(target) in stored_ids or _key(target) in claimed:
                     raise ValueError(
                         Msg('server.presets.share.bad_id', 'The id {id} is taken or not usable.', id=target)
                     )
-            elif choice == 'skip' or (choice == 'add' and _key(ident) in stored_ids):
+            elif choice == 'copy':
+                target = str(uuid.uuid4())
+            elif choice == 'skip' or (choice == 'add' and _key(target) in stored_ids):
                 continue
             elif choice == 'replace':
                 # Replace the preset that is here under its own spelling of the id.
-                target = stored_ids.get(_key(ident), ident)
+                target = stored_ids.get(_key(target), target)
             elif choice != 'add':
                 raise ValueError(
                     Msg('server.presets.share.bad_choice', 'Choose add, replace or skip for each preset.')
@@ -269,7 +307,12 @@ class PresetImports:
             plan.append((target, doc, preview, preview_meta))
         self.pending.pop(token, None)
         written = []
+        for ident, item in pending.get('common', {}).items():
+            canonical = canonical_for_save(self.paths, 'common', ident)
+            if canonical not in library.items(self.paths, None, 'common'):
+                library.save_item(self.paths, None, 'common', 'global', canonical, item)
         for target, doc, preview, preview_meta in plan:
+            target = canonical_for_save(self.paths, 'presets', target)
             folder = Path(self.paths.data) / 'image' / 'presets'
             folder.mkdir(parents=True, exist_ok=True)
             # The preview comes along with its record, so it is stale here exactly when it would be there.
@@ -278,6 +321,9 @@ class PresetImports:
                 stored['preview'] = preview_meta
             else:
                 stored.pop('preview', None)
+            stored['common'] = [
+                canonical_for_save(self.paths, 'common', ident) for ident in stored.get('common') or []
+            ]
             atomic_json(folder / f'{target}.json', library.preset_doc(stored, target))
             preview_path = library.preview_file(self.paths, target)
             if preview:

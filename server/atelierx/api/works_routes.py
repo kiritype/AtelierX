@@ -1,8 +1,12 @@
 """Works: list, create, change, delete, duplicate, samples, the data trash and one work."""
 
+import shutil
+
 from starlette.routing import Route
 
 from ..core.snapshots import Snapshots
+from ..core.works import trash_bundle
+from ..image.uuid_migration import FileCheckpoint, migrate_runtime, migrate_runtime_guarded
 from .common import body, ok, st, work_of
 
 
@@ -33,8 +37,7 @@ async def works_patch(request):
     fields = {
         k: v
         for k, v in data.items()
-        if k
-        in ('tags', 'scale', 'language', 'overrides', 'char', 'order', 'llm_consent')
+        if k in ('tags', 'scale', 'language', 'overrides', 'char', 'order', 'llm_consent')
     }
     if fields:
         work.update_doc(fields)
@@ -59,8 +62,19 @@ async def samples_list(request):
 
 async def samples_install(request):
     s = st(request)
-    work = s.works.install_sample(request.path_params['name'])
-    Snapshots(work).create('import', '샘플 설치')
+    with s.admission.exclusive(s.busy_work):
+        before = set(s.paths.works.iterdir()) if s.paths.works.is_dir() else set()
+        try:
+            work = s.works.install_sample(request.path_params['name'])
+            migrate_runtime_guarded(s)
+        except BaseException:
+            s.admission.seal()
+            for folder in set(s.paths.works.iterdir()) - before:
+                shutil.rmtree(folder)
+            migrate_runtime(s.image)
+            s.admission.unseal()
+            raise
+        Snapshots(work).create('import', '샘플 설치')
     return ok(s.works.card(work), 201)
 
 
@@ -69,7 +83,26 @@ async def data_trash_list(request):
 
 
 async def data_trash_restore(request):
-    return ok(st(request).works.restore(request.path_params['bid']))
+    s = st(request)
+    with s.admission.exclusive(s.busy_work):
+        bundle = trash_bundle(s.paths.data_trash, request.path_params['bid'])
+        checkpoint = FileCheckpoint(s.paths, [bundle])
+        before = set(s.paths.works.iterdir()) if s.paths.works.is_dir() else set()
+        try:
+            result = s.works.restore(request.path_params['bid'])
+            migrate_runtime_guarded(s)
+        except BaseException:
+            s.admission.seal()
+            for folder in set(s.paths.works.iterdir()) - before:
+                shutil.rmtree(folder)
+            checkpoint.rollback()
+            migrate_runtime(s.image)
+            s.admission.unseal()
+            raise
+        finally:
+            if not s.admission.quarantined:
+                checkpoint.close()
+    return ok(result)
 
 
 async def data_trash_purge(request):

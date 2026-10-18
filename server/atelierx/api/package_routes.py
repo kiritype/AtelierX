@@ -1,6 +1,8 @@
 """Work and settings packages (#46, #47): pack to a ZIP download, upload one to look into, then bring it in."""
 
+import copy
 import json
+import zipfile
 
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
@@ -9,6 +11,7 @@ from starlette.routing import Route
 
 from ..core import packages
 from ..core.i18n import wire
+from ..image.uuid_migration import FileCheckpoint, migrate_runtime, migrate_runtime_guarded
 
 
 def _packages(request):
@@ -68,19 +71,64 @@ async def upload(request):
 
 async def works_import(request):
     data = await _body(request)
-    return _ok(await run_in_threadpool(_packages(request).import_works, data.get('token'), data.get('works')))
+    s = request.app.state.app
+    with s.admission.exclusive(s.busy_work):
+        pk = _packages(request)
+        try:
+            result = await run_in_threadpool(pk.import_works, data.get('token'), data.get('works'))
+            await run_in_threadpool(migrate_runtime_guarded, s)
+        except BaseException:
+            s.admission.seal()
+            await run_in_threadpool(pk.rollback_last_work_import)
+            await run_in_threadpool(migrate_runtime, s.image)
+            s.admission.unseal()
+            raise
+    return _ok(result)
 
 
 async def settings_import(request):
     data = await _body(request)
-    return _ok(
-        await run_in_threadpool(
-            _packages(request).import_settings,
-            data.get('token'),
-            data.get('areas'),
-            data.get('vault_password'),
-        )
-    )
+    s = request.app.state.app
+    with s.admission.exclusive(s.busy_work):
+        pk = _packages(request)
+        targets = []
+        with zipfile.ZipFile(pk._upload(data.get('token'))) as archive:
+            members = set(archive.namelist())
+            for area in data.get('areas') or []:
+                if area not in packages.SETTINGS:
+                    continue
+                root_name, inner, kind = packages.SETTINGS[area]
+                target = getattr(s.paths, root_name) / inner
+                if kind == 'files':
+                    for member in members:
+                        if not member.startswith(f'settings/{area}/'):
+                            continue
+                        parts = packages._safe_member(member)
+                        if len(parts) == 3 and parts[2] != 'uuid-map.json':
+                            targets.append(target / parts[2])
+                else:
+                    targets.append(target)
+        checkpoint = FileCheckpoint(s.paths, targets)
+        vault_secrets = copy.deepcopy(s.vault._secrets)
+        try:
+            result = await run_in_threadpool(
+                pk.import_settings,
+                data.get('token'),
+                data.get('areas'),
+                data.get('vault_password'),
+            )
+            await run_in_threadpool(migrate_runtime_guarded, s)
+        except BaseException:
+            s.admission.seal()
+            checkpoint.rollback()
+            s.vault._secrets = vault_secrets
+            await run_in_threadpool(migrate_runtime, s.image)
+            s.admission.unseal()
+            raise
+        finally:
+            if not s.admission.quarantined:
+                checkpoint.close()
+    return _ok(result)
 
 
 def routes():

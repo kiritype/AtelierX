@@ -264,7 +264,9 @@ def image_ok(data):
 
 
 def image_range_ok(data):
-    return isinstance(data, dict) and (isinstance(data.get('prompt'), list) or isinstance(data.get('slots'), dict))
+    return isinstance(data, dict) and (
+        isinstance(data.get('prompt'), list) or isinstance(data.get('slots'), dict)
+    )
 
 
 def tags(values):

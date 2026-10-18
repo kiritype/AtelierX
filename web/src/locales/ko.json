@@ -703,6 +703,7 @@
   "lib.negative": "negative",
   "lib.negative_tags": "negative 태그",
   "lib.new_id": "새 항목 id (영문·숫자·_·-)",
+  "lib.new_name": "새 항목 이름",
   "lib.id_taken": "이미 쓰는 ID입니다: {id}",
   "lib.scope_move_hint": "저장하면 전역으로 옮겨지고 이 작품의 항목은 지워집니다.",
   "lib.scope_override_hint": "이 작품에서만 전역 항목을 덮어씁니다. 전역 항목은 그대로 남습니다.",

@@ -190,14 +190,13 @@ export default function ImageLab({ workId, active = true }: { workId?: string; a
   }
 
   async function savePreset() {
-    const id = prompt(t('lab.preset_id'));
-    if (!id) return;
+    const name = prompt(t('lib.new_name'))?.trim();
+    if (!name) return;
+    const id = crypto.randomUUID();
     try {
-      // Saving over a style preset keeps its artist tags, tags and common picks (#169).
-      const existing = presets.data?.find((p) => p.id === id);
-      await put(`/api/image/presets/${encodeURIComponent(id)}`, { ...existing, name: existing?.name ?? id, service: 'comfyui', family: draft.settings.family ?? 'anima', settings: { ...draft.settings, seed: -1 } });
+      await put(`/api/image/presets/${encodeURIComponent(id)}`, { name, service: 'comfyui', family: draft.settings.family ?? 'anima', settings: { ...draft.settings, seed: -1 } });
       qc.invalidateQueries({ queryKey: ['image-presets'] });
-      toast({ text: t('lab.preset_saved', { id }) });
+      toast({ text: t('lab.preset_saved', { id: name }) });
     } catch (err) {
       fail(err);
     }

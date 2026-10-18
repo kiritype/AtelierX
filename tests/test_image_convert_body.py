@@ -59,14 +59,20 @@ def test_whole_text_converts_without_sections_and_quotes_its_sources(unlocked):
     design = doc['candidates'][0]['design']
     assert design['appearance']['prompt']
     # The mock quotes the first line; it is in the text, so it is the source.
-    assert design['appearance']['source'] == {'spans': [{'text': '한서윤은 열일곱 살 고등학생이다.', 'by': 'auto'}]}
+    assert design['appearance']['source'] == {
+        'spans': [{'text': '한서윤은 열일곱 살 고등학생이다.', 'by': 'auto'}]
+    }
     assert len(design['outfits']) == 1
     _apply(c, wid, draft)
     status = c.get(url).json()['status']
     assert set(status.values()) == {'fresh'}
     # No section check any more.
     issues = c.get(f'/api/works/{wid}/check').json()
-    assert not [i for i in (issues.get('issues', issues) if isinstance(issues, dict) else issues) if 'section' in str(i)]
+    assert not [
+        i
+        for i in (issues.get('issues', issues) if isinstance(issues, dict) else issues)
+        if 'section' in str(i)
+    ]
 
 
 def test_reconverting_pairs_outfits_by_name_and_keeps_ids(unlocked):
@@ -127,7 +133,13 @@ def test_only_the_part_whose_text_changed_goes_stale(unlocked):
     (key,) = c.get(url).json()['design']['outfits']
 
     # An unrelated paragraph and line breaks inside a piece change nothing.
-    _rewrite(c, wid, BODY.replace('어릴 때는 머리가 짧았다.', '어릴 때는 머리가 아주 짧았다.').replace('하나로 묶고', '하나로\n묶고'))
+    _rewrite(
+        c,
+        wid,
+        BODY.replace('어릴 때는 머리가 짧았다.', '어릴 때는 머리가 아주 짧았다.').replace(
+            '하나로 묶고', '하나로\n묶고'
+        ),
+    )
     assert c.get(url).json()['status'] == {'appearance': 'fresh', f'outfit:{key}': 'fresh'}
 
     _rewrite(c, wid, BODY.replace('체크 치마', '주름 치마'))
@@ -226,7 +238,9 @@ def test_a_range_overlapping_a_piece_is_not_added_twice(unlocked):
     _apply(c, wid, _convert(c, wid, url)[0])
     # The mock quoted the whole first line; choosing part of it marks that piece as chosen instead of adding another.
     first = '한서윤은 열일곱 살 고등학생이다.'
-    _, doc = _convert(c, wid, url, range={'part': 'appearance', 'add': True, 'text': '열일곱 살 고등학생이다'})
+    _, doc = _convert(
+        c, wid, url, range={'part': 'appearance', 'add': True, 'text': '열일곱 살 고등학생이다'}
+    )
     assert doc['candidates'][0]['design']['appearance']['source']['spans'] == [{'text': first, 'by': 'pick'}]
     # A range holding a piece replaces it.
     wider = first + '\n검은 긴 머리를 하나로 묶고 다닌다.'

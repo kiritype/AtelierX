@@ -3,10 +3,11 @@
 import json
 
 from atelierx.image import library
+from image_ids import image_id
 
 
 def _style(c, wid, ident, kind='compositions', **item):
-    current = c.get(f'/api/image/library/{kind}?work={wid}').json().get(ident)
+    current = c.get(f'/api/image/library/{kind}?work={wid}').json().get(image_id(c, kind, ident, wid))
     return c.put(
         f'/api/image/library/{kind}/{ident}',
         json={
@@ -25,16 +26,16 @@ def test_items_keep_a_group_and_several_known_targets(unlocked):
     assert [t['id'] for t in rules['targets']] == ['sdxl', 'anima', 'novelai', 'pixai']
 
     saved = _style(c, wid, 'film', group=' 화면 효과 ', targets=['sdxl', 'pixai', 'sdxl', 'nope'])
-    assert saved['film']['group'] == '화면 효과'
-    assert saved['film']['targets'] == ['sdxl', 'pixai']
-    plain = _style(c, wid, 'plain')['plain']
+    assert saved[image_id(c, 'compositions', 'film', wid)]['group'] == '화면 효과'
+    assert saved[image_id(c, 'compositions', 'film', wid)]['targets'] == ['sdxl', 'pixai']
+    plain = _style(c, wid, 'plain')[image_id(c, 'compositions', 'plain', wid)]
     assert plain['group'] == '' and plain['targets'] == []
 
     # The default common prompts come grouped, and the quality tags are for the SDXL-style targets.
     common = c.get(f'/api/image/library/common?work={wid}').json()
-    assert common['quality']['group'] == '품질'
-    assert common['quality']['targets'] == ['sdxl', 'anima', 'pixai']
-    assert common['background_simple']['targets'] == []
+    assert common[image_id(c, 'common', 'quality', wid)]['group'] == '품질'
+    assert common[image_id(c, 'common', 'quality', wid)]['targets'] == ['sdxl', 'anima', 'pixai']
+    assert common[image_id(c, 'common', 'background_simple', wid)]['targets'] == []
 
 
 def test_files_from_before_read_their_model_family_as_targets(unlocked, paths):
@@ -96,11 +97,18 @@ def test_the_target_list_can_be_changed_and_keeps_one(unlocked):
         },
     ).json()
     assert [t['id'] for t in rules['targets']] == ['sdxl', 'flux']
-    assert _style(c, wid, 'flux_look', targets=['flux'])['flux_look']['targets'] == ['flux']
+    assert _style(c, wid, 'flux_look', targets=['flux'])[image_id(c, 'compositions', 'flux_look', wid)][
+        'targets'
+    ] == ['flux']
 
     # Removing a target leaves the items alone; one written only for it now fits every target.
     c.put('/api/image/library/rules/targets', json={'targets': [{'id': 'sdxl', 'name': 'SDXL·IL'}]})
-    assert c.get(f'/api/image/library/compositions?work={wid}').json()['flux_look']['targets'] == []
+    assert (
+        c.get(f'/api/image/library/compositions?work={wid}').json()[
+            image_id(c, 'compositions', 'flux_look', wid)
+        ]['targets']
+        == []
+    )
 
     refused = c.put('/api/image/library/rules/targets', json={'targets': []})
     assert refused.status_code == 400

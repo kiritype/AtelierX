@@ -23,6 +23,11 @@ DEFAULT_PROVIDERS = {
 
 
 def ensure_layout(paths):
+    # A power loss during the image ID transaction must be undone before any
+    # default refresh or legacy style conversion can observe mixed IDs.
+    from ..image.uuid_migration import recover as recover_image_ids
+
+    recover_image_ids(paths)
     for folder in (paths.config, paths.state, paths.data, paths.output, paths.works, paths.platforms):
         folder.mkdir(parents=True, exist_ok=True)
     marker = paths.data / 'atelierx.json'
@@ -39,6 +44,9 @@ def ensure_layout(paths):
     fill_default_codes(paths)
     # Style fragments became the style presets' artist tags (#169).
     migrate_styles(paths)
+    from ..image.uuid_migration import migrate as migrate_image_ids
+
+    migrate_image_ids(paths)
     tags = paths.data / 'tags'
     if not tags.exists() and (paths.defaults / 'tags').is_dir():
         tags.mkdir(parents=True)

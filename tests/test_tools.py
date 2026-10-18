@@ -65,7 +65,10 @@ def test_archive_restores_without_changing_files_masks_or_gallery_references(unl
     gallery_path.write_bytes(png((200, 10, 10)))
     gallery_item = c.post('/api/image/tools/gallery', json={'paths': ['gallery.png']}).json()['items'][0]
     rt.tools.set_mask(uploaded['id'], Image.new('L', (40, 30), 255), 'edited')
-    assert c.post('/api/image/tools/censor', json={'id': uploaded['id'], 'treatment': 'color'}).status_code == 200
+    assert (
+        c.post('/api/image/tools/censor', json={'id': uploaded['id'], 'treatment': 'color'}).status_code
+        == 200
+    )
     result_path = rt.tools.file(rt.tools.items[-1])
     files = [rt.tools.file(uploaded), rt.tools.mask_path(uploaded['id'], 'censor'), gallery_path, result_path]
     before = [hashlib.sha256(path.read_bytes()).hexdigest() for path in files]
@@ -84,12 +87,17 @@ def test_archive_restores_without_changing_files_masks_or_gallery_references(unl
     assert restarted.get(uploaded['id'])['mask']['source'] == 'edited'
     assert c.post('/api/image/tools/gallery', json={'paths': ['gallery.png']}).json()['restored'] == 1
     assert c.get('/api/image/tools/items?archived=1').json()['total'] == 1
-    assert c.post('/api/image/tools/archive', json={'ids': [uploaded['id']], 'archived': False}).status_code == 200
+    assert (
+        c.post('/api/image/tools/archive', json={'ids': [uploaded['id']], 'archived': False}).status_code
+        == 200
+    )
     assert c.get('/api/image/tools/items').json()['total'] == 3
     assert [hashlib.sha256(path.read_bytes()).hexdigest() for path in files] == before
 
     c.post('/api/image/tools/archive', json={'ids': [uploaded['id']], 'archived': True})
-    monkeypatch.setattr(rt.tools, '_save_archive', lambda: (_ for _ in ()).throw(OSError('read-only sidecar')))
+    monkeypatch.setattr(
+        rt.tools, '_save_archive', lambda: (_ for _ in ()).throw(OSError('read-only sidecar'))
+    )
     assert c.post('/api/image/tools/remove', json={'ids': [uploaded['id']]}).status_code == 200
     assert not files[0].exists() and not files[1].exists()
     assert uploaded['id'] not in ToolWorkspace(paths, rt.gallery).ids(archived=True)['ids']

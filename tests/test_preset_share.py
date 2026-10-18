@@ -2,9 +2,12 @@
 
 import io
 import json
+import uuid
 import zipfile
 
 from PIL import Image
+
+from image_ids import image_id
 
 
 def _preset(c, ident, **extra):
@@ -23,6 +26,7 @@ def _preset(c, ident, **extra):
 
 
 def _with_preview(paths, ident):
+    ident = image_id(paths, 'presets', ident)
     folder = paths.data / 'image' / 'presets'
     buffer = io.BytesIO()
     Image.new('RGB', (8, 8), (10, 20, 30)).save(buffer, format='WEBP')
@@ -37,10 +41,14 @@ def test_export_packs_the_chosen_presets_their_previews_and_what_they_need(unloc
     _preset(c, 'ink')
     _preset(c, 'water', service='novelai', settings={'model': 'nai-diffusion-4-5-full'})
     _with_preview(paths, 'ink')
-    response = c.get('/api/image/presets/export', params={'ids': 'ink'})
+    response = c.get('/api/image/presets/export', params={'ids': image_id(c, 'presets', 'ink')})
     assert response.status_code == 200 and 'attachment' in response.headers['content-disposition']
     archive = zipfile.ZipFile(io.BytesIO(response.content))
-    assert sorted(archive.namelist()) == ['atelierx-presets.json', 'presets/ink.json', 'presets/ink.webp']
+    assert sorted(archive.namelist()) == [
+        'atelierx-presets.json',
+        f'presets/{image_id(c, "presets", "ink")}.json',
+        f'presets/{image_id(c, "presets", "ink")}.webp',
+    ]
     manifest = json.loads(archive.read('atelierx-presets.json'))
     assert manifest['kind'] == 'atelierx-style-presets'
     (entry,) = manifest['presets']
@@ -51,7 +59,7 @@ def test_export_packs_the_chosen_presets_their_previews_and_what_they_need(unloc
     ]
     # No ids: everything.
     every = zipfile.ZipFile(io.BytesIO(c.get('/api/image/presets/export').content))
-    assert 'presets/water.json' in every.namelist()
+    assert f'presets/{image_id(c, "presets", "water")}.json' in every.namelist()
 
 
 def test_import_shows_each_preset_first_then_applies_the_choices(unlocked, paths):
@@ -70,19 +78,34 @@ def test_import_shows_each_preset_first_then_applies_the_choices(unlocked, paths
     }
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     items = {i['id']: i for i in seen['items']}
-    assert items['ink']['exists'] is True and items['water']['exists'] is False
-    assert items['ink']['preview'] is True
+    assert (
+        items[image_id(c, 'presets', 'ink')]['exists'] is True
+        and items[image_id(c, 'presets', 'water')]['exists'] is False
+    )
+    assert items[image_id(c, 'presets', 'ink')]['preview'] is True
     # This PC has the model but not the LoRA.
-    assert items['ink']['missing'] == [{'kind': 'lora', 'name': 'anima\\ink.safetensors'}]
+    assert items[image_id(c, 'presets', 'ink')]['missing'] == [
+        {'kind': 'lora', 'name': 'anima\\ink.safetensors'}
+    ]
+    copied_id = str(uuid.uuid4())
     done = c.post(
         '/api/image/presets/import',
-        json={'token': seen['token'], 'choices': {'ink': {'as': 'ink_shared'}, 'water': 'add'}},
+        json={
+            'token': seen['token'],
+            'choices': {
+                image_id(c, 'presets', 'ink'): {'as': copied_id},
+                image_id(c, 'presets', 'water'): 'add',
+            },
+        },
     ).json()
-    assert sorted(done['written']) == ['ink_shared', 'water']
+    assert set(done['written']) == {copied_id, image_id(c, 'presets', 'water')}
     presets = {p['id']: p for p in done['presets']}
-    assert presets['ink']['name'] == 'changed here' and presets['ink_shared']['name'] == 'ink'
+    assert (
+        presets[image_id(c, 'presets', 'ink')]['name'] == 'changed here'
+        and presets[copied_id]['name'] == 'ink'
+    )
     # The preview came along with its record.
-    assert (paths.data / 'image' / 'presets' / 'ink_shared.webp').is_file() and presets['ink_shared'][
+    assert (paths.data / 'image' / 'presets' / f'{copied_id}.webp').is_file() and presets[copied_id][
         'preview_url'
     ]
     # A token is used once.
@@ -97,20 +120,23 @@ def test_replace_skip_and_bad_packages(unlocked):
     _preset(c, 'ink', name='local')
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     skipped = c.post(
-        '/api/image/presets/import', json={'token': seen['token'], 'choices': {'ink': 'skip'}}
+        '/api/image/presets/import',
+        json={'token': seen['token'], 'choices': {image_id(c, 'presets', 'ink'): 'skip'}},
     ).json()
     assert skipped['written'] == [] and skipped['presets'][0]['name'] == 'local'
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     replaced = c.post(
-        '/api/image/presets/import', json={'token': seen['token'], 'choices': {'ink': 'replace'}}
+        '/api/image/presets/import',
+        json={'token': seen['token'], 'choices': {image_id(c, 'presets', 'ink'): 'replace'}},
     ).json()
-    assert replaced['written'] == ['ink'] and replaced['presets'][0]['name'] == 'ink'
+    assert replaced['written'] == [image_id(c, 'presets', 'ink')] and replaced['presets'][0]['name'] == 'ink'
     # "add" never overwrites a preset that is already here.
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     assert (
-        c.post('/api/image/presets/import', json={'token': seen['token'], 'choices': {'ink': 'add'}}).json()[
-            'written'
-        ]
+        c.post(
+            '/api/image/presets/import',
+            json={'token': seen['token'], 'choices': {image_id(c, 'presets', 'ink'): 'add'}},
+        ).json()['written']
         == []
     )
 
@@ -132,21 +158,21 @@ def _zip(files):
 
 
 def test_ids_that_differ_only_in_case_are_the_same_preset(unlocked, paths):
-    # Review of #196: on Windows "ink" and "Ink" are one file, so taking one for the other overwrote a preset.
     c = unlocked
-    _preset(c, 'Ink', name='kept')
-    _preset(c, 'water')
-    package = c.get('/api/image/presets/export', params={'ids': 'water'}).content
+    ink = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    water = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    _preset(c, ink, name='kept')
+    _preset(c, water)
+    package = c.get('/api/image/presets/export', params={'ids': water}).content
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     refused = c.post(
-        '/api/image/presets/import', json={'token': seen['token'], 'choices': {'water': {'as': 'ink'}}}
+        '/api/image/presets/import', json={'token': seen['token'], 'choices': {water: {'as': ink.upper()}}}
     )
     assert refused.status_code == 400 and refused.json()['error']['key'] == 'server.presets.share.bad_id'
     names = {p['id']: p['name'] for p in c.get('/api/image/presets').json()}
-    assert names['Ink'] == 'kept' and 'ink' not in names
-    # A package's own id in another case is "already here".
-    c.delete('/api/image/presets/water')
-    _preset(c, 'WATER', name='local')
+    assert names[ink] == 'kept' and ink.upper() not in names
+    c.delete(f'/api/image/presets/{water}')
+    _preset(c, water.upper(), name='local')
     seen = c.post('/api/image/presets/import/preview', content=package).json()
     assert seen['items'][0]['exists'] is True
 
@@ -159,13 +185,16 @@ def test_a_refused_choice_writes_nothing_and_keeps_the_package_for_another_try(u
     package = c.get('/api/image/presets/export').content
     c.put('/api/image/presets/ink', json={'name': 'changed here', 'service': 'comfyui'})
     seen = c.post('/api/image/presets/import/preview', content=package).json()
-    bad = {'ink': 'replace', 'water': {'as': 'ink'}}
+    ink = image_id(c, 'presets', 'ink')
+    water = image_id(c, 'presets', 'water')
+    bad = {ink: 'replace', water: {'as': ink}}
     refused = c.post('/api/image/presets/import', json={'token': seen['token'], 'choices': bad})
     assert refused.status_code == 400
-    assert {p['id']: p['name'] for p in c.get('/api/image/presets').json()}['ink'] == 'changed here'
-    fixed = {'ink': 'replace', 'water': {'as': 'water_2'}}
+    assert {p['id']: p['name'] for p in c.get('/api/image/presets').json()}[ink] == 'changed here'
+    copy_id = str(uuid.uuid4())
+    fixed = {ink: 'replace', water: {'as': copy_id}}
     done = c.post('/api/image/presets/import', json={'token': seen['token'], 'choices': fixed}).json()
-    assert sorted(done['written']) == ['ink', 'water_2']
+    assert set(done['written']) == {ink, copy_id}
 
 
 def test_members_that_unpack_too_large_are_refused_before_they_are_read(unlocked):
@@ -177,7 +206,7 @@ def test_members_that_unpack_too_large_are_refused_before_they_are_read(unlocked
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
         for name in package.namelist():
             archive.writestr(name, package.read(name))
-        archive.writestr('presets/ink.webp', b'\0' * (17 * 1024**2))
+        archive.writestr(f'presets/{image_id(c, "presets", "ink")}.webp', b'\0' * (17 * 1024**2))
     assert len(out.getvalue()) < 200_000
     refused = c.post('/api/image/presets/import/preview', content=out.getvalue())
     assert (

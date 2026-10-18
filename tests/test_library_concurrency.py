@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from atelierx.image import library
+from image_ids import image_id
 
 
 def test_concurrent_saves_preserve_both_items(paths, monkeypatch):
@@ -39,11 +40,13 @@ def test_concurrent_saves_preserve_both_items(paths, monkeypatch):
         assert not acquired, 'The read must hold the transaction lock until its write finishes.'
         for future in futures:
             future.result(timeout=5)
-    assert set(library.items(paths, None, 'common')) == {'one', 'two'}
+    assert set(library.items(paths, None, 'common')) == {
+        image_id(paths, 'common', key) for key in ('one', 'two')
+    }
 
 
 def test_failed_scope_move_restores_destination_and_keeps_source(paths, monkeypatch):
-    work = SimpleNamespace(app=paths.root / 'work' / '.atelierx')
+    work = SimpleNamespace(id='W001', app=paths.root / 'work' / '.atelierx')
     library.save_item(paths, work, 'common', 'global', 'one', {'name': 'global'})
     library.save_item(paths, work, 'common', 'work', 'one', {'name': 'work'})
     write = library.atomic_json
@@ -56,15 +59,17 @@ def test_failed_scope_move_restores_destination_and_keeps_source(paths, monkeypa
     monkeypatch.setattr(library, 'atomic_json', fail_source)
     with pytest.raises(OSError):
         library.save_item(paths, work, 'common', 'global', 'one', {'name': 'moved'}, 'work')
-    assert library.items(paths, work, 'common')['one']['name'] == 'work'
-    assert library.items(paths, None, 'common')['one']['name'] == 'global'
+    assert library.items(paths, work, 'common')[image_id(paths, 'common', 'one', work.id)]['name'] == 'work'
+    assert library.items(paths, None, 'common')[image_id(paths, 'common', 'one')]['name'] == 'global'
 
 
 def test_api_rejects_stale_save_delete_and_import(unlocked):
     c = unlocked
     url = '/api/image/library/common/unique'
-    first = c.put(url, json={'item': {'name': 'first'}}).json()['unique']
-    exported = c.get('/api/image/library-share/common/export?ids=unique').json()
+    first = c.put(url, json={'item': {'name': 'first'}}).json()[image_id(c, 'common', 'unique')]
+    exported = c.get(
+        '/api/image/library-share/common/export', params={'ids': image_id(c, 'common', 'unique')}
+    ).json()
     preview = c.post('/api/image/library-share/common/preview', json={'file': exported}).json()
     second = c.put(url, json={'item': {'name': 'second'}, 'revision': first['revision']})
     assert second.status_code == 200
@@ -76,18 +81,25 @@ def test_api_rejects_stale_save_delete_and_import(unlocked):
         '/api/image/library-share/common/import',
         json={
             'file': exported,
-            'choices': {'unique': 'overwrite'},
-            'revisions': {'unique': preview['items'][0]['revision']},
+            'choices': {image_id(c, 'common', 'unique'): 'overwrite'},
+            'revisions': {image_id(c, 'common', 'unique'): preview['items'][0]['revision']},
         },
     )
     assert response.status_code == 409
-    assert c.get('/api/image/library/common').json()['unique']['name'] == 'second'
-    assert c.delete(url, params={'revision': second.json()['unique']['revision']}).status_code == 200
+    assert c.get('/api/image/library/common').json()[image_id(c, 'common', 'unique')]['name'] == 'second'
+    assert (
+        c.delete(
+            url, params={'revision': second.json()[image_id(c, 'common', 'unique')]['revision']}
+        ).status_code
+        == 200
+    )
 
 
 def test_unrelated_item_change_does_not_invalidate_editor(unlocked):
     c = unlocked
-    one = c.put('/api/image/library/common/one', json={'item': {'name': 'one'}}).json()['one']
+    one = c.put('/api/image/library/common/one', json={'item': {'name': 'one'}}).json()[
+        image_id(c, 'common', 'one')
+    ]
     assert c.put('/api/image/library/common/two', json={'item': {'name': 'two'}}).status_code == 200
     assert (
         c.put(
@@ -105,7 +117,7 @@ def test_move_rejects_changed_destination_and_does_not_persist_revision(unlocked
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     url = '/api/image/library/common/moving'
-    original = c.put(url, json={'item': {'name': 'global'}}).json()['moving']
+    original = c.put(url, json={'item': {'name': 'global'}}).json()[image_id(c, 'common', 'moving')]
     override = c.put(
         url,
         json={
@@ -114,7 +126,7 @@ def test_move_rejects_changed_destination_and_does_not_persist_revision(unlocked
             'item': {'name': 'work'},
             'revision': original['revision'],
         },
-    ).json()['moving']
+    ).json()[image_id(c, 'common', 'moving')]
     assert (
         c.put(url, json={'item': {'name': 'new global'}, 'revision': original['revision']}).status_code == 200
     )
@@ -129,6 +141,16 @@ def test_move_rejects_changed_destination_and_does_not_persist_revision(unlocked
         },
     )
     assert refused.status_code == 409
-    assert c.get('/api/image/library/common', params={'work': wid}).json()['moving']['name'] == 'work'
-    assert c.get('/api/image/library/common').json()['moving']['name'] == 'new global'
-    assert 'revision' not in library.read_json(paths.data / 'image' / 'common.json')['items']['moving']
+    assert (
+        c.get('/api/image/library/common', params={'work': wid}).json()[image_id(c, 'common', 'moving')][
+            'name'
+        ]
+        == 'work'
+    )
+    assert c.get('/api/image/library/common').json()[image_id(c, 'common', 'moving')]['name'] == 'new global'
+    assert (
+        'revision'
+        not in library.read_json(paths.data / 'image' / 'common.json')['items'][
+            image_id(paths, 'common', 'moving')
+        ]
+    )

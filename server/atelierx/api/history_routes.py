@@ -4,6 +4,7 @@ from starlette.routing import Route
 
 from ..core import exporter
 from ..core.snapshots import Snapshots
+from ..image.uuid_migration import migrate_runtime, migrate_runtime_guarded
 from .common import body, ok, st, work_of
 
 
@@ -43,7 +44,25 @@ async def snap_file(request):
 
 async def snap_restore(request):
     data = await body(request)
-    return ok(Snapshots(work_of(request)).restore(request.path_params['sid'], data.get('paths')))
+    s = st(request)
+    with s.admission.exclusive(s.busy_work):
+        snaps = Snapshots(work_of(request))
+        for path, digest in snaps.get(request.path_params['sid'])['files'].items():
+            snaps.path_in_work(path)
+            snaps._object(digest)
+        for path in data.get('paths') or ():
+            snaps.path_in_work(path)
+        before = snaps.create('before_uuid_restore', force=True)['id']
+        try:
+            result = snaps.restore(request.path_params['sid'], data.get('paths'))
+            migrate_runtime_guarded(s)
+        except BaseException:
+            s.admission.seal()
+            snaps.restore(before)
+            migrate_runtime(s.image)
+            s.admission.unseal()
+            raise
+    return ok(result)
 
 
 async def snap_patch(request):

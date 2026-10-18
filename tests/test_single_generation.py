@@ -6,6 +6,7 @@ import pytest
 from PIL import Image
 
 from atelierx.image import library
+from atelierx.image.uuid_migration import resolve
 from test_image import FakeComfy
 
 
@@ -30,9 +31,16 @@ def test_single_generation_saves_and_restores_without_character(unlocked, monkey
     adapter = runtime.services[service]
     sent = []
     monkeypatch.setattr(adapter, 'busy', lambda: False)
-    monkeypatch.setattr(adapter, 'submit', lambda job: (sent.append(job['snapshot']), {'id': 'remote-id', 'record': {}})[1])
+    monkeypatch.setattr(
+        adapter, 'submit', lambda job: (sent.append(job['snapshot']), {'id': 'remote-id', 'record': {}})[1]
+    )
     monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
-    request = {'service': service, 'positive': 'two people beside a lake', 'negative': 'blur', 'settings': {'seed': 17}}
+    request = {
+        'service': service,
+        'positive': 'two people beside a lake',
+        'negative': 'blur',
+        'settings': {'seed': 17},
+    }
     response = client.post(f'/api/works/{wid}/image/single', json=request)
     assert response.status_code == 200, response.text
     job_id = response.json()['job_id']
@@ -89,7 +97,9 @@ def test_single_validation_rejects_empty_and_unsupported_settings(unlocked):
     url = f'/api/works/{wid}/image/single'
     assert client.post(url, json={'positive': ''}).status_code == 400
     for service in ('comfyui', 'novelai', 'pixai'):
-        response = client.post(url, json={'positive': 'test', 'service': service, 'settings': {'unused_option': 1}})
+        response = client.post(
+            url, json={'positive': 'test', 'service': service, 'settings': {'unused_option': 1}}
+        )
         assert response.status_code == 400
         assert response.json()['error']['key'] == 'server.single.unsupported_settings'
     assert runtime.queue.queued_count() == 0
@@ -99,18 +109,43 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
     client = unlocked
     wid, runtime = _setup(client)
     work = runtime.works.get(wid)
-    library.save_item(runtime.paths, work, 'common', 'work', 'sunlit',
-                      {'name': 'Sunlit', 'prompt': ['warm daylight # note'], 'target': 'positive'})
-    library.save_item(runtime.paths, work, 'common', 'work', 'avoid',
-                      {'name': 'Avoid', 'prompt': ['blurry'], 'target': 'negative'})
-    library.save_preset(runtime.paths, 'soft', {
-        'service': 'comfyui', 'family': 'anima', 'settings': {'cfg': 6.5},
-        'common': ['sunlit', 'avoid'], 'artist': {'positive': 'gentle color', 'negative': 'darkness'},
-    })
-    first = client.post(f'/api/works/{wid}/image/single', json={
-        'service': 'comfyui', 'positive': 'forest', 'negative': 'noise',
-        'preset_id': 'soft', 'settings': {'seed': 27},
-    })
+    library.save_item(
+        runtime.paths,
+        work,
+        'common',
+        'work',
+        'sunlit',
+        {'name': 'Sunlit', 'prompt': ['warm daylight # note'], 'target': 'positive'},
+    )
+    library.save_item(
+        runtime.paths,
+        work,
+        'common',
+        'work',
+        'avoid',
+        {'name': 'Avoid', 'prompt': ['blurry'], 'target': 'negative'},
+    )
+    library.save_preset(
+        runtime.paths,
+        'soft',
+        {
+            'service': 'comfyui',
+            'family': 'anima',
+            'settings': {'cfg': 6.5},
+            'common': ['sunlit', 'avoid'],
+            'artist': {'positive': 'gentle color', 'negative': 'darkness'},
+        },
+    )
+    first = client.post(
+        f'/api/works/{wid}/image/single',
+        json={
+            'service': 'comfyui',
+            'positive': 'forest',
+            'negative': 'noise',
+            'preset_id': 'soft',
+            'settings': {'seed': 27},
+        },
+    )
     assert first.status_code == 200, first.text
     first_job = runtime.queue.get(first.json()['job_id'])
     snapshot = first_job['snapshot']
@@ -120,11 +155,16 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
     assert run['actual']['positive'] == snapshot['positive']
     assert run['actual']['settings']['cfg'] == 6.5
     assert 'model_loader' not in run['actual']['settings']
-    (runtime.paths.data / 'image' / 'presets' / 'soft.json').unlink()
-    second = client.post(f'/api/works/{wid}/image/single', json={
-        'service': 'comfyui', 'positive': run['actual']['positive'], 'negative': run['actual']['negative'],
-        'settings': run['actual']['settings'],
-    })
+    (runtime.paths.data / 'image' / 'presets' / f'{resolve(runtime.paths, "presets", "soft")}.json').unlink()
+    second = client.post(
+        f'/api/works/{wid}/image/single',
+        json={
+            'service': 'comfyui',
+            'positive': run['actual']['positive'],
+            'negative': run['actual']['negative'],
+            'settings': run['actual']['settings'],
+        },
+    )
     assert second.status_code == 200, second.text
     repeated = runtime.queue.get(second.json()['job_id'])['snapshot']
     assert repeated['positive'] == snapshot['positive'] and repeated['negative'] == snapshot['negative']
@@ -141,9 +181,14 @@ def test_gallery_regeneration_keeps_single_kind_and_history(unlocked, monkeypatc
     monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
     client.put('/api/image/review/settings', json={'enabled': True})
 
-    first = client.post(f'/api/works/{wid}/image/single', json={
-        'service': service, 'positive': 'a lantern at dusk', 'settings': {'seed': 17},
-    }).json()['job_id']
+    first = client.post(
+        f'/api/works/{wid}/image/single',
+        json={
+            'service': service,
+            'positive': 'a lantern at dusk',
+            'settings': {'seed': 17},
+        },
+    ).json()['job_id']
     paths = []
     for index in range(3):
         job = runtime.queue.get(first) if index == 0 else runtime.jobs[-1]
@@ -176,8 +221,16 @@ def test_gallery_regeneration_keeps_single_kind_and_history(unlocked, monkeypatc
 def test_missing_character_identity_cannot_create_none_folder(unlocked):
     _, runtime = _setup(unlocked)
     with pytest.raises(ValueError):
-        runtime.save_result({
-            'id': 'invalid', 'work_id': 'W001', 'character_id': None,
-            'outfit_id': 'O001', 'expression_id': 'E001',
-        }, _png(), {}, 'fake-id')
+        runtime.save_result(
+            {
+                'id': 'invalid',
+                'work_id': 'W001',
+                'character_id': None,
+                'outfit_id': 'O001',
+                'expression_id': 'E001',
+            },
+            _png(),
+            {},
+            'fake-id',
+        )
     assert not (runtime.paths.output / 'W001' / 'None').exists()

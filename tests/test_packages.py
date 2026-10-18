@@ -10,6 +10,7 @@ from starlette.testclient import TestClient
 from atelierx.api.app import build_app
 from atelierx.core.paths import REPO_ROOT, AppPaths
 from conftest import FAST_KDF
+from image_ids import image_id
 from test_image import FakeComfy
 
 
@@ -74,7 +75,10 @@ def test_a_work_package_comes_back_under_a_new_id_with_its_adopted_image(unlocke
     assert (output / copied).is_file()
     assert json.loads((output / copied).with_suffix('.json').read_text(encoding='utf-8'))['work_id'] == new_id
     board = c.get(f'/api/works/{new_id}/image/board').json()
-    assert board['characters'][0]['cells']['o01/smile']['state'] == 'adopted'
+    assert (
+        board['characters'][0]['cells'][f'o01/{image_id(c, "expressions", "smile", new_id)}']['state']
+        == 'adopted'
+    )
     assert c.get(f'/api/works/{wid}/image/board').json()['adopted'] == 1  # the original is untouched
     # The token is used up.
     again = c.post('/api/packages/works/import', json={'token': seen['token'], 'works': [{'index': 0}]})

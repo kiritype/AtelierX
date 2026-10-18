@@ -13,6 +13,7 @@ from ..image import library, library_share
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
+from ..image.uuid_migration import FileCheckpoint, migrate_runtime, migrate_runtime_guarded
 
 
 def _runtime(request):
@@ -561,7 +562,31 @@ async def trash_action(request):
     action = request.path_params['action']
     ids = (await _body(request)).get('ids')
     if action == 'restore':
-        return await call(runtime.trash.restore, ids)
+        s = request.app.state.app
+        with s.admission.exclusive(s.busy_work):
+            entries = [e for e in runtime.trash._entries() if e['id'] in (ids or [])]
+            folders = {runtime.gallery.safe_path(e['path']).parent for e in entries}
+            before = {folder: set(folder.iterdir()) if folder.is_dir() else set() for folder in folders}
+            checkpoint = FileCheckpoint(
+                s.paths, [runtime.trash.index_path, *(runtime.trash.folder / e['id'] for e in entries)]
+            )
+            try:
+                result = await call(runtime.trash.restore, ids)
+                await run_in_threadpool(migrate_runtime_guarded, s)
+            except BaseException:
+                s.admission.seal()
+                for folder, existing in before.items():
+                    for path in (set(folder.iterdir()) if folder.is_dir() else set()) - existing:
+                        if path.is_file():
+                            path.unlink()
+                checkpoint.rollback()
+                await run_in_threadpool(migrate_runtime, s.image)
+                s.admission.unseal()
+                raise
+            finally:
+                if not s.admission.quarantined:
+                    checkpoint.close()
+        return result
     if action == 'purge':
         return await call(runtime.trash.purge, ids)
     raise AppError(Msg('server.image.unknown_action', 'Unknown action.'), 404)

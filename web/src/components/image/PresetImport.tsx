@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ApiError, post } from '../../api';
 import { msgText, t, tm } from '../../i18n';
-import { PRESET_ID } from '../../lib/presetFromRecord';
 import { useToast } from '../Toasts';
 import { Dialog } from '../ui';
 import { presetTarget } from './PresetEditor';
@@ -11,7 +10,7 @@ import { presetTarget } from './PresetEditor';
 type Missing = { kind: string; name: string; sha256?: string; civitai?: string };
 type Item = { id: string; name: string; service: string; family: string; exists: boolean; preview: boolean; missing: Missing[] };
 export type ImportLook = { token: string; app_version?: string; checked: boolean; items: Item[] };
-type Choice = 'add' | 'replace' | 'skip' | 'rename';
+type Choice = 'add' | 'replace' | 'skip' | 'copy';
 
 export async function readPackage(file: File): Promise<ImportLook> {
   const response = await fetch('/api/image/presets/import/preview', {
@@ -28,15 +27,13 @@ export async function readPackage(file: File): Promise<ImportLook> {
 export default function PresetImport({ look, onClose, onDone }: { look: ImportLook; onClose: () => void; onDone: (written: string[], presets: unknown) => void }) {
   const toast = useToast();
   const [choices, setChoices] = useState<Record<string, Choice>>(() => Object.fromEntries(look.items.map((i) => [i.id, i.exists ? 'skip' : 'add'])));
-  const [names, setNames] = useState<Record<string, string>>(() => Object.fromEntries(look.items.map((i) => [i.id, `${i.id}_shared`])));
   const [busy, setBusy] = useState(false);
-  const bad = look.items.some((i) => choices[i.id] === 'rename' && !PRESET_ID.test(names[i.id] ?? ''));
   const count = look.items.filter((i) => choices[i.id] !== 'skip').length;
 
   async function apply() {
     setBusy(true);
     try {
-      const body = Object.fromEntries(look.items.map((i) => [i.id, choices[i.id] === 'rename' ? { as: names[i.id] } : choices[i.id]]));
+      const body = Object.fromEntries(look.items.map((i) => [i.id, choices[i.id]]));
       const done = await post<{ written: string[]; presets: unknown }>('/api/image/presets/import', { token: look.token, choices: body });
       onDone(done.written, done.presets);
     } catch (err) {
@@ -52,7 +49,7 @@ export default function PresetImport({ look, onClose, onDone }: { look: ImportLo
       onClose={onClose}
       className="wide"
       actions={
-        <button className="primary" disabled={busy || bad || !count} onClick={apply}>
+        <button className="primary" disabled={busy || !count} onClick={apply}>
           {t('presets.share.import_apply', { n: count })}
         </button>
       }
@@ -73,7 +70,7 @@ export default function PresetImport({ look, onClose, onDone }: { look: ImportLo
                   <>
                     <option value="skip">{t('presets.share.choice.skip')}</option>
                     <option value="replace">{t('presets.share.choice.replace')}</option>
-                    <option value="rename">{t('presets.share.choice.rename')}</option>
+                    <option value="copy">{t('presets.share.choice.rename')}</option>
                   </>
                 ) : (
                   <>
@@ -82,9 +79,6 @@ export default function PresetImport({ look, onClose, onDone }: { look: ImportLo
                   </>
                 )}
               </select>
-              {choices[item.id] === 'rename' && (
-                <input className="mono" style={{ width: 160 }} value={names[item.id]} onChange={(e) => setNames({ ...names, [item.id]: e.target.value })} aria-label={t('presets.share.new_id')} />
-              )}
             </div>
             {item.missing.length > 0 && (
               <div className="col small" style={{ gap: 2 }}>

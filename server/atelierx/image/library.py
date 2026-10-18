@@ -30,6 +30,9 @@ def locked(fn):
 
 @locked
 def item_revision(paths, work, kind, ident):
+    from .uuid_migration import resolve
+
+    ident = resolve(paths, kind, ident, work.id if work else None)
     values = {'global': None, 'work': None}
     for scope in SCOPES:
         if scope == 'work' and work is None:
@@ -261,6 +264,9 @@ def save_item(paths, work, kind, scope, ident, item, from_scope=None, base_revis
     _check_kind(kind)
     if not ITEM_ID.match(ident or ''):
         raise ValueError(Msg('server.image.library.item_id', "Use letters, digits, '_' and '-' for the id."))
+    from .uuid_migration import canonical_for_save
+
+    ident = canonical_for_save(paths, kind, ident, scope, work.id if work else None)
     if from_scope is not None and from_scope not in SCOPES:
         raise ValueError(Msg('server.image.library.unknown_scope', 'Choose global or work.'))
     path = _file(paths, work, kind, scope)
@@ -268,9 +274,15 @@ def save_item(paths, work, kind, scope, ident, item, from_scope=None, base_revis
     if base_revision is not _UNCHECKED:
         revisions.check(base_revision, item_revision(paths, work, kind, ident))
     previous = read_json(path, None)
-    doc = read_json(path, {}) or {'schema_version': 1, 'items': {}}
+    doc = read_json(path, {}) or {'schema_version': 2, 'items': {}}
     old = read_json(old_path, {}) or {} if old_path else {}
-    doc.setdefault('items', {})[ident] = clean_item(kind, item, compose_rules(paths))
+    cleaned = clean_item(kind, item, compose_rules(paths))
+    if kind == 'expressions' and cleaned.get('composition'):
+        cleaned['composition'] = canonical_for_save(
+            paths, 'compositions', cleaned['composition'], scope, work.id if work else None
+        )
+    doc.setdefault('items', {})[ident] = cleaned
+    doc['schema_version'] = 2
     atomic_json(path, doc)
     if old_path and ident in (old.get('items') or {}):
         del old['items'][ident]
@@ -289,6 +301,9 @@ def save_item(paths, work, kind, scope, ident, item, from_scope=None, base_revis
 @locked
 def delete_item(paths, work, kind, scope, ident, base_revision=_UNCHECKED):
     _check_kind(kind)
+    from .uuid_migration import resolve
+
+    ident = resolve(paths, kind, ident, work.id if work else None)
     path = _file(paths, work, kind, scope)
     if base_revision is not _UNCHECKED:
         revisions.check(base_revision, item_revision(paths, work, kind, ident))
@@ -333,7 +348,7 @@ def preset_doc(preset, ident):
             tags.append(tag)
     artist = preset.get('artist') if isinstance(preset.get('artist'), dict) else {}
     return {
-        'schema_version': 2,
+        'schema_version': 3,
         'name': str(preset.get('name') or ident)[:200],
         'service': service,
         'family': family,
@@ -425,12 +440,18 @@ def store_preview(paths, ident, image_path, seed, digest):
     atomic_json(path, doc)
 
 
+@locked
 def save_preset(paths, ident, preset):
     if not ITEM_ID.match(ident or ''):
         raise ValueError(Msg('server.image.library.item_id', "Use letters, digits, '_' and '-' for the id."))
     if not isinstance(preset, dict):
         raise ValueError(Msg('server.image.library.item_object', 'The item must be an object.'))
-    atomic_json(_presets_dir(paths) / f'{ident}.json', preset_doc(preset, ident))
+    from .uuid_migration import canonical_for_save, preset_common
+
+    ident = canonical_for_save(paths, 'presets', ident)
+    cleaned = preset_doc(preset, ident)
+    cleaned['common'] = [preset_common(paths, one) for one in cleaned['common']]
+    atomic_json(_presets_dir(paths) / f'{ident}.json', cleaned)
     return presets(paths)
 
 
@@ -509,6 +530,9 @@ def migrate_styles(paths):
 
 
 def delete_preset(paths, ident):
+    from .uuid_migration import resolve
+
+    ident = resolve(paths, 'presets', ident)
     if ITEM_ID.match(ident or ''):
         (_presets_dir(paths) / f'{ident}.json').unlink(missing_ok=True)
         preview_file(paths, ident).unlink(missing_ok=True)

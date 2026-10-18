@@ -13,11 +13,25 @@ from .. import __version__
 from ..core.i18n import Msg
 from . import library
 from .util import atomic_json, read_json
+from .uuid_migration import canonical_for_save, resolve
 
 FORMAT = 'atelierx-prompt-library'
 MAX_ITEMS = 2000
-FIELDS = ('name', 'group', 'targets', 'prompt', 'negative', 'code', 'rating', 'composition', 'suggest_slots',
-          'hide_outfit', 'target', 'default', 'slot')
+FIELDS = (
+    'name',
+    'group',
+    'targets',
+    'prompt',
+    'negative',
+    'code',
+    'rating',
+    'composition',
+    'suggest_slots',
+    'hide_outfit',
+    'target',
+    'default',
+    'slot',
+)
 
 
 @library.locked
@@ -28,12 +42,30 @@ def export(paths, work, kind, ids):
     if not chosen:
         raise ValueError(Msg('server.library.share.none', 'Choose the items to export.'))
     out = {}
+    dependencies = {}
     for ident in chosen:
         item = merged[ident]
         # The stored item keeps targets this PC does not list (the merged view leaves them out).
         stored = _stored(paths, work, kind, item['scope']).get(ident)
         entry = _clean(paths, kind, ident, stored if isinstance(stored, dict) else item) or {}
         out[ident] = {**entry, 'scope': item['scope']}
+        if kind == 'expressions' and entry.get('composition'):
+            composition_id = entry['composition']
+            composition = library.items(paths, work, 'compositions').get(composition_id)
+            if composition:
+                source = _stored(paths, work, 'compositions', composition['scope']).get(composition_id)
+                dependencies[composition_id] = {
+                    **(
+                        _clean(
+                            paths,
+                            'compositions',
+                            composition_id,
+                            source if isinstance(source, dict) else composition,
+                        )
+                        or {}
+                    ),
+                    'scope': composition['scope'],
+                }
     doc = {
         'kind': FORMAT,
         'schema_version': 1,
@@ -41,6 +73,7 @@ def export(paths, work, kind, ids):
         'library': kind,
         'exported_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
         'items': out,
+        **({'dependencies': {'compositions': dependencies}} if dependencies else {}),
     }
     name = f'prompt-library-{kind}-{chosen[0] if len(chosen) == 1 else len(chosen)}-{time.strftime("%Y%m%d")}.json'
     return doc, name
@@ -73,9 +106,7 @@ def _rules_for(paths, item):
 
 
 def _bad():
-    return ValueError(
-        Msg('server.library.share.bad', 'This file is not an AtelierX prompt library file.')
-    )
+    return ValueError(Msg('server.library.share.bad', 'This file is not an AtelierX prompt library file.'))
 
 
 def _read(kind, doc):
@@ -160,26 +191,29 @@ def preview(paths, work, kind, doc, scope):
         if item is None:
             skipped += 1
             continue
+        canonical = resolve(paths, kind, ident, work.id if scope == 'work' and work else None)
         # Compared with what is stored where it would go, or else with what the list shows now.
-        here = target.get(ident)
+        here = target.get(canonical)
         if here is not None:
             old = _clean(paths, kind, ident, here) or {}
-        elif ident in merged:
-            old = {k: v for k, v in merged[ident].items() if k in FIELDS}
+        elif canonical in merged:
+            old = {k: v for k, v in merged[canonical].items() if k in FIELDS}
         else:
             old = None
         out.append(
             {
                 'id': ident,
-                'revision': library.item_revision(paths, work, kind, ident),
+                'revision': library.item_revision(paths, work, kind, canonical),
                 'name': item['name'] or ident,
                 'scope': raw.get('scope') if raw.get('scope') in library.SCOPES else None,
                 'exists': old is not None,
-                'here_scope': merged[ident]['scope'] if ident in merged else None,
+                'here_scope': merged[canonical]['scope'] if canonical in merged else None,
                 'changes': _changes(old, item) if old is not None else [],
                 'unknown': _unknown(paths, work, kind, item),
                 # A global item a work item of the same id keeps hiding in this work.
-                'shadowed': scope == 'global' and work is not None and ident in _stored(paths, work, kind, 'work'),
+                'shadowed': scope == 'global'
+                and work is not None
+                and canonical in _stored(paths, work, kind, 'work'),
             }
         )
     if not out:
@@ -196,22 +230,51 @@ def apply(paths, work, kind, doc, scope, choices, base_revisions=None):
         raise ValueError(Msg('server.image.library.unknown_scope', 'Choose global or work.'))
     merged = library.items(paths, work, kind)
     plan = {}
+    pending = []
     for ident, raw in raw_items.items():
         item = _clean(paths, kind, ident, raw)
         if item is None:
             continue
+        canonical = resolve(paths, kind, ident, work.id if scope == 'work' and work else None)
         choice = (choices or {}).get(ident, 'add')
         if choice not in ('add', 'overwrite', 'skip'):
             raise ValueError(
                 Msg('server.library.share.bad_choice', 'Choose add, overwrite or skip for each item.')
             )
-        if choice == 'skip' or (choice == 'add' and ident in merged):
+        if choice == 'skip' or (choice == 'add' and canonical in merged):
             continue
-        library.revisions.check((base_revisions or {}).get(ident), library.item_revision(paths, work, kind, ident))
-        plan[ident] = item
+        library.revisions.check(
+            (base_revisions or {}).get(ident), library.item_revision(paths, work, kind, canonical)
+        )
+        pending.append((ident, item))
+    dependencies = {}
+    if kind == 'expressions':
+        raw_dependencies = (doc.get('dependencies') or {}).get('compositions') or {}
+        for ident, item in pending:
+            ref = item.get('composition')
+            if ref and ref not in library.items(paths, work, 'compositions'):
+                dependency = _clean(paths, 'compositions', ref, raw_dependencies.get(ref))
+                if dependency:
+                    dependencies[ref] = dependency
+    for ident, item in pending:
+        canonical = canonical_for_save(paths, kind, ident, scope, work.id if work else None)
+        if kind == 'expressions' and item.get('composition'):
+            item['composition'] = canonical_for_save(
+                paths, 'compositions', item['composition'], scope, work.id if work else None
+            )
+        plan[canonical] = item
+    if dependencies:
+        comp_path = library._file(paths, work, 'compositions', scope)
+        comp_doc = read_json(comp_path, {}) or {'schema_version': 2, 'items': {}}
+        comp_doc['schema_version'] = 2
+        for ident, item in dependencies.items():
+            canonical = canonical_for_save(paths, 'compositions', ident, scope, work.id if work else None)
+            comp_doc.setdefault('items', {}).setdefault(canonical, item)
+        atomic_json(comp_path, comp_doc)
     if plan:
         path = library._file(paths, work, kind, scope)
         stored = read_json(path, {}) or {'schema_version': 1, 'items': {}}
+        stored['schema_version'] = 2
         stored.setdefault('items', {}).update(plan)
         atomic_json(path, stored)
     return {'written': list(plan), 'items': library.items(paths, work, kind)}

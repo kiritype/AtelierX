@@ -7,6 +7,7 @@ import { useToast } from '../Toasts';
 import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import { afterRevisionSave, followSelection } from '../../lib/libraryDraft';
+import { displayName, nameIdHint, nameLabel } from '../../lib/nameLabels';
 import LibraryImport from './LibraryImport';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
@@ -31,8 +32,6 @@ type Item = {
   targets?: string[];
 };
 type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; name: string }[]; targets: Target[] };
-const displayName = (item: Pick<Item, 'name' | 'id'>) => item.name.trim() || item.id;
-
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
 export default function ImageLibrary({ workId }: { workId: string }) {
   const [kind, setKind] = useState<Kind>('expressions');
@@ -86,7 +85,8 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   const [checked, setChecked] = useState<string[]>([]);
   const [importing, setImporting] = useState<unknown>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const list = Object.values(items.data ?? {}).filter((i) => !filter || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
+  const allItems = Object.values(items.data ?? {});
+  const list = allItems.filter((i) => !filter || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
   const groups = [...new Set(Object.values(items.data ?? {}).map((i) => i.group ?? '').filter(Boolean))];
   const targets = rules.data?.targets ?? [];
 
@@ -103,7 +103,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
     kind === 'expressions' && draft?.code?.trim()
       ? Object.values(items.data ?? {})
           .filter((i) => i.id !== draft.id && (i.code ?? '').trim() === draft.code!.trim())
-          .map((i) => `${displayName(i)} (${i.id})`)
+          .map((i) => nameLabel(i, allItems))
       : [];
   const dirty = !!draft && (!stored || JSON.stringify({ ...stored, scope: stored.scope ?? 'global' }) !== JSON.stringify(draft));
   useUnsaved(`library-${kind}`, dirty);
@@ -166,16 +166,12 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
 
   function create() {
     if (dirty && !confirm(t('lib.discard_confirm'))) return;
-    const ident = prompt(t('lib.new_id'))?.trim();
-    if (!ident) return;
-    // An id in use would silently overwrite or override that item (#147).
-    if (items.data?.[ident]) {
-      alert(t('lib.id_taken', { id: ident }));
-      return;
-    }
+    const name = prompt(t('lib.new_name'))?.trim();
+    if (!name) return;
+    const ident = crypto.randomUUID();
     const blank: Item & { scope: 'global' | 'work' } = {
       id: ident,
-      name: ident,
+      name,
       prompt: [],
       negative: [],
       scope: 'work',
@@ -244,8 +240,8 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   aria-label={t('lib.share.check')}
                 />
                 <span className="grow">
-                  <span title={displayName(item)} style={{ overflowWrap: 'anywhere' }}>{displayName(item)}</span>
-                  {item.name.trim() && <span className="faint mono small" style={{ overflowWrap: 'anywhere' }}> {item.id}</span>}
+                  <span title={item.id} style={{ overflowWrap: 'anywhere' }}>{displayName(item)}</span>
+                  {nameIdHint(item, allItems) && <span className="faint mono small" title={item.id}> ({nameIdHint(item, allItems)})</span>}
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
                   {kind === 'compositions' && item.hide_outfit && <span className="chip small" title={t('lib.hide_outfit_hint')}>{t('lib.hide_outfit')}</span>}
                   {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
@@ -277,9 +273,9 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
           <>
             <div className="row">
               <div className="col grow" style={{ minWidth: 0, gap: 2 }}>
-                <strong style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
+                <strong title={draft.id} style={{ overflowWrap: 'anywhere' }}>{displayName(draft)}</strong>
                 <span className="faint small" style={{ overflowWrap: 'anywhere' }}>
-                  {draft.name.trim() && <span className="mono">{draft.id} · </span>}{t(`lib.scope.${draft.scope}`)}
+                  {nameIdHint(draft, allItems) && <span className="mono" title={draft.id}>{nameIdHint(draft, allItems)} · </span>}{t(`lib.scope.${draft.scope}`)}
                   {draft.overrides && <> · {t('lib.overrides')}</>}
                 </span>
               </div>
@@ -330,7 +326,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                     <option value="">—</option>
                     {Object.values(compositions.data ?? {}).map((c) => (
                       <option key={c.id} value={c.id}>
-                        {displayName(c)}{c.name.trim() && ` (${c.id})`}
+                        {nameLabel(c, Object.values(compositions.data ?? {}))}
                       </option>
                     ))}
                   </select>

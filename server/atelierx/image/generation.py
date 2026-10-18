@@ -112,7 +112,10 @@ class GenerationMixin:
     def _preset(self, body, service):
         if not body.get('preset_id'):
             return None
-        preset = next((p for p in library.presets(self.paths) if p['id'] == body['preset_id']), None)
+        from .uuid_migration import resolve
+
+        requested = resolve(self.paths, 'presets', body['preset_id'])
+        preset = next((p for p in library.presets(self.paths) if p['id'] == requested), None)
         if preset is None:
             raise ValueError(Msg('server.image.queue.no_preset', 'Style preset not found.'))
         if preset['service'] != service:
@@ -268,8 +271,15 @@ class GenerationMixin:
         if not isinstance(body, dict):
             raise ValueError(Msg('server.single.request', 'Choose an image service and enter a prompt.'))
         positive, negative = body.get('positive'), body.get('negative', '')
-        if not isinstance(positive, str) or not isinstance(negative, str) or len(positive) > 30000 or len(negative) > 30000:
-            raise ValueError(Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.'))
+        if (
+            not isinstance(positive, str)
+            or not isinstance(negative, str)
+            or len(positive) > 30000
+            or len(negative) > 30000
+        ):
+            raise ValueError(
+                Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
+            )
         positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
         if not positive:
             raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
@@ -281,15 +291,22 @@ class GenerationMixin:
             allowed = set(COMFY_DEFAULTS) | {'family', 'clip_skip', 'shift', 'upscale', 'detailer'}
         elif service.id == 'novelai':
             from .internet.novelai import DEFAULTS as NOVELAI_DEFAULTS
+
             allowed = set(NOVELAI_DEFAULTS) | {'family'}
         else:
             from .internet.pixai import DEFAULTS as PIXAI_DEFAULTS
+
             allowed = set(PIXAI_DEFAULTS) | {'family'}
         unsupported = set(raw_settings) - allowed
         if unsupported:
-            raise ValueError(Msg('server.single.unsupported_settings',
-                                 'These settings are not supported by {service}: {settings}.',
-                                 service=service.id, settings=', '.join(sorted(unsupported))))
+            raise ValueError(
+                Msg(
+                    'server.single.unsupported_settings',
+                    'These settings are not supported by {service}: {settings}.',
+                    service=service.id,
+                    settings=', '.join(sorted(unsupported)),
+                )
+            )
         if service.id == DEFAULT_SERVICE:
             catalog = self.comfy.catalog()
             if not catalog['connected']:
@@ -303,41 +320,84 @@ class GenerationMixin:
         for ident in common_ids:
             item = commons.get(ident)
             if item is None:
-                raise ValueError(Msg('server.single.missing_common', 'Preset common prompt {id} was not found.', id=ident))
+                raise ValueError(
+                    Msg('server.single.missing_common', 'Preset common prompt {id} was not found.', id=ident)
+                )
             if not library.fits(item, options['family']):
-                raise ValueError(Msg('server.single.other_target', 'Preset common prompt {id} is for another target.', id=ident))
+                raise ValueError(
+                    Msg(
+                        'server.single.other_target',
+                        'Preset common prompt {id} is for another target.',
+                        id=ident,
+                    )
+                )
             selected.append(item)
         artist = (preset or {}).get('artist') or {}
-        common_positive = _join(*(item.get('prompt') for item in selected if item.get('target') != 'negative'))
-        common_negative = _join(*(item.get('prompt') for item in selected if item.get('target') == 'negative'))
-        final_positive = ', '.join(x for x in (*common_positive, positive, strip_text(artist.get('positive') or '').strip()) if x)
-        final_negative = ', '.join(x for x in (*common_negative, negative, strip_text(artist.get('negative') or '').strip()) if x)
+        common_positive = _join(
+            *(item.get('prompt') for item in selected if item.get('target') != 'negative')
+        )
+        common_negative = _join(
+            *(item.get('prompt') for item in selected if item.get('target') == 'negative')
+        )
+        final_positive = ', '.join(
+            x for x in (*common_positive, positive, strip_text(artist.get('positive') or '').strip()) if x
+        )
+        final_negative = ', '.join(
+            x for x in (*common_negative, negative, strip_text(artist.get('negative') or '').strip()) if x
+        )
         if len(final_positive) > 30000 or len(final_negative) > 30000:
-            raise ValueError(Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.'))
-        seed = (secrets.randbelow(2**31) if service.id == 'pixai' else secrets.randbits(32)) if settings.get('seed', -1) == -1 else settings['seed']
+            raise ValueError(
+                Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
+            )
+        seed = (
+            (secrets.randbelow(2**31) if service.id == 'pixai' else secrets.randbits(32))
+            if settings.get('seed', -1) == -1
+            else settings['seed']
+        )
         actual = {**settings, 'seed': seed}
         if service.id != DEFAULT_SERVICE:
-            self._check_repeat(service, {**body, 'positive': final_positive, 'negative': final_negative}, settings)
+            self._check_repeat(
+                service, {**body, 'positive': final_positive, 'negative': final_negative}, settings
+            )
         job_id = uuid.uuid4().hex
         created = now()
         request = {
-            'positive': positive, 'negative': negative, 'service': service.id,
-            'settings': copy.deepcopy(body.get('settings') or {}), 'preset_id': body.get('preset_id') or '',
+            'positive': positive,
+            'negative': negative,
+            'service': service.id,
+            'settings': copy.deepcopy(body.get('settings') or {}),
+            'preset_id': body.get('preset_id') or '',
         }
         snapshot = {
-            'kind': 'single', 'work_id': work.id, 'service': service.id,
-            'positive': final_positive, 'negative': final_negative, 'settings': actual,
-            'request': request, 'run_created_at': created,
+            'kind': 'single',
+            'work_id': work.id,
+            'service': service.id,
+            'positive': final_positive,
+            'negative': final_negative,
+            'settings': actual,
+            'request': request,
+            'run_created_at': created,
         }
         if common_ids:
             snapshot['common_ids'] = list(common_ids)
         if preset:
             snapshot['generation_preset'] = {'id': preset['id'], 'name': preset.get('name', preset['id'])}
-        self.queue.add([{
-            'id': job_id, 'kind': 'single', 'status': 'queued', 'created_at': created,
-            'work_id': work.id, 'service': service.id, 'seed': seed,
-            'title': positive[:80], 'review_requested': False, 'snapshot': snapshot,
-        }])
+        self.queue.add(
+            [
+                {
+                    'id': job_id,
+                    'kind': 'single',
+                    'status': 'queued',
+                    'created_at': created,
+                    'work_id': work.id,
+                    'service': service.id,
+                    'seed': seed,
+                    'title': positive[:80],
+                    'review_requested': False,
+                    'snapshot': snapshot,
+                }
+            ]
+        )
         return {'job_id': job_id}
 
     def single_runs(self, work):
@@ -355,25 +415,42 @@ class GenerationMixin:
                 continue
             actual = self._single_actual(record)
             saved[record['job_id']] = {
-                'id': record['job_id'], 'status': 'done', 'created_at': record.get('run_created_at') or record.get('created_at'),
-                'service': record.get('service'), 'seed': record.get('seed'), 'request': record.get('request'), 'actual': actual,
-                'image_url': item['image_url'], 'path': item['path'],
+                'id': record['job_id'],
+                'status': 'done',
+                'created_at': record.get('run_created_at') or record.get('created_at'),
+                'service': record.get('service'),
+                'seed': record.get('seed'),
+                'request': record.get('request'),
+                'actual': actual,
+                'image_url': item['image_url'],
+                'path': item['path'],
             }
         for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work.id):
             entry = saved.get(job['id'], {})
-            saved[job['id']] = {**entry, 'id': job['id'], 'status': job['status'],
-                'created_at': job['created_at'], 'service': job['service'], 'seed': job['seed'],
-                'request': (job.get('snapshot') or {}).get('request'), 'actual': self._single_actual(job.get('snapshot') or {}),
+            saved[job['id']] = {
+                **entry,
+                'id': job['id'],
+                'status': job['status'],
+                'created_at': job['created_at'],
+                'service': job['service'],
+                'seed': job['seed'],
+                'request': (job.get('snapshot') or {}).get('request'),
+                'actual': self._single_actual(job.get('snapshot') or {}),
                 'image_url': job.get('image_url') or entry.get('image_url'),
-                'path': entry.get('path'), 'error': message_of(job['error']) if job.get('error') else None}
+                'path': entry.get('path'),
+                'error': message_of(job['error']) if job.get('error') else None,
+            }
         return {'runs': sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)[:100]}
 
     @staticmethod
     def _single_actual(snapshot):
         settings = snapshot.get('settings') or {}
         return {
-            'positive': snapshot.get('positive') or '', 'negative': snapshot.get('negative') or '',
-            'settings': {key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')},
+            'positive': snapshot.get('positive') or '',
+            'negative': snapshot.get('negative') or '',
+            'settings': {
+                key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')
+            },
         }
 
     REPEAT_WINDOW = 600

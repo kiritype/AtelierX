@@ -61,7 +61,7 @@ class WorkJobs:
                     data.get('overwrite', False),
                     self.paths.root,
                     cancel,
-                )
+                ),
             )
             try:
                 return await asyncio.shield(writer)
@@ -376,11 +376,17 @@ class WorkJobs:
                 await asyncio.sleep(0.6)
                 await progress(60)
                 lines = [
-                    line.strip() for line in body_text.splitlines() if line.strip() and not line.startswith('#')
+                    line.strip()
+                    for line in body_text.splitlines()
+                    if line.strip() and not line.startswith('#')
                 ]
                 quote = lines[:1]
                 result = {
-                    'appearance': {'prompt': ['1girl', 'solo', '(모의 태그)'], 'negative': [], 'evidence': quote},
+                    'appearance': {
+                        'prompt': ['1girl', 'solo', '(모의 태그)'],
+                        'negative': [],
+                        'evidence': quote,
+                    },
                     'outfits': [
                         {'name': name, 'slots': {'top': ['(모의 태그)']}, 'negative': [], 'evidence': quote}
                         for name in existing or ['기본']
