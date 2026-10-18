@@ -29,13 +29,10 @@ def runtime(paths):
 def test_gallery_receipt_exposes_filename_without_changing_target_reference(paths):
     rt = runtime(paths)
     bulk = ToolBatches(rt)
-    accepted = bulk.submit(
-        {
-            'operation': 'gallery',
-            'request_id': 'display-name',
-            'paths': ['W001/C001/images/o01/portrait.png'],
-        }
-    )
+    accepted = bulk.submit({
+        'operation': 'gallery', 'request_id': 'display-name',
+        'paths': ['W001/C001/images/o01/portrait.png'],
+    })
     item = bulk.details(accepted['id'])['items'][0]
     assert item['display_name'] == 'portrait.png'
     assert item['thumbnail_url'].endswith('W001%2FC001%2Fimages%2Fo01%2Fportrait.png')
@@ -382,30 +379,14 @@ def test_archive_rejects_any_unfinished_reference_and_preserves_batch_retry(unlo
     rt._thread.join(timeout=5)
     item = upload(unlocked, 'shared.png', png())['added'][0]
     rt.tools.set_mask(item['id'], Image.new('L', (40, 30), 255), 'edited')
-    first = rt.bulk.submit(
-        {'operation': 'censor', 'request_id': 'archive-first', 'ids': [item['id']], 'treatment': 'color'}
-    )
-    second = rt.bulk.submit(
-        {
-            'operation': 'censor',
-            'request_id': 'archive-second',
-            'ids': [item['id']],
-            'treatment': 'color',
-            'opacity': 50,
-        }
-    )
+    first = rt.bulk.submit({'operation': 'censor', 'request_id': 'archive-first', 'ids': [item['id']], 'treatment': 'color'})
+    second = rt.bulk.submit({'operation': 'censor', 'request_id': 'archive-second', 'ids': [item['id']], 'treatment': 'color', 'opacity': 50})
     response = unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True})
     assert response.status_code == 409
     rt.bulk.cancel(first['id'])
-    assert (
-        unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code
-        == 409
-    )
+    assert unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code == 409
     rt.bulk.cancel(second['id'])
-    assert (
-        unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code
-        == 200
-    )
+    assert unlocked.post('/api/image/tools/archive', json={'ids': [item['id']], 'archived': True}).status_code == 200
     rt.bulk.retry(first['id'])
     rt.bulk.pump()
     rt.bulk.run_cpu(rt.queue.jobs[0])

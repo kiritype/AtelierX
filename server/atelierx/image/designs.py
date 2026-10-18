@@ -243,19 +243,10 @@ def reconcile_conversion(previous, generated):
             )
         if match is None:
             match = next(
-                (
-                    key
-                    for key, old_outfit in old_outfits.items()
-                    if free(key) and old_outfit.get('name') == outfit.get('name')
-                ),
+                (key for key, old_outfit in old_outfits.items() if free(key) and old_outfit.get('name') == outfit.get('name')),
                 None,
             )
-        if (
-            match is None
-            and generated_id not in old_outfits
-            and generated_id not in retired
-            and generated_id not in new_outfits
-        ):
+        if match is None and generated_id not in old_outfits and generated_id not in retired and generated_id not in new_outfits:
             match = generated_id
         if match is None:
             match = new_outfit_id(set(old_outfits) | retired | set(new_outfits))
@@ -292,11 +283,7 @@ def default_choice(previous, proposed, focus=None):
         old.get('appearance')
         and focus != 'appearance'
         and picked(old['appearance'])
-        and (
-            old['appearance'].get('prompt')
-            or old['appearance'].get('negative')
-            or old['appearance'].get('source')
-        )
+        and (old['appearance'].get('prompt') or old['appearance'].get('negative') or old['appearance'].get('source'))
     ):
         design['appearance'] = deepcopy(old['appearance'])
     for key, outfit in (old.get('outfits') or {}).items():
