@@ -8,9 +8,10 @@ import ToolBatches from './ToolBatches';
 
 vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn() }));
 
-it('starts with a compact status, opens a submitted job, and clears only completed history', async () => {
+it('keeps submitted jobs collapsed until the user opens status or history', async () => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   localStorage.removeItem('atelierx.tools.batches.open');
+  localStorage.removeItem('atelierx.tools.batches.history.open');
   const counts = (pending: number, done: number) => ({ pending, queued: 0, running: 0, cancelling: 0, done, failed: 0, cancelled: 0, interrupted: 0 });
   const running = { id: 'running-id', operation: 'tag', total: 2, accepted: 2, progress: 0.5, created_at: '', counts: counts(1, 1), paused: false, cancelled: false };
   const complete = { ...running, id: 'complete-id', counts: counts(0, 2), progress: 1 };
@@ -30,11 +31,14 @@ it('starts with a compact status, opens a submitted job, and clears only complet
     expect(sections[0].querySelector('summary')?.getAttribute('aria-expanded')).toBe('false');
     expect(sections[0].textContent).toContain('1');
     await act(async () => window.dispatchEvent(new CustomEvent('tool-batch-focus', { detail: complete.id })));
-    expect(sections[1].open).toBe(true);
-    expect(sections[1].querySelector('summary')?.getAttribute('aria-expanded')).toBe('true');
-    await act(async () => window.dispatchEvent(new CustomEvent('tool-batch-focus', { detail: running.id })));
-    expect(sections[0].open).toBe(true);
+    expect(sections[1].open).toBe(false);
+    expect(sections[0].open).toBe(false);
+    await act(async () => sections[0].querySelector('summary')!.click());
+    expect(localStorage.getItem('atelierx.tools.batches.open')).toBe('true');
     expect(sections[0].querySelector('summary')?.getAttribute('aria-expanded')).toBe('true');
+    await act(async () => sections[1].querySelector('summary')!.click());
+    expect(localStorage.getItem('atelierx.tools.batches.history.open')).toBe('true');
+    expect(sections[1].querySelector('summary')?.getAttribute('aria-expanded')).toBe('true');
     const clearButton = [...sections[1].querySelectorAll('button')].find(button => button.textContent?.includes('Clear') || button.textContent?.includes('비우기'))!;
     await act(async () => { clearButton.click(); await new Promise(resolve => setTimeout(resolve, 10)); });
     expect(vi.mocked(post)).toHaveBeenCalledWith('/api/image/tools/batches/clear-completed', {});
