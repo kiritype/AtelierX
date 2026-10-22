@@ -1548,3 +1548,11 @@ history/
 - 앱보다 오래된 버전이면 변환을 제안한다. 변환 전에 작품마다 `before_bulk` 스냅샷을 만들고, 데이터 루트 단위 변환이면
   백업 폴더를 만든다.
 - 앱보다 새 버전이면 해당 작품·파일을 읽기 전용으로 연다(새 앱이 만든 데이터를 옛 앱이 망가뜨리지 않게).
+
+### Anima 다중 캐릭터 단일 생성 기록 (schema_version 3)
+
+기존 single 요청/큐/이미지 sidecar를 확장한다. `multi`는 `characters`(정확히 2개, 각각 안정적인 id·name·prompt)와 `left_id`를 갖는다.
+`request.positive`는 사용자의 공통 장면이고 `snapshot.positive`는 공통 태그·그림체와 인물·좌우를 합친 실제 전달 프롬프트다.
+`scene_positive`는 인물 합성 전 최종 공통 프롬프트이며 multi와 함께 복원해 그림체의 중복 적용을 피한다. negative는 공통만 지원한다.
+기존 schema_version 2 single 기록에는 multi가 없으며 일반 단일 생성으로 복원한다. 프리셋 원본 변경은 이미 저장된 실제 입력을 바꾸지 않는다.
+화면 초안은 기존 단일 생성 로컬 저장에 mode/multi를 추가하고 저장 실패 시 저장하지 않은 변경 안내를 사용한다.

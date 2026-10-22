@@ -2628,5 +2628,21 @@
   "image_info.copy_raw": "Copy original value",
   "image_info.copy_settings": "Copy interpreted settings",
   "server.image.inspect_too_large": "The image must be 32 MB or less.",
-  "server.image.inspect_invalid": "The image could not be read. Choose a PNG, WebP, or JPEG file."
+  "server.image.inspect_invalid": "The image could not be read. Choose a PNG, WebP, or JPEG file.",
+  "multi.limit": "Anima: two characters. Placement is requested in text, not guaranteed. Negative prompts and LoRAs apply globally.",
+  "multi.left": "Left",
+  "multi.right": "Right",
+  "multi.person_prompt": "{name} appearance and clothing",
+  "multi.import": "Import from work",
+  "multi.swap": "Swap sides",
+  "multi.count_warning": "Solo/count tags may conflict with the two-character scene. Review the inputs.",
+  "multi.character": "Character",
+  "multi.outfit": "Outfit",
+  "multi.import_failed": "Could not load character materials.",
+  "multi.import_apply": "Add reviewed material",
+  "multi.unsupported": "Multi-character generation currently supports ComfyUI Anima only. Inputs are preserved; return to supported settings to generate.",
+  "server.multi.service": "Two-character generation currently supports ComfyUI Anima only.",
+  "server.multi.invalid": "Choose two characters and their left/right placement.",
+  "server.multi.empty": "Enter the appearance and clothing for both characters.",
+  "server.multi.compatibility": "Resolve incompatible models or LoRAs before generating."
 }
