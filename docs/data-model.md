@@ -1548,3 +1548,11 @@ history/
 - 앱보다 오래된 버전이면 변환을 제안한다. 변환 전에 작품마다 `before_bulk` 스냅샷을 만들고, 데이터 루트 단위 변환이면
   백업 폴더를 만든다.
 - 앱보다 새 버전이면 해당 작품·파일을 읽기 전용으로 연다(새 앱이 만든 데이터를 옛 앱이 망가뜨리지 않게).
+
+### 업데이트 확인 상태 (`state/update/notice.json`, schema_version 2)
+
+마지막 시도 `last_attempt`와 성공 `last_success`는 UTC epoch 밀리초다. `status`는 unchecked/latest/available/failed이며 checking은 실행 중 요청에서 계산한다.
+`retries`는 자동 추가 시도 횟수(0~3), `next_retry`는 다음 재시도 시각, `server_not_before`는 서버가 허용하는 최초 시각이다.
+`result`와 `available_version`은 마지막 성공 결과를 보존하며 `error`는 메시지 키·문구·값이다. `retryable`은 일시 오류 여부다.
+기존 checked_at은 성공을 보장하지 않아 last_success로 이전하지 않는다. 기존 버전별 알림·설치 결과 중복 방지 필드는 유지한다.
+실행 중 요청은 영속화하지 않으며 재시작은 저장된 대기·횟수 기준으로 판단한다. 자동 확인 설정은 config/settings.json의 기존 필드를 사용한다.

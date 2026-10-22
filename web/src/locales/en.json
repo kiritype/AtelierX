@@ -2628,5 +2628,18 @@
   "image_info.copy_raw": "Copy original value",
   "image_info.copy_settings": "Copy interpreted settings",
   "server.image.inspect_too_large": "The image must be 32 MB or less.",
-  "server.image.inspect_invalid": "The image could not be read. Choose a PNG, WebP, or JPEG file."
+  "server.image.inspect_invalid": "The image could not be read. Choose a PNG, WebP, or JPEG file.",
+  "help.auto_check": "Automatic update checks",
+  "help.auto_on": "On",
+  "help.auto_off": "Off",
+  "help.last_success": "Last successful check",
+  "help.next_retry": "Next retry",
+  "help.last_known_update": "Update at last successful check: {version}",
+  "help.check_status.unchecked": "Not checked",
+  "help.check_status.checking": "Checking",
+  "help.check_status.latest": "Up to date",
+  "help.check_status.available": "Update available",
+  "help.check_status.failed": "Check failed",
+  "server.about.update_wait": "Wait until the server allows another update check.",
+  "server.about.update_invalid": "GitHub returned an invalid release response."
 }

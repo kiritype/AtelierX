@@ -6,6 +6,8 @@ executable; a development run has neither. The update check asks GitHub for the 
 """
 
 import re
+import time
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -65,11 +67,13 @@ async def check_update(current=__version__, url=LATEST_URL):
                 headers={'Accept': 'application/vnd.github+json', 'User-Agent': f'AtelierX/{current}'},
             )
     except httpx.HTTPError as exc:
-        raise AppError(
+        error = AppError(
             Msg('server.about.update_unreachable', 'Could not reach GitHub to check for updates.'), 502
-        ) from exc
+        )
+        error.retryable = True
+        raise error from exc
     if response.status_code != 200:
-        raise AppError(
+        error = AppError(
             Msg(
                 'server.about.update_failed',
                 'The update check failed (HTTP {status}).',
@@ -77,7 +81,36 @@ async def check_update(current=__version__, url=LATEST_URL):
             ),
             502,
         )
-    data = response.json()
+        error.retryable = response.status_code in (408, 429) or response.status_code >= 500
+        retry_at = 0
+        retry = response.headers.get('retry-after')
+        if retry:
+            try:
+                retry_at = int((time.time() + max(0, float(retry))) * 1000)
+            except ValueError:
+                try:
+                    retry_at = int(parsedate_to_datetime(retry).timestamp() * 1000)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+        if response.headers.get('x-ratelimit-remaining') == '0':
+            try:
+                retry_at = max(retry_at, int(float(response.headers.get('x-ratelimit-reset', '0')) * 1000))
+            except (ValueError, OverflowError):
+                pass
+        if response.status_code in (403, 429) and retry_at:
+            error.retryable = True
+        error.retry_at = retry_at
+        raise error
+    try:
+        data = response.json()
+        if not isinstance(data, dict) or not version_key(data.get('tag_name')):
+            raise ValueError('invalid release')
+        if not isinstance(data.get('body', ''), (str, type(None))):
+            raise TypeError('invalid notes')
+    except (ValueError, TypeError) as exc:
+        raise AppError(
+            Msg('server.about.update_invalid', 'GitHub returned an invalid release response.'), 502
+        ) from exc
     latest = data.get('tag_name') or ''
     newer = (version_key(latest) or (0, 0, 0)) > (version_key(current) or (0, 0, 0))
     return {

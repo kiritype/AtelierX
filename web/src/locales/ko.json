@@ -2797,5 +2797,18 @@
   "image_info.copy_raw": "원본 값 복사",
   "image_info.copy_settings": "해석한 생성 설정 복사",
   "server.image.inspect_too_large": "이미지는 32MB 이하여야 합니다.",
-  "server.image.inspect_invalid": "이미지를 읽을 수 없습니다. PNG·WebP·JPEG 파일을 선택하세요."
+  "server.image.inspect_invalid": "이미지를 읽을 수 없습니다. PNG·WebP·JPEG 파일을 선택하세요.",
+  "help.auto_check": "자동 업데이트 확인",
+  "help.auto_on": "켜짐",
+  "help.auto_off": "꺼짐",
+  "help.last_success": "마지막 성공 확인",
+  "help.next_retry": "다음 재시도",
+  "help.last_known_update": "마지막 성공 당시 새 버전: {version}",
+  "help.check_status.unchecked": "미확인",
+  "help.check_status.checking": "확인 중",
+  "help.check_status.latest": "최신",
+  "help.check_status.available": "새 버전 있음",
+  "help.check_status.failed": "확인 실패",
+  "server.about.update_wait": "서버가 허용하는 다음 확인 시각까지 기다려 주세요.",
+  "server.about.update_invalid": "GitHub 업데이트 응답 형식이 올바르지 않습니다."
 }
