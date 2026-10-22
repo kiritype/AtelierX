@@ -64,7 +64,7 @@ export function useCatalog(preview = false) {
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop();
 
-export default function GenSettings({ value, onChange, preview = false, compact = false }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void; preview?: boolean; compact?: boolean }) {
+export default function GenSettings({ value, onChange, preview = false }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void; preview?: boolean }) {
   const catalog = useCatalog(preview);
   const c = catalog.data;
   if (!c) return null;
@@ -119,27 +119,22 @@ export default function GenSettings({ value, onChange, preview = false, compact 
           </div>
         </label>
         {pick('model', t('gen.model'), models, t('gen.default'))}
-
-      </div>
-      <div className="row wrap">{num('width', t('gen.width'), 16, 84)}{num('height', t('gen.height'), 16, 84)}
-        <label className="col gen-field" data-setting="seed">
-          <span className="muted">{t('gen.seed')}</span>
-          <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
-        </label></div>
-      <details open={compact ? undefined : true}><summary>{t('single.settings')} · {value.steps} steps · CFG {value.cfg} · {value.sampler} / {value.scheduler}</summary>
-      <div className="row wrap">
         {family === 'anima' && pick('text_encoder', t('gen.text_encoder'), c.text_encoders, t('gen.default'))}
-        {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}</div>
+        {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}
+      </div>
       <div className="row gen-core-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {pick('sampler', t('gen.sampler'), c.samplers, t('gen.default'))}
         {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'))}
         {num('steps', t('gen.steps'))}
         {num('cfg', 'CFG', 0.5)}
-
+        {num('width', t('gen.width'), 16, 84)}
+        {num('height', t('gen.height'), 16, 84)}
         {family === 'sdxl' && num('clip_skip', 'clip skip')}
-
+        <label className="col gen-field" data-setting="seed">
+          <span className="muted">{t('gen.seed')}</span>
+          <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
+        </label>
       </div>
-      </details>
       <div className="col" style={{ gap: 4 }}>
         <span className="muted">{t('gen.loras')}</span>
         {(value.loras ?? []).map((lora, n) => (

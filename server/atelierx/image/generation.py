@@ -287,9 +287,6 @@ class GenerationMixin:
             raise ValueError(Msg('server.single.settings', 'Choose valid generation settings.'))
         service = self._service(body)
         raw_settings, options, preset = self._settings(body)
-        from .multi import clean_multi, compose_multi
-
-        multi = clean_multi(body.get('multi'), service.id, options['family'])
         if service.id == DEFAULT_SERVICE:
             allowed = set(COMFY_DEFAULTS) | {'family', 'clip_skip', 'shift', 'upscale', 'detailer'}
         elif service.id == 'novelai':
@@ -311,24 +308,10 @@ class GenerationMixin:
                 )
             )
         if service.id == DEFAULT_SERVICE:
-            catalog = self.catalog() if multi else self.comfy.catalog()
+            catalog = self.comfy.catalog()
             if not catalog['connected']:
                 raise ValueError(catalog['error'])
             settings = validate_settings(raw_settings, catalog)
-            if multi:
-                families = catalog.get('families') or {}
-                names = [('models', settings['model'])] + [
-                    ('loras', item['name'])
-                    for item in settings.get('loras', [])
-                    if item.get('enabled') is not False
-                ]
-                if any((families.get(kind) or {}).get(name) not in (None, 'anima') for kind, name in names):
-                    raise ValueError(
-                        Msg(
-                            'server.multi.compatibility',
-                            'Resolve incompatible models or LoRAs before generating.',
-                        )
-                    )
         else:
             settings = service.validate_settings(raw_settings)
         commons = library.items(self.paths, work, 'common')
@@ -362,9 +345,6 @@ class GenerationMixin:
         final_negative = ', '.join(
             x for x in (*common_negative, negative, strip_text(artist.get('negative') or '').strip()) if x
         )
-        scene_positive = final_positive
-        if multi:
-            final_positive = compose_multi(final_positive, multi)
         if len(final_positive) > 30000 or len(final_negative) > 30000:
             raise ValueError(
                 Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
@@ -387,7 +367,6 @@ class GenerationMixin:
             'service': service.id,
             'settings': copy.deepcopy(body.get('settings') or {}),
             'preset_id': body.get('preset_id') or '',
-            **({'multi': multi} if multi else {}),
         }
         snapshot = {
             'kind': 'single',
@@ -398,7 +377,6 @@ class GenerationMixin:
             'settings': actual,
             'request': request,
             'run_created_at': created,
-            **({'multi': multi, 'scene_positive': scene_positive} if multi else {}),
         }
         if common_ids:
             snapshot['common_ids'] = list(common_ids)
@@ -468,11 +446,6 @@ class GenerationMixin:
     def _single_actual(snapshot):
         settings = snapshot.get('settings') or {}
         return {
-            **(
-                {'multi': snapshot['multi'], 'scene_positive': snapshot.get('scene_positive', '')}
-                if snapshot.get('multi')
-                else {}
-            ),
             'positive': snapshot.get('positive') or '',
             'negative': snapshot.get('negative') or '',
             'settings': {
@@ -611,7 +584,7 @@ class GenerationMixin:
             index += 1
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
-            schema_version=3 if job['snapshot'].get('multi') else (2 if job.get('kind') == 'single' else 1),
+            schema_version=2 if job.get('kind') == 'single' else 1,
             created_at=now(),
             job_id=job['id'],
             prompt_id=prompt_id,

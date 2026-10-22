@@ -68,9 +68,7 @@ export type GenerationRecord = {
 };
 
 export type SingleService = 'comfyui' | 'novelai' | 'pixai';
-export type MultiInput = { characters: { id: string; name: string; prompt: string }[]; left_id: string };
 export type SingleRequest = {
-  multi?: MultiInput;
   positive: string;
   negative: string;
   service: SingleService;
@@ -84,7 +82,7 @@ export type SingleRun = {
   service: SingleService;
   seed: number;
   request: SingleRequest | null;
-  actual: { positive: string; negative: string; settings: Record<string, unknown>; multi?: MultiInput; scene_positive?: string };
+  actual: { positive: string; negative: string; settings: Record<string, unknown> };
   image_url?: string | null;
   path?: string | null;
   error?: ServerMsg | string | null;
