@@ -3,6 +3,7 @@ import asyncio
 import httpx
 import pytest
 
+from atelierx import __version__
 from atelierx.core import about
 from atelierx.core.fsutil import write_json
 from atelierx.core.i18n import AppError, Msg
@@ -40,7 +41,7 @@ def test_retry_budget_persists_and_success_does_not_schedule_periodic_checks(pat
         assert await n.check() is None  # no new cycle until a new startup
 
         async def success():
-            return {'current': '0.5.0', 'latest': '0.6.0', 'newer': True}
+            return {'current': __version__, 'latest': '9.9.9', 'newer': True}
 
         monkeypatch.setattr(about, 'check_update', success)
         await n.check(startup=True)
@@ -54,14 +55,14 @@ def test_retry_budget_persists_and_success_does_not_schedule_periodic_checks(pat
 def test_manual_and_automatic_requests_coalesce_and_old_checked_at_is_not_success(paths, monkeypatch):
     async def scenario():
         n = UpdateNotices(paths)
-        write_json(n.path, {'checked_at': n.clock(), 'checked_version': '0.5.0'})
+        write_json(n.path, {'checked_at': n.clock(), 'checked_version': __version__})
         release = asyncio.Event()
         calls = []
 
         async def success():
             calls.append(1)
             await release.wait()
-            return {'current': '0.5.0', 'latest': '0.6.0', 'newer': True}
+            return {'current': __version__, 'latest': '9.9.9', 'newer': True}
 
         monkeypatch.setattr(about, 'check_update', success)
         a = asyncio.create_task(n.check(startup=True))
@@ -80,7 +81,7 @@ def test_rate_limit_is_honored_by_manual_checks_and_failure_keeps_last_release(p
     async def scenario():
         n = UpdateNotices(paths)
         n.clock = lambda: 1000
-        n.record({'current': '0.5.0', 'latest': '0.6.0', 'newer': True}, 500)
+        n.record({'current': __version__, 'latest': '9.9.9', 'newer': True}, 500)
 
         async def limited():
             e = AppError(Msg('limited', 'limited'))
@@ -91,7 +92,7 @@ def test_rate_limit_is_honored_by_manual_checks_and_failure_keeps_last_release(p
         with pytest.raises(AppError):
             await n.check(manual=True)
         state = n.status(True)
-        assert state['last_success'] == 500 and state['available_version'] == '0.6.0'
+        assert state['last_success'] == 500 and state['available_version'] == '9.9.9'
         assert state['next_retry'] == 9_000_000
         with pytest.raises(AppError) as error:
             await n.check(manual=True)
