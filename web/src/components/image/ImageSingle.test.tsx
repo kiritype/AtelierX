@@ -40,6 +40,21 @@ async function edit(element: HTMLTextAreaElement, value: string) {
 }
 const publish = async () => act(async () => { await qc.invalidateQueries({ queryKey: ['image-single-runs', 'synthetic'] }); await new Promise(resolve => setTimeout(resolve, 0)); });
 
+it('preserves both people when swapping placement or changing services', async () => {
+  await click(t('single.multi'));
+  await edit(positive(), 'gray background');
+  const fields = [...host.querySelectorAll('textarea')].filter(e => e.getAttribute('aria-label')?.includes('A') || e.getAttribute('aria-label')?.includes('B'));
+  await edit(fields[0], 'short black hair, blue jacket');
+  await edit(fields[1], 'long blonde hair, red jacket');
+  await click(t('multi.swap'));
+  await click('NovelAI');
+  expect(button(t('single.run')).disabled).toBe(true);
+  await click('ComfyUI');
+  await click(t('single.run'));
+  const call = vi.mocked(post).mock.calls.find(([url]) => url.endsWith('/single'));
+  expect(call?.[1]).toMatchObject({ multi: { left_id: 'B', characters: [{ id: 'A', prompt: 'short black hair, blue jacket' }, { id: 'B', prompt: 'long blonde hair, red jacket' }] } });
+});
+
 beforeEach(async () => {
   vi.clearAllMocks();
   takeToolHandoff();
@@ -89,7 +104,7 @@ it('keeps both prompts across services and submits a real queued request', async
     positive: 'Two people beside a lake', negative: 'blur', service: 'comfyui',
   }));
   expect(host.querySelector('[role="status"]')?.textContent).toBe(t('single.state.queued'));
-  expect(button(t('single.multi')).hasAttribute('disabled')).toBe(true);
+  expect(button(t('single.multi')).hasAttribute('disabled')).toBe(false);
 });
 
 it('cancels, retries, restores and regenerates the saved request', async () => {

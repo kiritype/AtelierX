@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm, msgText } from '../../i18n';
 import type { ImageView } from '../../types';
-import type { SingleRun, SingleRuns } from '../../imageTypes';
+import type { SingleRun, SingleRuns, MultiInput } from '../../imageTypes';
 import { useUnsaved } from '../Unsaved';
 import type { ImageServices } from '../ImageServiceSettings';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
@@ -14,9 +14,10 @@ import { sendToLab } from './ImageLab';
 import { sendToTools } from '../../lib/toolHandoff';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import './ImageSingle.css';
+import MultiInputs, { freshMulti, multiPrompt } from './MultiInputs';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
-type Draft = { positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string };
+type Draft = { mode?: 'general' | 'multi'; multi?: MultiInput; positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string };
 type Preset = { id: string; name: string; service: string; family: string; settings: Record<string, unknown>; common?: string[]; artist?: { positive?: string; negative?: string } };
 type Common = { prompt?: string[]; target?: string; targets?: string[] };
 const storageKey = (work: string) => `atelierx-single-v2-${work}`;
@@ -28,7 +29,7 @@ function readDraft(work: string): Draft {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey(work)) || 'null') as Draft | null;
     if (!saved || typeof saved.positive !== 'string' || typeof saved.negative !== 'string' || !['comfyui', 'novelai', 'pixai'].includes(saved.service)) return fallback;
-    return { ...fallback, positive: saved.positive, negative: saved.negative, service: saved.service,
+    return { ...fallback, mode: saved.mode === 'multi' ? 'multi' : 'general', multi: saved.multi?.characters?.length === 2 ? saved.multi : freshMulti(), positive: saved.positive, negative: saved.negative, service: saved.service,
       preset: typeof saved.preset === 'string' ? saved.preset : '',
       settings: Object.fromEntries(Object.entries(fallback.settings).map(([key, value]) => [key, { ...value, ...saved.settings?.[key as Service] }])) as Draft['settings'] };
   } catch { return fallback; }
@@ -94,16 +95,26 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const selectedCommon = (chosenPreset?.common ?? []).map(key => commons.data?.[key]).filter((item): item is Common => !!item);
   const commonTags = (target: string) => selectedCommon.filter(item => (item.target === 'negative' ? 'negative' : 'positive') === target)
     .flatMap(item => item.prompt ?? []).map(withoutNote).filter((tag, index, tags) => !!tag && tags.indexOf(tag) === index);
-  const positive = [...commonTags('positive'), promptText(draft.positive), promptText(chosenPreset?.artist?.positive ?? '')].filter(Boolean).join(', ');
+  const scenePositive = [...commonTags('positive'), promptText(draft.positive), promptText(chosenPreset?.artist?.positive ?? '')].filter(Boolean).join(', ');
+  const multi = draft.multi ?? freshMulti();
+  const multiMode = draft.mode === 'multi';
+  const multiSupported = draft.service === 'comfyui' && (settings.family ?? 'anima') === 'anima';
+  const incompatibilities = multiMode && draft.service === 'comfyui' && catalog.data?.connected ? [
+    ...(settings.model ? [{kind:'models' as const,name:String(settings.model)}] : []),
+    ...((settings.loras ?? []) as NonNullable<GenerationSettings['loras']>).filter(l=>l.enabled!==false).map(l=>({kind:'loras' as const,name:l.name})),
+  ].filter(x=>!catalog.data![x.kind].includes(x.name) || ![undefined,null,'anima'].includes(catalog.data!.families?.[x.kind]?.[x.name])).map(x=>x.name) : [];
+  const multiInvalid = multiMode && (!multiSupported || !!incompatibilities.length || multi.characters.some(p => !p.prompt.trim()));
+  const positive = multiMode ? multiPrompt(scenePositive, multi) : scenePositive;
   const negative = [...commonTags('negative'), promptText(draft.negative), promptText(chosenPreset?.artist?.negative ?? '')].filter(Boolean).join(', ');
   const fail = (err: unknown) => setError(err instanceof ApiError ? tm(err.msg) : String(err));
   const refresh = () => qc.invalidateQueries({ queryKey: ['image-single-runs', workId] });
   async function enqueue(value = draft, repeatOk = false) {
-    if (busy || !value.positive.trim()) return;
+    if (busy || !value.positive.trim() || multiInvalid) return;
     setPending(true); setError(''); setDestination(null);
     try {
       const request = {
         positive: value.positive, negative: value.negative, service: value.service,
+        multi: value.mode === 'multi' ? value.multi ?? freshMulti() : undefined,
         preset_id: value.preset || undefined, settings: value.settings[value.service], repeat_ok: repeatOk,
       };
       let response: { job_id: string };
@@ -140,7 +151,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   function restore(selected: SingleRun) {
     if (!selected.actual) return;
     setPreviewOpen(false);
-    setDraft(current => ({ ...current, positive: selected.actual.positive, negative: selected.actual.negative,
+    setDraft(current => ({ ...current, mode: selected.actual.multi ? 'multi' : 'general', multi: selected.actual.multi ?? current.multi, positive: selected.actual.multi ? selected.actual.scene_positive ?? '' : selected.actual.positive, negative: selected.actual.negative,
       service: selected.service, preset: '',
       settings: { ...current.settings, [selected.service]: { ...selected.actual.settings, seed: selected.seed } },
     }));
@@ -149,7 +160,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     if (!run?.actual) return;
     setPreviewOpen(false);
     const value = clone(draft);
-    value.positive = run.actual.positive; value.negative = run.actual.negative; value.service = run.service; value.preset = '';
+    value.mode = run.actual.multi ? 'multi' : 'general'; value.multi = run.actual.multi ?? value.multi;
+    value.positive = run.actual.multi ? run.actual.scene_positive ?? '' : run.actual.positive; value.negative = run.actual.negative; value.service = run.service; value.preset = '';
     value.settings[run.service] = { ...run.actual.settings, seed: run.seed };
     setDraft(value);
     await enqueue(value, true);
@@ -174,7 +186,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   }
   return <section className="single-image" aria-label={t('image_menu.single')}>
     <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t('single.subtitle')}</span></div>
-      <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>
+      <div className="seg" aria-label={t('single.mode')}><button type="button" className={!multiMode ? "on" : ""} aria-pressed={!multiMode} onClick={() => update({ mode: "general" })}>{t('single.general')}</button><button type="button" className={multiMode ? "on" : ""} aria-pressed={multiMode} onClick={() => update({ mode: "multi", multi })}>{t('single.multi')}</button></div>
     </header>
     <div className="single-layout">
       <div className="single-form">
@@ -190,16 +202,18 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select></label>
         <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
+        {!!incompatibilities.length && <p role="alert" className="warn-text">{t('server.multi.compatibility')} {incompatibilities.join(', ')}</p>}
+        {multiMode && <><MultiInputs workId={workId} value={multi} onChange={multi => update({ multi })} />{!multiSupported && <p className="warn-text" role="alert">{t('multi.unsupported')}</p>}</>}
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
         <details className="single-details" open><summary>{t('single.settings')}</summary><p className="faint small">{t('single.settings_hint')}</p>
-          {draft.service === 'comfyui' && <GenSettings value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
+          {draft.service === 'comfyui' && <GenSettings compact={multiMode} value={settings as GenerationSettings} onChange={value => setSettings(multiMode && value.family !== settings.family ? { ...settings, family: value.family, model: value.model } : value)} />}
           {draft.service === 'novelai' && <NovelAISettings value={settings} onChange={setSettings} />}
           {draft.service === 'pixai' && <PixAISettings value={settings} onChange={setSettings} />}
         </details>
         {storageFailed ? <p role="alert" className="warn-text">{t('single.storage_failed')} <button onClick={saveDraft}>{t('common.save')}</button></p> : <p className="faint small">{t('single.local_draft')}</p>}
-        <div className="single-run"><button type="button" className="primary" disabled={busy || !ready || !draft.positive.trim()} onClick={() => enqueue()}>{t('single.run')}</button>
+        <div className="single-run"><button type="button" className="primary" disabled={busy || !ready || !draft.positive.trim() || multiInvalid} onClick={() => enqueue()}>{t('single.run')}</button>
           {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
         </div>
       </div>

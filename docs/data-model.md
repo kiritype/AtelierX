@@ -1556,3 +1556,11 @@ history/
 `result`와 `available_version`은 마지막 성공 결과를 보존하며 `error`는 메시지 키·문구·값이다. `retryable`은 일시 오류 여부다.
 기존 checked_at은 성공을 보장하지 않아 last_success로 이전하지 않는다. 기존 버전별 알림·설치 결과 중복 방지 필드는 유지한다.
 실행 중 요청은 영속화하지 않으며 재시작은 저장된 대기·횟수 기준으로 판단한다. 자동 확인 설정은 config/settings.json의 기존 필드를 사용한다.
+
+### Anima 다중 캐릭터 단일 생성 기록 (schema_version 3)
+
+기존 single 요청/큐/이미지 sidecar를 확장한다. `multi`는 `characters`(정확히 2개, 각각 안정적인 id·name·prompt)와 `left_id`를 갖는다.
+`request.positive`는 사용자의 공통 장면이고 `snapshot.positive`는 공통 태그·그림체와 인물·좌우를 합친 실제 전달 프롬프트다.
+`scene_positive`는 인물 합성 전 최종 공통 프롬프트이며 multi와 함께 복원해 그림체의 중복 적용을 피한다. negative는 공통만 지원한다.
+기존 schema_version 2 single 기록에는 multi가 없으며 일반 단일 생성으로 복원한다. 프리셋 원본 변경은 이미 저장된 실제 입력을 바꾸지 않는다.
+화면 초안은 기존 단일 생성 로컬 저장에 mode/multi를 추가하고 저장 실패 시 저장하지 않은 변경 안내를 사용한다.
