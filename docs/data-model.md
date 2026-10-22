@@ -1564,3 +1564,12 @@ history/
 `scene_positive`는 인물 합성 전 최종 공통 프롬프트이며 multi와 함께 복원해 그림체의 중복 적용을 피한다. negative는 공통만 지원한다.
 기존 schema_version 2 single 기록에는 multi가 없으며 일반 단일 생성으로 복원한다. 프리셋 원본 변경은 이미 저장된 실제 입력을 바꾸지 않는다.
 화면 초안은 기존 단일 생성 로컬 저장에 mode/multi를 추가하고 저장 실패 시 저장하지 않은 변경 안내를 사용한다.
+
+### 그림체 탐색 세션 (0.6.0, #306)
+
+- `data/image/style-search/pools.json`: `schema_version: 1`, `items`는 `id/name/kind/items` 전역 풀 목록입니다. kind는 artists/models/loras, 각 항목은 name과 mode(always/candidate/exclude)를 갖습니다. 파일 자체를 복제하지 않습니다.
+- `data/image/style-search/sessions/<id>.json`: `schema_version: 1`. 서비스·계열·정규화한 생성 settings(고정 seed 포함), positive/negative, 독립 pools 사본, rules, candidates, rounds, events, pair, rng, changes를 보존합니다. 새 저장 형식이므로 이전 데이터 변환은 없습니다.
+- candidates는 id/config(model, artists의 name/weight, loras의 name/weight/clip), parent_id/change, status, attempts, execution_settings를 가집니다. 시도에는 공용 큐 id/status/image_url/error/prompt_id/result_uncertain을 보존합니다. 실제 이미지가 없어도 후보와 평가는 삭제하지 않습니다.
+- rounds의 ids/start_event로 신규 성공 후보 수와 기본 2N 응답 예산을 계산합니다. events는 pair/choice/at/undone, pair는 현재 좌우 ID입니다. Elo 1000/K24와 승리·비선호 수는 이벤트 재생으로 계산하고 API의 scores에 제공합니다. rng는 이미지 시드와 별도의 Python Random 상태입니다.
+- 전역 풀 및 세션 API는 revision을 확인합니다. 진행 상태와 평가도 원자적으로 저장하며 큐에서 완료 기록을 정리하기 전에 세션에 결과가 남습니다. 재시작한 탐색 요청은 interrupted로 바꾸며 자동 재전송하지 않습니다.
+- 이미지 결과는 기존 `_lab` 출력 및 sidecar 형식을 사용하고 `style_session/style_candidate` 식별자를 더합니다. 세션 삭제의 선택적 이미지 삭제는 해당 식별자만 대상으로 휴지통을 사용합니다. 기존 프리셋 schema 3으로 내보낼 때 장면·seed·장면 negative는 포함하지 않습니다.

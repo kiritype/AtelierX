@@ -32,7 +32,8 @@ type Draft = { positive: string; negative: string; settings: GenerationSettings;
 type Side = { url: string; label: string; path?: string };
 
 const DRAFT_KEY = 'atelierx-lab-draft';
-const HANDOFF_KEY = 'atelierx-lab-handoff';
+export const HANDOFF_KEY = 'atelierx-lab-handoff';
+export function hasLabHandoff() { return !!readStore(sessionStorage, HANDOFF_KEY); }
 const SWEEPS = ['cfg', 'steps', 'sampler', 'scheduler', 'clip_skip', 'lora_strength', 'lora_file', 'artist'] as const;
 const MAX_JOBS = 48;
 

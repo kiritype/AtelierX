@@ -685,9 +685,49 @@ async def designs(request):
     return await call(_designs, runtime.works.get(request.path_params['wid']))
 
 
+async def explore_pools(request):
+    search = _runtime(request).style_search
+    return (
+        await call(search.save_pool, await _body(request))
+        if request.method == 'POST'
+        else await call(search.pools)
+    )
+
+
+async def explore_sessions(request):
+    search = _runtime(request).style_search
+    return (
+        await call(search.create, await _body(request))
+        if request.method == 'POST'
+        else await call(search.list)
+    )
+
+
+async def explore_session(request):
+    search = _runtime(request).style_search
+    ident = request.path_params['sid']
+    return (
+        await call(search.action, ident, await _body(request))
+        if request.method == 'POST'
+        else await call(search.get, ident)
+    )
+
+
+async def explore_artists(request):
+    try:
+        offset = max(0, int(request.query_params.get('offset', 0)))
+    except ValueError:
+        offset = 0
+    return await call(_runtime(request).tags.artists, request.query_params.get('q', ''), offset)
+
+
 def routes():
     p = '/api/image'
     return [
+        Route(f'{p}/explore/pools', explore_pools, methods=['GET', 'POST']),
+        Route(f'{p}/explore/sessions', explore_sessions, methods=['GET', 'POST']),
+        Route(f'{p}/explore/sessions/{{sid}}', explore_session, methods=['GET', 'POST']),
+        Route(f'{p}/explore/artists', explore_artists),
         Route(f'{p}/inspect', inspect_external_image, methods=['POST']),
         Route(f'{p}/connection', connection_get),
         Route(f'{p}/connection', connection_put, methods=['PUT']),
