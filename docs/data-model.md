@@ -1548,3 +1548,20 @@ history/
 - 앱보다 오래된 버전이면 변환을 제안한다. 변환 전에 작품마다 `before_bulk` 스냅샷을 만들고, 데이터 루트 단위 변환이면
   백업 폴더를 만든다.
 - 앱보다 새 버전이면 해당 작품·파일을 읽기 전용으로 연다(새 앱이 만든 데이터를 옛 앱이 망가뜨리지 않게).
+
+### 업데이트 확인 상태 (`state/update/notice.json`, schema_version 2)
+
+마지막 시도 `last_attempt`와 성공 `last_success`는 UTC epoch 밀리초다. `status`는 unchecked/latest/available/failed이며 checking은 실행 중 요청에서 계산한다.
+`retries`는 자동 추가 시도 횟수(0~3), `next_retry`는 다음 재시도 시각, `server_not_before`는 서버가 허용하는 최초 시각이다.
+`result`와 `available_version`은 마지막 성공 결과를 보존하며 `error`는 메시지 키·문구·값이다. `retryable`은 일시 오류 여부다.
+기존 checked_at은 성공을 보장하지 않아 last_success로 이전하지 않는다. 기존 버전별 알림·설치 결과 중복 방지 필드는 유지한다.
+실행 중 요청은 영속화하지 않으며 재시작은 저장된 대기·횟수 기준으로 판단한다. 자동 확인 설정은 config/settings.json의 기존 필드를 사용한다.
+
+### 그림체 탐색 세션 (0.6.0, #306)
+
+- `data/image/style-search/pools.json`: `schema_version: 1`, `items`는 `id/name/kind/items` 전역 풀 목록입니다. kind는 artists/models/loras, 각 항목은 name과 mode(always/candidate/exclude)를 갖습니다. 파일 자체를 복제하지 않습니다.
+- `data/image/style-search/sessions/<id>.json`: `schema_version: 1`. 서비스·계열·정규화한 생성 settings(고정 seed 포함), positive/negative, 독립 pools 사본, rules, candidates, rounds, events, pair, rng, changes를 보존합니다. 새 저장 형식이므로 이전 데이터 변환은 없습니다.
+- candidates는 id/config(model, artists의 name/weight, loras의 name/weight/clip), parent_id/change, status, attempts, execution_settings를 가집니다. 시도에는 공용 큐 id/status/image_url/error/prompt_id/result_uncertain을 보존합니다. 실제 이미지가 없어도 후보와 평가는 삭제하지 않습니다.
+- rounds의 ids/start_event로 신규 성공 후보 수와 기본 2N 응답 예산을 계산합니다. events는 pair/choice/at/undone, pair는 현재 좌우 ID입니다. Elo 1000/K24와 승리·비선호 수는 이벤트 재생으로 계산하고 API의 scores에 제공합니다. rng는 이미지 시드와 별도의 Python Random 상태입니다.
+- 전역 풀 및 세션 API는 revision을 확인합니다. 진행 상태와 평가도 원자적으로 저장하며 큐에서 완료 기록을 정리하기 전에 세션에 결과가 남습니다. 재시작한 탐색 요청은 interrupted로 바꾸며 자동 재전송하지 않습니다.
+- 이미지 결과는 기존 `_lab` 출력 및 sidecar 형식을 사용하고 `style_session/style_candidate` 식별자를 더합니다. 세션 삭제의 선택적 이미지 삭제는 해당 식별자만 대상으로 휴지통을 사용합니다. 기존 프리셋 schema 3으로 내보낼 때 장면·seed·장면 negative는 포함하지 않습니다.

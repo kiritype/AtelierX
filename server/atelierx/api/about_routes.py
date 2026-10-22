@@ -29,7 +29,12 @@ async def about_notices(request):
 
 
 async def update_check(request):
-    return ok(await about.check_update())
+    return ok(await st(request).update_notices.check(manual=True))
+
+
+async def update_check_status(request):
+    state = st(request)
+    return ok(state.update_notices.status(state.settings.load().get('update_check_on_start', False)))
 
 
 async def update_notice_begin(request):
@@ -83,6 +88,7 @@ def routes():
         Route('/api/about', about_get),
         Route('/api/about/notices', about_notices),
         Route('/api/update-check', update_check),
+        Route('/api/update/check-status', update_check_status),
         Route('/api/update/notice/begin', update_notice_begin, methods=['POST']),
         Route('/api/update/notice/result', update_notice_record, methods=['POST']),
         Route('/api/update/notice/consume', update_notice_consume, methods=['POST']),
