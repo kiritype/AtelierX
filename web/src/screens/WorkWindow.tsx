@@ -403,8 +403,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
           {info.data.name} <Icon name="menu" size={14} />
         </span>
         <MenuBar menus={menus} />
-        <button className="ghost" onClick={() => image('lab')}>{t('explore.title')}</button>
-        <button className="ghost" onClick={() => image('lora')}>{t('image_menu.lora')}</button>
+        <button className="ghost" onClick={image('lab')}>{t('explore.title')}</button>
+        <button className="ghost" onClick={image('lora')}>{t('image_menu.lora')}</button>
         {help.updateAvailable && (
           <button className="update-badge" onClick={help.openUpdate} aria-label={t('help.update_badge')} title={t('help.update_badge')}>
             <Icon name="release" size={14} /> <span className="update-badge-label">{t('help.update_badge')}</span>
