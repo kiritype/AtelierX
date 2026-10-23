@@ -84,7 +84,7 @@ def persist(rt, s):
     s = copy.deepcopy(s)
     for key in ('revision', 'scores'):
         s.pop(key, None)
-    for key in ('used', 'owner', 'readiness'):
+    for key in ('used', 'owner', 'readiness', 'explore_used', 'optimize_used'):
         s['flow'].pop(key, None)
     atomic_json(rt.style_search.path(s['id']), s)
     return rt.style_search.get(s['id'])
@@ -160,7 +160,7 @@ def test_paused_comparisons_appear_without_claiming_owner_or_generating(unlocked
 def test_auto_round_is_idempotent_and_never_partially_spends_budget(unlocked):
     _, rt = _setup(unlocked)
     s = persist(rt, cover(ready_session(unlocked, rt)))
-    s = action(unlocked, s, 'automatic', enabled=True, limit=5, count=3)
+    s = action(unlocked, s, 'automatic', enabled=True, limit=5, count=3, optimize_limit=0)
     s = action(unlocked, s, 'resume', owner=OWNER)
     assert len(s['rounds']) == 1 and s['flow']['paused'] and spent(s) == 3
     assert s['flow']['reason'] == 'limit_remaining' and 'flow_error' not in s
@@ -181,7 +181,7 @@ def test_auto_round_is_idempotent_and_never_partially_spends_budget(unlocked):
 def test_limit_completion_is_not_an_error_and_survives_resume_and_restart(unlocked):
     _, rt = _setup(unlocked)
     s = persist(rt, cover(ready_session(unlocked, rt)))
-    s = action(unlocked, s, 'automatic', enabled=True, limit=3, count=3)
+    s = action(unlocked, s, 'automatic', enabled=True, limit=3, count=3, optimize_limit=0)
     s = action(unlocked, s, 'resume', owner=OWNER)
     assert s['flow']['reason'] == 'limit_reached' and 'flow_error' not in s
     s = action(unlocked, s, 'leave', owner=OWNER)

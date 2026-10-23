@@ -115,6 +115,9 @@ it('starts with comparison and search settings collapsed and never generates aut
   expect(host.textContent).toContain(t('explore.artists'));
   expect(host.textContent).toContain(t('explore.models'));
   expect(host.textContent).toContain(t('explore.loras'));
+  const budget = (label: string) => [...host.querySelectorAll('label')].find(x => x.textContent?.startsWith(label))!.querySelector('input')!.value;
+  expect(budget(t('builder.limit'))).toBe('30');
+  expect(budget(t('builder.optimize_limit'))).toBe('10');
   expect(post).not.toHaveBeenCalled();
 });
 
@@ -151,7 +154,8 @@ it('prepares and confirms actual counts before generating, then claims progressi
   vi.mocked(get).mockImplementation(async url => url.endsWith('/sessions/session') ? doc : []);
   await click(t('builder.start'));
   expect(vi.mocked(post).mock.calls.map(c => (c[1] as Record<string, unknown>).action)).toEqual([undefined, 'automatic', 'propose', 'generate', 'resume']);
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining(t('builder.confirm', {n: 1, count: 10, limit: 30})));
+  expect(vi.mocked(post).mock.calls[1][1]).toEqual(expect.objectContaining({limit: 30, optimize_limit: 10}));
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining(t('builder.confirm', {n: 1, count: 10, limit: 30, optimizeLimit: 10})));
   const resume = vi.mocked(post).mock.calls.at(-1)![1] as Record<string, unknown>;
   expect(String(resume.owner).length).toBeGreaterThanOrEqual(16);
   await render(<StyleExplorer openPresets={vi.fn()} active={false} />);

@@ -91,7 +91,7 @@ def readiness(session):
     }
 
 
-def spent(session):
+def spent(session, phase=None):
     return sum(
         bool(
             a.get('sent')
@@ -102,6 +102,7 @@ def spent(session):
             or (a['status'] == 'failed' and 'sent' not in a)
         )
         for c in session['candidates']
+        if phase is None or c.get('phase', 'explore') == phase
         for a in c['attempts']
     )
 
@@ -136,7 +137,8 @@ class StyleFlowMixin:
         self.clock = time.monotonic
 
     def normalize_flow(self, s):
-        s['schema_version'] = 2
+        migrating = s.get('schema_version', 1) < 3
+        s['schema_version'] = 3
         flow = s.setdefault(
             'flow',
             {
@@ -148,12 +150,19 @@ class StyleFlowMixin:
                 'mode': 'explore',
             },
         )
+        flow.setdefault('optimize_limit', 10)
+        for c in s['candidates']:
+            c.setdefault('phase', 'refine' if 'origin_event' in c else 'explore')
+        if migrating:
+            flow.update(paused=True, reason='resume')
+            if flow['mode'] == 'refine' and s.get('refinement') and not s['refinement'].get('automatic'):
+                s['refinement']['upgrade_pending'] = True
         error = s.get('flow_error')
         if isinstance(error, dict) and error.get('key') == 'server.explore.budget':
             self.limit_pause(s)
         if flow['reason'] in ('limit_reached', 'limit_remaining'):
             count = 1 if flow['mode'] == 'refine' else flow['count']
-            if spent(s) + count <= flow['limit']:
+            if spent(s, flow['mode']) + count <= self.phase_limit(s):
                 flow['reason'] = 'resume'
         if flow.get('boot') != self.boot:
             flow.update(boot=self.boot, paused=True, reason=resume_reason(s))
@@ -170,18 +179,26 @@ class StyleFlowMixin:
         return {
             **f,
             'used': spent(s),
+            'explore_used': spent(s, 'explore'),
+            'optimize_used': spent(s, 'refine'),
             'owner': self.leases.get(s['id'], [None])[0] if self.owner_alive(s['id']) else None,
             'readiness': readiness(s),
         }
 
-    def budget(self, s, count):
-        if spent(s) + count > s['flow']['limit']:
+    def phase_limit(self, s, phase=None):
+        return s['flow']['optimize_limit' if (phase or s['flow']['mode']) == 'refine' else 'limit']
+
+    def budget(self, s, count, phase=None):
+        phase = phase or s['flow']['mode']
+        if spent(s, phase) + count > self.phase_limit(s, phase):
             raise ValueError(Msg('server.explore.budget', 'The session generation limit would be exceeded.'))
 
     def limit_pause(self, s):
         s['flow'].update(
             paused=True,
-            reason='limit_reached' if spent(s) >= s['flow']['limit'] else 'limit_remaining',
+            reason='limit_reached'
+            if spent(s, s['flow']['mode']) >= self.phase_limit(s)
+            else 'limit_remaining',
         )
         s.pop('flow_error', None)
 
@@ -221,6 +238,10 @@ class StyleFlowMixin:
                     raise AppError(
                         Msg('server.explore.owner', 'Another screen owns automatic progression.'), 409
                     )
+                if s.get('refinement', {}).get('upgrade_pending'):
+                    self.begin_optimization(s)
+                    if f['reason'] == 'no_parent':
+                        return
                 self.leases[s['id']] = (owner, self.clock())
                 f.update(paused=False, reason='evaluating')
             elif lease and lease[0] == owner and self.owner_alive(s['id']):
@@ -238,14 +259,21 @@ class StyleFlowMixin:
             if type(body.get('enabled')) is not bool:
                 invalid('automatic')
             limit, count = body.get('limit'), body.get('count', f['count'])
+            optimize_limit = body.get('optimize_limit', f['optimize_limit'])
             if (
                 type(limit) is not int
                 or not 1 <= limit <= 5000
                 or type(count) is not int
                 or not 1 <= count <= 5000
+                or type(optimize_limit) is not int
+                or not 0 <= optimize_limit <= 5000
             ):
                 invalid('limit/count (1–5000)')
-            f.update(enabled=body['enabled'], limit=limit, count=count)
+            f.update(enabled=body['enabled'], limit=limit, count=count, optimize_limit=optimize_limit)
+        elif action == 'optimize':
+            if any(c['status'] in ACTIVE for c in s['candidates']):
+                invalid('wait for generation')
+            self.begin_optimization(s)
         elif action == 'refine':
             c = next((c for c in available(s) if c['id'] == body.get('candidate')), None)
             target = body.get('target', 'all')
@@ -303,6 +331,14 @@ class StyleFlowMixin:
             if any(c['status'] in ACTIVE for c in s['candidates']):
                 f['reason'] = 'generating'
                 return
+            if spent(s, 'explore') + f['count'] > f['limit']:
+                if f['optimize_limit']:
+                    self.begin_optimization(s)
+                    if not f['paused']:
+                        self.refine_next(s)
+                else:
+                    self.limit_pause(s)
+                return
             self.budget(s, f['count'])
             self.check_assets(s)
             if not s.get('proposal'):
@@ -324,6 +360,10 @@ class StyleFlowMixin:
         from .style_search import signature
 
         r, f = s['refinement'], s['flow']
+        if r.get('automatic') and r.get('rotate'):
+            self.rotate_optimization(s)
+            if f['paused']:
+                return
         if r.get('needs_base'):
             f.update(paused=True, reason='choose_base')
             return
@@ -338,9 +378,21 @@ class StyleFlowMixin:
             candidate = by_id[r['pending']]
         else:
             candidate = None
-            for config, desc in neighbours(s, base['config'], r['target']):
+            from .style_optimize import suggestions
+
+            options = (
+                suggestions(s, base, r['target'])
+                if r.get('automatic')
+                else neighbours(s, base['config'], r['target'])
+            )
+            for config, desc in options:
                 key = [r['base'], signature(config)]
                 if key in r['seen']:
+                    continue
+                if (
+                    r.get('automatic')
+                    and sorted([signature(base['config']), signature(config)]) in r['compared']
+                ):
                     continue
                 candidate = next((c for c in s['candidates'] if signature(c['config']) == key[1]), None)
                 if candidate is None:
@@ -353,6 +405,7 @@ class StyleFlowMixin:
                         'change': desc,
                         'status': 'planned',
                         'attempts': [],
+                        'phase': 'refine',
                     }
                     s['proposal'] = {
                         'requested': 1,
@@ -364,6 +417,13 @@ class StyleFlowMixin:
                 r['pending'] = candidate['id']
                 break
             if candidate is None:
+                if r.get('automatic'):
+                    r['groups'][r['cursor']]['done'] = True
+                    r['rotate'] = True
+                    self.rotate_optimization(s)
+                    if not f['paused']:
+                        self.refine_next(s)
+                    return
                 f.update(paused=True, reason='no_improvement')
                 return
         if candidate in available(s):
@@ -391,6 +451,10 @@ class StyleFlowMixin:
         if event['choice'] == 'skip':
             return
         if event['choice'] == 'bad':
+            if r.get('automatic'):
+                r['groups'][r['cursor']]['done'] = True
+                r.update(rotate=True, pending=None)
+                return
             r.update(needs_base=True, pending=None)
             s['flow'].update(paused=True, reason='choose_base')
             return
@@ -399,6 +463,52 @@ class StyleFlowMixin:
         r['seen'].append([r['base'], signature(c['config'])])
         winner = event['pair'][0 if event['choice'] == 'a' else 1] if event['choice'] != 'tie' else r['base']
         r.update(base=winner, pending=None)
+        if r.get('automatic'):
+            by_id = {c['id']: c for c in s['candidates']}
+            r['compared'].append(sorted(signature(by_id[x]['config']) for x in event['pair']))
+            r['groups'][r['cursor']]['base'] = winner
+            r['rotate'] = True
+
+    def begin_optimization(self, s):
+        from .style_optimize import group_key
+        from .style_search import ranking
+
+        scores = ranking(s)
+        groups, seen = [], set()
+        for c in sorted(parents(s), key=lambda c: -scores[c['id']]['score']):
+            key = group_key(c['config'])
+            if key in seen:
+                continue
+            seen.add(key)
+            groups.append({'base': c['id'], 'done': False})
+            if len(groups) == 3:
+                break
+        if not groups:
+            s['flow'].update(paused=True, reason='no_parent')
+            return
+        s['flow'].update(mode='refine', reason='evaluating')
+        s['pair'] = None
+        s.pop('proposal', None)
+        s['refinement'] = {
+            'base': groups[0]['base'],
+            'target': 'all',
+            'seen': [],
+            'pending': None,
+            'automatic': True,
+            'groups': groups,
+            'cursor': 0,
+            'compared': [],
+        }
+
+    def rotate_optimization(self, s):
+        r = s['refinement']
+        for offset in range(1, len(r['groups']) + 1):
+            index = (r['cursor'] + offset) % len(r['groups'])
+            group = r['groups'][index]
+            if not group['done']:
+                r.update(cursor=index, base=group['base'], pending=None, rotate=False)
+                return
+        s['flow'].update(paused=True, reason='no_improvement')
 
     def undo_flow(self, s, index, event):
         s['flow'].update(paused=True, reason='paused')

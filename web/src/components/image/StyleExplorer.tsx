@@ -114,7 +114,7 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
     [deleteImages, setDeleteImages] = useState(false);
   useUnsaved(`style-explore-${initialService}`, dirty || conditionsDirty || busy);
   const [automatic, setAutomatic] = useState(true), [limit, setLimit] = useState(30);
-  const [target, setTarget] = useState('all');
+  const [optimizeLimit, setOptimizeLimit] = useState(10);
   useEffect(() => { if (s?.flow?.mode === 'refine' && s.refinement?.base) setChosen([s.refinement.base]); }, [s?.flow?.mode, s?.refinement?.base]);
   const [materialsOpen, setMaterialsOpen] = useState(true);
   useEffect(() => { setMaterialsOpen(!s?.candidates.length); }, [s?.id, !!s?.candidates.length]);
@@ -159,6 +159,7 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
       setChosen([]);
       setAutomatic(s.flow?.enabled ?? true);
       setLimit(s.flow?.limit ?? 30);
+      setOptimizeLimit(s.flow?.optimize_limit ?? 10);
       setCount(s.flow?.count ?? 10);
     }
   }, [s]);
@@ -248,11 +249,11 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
       qc.setQueryData(['style-session', doc.id], doc);
     };
     if (dirty && !conditionsDirty && s) { await send('configure', {pools: selected, rules}); setDirty(false); }
-    await send('automatic', {enabled: automatic, limit, count});
+    await send('automatic', {enabled: automatic, limit, optimize_limit: optimizeLimit, count});
     await send('propose', {count});
     const n = doc.proposal?.candidates.length ?? 0;
     if (!n) { setError(t('builder.exhausted')); return; }
-    if (!confirm(t('builder.confirm', {n, count, limit}) + '\n' + t('explore.cost'))) return;
+    if (!confirm(t('builder.confirm', {n, count, limit, optimizeLimit}) + '\n' + t('explore.cost'))) return;
     await send('generate', {allow_partial: true});
     await send('resume', {owner: owner.current});
   }
@@ -470,12 +471,13 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
         <div className="row" style={{flexWrap: 'wrap'}}>
           <label className="builder-check"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} />{t('builder.auto')}</label>
           <label>{t('builder.limit')} <input type="number" min={1} max={5000} value={limit} style={{width: 85}} onChange={e => setLimit(Number(e.target.value))} /></label>
+          <label>{t('builder.optimize_limit')} <input type="number" min={0} max={5000} value={optimizeLimit} style={{width: 85}} onChange={e => setOptimizeLimit(Number(e.target.value))} /></label>
           <label>{t('builder.batch')} <input type="number" min={1} max={5000} value={count} style={{width: 75}} onChange={e => setCount(Number(e.target.value))} /></label>
-          {s && <button disabled={busy} onClick={() => run(() => act('automatic', {enabled: automatic, limit, count}))}>{t('builder.apply_auto')}</button>}
+          {s && <button disabled={busy} onClick={() => run(() => act('automatic', {enabled: automatic, limit, optimize_limit: optimizeLimit, count}))}>{t('builder.apply_auto')}</button>}
         </div>
         <details><summary>{t('builder.criteria')}</summary><p className="muted">{t('builder.auto_hint')}</p></details>
         {s?.flow && <div role="status">
-          {t('builder.progress', {round: s.rounds?.length ?? 0, used: s.flow.used, limit: s.flow.limit})} · {t(`builder.reason.${s.flow.reason}`)}
+          {t('builder.phase_progress', {round: s.rounds?.length ?? 0, explored: s.flow.explore_used, limit: s.flow.limit, optimized: s.flow.optimize_used, optimizeLimit: s.flow.optimize_limit})} · {t(s.flow.mode === 'refine' ? 'builder.refine' : 'builder.explore')} · {t(`builder.reason.${s.flow.reason}`)}
           {s.flow.mode === 'explore' && <> · {t('builder.coverage', {n: s.flow.readiness.covered, total: s.flow.readiness.total})}</>}
           {s.flow_error && <p role="alert">{typeof s.flow_error === 'string' ? s.flow_error : tm(s.flow_error)}</p>}
         </div>}
@@ -603,10 +605,8 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
               <option value="">{t('builder.choose')}</option>
               {scores.filter(c => c.status === 'done' && !c.image_missing).map(c => <option key={c.id} value={c.id}>{t('builder.candidate', {n: s.candidates.indexOf(c) + 1})} · Elo {s.scores[c.id].score.toFixed(0)}</option>)}
             </select></label>
-            <select aria-label={t('builder.target')} value={target} onChange={e => setTarget(e.target.value)}>
-              <option value="all">{t('builder.all_weights')}</option><option value="artist">Artist</option>{service === 'comfyui' && <option value="lora">LoRA</option>}
-            </select>
-            <button disabled={busy || chosen.length !== 1 || s.candidates.some(c => ['queued','running','cancelling'].includes(c.status))} onClick={() => run(async () => { await act('refine', {candidate: chosen[0], target}); await act('resume', {owner: owner.current}); if (!automatic) await act('refine_next'); })}>{t('builder.refine')}</button>
+            {s.flow?.mode !== 'refine' && <button disabled={busy || dirty || conditionsDirty || s.candidates.some(c => ['queued','running','cancelling'].includes(c.status))} onClick={() => run(async () => { await act('automatic', {enabled: automatic, limit, optimize_limit: optimizeLimit, count}); await act('optimize'); await act('resume', {owner: owner.current}); if (!automatic) await act('refine_next'); })}>{t('builder.optimize_start')}</button>}
+            {s.refinement?.automatic && <p className="muted">{t('builder.optimize_hint', {n: s.refinement.groups?.length ?? 0})}</p>}
             {s.flow?.mode === 'refine' && <>
               <button disabled={busy || !!s.pair} onClick={() => run(() => act('refine_next'))}>{t('builder.next_weight')}</button>
               <button disabled={busy} onClick={() => run(() => act('explore'))}>{t('builder.back_explore')}</button>

@@ -470,7 +470,7 @@ class StyleSearch(StyleFlowMixin):
         for key in ('pair', 'rng', 'flow_error'):
             data.pop(key, None)
         data['command_version'] = data.get('command_version', 0)
-        data['flow'] = {k: data['flow'][k] for k in ('enabled', 'limit', 'count', 'mode')}
+        data['flow'] = {k: data['flow'][k] for k in ('enabled', 'limit', 'optimize_limit', 'count', 'mode')}
         for c in data['candidates']:
             for key in ('status', 'image_url', 'image_missing'):
                 c.pop(key, None)
@@ -574,7 +574,8 @@ class StyleSearch(StyleFlowMixin):
         plan = session['proposal']
         if session['service'] == 'novelai':
             self.runtime.services['novelai'].key()
-        self.budget(session, len(plan['candidates']))
+        phase = 'refine' if plan.get('refine') else 'explore'
+        self.budget(session, len(plan['candidates']), phase)
         limit = self.runtime.service_config.limit() if session['service'] == 'novelai' else 0
         if limit and len(plan['candidates']) > limit:
             invalid('internet generation limit: ' + str(limit))
@@ -591,7 +592,7 @@ class StyleSearch(StyleFlowMixin):
             jobs.append(job)
         benchmarks = sorted(parents(session), key=lambda c: -ranking(session)[c['id']]['score'])[:3]
         for c, job in zip(plan['candidates'], jobs, strict=True):
-            c.update(status='queued', attempts=[{'id': job['id'], 'status': 'queued', 'sent': False}])
+            c.update(phase=phase, status='queued', attempts=[{'id': job['id'], 'status': 'queued', 'sent': False}])
             session['candidates'].append(c)
         if not plan.get('refine'):
             session['rounds'].append(
@@ -620,6 +621,7 @@ class StyleSearch(StyleFlowMixin):
                 'leave',
                 'pause',
                 'automatic',
+                'optimize',
                 'refine',
                 'explore',
                 'refine_next',
@@ -695,7 +697,10 @@ class StyleSearch(StyleFlowMixin):
                 if action == 'retry':
                     if session['service'] == 'novelai':
                         self.runtime.services['novelai'].key()
-                    self.budget(session, len(targets))
+                    for phase in ('explore', 'refine'):
+                        count = sum(c.get('phase', 'explore') == phase for c in targets)
+                        if count:
+                            self.budget(session, count, phase)
                     self.runtime.queue.check_room(len(targets))
                     for c in targets:
                         previous = c['attempts'][-1]
