@@ -1568,5 +1568,6 @@ history/
 
 - flow는 enabled/limit/count/paused/reason/mode/boot를 보존합니다. 기본값은 자동 켜짐·총 30회·라운드 10개·재개 대기·explore입니다. API flow에는 used/owner/readiness를 계산해 더하며 저장 원본·revision에는 넣지 않습니다.
 - 소유 화면은 메모리의 12초 임대로 관리합니다. 2초 heartbeat는 기존 소유자만 연장하며 새 소유자 등록은 명시적 resume만 가능합니다. 화면 이탈·임대 만료·서버 재시작 후 새 자동 요청은 멈춥니다. heartbeat/leave 이외의 변경은 revision을 검사합니다.
+- 세션의 선택적 `command_version`은 없으면 0이며, heartbeat/leave 외 사용자 명령을 처리할 때 증가합니다. revision은 이 값과 편집·평가·후보/시도 식별자·생성 계획을 검사하고 작업 진행 상태·이미지 경로·비교 표시·임대 상태는 제외합니다. 따라서 작업 진행은 충돌을 만들지 않으며 동시 편집과 생성 요청 재전송은 거절합니다. 평가 요청은 표시된 `pair`도 보내며 현재 쌍과 일치해야 합니다.
 - used는 attempts의 활성 예약 또는 송신/불명/완료 요청을 셉니다. 송신 직전에 sent를 원자적으로 기록합니다. 송신 전 취소·중단·확실한 실패는 반환하며 구버전 failed 기록은 보수적으로 사용량에 포함합니다. 송신한 실패와 재시도는 각각 집계합니다.
 - refinement는 base/target/seen/pending을 갖습니다. seen은 기준 ID와 변형 조합 signature 쌍입니다. events의 refinement_before로 undo하며, 다듬기 후보의 origin_event로 파생 요청을 추적합니다. 무효화된 탐색 라운드는 invalidated_rounds에 보존하고 송신 전 작업만 취소합니다.

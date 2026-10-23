@@ -14,6 +14,42 @@ from test_style_search import action, create, session
 OWNER = 'screen-owner-00000001'
 
 
+def test_progress_between_generation_and_resume_is_not_an_edit_conflict(unlocked):
+    _, rt = _setup(unlocked)
+    s = create(unlocked, rt)
+    s = action(unlocked, s, 'propose', count=3)
+    prepared = s
+    s = action(unlocked, s, 'generate')
+    job = rt.queue.get(s['candidates'][0]['attempts'][0]['id'])
+    rt.queue.update(job, status='running', sent=True, prompt_id='remote-id')
+    rt.style_search.capture(job)
+    # Use exactly the response from generate, before the worker persisted progress.
+    resumed = action(unlocked, s, 'resume', owner=OWNER)
+    assert len(resumed['candidates']) == 3 and not resumed['flow']['paused']
+    duplicate = unlocked.post('/api/image/explore/sessions/' + s['id'], json={
+        'action': 'generate', 'revision': prepared['revision'],
+    })
+    assert duplicate.status_code == 409
+    assert len(rt.style_search.get(s['id'])['candidates']) == 3
+
+
+def test_real_edits_and_wrong_pairs_still_conflict(unlocked):
+    _, rt = _setup(unlocked)
+    s = ready_session(unlocked, rt)
+    action(unlocked, s, 'automatic', enabled=True, limit=9, count=3)
+    conflict = unlocked.post('/api/image/explore/sessions/' + s['id'], json={
+        'action': 'automatic', 'revision': s['revision'], 'enabled': False, 'limit': 30, 'count': 3,
+    })
+    assert conflict.status_code == 409
+    current = rt.style_search.get(s['id'])
+    wrong_pair = unlocked.post('/api/image/explore/sessions/' + s['id'], json={
+        'action': 'evaluate', 'revision': current['revision'], 'choice': 'a',
+        'pair': list(reversed(current['pair'])),
+    })
+    assert wrong_pair.status_code == 409
+    assert not rt.style_search.get(s['id'])['events']
+
+
 def ready_session(client, rt, count=3):
     s = create(client, rt)
     s['rng'] = random.Random(72).getstate()

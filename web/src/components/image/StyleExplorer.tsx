@@ -204,7 +204,7 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
     const pair = s.pair.join(':');
     void run(async () => {
       const current = qc.getQueryData<StyleSession>(['style-session', s.id]);
-      if (current?.pair?.join(':') === pair) await act('evaluate', { choice });
+      if (current?.pair?.join(':') === pair) await act('evaluate', { choice, pair: s.pair });
     });
   }
   useEffect(() => {

@@ -463,13 +463,27 @@ class StyleSearch(StyleFlowMixin):
                         c['image_missing'] = True
         return session
 
+    def edit_revision(self, session):
+        # Worker progress and comparison presentation are not user edits. Keep
+        # candidate/attempt identities so automatic admission and retries conflict.
+        data = copy.deepcopy(session)
+        for key in ('pair', 'rng', 'flow_error'):
+            data.pop(key, None)
+        data['command_version'] = data.get('command_version', 0)
+        data['flow'] = {k: data['flow'][k] for k in ('enabled', 'limit', 'count', 'mode')}
+        for c in data['candidates']:
+            for key in ('status', 'image_url', 'image_missing'):
+                c.pop(key, None)
+            c['attempts'] = [{'id': a['id']} for a in c['attempts']]
+        return revisions.of(data)
+
     def get(self, ident):
         with self.lock:
             session = self.sync(self.load(ident))
             self.present_comparison(session)
             flow = self.public_flow(session)
             atomic_json(self.path(ident), session)
-            return {**session, 'flow': flow, 'scores': ranking(session), 'revision': revisions.of(session)}
+            return {**session, 'flow': flow, 'scores': ranking(session), 'revision': self.edit_revision(session)}
 
     def check_assets(self, session):
         if session['service'] != 'comfyui':
@@ -597,9 +611,8 @@ class StyleSearch(StyleFlowMixin):
     def action(self, ident, body):
         with self.lock:
             session = self.sync(self.load(ident))
-            # Runtime progress is not an edit conflict; compare against the persisted document before syncing.
             if body.get('action') not in ('heartbeat', 'leave'):
-                revisions.check(body.get('revision'), revisions.of(self.load(ident)))
+                revisions.check(body.get('revision'), self.edit_revision(session))
             action = body.get('action')
             if action in (
                 'heartbeat',
@@ -644,6 +657,7 @@ class StyleSearch(StyleFlowMixin):
             elif action == 'pair':
                 self.pair(session, bool(body.get('extra')))
             elif action == 'evaluate':
+                revisions.check(body.get('pair'), session['pair'])
                 choice = body.get('choice')
                 if choice not in ('a', 'b', 'tie', 'bad', 'skip') or not session['pair']:
                     invalid('evaluation')
@@ -760,6 +774,8 @@ class StyleSearch(StyleFlowMixin):
                 return {'deleted': True}
             else:
                 invalid('action')
+            if action not in ('heartbeat', 'leave'):
+                session['command_version'] = session.get('command_version', 0) + 1
             atomic_json(self.path(ident), session)
             return self.get(ident)
 

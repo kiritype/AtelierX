@@ -102,6 +102,8 @@ def create(client, rt):
 
 
 def action(client, s, op, **kwargs):
+    if op == 'evaluate':
+        kwargs.setdefault('pair', s['pair'])
     response = client.post(
         '/api/image/explore/sessions/' + s['id'], json={'revision': s['revision'], 'action': op, **kwargs}
     )
