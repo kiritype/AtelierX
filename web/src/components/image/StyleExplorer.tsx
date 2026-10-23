@@ -501,8 +501,8 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
                       {c.image_missing ? (
                         <p>{t('explore.missing')}</p>
                       ) : (
-                        <button type="button" disabled={busy} aria-label={t(`explore.vote.${i === 0 ? 'a' : 'b'}`)} onClick={() => vote(i === 0 ? 'a' : 'b')} style={{ display: 'block', width: '100%', padding: 0 }}>
-                          <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ display: 'block', width: '100%', maxHeight: 'min(50vh,560px)', objectFit: 'contain' }} />
+                        <button type="button" disabled={busy} aria-label={t(`explore.vote.${i === 0 ? 'a' : 'b'}`)} onClick={() => vote(i === 0 ? 'a' : 'b')} style={{ display: 'block', width: 'fit-content', maxWidth: '100%', padding: 0, marginInline: 'auto', overflow: 'hidden' }}>
+                          <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: 'min(50vh,560px)' }} />
                         </button>
                       )}
                       <details>
