@@ -26,7 +26,7 @@ export function freeForOpus(width: number, height: number, steps: number, free: 
 }
 
 // The generate screen's settings for NovelAI (#42): model (V4.5, V5 …), size, sampling, and the account's Anlas.
-export default function NovelAISettings({ value, onChange, preview = false }: ServicePanelProps) {
+export default function NovelAISettings({ value, onChange, preview = false, fixedModel = false }: ServicePanelProps & { fixedModel?: boolean }) {
   const info = useQuery<NovelAIInfo>({
     queryKey: preview ? ['image-single-preview', 'novelai-info'] : ['image-service-info', 'novelai'],
     queryFn: () => preview ? Promise.resolve(NOVELAI_PREVIEW_INFO) : get('/api/image/services/novelai/info'),
@@ -52,7 +52,7 @@ export default function NovelAISettings({ value, onChange, preview = false }: Se
 
   return (
     <div className="col" style={{ gap: 8 }}>
-      <label className="col" style={{ gap: 2 }}>
+      {!fixedModel && <label className="col" style={{ gap: 2 }}>
         <span className="muted">{t('nai.model')}</span>
         {customModel || !known ? (
           <div className="row">
@@ -71,7 +71,7 @@ export default function NovelAISettings({ value, onChange, preview = false }: Se
             <option value="*">{t('nai.model_custom')}</option>
           </select>
         )}
-      </label>
+      </label>}
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <span className="muted">{t('nai.size')}</span>
         {SIZES.map((size) => (

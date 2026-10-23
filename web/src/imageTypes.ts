@@ -121,7 +121,10 @@ export type PoolDocument = { revision: string; items: StylePool[] };
 export type SearchRules = Record<string, number | boolean>;
 export type StyleConfig = { model: string; artists: {name: string; weight: number}[]; loras: {name: string; weight: number; clip: number}[] };
 export type StyleCandidate = {id: string; config: StyleConfig; parent_id: string | null; change: string; status: string; image_url?: string; image_missing?: boolean; include_parent?: boolean; attempts: {id: string; status: string; error?: import('./api').ServerMessage; prompt_id?: string; result_uncertain?: boolean}[]};
+export type StyleFlow = {enabled: boolean; limit: number; count: number; paused: boolean; reason: string; mode: 'explore' | 'refine'; used: number; owner: string | null; readiness: {ready: boolean; reason: string; covered: number; total: number}};
 export type StyleSession = {
+  flow?: StyleFlow; flow_error?: import('./api').ServerMessage | string; rounds?: {ids: string[]; start_event: number}[];
+  refinement?: {base: string; target: string; pending: string | null};
   id: string; revision: string; name: string; service: 'comfyui' | 'novelai'; family: 'anima' | 'sdxl';
   settings: Record<string, unknown>; positive: string; negative: string; pools: StylePools; rules: SearchRules;
   candidates: StyleCandidate[]; pair: string[] | null; events: {choice: string; undone?: boolean}[];

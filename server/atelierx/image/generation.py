@@ -714,6 +714,9 @@ class GenerationMixin:
                 return
             self.ensure_generation_safe()
             kind = job.get('kind')
+            if hasattr(self, 'style_search') and not self.style_search.before_submit(job):
+                self.queue.update(job, status='cancelled')
+                return
             sent = {'id': resume, 'record': service.request_body(job)} if resume else service.submit(job)
             working = (
                 self._generating(job)

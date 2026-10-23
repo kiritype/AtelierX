@@ -782,3 +782,20 @@ a.button.disabled { opacity: .5; pointer-events: none; }
 .image-info-content section { min-width: 0; }
 .image-info-raw { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 @media (max-width: 850px) { .image-info-content { grid-template-columns: 1fr; } }
+
+/* Style builder: keep the hit target and its label on the same row. */
+.builder-check, .dialog label.builder-check { display:flex; flex-direction:row; align-items:flex-start; gap:10px; padding:8px; cursor:pointer; }
+.builder-check input[type=checkbox] { flex:0 0 auto; width:18px; height:18px; margin:2px 0 0; }
+.builder-check span { min-width:0; overflow-wrap:anywhere; }
+.builder-check:has(input:checked) { background:var(--bg-hover, #80808018); border-radius:6px; }
+.builder-check:focus-within { outline:2px solid var(--accent, #4779df); outline-offset:-2px; }
+.builder-pool-fields { border:0; padding:0; min-width:0; }
+.builder-steps { display:flex; flex-wrap:wrap; gap:24px; list-style-position:inside; padding:12px; margin:0; }
+.builder-steps li[aria-current=step] { font-weight:700; color:var(--accent, #4779df); }
+.builder-wait { text-align:center; padding:32px; }
+
+.style-builder .card { width:auto; }
+.style-builder .card.row { flex-direction:row; }
+.card label.builder-check { flex-direction:row; align-items:center; gap:8px; }
+.style-builder > p, .style-builder .card p { margin:4px 0; }
+.builder-votes { position:sticky; bottom:0; background:var(--panel); padding:12px; border:1px solid var(--border); border-radius:8px; z-index:1; }

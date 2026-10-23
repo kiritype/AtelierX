@@ -47,6 +47,7 @@ const entries = (names: string[]): PoolItem[] =>
 const message = (e: unknown) => (e instanceof ApiError ? tm(e.msg) : String(e));
 
 export default function ImageExperiments({ workId, active, openPresets }: { workId: string; active: boolean; openPresets: () => void }) {
+  const [serviceTab, setServiceTab] = useState<'comfyui' | 'novelai'>('comfyui');
   const [tab, setTab] = useState<'lab' | 'explore'>(() => (hasLabHandoff() ? 'lab' : 'explore'));
   useEffect(() => {
     const take = () => setTab('lab');
@@ -60,11 +61,14 @@ export default function ImageExperiments({ workId, active, openPresets }: { work
           {t('explore.title')}
         </button>
         <button className={tab === 'lab' ? 'primary' : ''} onClick={() => setTab('lab')}>
-          {t('explore.lab')}
+          {t('builder.advanced')}
         </button>
       </nav>
       <div hidden={tab !== 'explore'}>
-        <StyleExplorer openPresets={openPresets} />
+        <nav className="row pad" aria-label={t('explore.service')}>
+          {(['comfyui', 'novelai'] as const).map(v => <button key={v} aria-pressed={serviceTab === v} className={serviceTab === v ? 'primary' : ''} onClick={() => setServiceTab(v)}>{v === 'comfyui' ? 'ComfyUI' : 'NovelAI'}</button>)}
+        </nav>
+        {(['comfyui', 'novelai'] as const).map(v => <div hidden={serviceTab !== v} key={v}><StyleExplorer openPresets={openPresets} initialService={v} active={active && tab === 'explore' && serviceTab === v} /></div>)}
       </div>
       <div hidden={tab !== 'lab'}>
         <ImageLab workId={workId} active={active && tab === 'lab'} />
@@ -73,7 +77,7 @@ export default function ImageExperiments({ workId, active, openPresets }: { work
   );
 }
 
-export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
+export function StyleExplorer({ openPresets, active = true, initialService = 'comfyui' }: { openPresets: () => void; active?: boolean; initialService?: 'comfyui' | 'novelai' }) {
   const qc = useQueryClient();
   const catalog = useCatalog();
   const pools = useQuery<PoolDocument>({ queryKey: ['style-pools'], queryFn: () => get(`${endpoint}/pools`) });
@@ -85,11 +89,11 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
   const session = useQuery<StyleSession>({
     queryKey: ['style-session', sid],
     queryFn: () => get(`${endpoint}/sessions/${sid}`),
-    enabled: !!sid,
-    refetchInterval: 2000,
+    enabled: !!sid && active,
+    refetchOnWindowFocus: false,
   });
   const s = session.data;
-  const [service, setService] = useState<'comfyui' | 'novelai'>('comfyui');
+  const [service, setService] = useState<'comfyui' | 'novelai'>(initialService);
   const [family, setFamily] = useState<'anima' | 'sdxl'>('anima');
   const [selected, setSelected] = useState<StylePools>(EMPTY);
   const [rules, setRules] = useState<SearchRules>({});
@@ -107,8 +111,37 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
     [presetName, setPresetName] = useState('');
   const [unknown, setUnknown] = useState(false),
     [deleteImages, setDeleteImages] = useState(false);
-  useUnsaved('style-explore', dirty || conditionsDirty || busy);
+  useUnsaved(`style-explore-${initialService}`, dirty || conditionsDirty || busy);
+  const [automatic, setAutomatic] = useState(true), [limit, setLimit] = useState(30);
+  const [target, setTarget] = useState('all');
+  useEffect(() => { if (s?.flow?.mode === 'refine' && s.refinement?.base) setChosen([s.refinement.base]); }, [s?.flow?.mode, s?.refinement?.base]);
+  const [materialsOpen, setMaterialsOpen] = useState(true);
+  useEffect(() => { setMaterialsOpen(!s?.candidates.length); }, [s?.id, !!s?.candidates.length]);
+  const edits = useRef(false);
+  edits.current = dirty || conditionsDirty;
+  const owner = useRef(crypto.randomUUID());
+  const working = useRef(false);
+  const pendingHeartbeat = useRef<Promise<unknown> | null>(null);
   const loaded = useRef('');
+  useEffect(() => {
+    if (!active || !sid) return;
+    let disposed = false;
+    const beat = () => {
+      if (disposed || working.current || pendingHeartbeat.current) return;
+      pendingHeartbeat.current = post<StyleSession>(`${endpoint}/sessions/${sid}`, {action: 'heartbeat', owner: owner.current, hold: edits.current})
+        .then(result => { if (!disposed) qc.setQueryData(['style-session', sid], result); })
+        .catch(e => { if (!disposed) setError(message(e)); })
+        .finally(() => { pendingHeartbeat.current = null; });
+    };
+    const leave = () => {
+      disposed = true;
+      void fetch(`${endpoint}/sessions/${sid}`, {method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', keepalive: true,
+        body: JSON.stringify({action: 'leave', owner: owner.current})}).catch(() => {});
+    };
+    const timer = window.setInterval(beat, 2000);
+    window.addEventListener('pagehide', leave);
+    return () => { clearInterval(timer); window.removeEventListener('pagehide', leave); leave(); };
+  }, [active, sid, qc]);
   useEffect(() => {
     if (s && loaded.current !== s.id) {
       loaded.current = s.id;
@@ -123,17 +156,22 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
       setDirty(false);
       setConditionsDirty(false);
       setChosen([]);
+      setAutomatic(s.flow?.enabled ?? true);
+      setLimit(s.flow?.limit ?? 30);
+      setCount(s.flow?.count ?? 10);
     }
   }, [s]);
   const info = useQuery<NovelAIInfo>({
     queryKey: ['image-service-info', 'novelai'],
     queryFn: () => get('/api/image/services/novelai/info'),
-    enabled: service === 'novelai',
+    enabled: active && service === 'novelai',
     staleTime: Infinity,
   });
-  async function run(fn: () => Promise<void>) {
-    if (busy) return;
+  async function run(fn: () => Promise<unknown>) {
+    if (working.current) return;
+    working.current = true;
     setBusy(true);
+    await pendingHeartbeat.current;
     setError('');
     try {
       await fn();
@@ -141,13 +179,15 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
       setError(message(e));
       if (e instanceof ApiError && e.status === 409) await session.refetch();
     } finally {
+      working.current = false;
       setBusy(false);
     }
   }
   async function act(action: string, extra: Record<string, unknown> = {}) {
     if (!s) return;
+    const current = qc.getQueryData<StyleSession>(['style-session', s.id]) ?? s;
     const result = await post<StyleSession & { deleted?: boolean }>(`${endpoint}/sessions/${s.id}`, {
-      revision: s.revision,
+      revision: current.revision,
       action,
       ...extra,
     });
@@ -156,6 +196,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
       loaded.current = '';
       await qc.invalidateQueries({ queryKey: ['style-sessions'] });
     } else qc.setQueryData(['style-session', s.id], result);
+    return result;
   }
   async function create() {
     const result = await post<StyleSession>(`${endpoint}/sessions`, {
@@ -168,18 +209,36 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
       positive,
       negative,
     });
-    loaded.current = '';
+    loaded.current = result.id;
+    setRules(result.rules);
+    setSettings(result.settings);
     setSid(result.id);
     qc.setQueryData(['style-session', result.id], result);
     setDirty(false);
     setConditionsDirty(false);
     await qc.invalidateQueries({ queryKey: ['style-sessions'] });
+    return result;
+  }
+  async function start() {
+    let doc = !s || conditionsDirty ? await create() : (qc.getQueryData<StyleSession>(['style-session', s.id]) ?? s);
+    const send = async (action: string, extra: Record<string, unknown> = {}) => {
+      doc = await post<StyleSession>(`${endpoint}/sessions/${doc.id}`, {revision: doc.revision, action, ...extra});
+      qc.setQueryData(['style-session', doc.id], doc);
+    };
+    if (dirty && !conditionsDirty && s) { await send('configure', {pools: selected, rules}); setDirty(false); }
+    await send('automatic', {enabled: automatic, limit, count});
+    await send('propose', {count});
+    const n = doc.proposal?.candidates.length ?? 0;
+    if (!n) { setError(t('builder.exhausted')); return; }
+    if (!confirm(t('builder.confirm', {n, count, limit}) + '\n' + t('explore.cost'))) return;
+    await send('generate', {allow_partial: true});
+    await send('resume', {owner: owner.current});
   }
   const changePool = (kind: PoolKind, items: PoolItem[]) => {
     setSelected({ ...selected, [kind]: items });
     setDirty(true);
   };
-  const kinds: PoolKind[] = service === 'novelai' ? ['artists', 'models'] : ['artists', 'models', 'loras'];
+  const kinds: PoolKind[] = service === 'novelai' ? ['artists'] : ['artists', 'models', 'loras'];
   const poolCards = kinds.map((kind) => (
     <div className="card col" style={{ flex: 1, minWidth: 180, padding: 12 }} key={kind}>
       <strong>
@@ -202,20 +261,6 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
             </option>
           ))}
       </select>
-      {kind === 'models' && service === 'novelai' && (
-        <select
-          aria-label={t('explore.fixed_model')}
-          value={selected.models[0]?.name ?? ''}
-          onChange={(e) => changePool('models', entries([e.target.value]))}
-        >
-          <option value="">{t('explore.fixed_model')}</option>
-          {info.data?.models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      )}
       <button onClick={() => setEditing(kind)}>{t('explore.manage')}</button>
     </div>
   ));
@@ -228,7 +273,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
       )
     : [];
   return (
-    <section className="pad col" style={{ gap: 16, maxWidth: 1320, margin: 'auto' }} aria-label={t('explore.title')}>
+    <section className="pad col style-builder" style={{ gap: 16, maxWidth: 1320, margin: 'auto' }} aria-label={t('explore.title')}>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <h2 className="grow">{t('explore.title')}</h2>
         <select
@@ -246,26 +291,38 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
           }}
         >
           <option value="">{t('explore.new')}</option>
-          {sessions.data?.map((x) => (
+          {sessions.data?.filter(x => x.service === service).map((x) => (
             <option key={x.id} value={x.id}>
               {x.service} · {x.name}
             </option>
           ))}
         </select>
       </div>
-      <p className="muted">{t('explore.intro')}</p>
+      <ol className="builder-steps" aria-label={t('builder.flow')}>
+        <li aria-current={!s?.candidates.length ? 'step' : undefined}>{t('builder.materials')}</li>
+        <li aria-current={s?.candidates.length && s.flow?.mode !== 'refine' ? 'step' : undefined}>{t('builder.explore')}</li>
+        <li aria-current={s?.flow?.mode === 'refine' ? 'step' : undefined}>{t('builder.refine')}</li>
+        <li>{t('explore.save_presets')}</li>
+      </ol>
+      {!s?.candidates.length && <p className="muted">{t(service === 'novelai' ? 'builder.nai_intro' : 'explore.intro')}</p>}
+      {service === 'novelai' && <label>{t('explore.fixed_model')} <select aria-label={t('explore.fixed_model')} value={selected.models[0]?.name ?? ''} onChange={e => {changePool('models', entries([e.target.value])); conditionChanged();}}>
+        <option value="">{t('explore.fixed_model')}</option>
+        {info.data?.models?.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select></label>}
       {error && (
         <p role="alert" className="error-text">
           {error}
         </p>
       )}
       {(session.error || pools.error || sessions.error) && <p role="alert">{message(session.error || pools.error || sessions.error)}</p>}
+      <details open={materialsOpen} onToggle={e => setMaterialsOpen(e.currentTarget.open)}>
+        <summary>{t('builder.materials')}{s?.candidates.length ? ` · ${selected.artists.length} artist` : ''}</summary>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         {poolCards}
       </div>
       <details>
         <summary>
-          {t('explore.conditions')} · {service} / {family} · {String(settings.width ?? 1024)}×{String(settings.height ?? 1024)} · seed{' '}
+          {t('explore.conditions')} · {service} / {service === 'novelai' ? (selected.models[0]?.name ?? t('explore.fixed_model')) : family} · {String(settings.width ?? 1024)}×{String(settings.height ?? 1024)} · seed{' '}
           {String(settings.seed)}
         </summary>
         <div className="col" style={{ gap: 10, padding: 12 }}>
@@ -281,17 +338,6 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
             />
           </label>
           <div className="row">
-            <select
-              aria-label={t('explore.service')}
-              value={service}
-              onChange={(e) => {
-                setService(e.target.value as typeof service);
-                conditionChanged();
-              }}
-            >
-              <option value="comfyui">ComfyUI</option>
-              <option value="novelai">NovelAI</option>
-            </select>
             {service === 'comfyui' && (
               <select
                 aria-label={t('explore.family')}
@@ -327,7 +373,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
               }}
             />
           </label>
-          {service === 'comfyui' ? (
+          {active && (service === 'comfyui' ? (
             <GenSettings
               value={{ ...settings, family } as GenerationSettings}
               onChange={(v) => {
@@ -338,13 +384,14 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
             />
           ) : (
             <NovelAISettings
-              value={settings}
+              fixedModel
+              value={{...settings, model: selected.models[0]?.name}}
               onChange={(v) => {
                 setSettings(v);
                 conditionChanged();
               }}
             />
-          )}
+          ))}
           <p className="muted">{t('explore.pool_override')}</p>
         </div>
       </details>
@@ -395,74 +442,32 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
         </div>
         <p>{t('explore.limits')}</p>
       </details>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        {(!s || conditionsDirty) && (
-          <button className="primary" disabled={busy} onClick={() => run(create)}>
-            {t(s ? 'explore.new_conditions' : 'explore.create')}
-          </button>
-        )}
-        {s && dirty && !conditionsDirty && (
-          <button
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                await act('configure', { pools: selected, rules });
-                setDirty(false);
-              })
-            }
-          >
-            {t('explore.apply')}
-          </button>
-        )}
-        {s && !conditionsDirty && (
-          <>
-            <label>
-              {t('explore.count')}{' '}
-              <input
-                aria-label={t('explore.count')}
-                type="number"
-                min={1}
-                max={5000}
-                value={count}
-                onChange={(e) => setCount(Number(e.target.value))}
-                style={{ width: 75 }}
-              />
-            </label>
-            <button disabled={busy || dirty} onClick={() => run(() => act('propose', { count }))}>
-              {t('explore.propose')}
-            </button>
-          </>
-        )}
-      </div>
-      {s?.proposal && (
-        <div className="card pad">
-          <p>{t('explore.requests', { n: s.proposal.candidates.length, total: s.proposal.requested })}</p>
-          <p>{t('explore.cost')}</p>
-          <button
-            className="primary"
-            disabled={busy || dirty || conditionsDirty || !s.proposal.candidates.length}
-            onClick={() => run(() => act('generate', { allow_partial: true }))}
-          >
-            {t(s.proposal.candidates.length < s.proposal.requested ? 'explore.partial' : 'explore.generate')}
-          </button>
+      {s && dirty && !conditionsDirty && <button disabled={busy} onClick={() => run(async () => {await act('configure', {pools: selected, rules}); setDirty(false);})}>{t('explore.apply')}</button>}
+      </details>
+      <div className="card pad col" style={{gap: 12}}>
+        <div className="row" style={{flexWrap: 'wrap'}}>
+          <label className="builder-check"><input type="checkbox" checked={automatic} onChange={e => setAutomatic(e.target.checked)} />{t('builder.auto')}</label>
+          <label>{t('builder.limit')} <input type="number" min={1} max={5000} value={limit} style={{width: 85}} onChange={e => setLimit(Number(e.target.value))} /></label>
+          <label>{t('builder.batch')} <input type="number" min={1} max={5000} value={count} style={{width: 75}} onChange={e => setCount(Number(e.target.value))} /></label>
+          {s && <button disabled={busy} onClick={() => run(() => act('automatic', {enabled: automatic, limit, count}))}>{t('builder.apply_auto')}</button>}
         </div>
-      )}
+        <details><summary>{t('builder.criteria')}</summary><p className="muted">{t('builder.auto_hint')}</p></details>
+        {s?.flow && <div role="status">
+          {t('builder.progress', {round: s.rounds?.length ?? 0, used: s.flow.used, limit: s.flow.limit})} · {t(`builder.reason.${s.flow.reason}`)}
+          {s.flow.mode === 'explore' && <> · {t('builder.coverage', {n: s.flow.readiness.covered, total: s.flow.readiness.total})}</>}
+          {s.flow_error && <p role="alert">{typeof s.flow_error === 'string' ? s.flow_error : tm(s.flow_error)}</p>}
+        </div>}
+        <div className="row" style={{flexWrap: 'wrap'}}>
+          <button className="primary" disabled={busy || !!s?.candidates.some(c => ['queued','running','cancelling'].includes(c.status)) || s?.flow?.mode === 'refine'} onClick={() => run(start)}>{t(s?.candidates.length ? 'builder.add_round' : 'builder.start')}</button>
+          {!!s?.candidates.length && <>
+            <button disabled={busy || dirty || conditionsDirty || s.flow?.reason === 'choose_base'} onClick={() => run(() => act(s.flow?.paused ? 'resume' : 'pause', {owner: owner.current}))}>{t(s.flow?.paused ? 'builder.resume' : 'builder.pause')}</button>
+            <button disabled={busy || !s.events.some(e => !e.undone)} onClick={() => run(() => act('undo'))}>{t('explore.undo')}</button>
+            <button disabled={busy} onClick={() => run(() => act('cancel'))}>{t('explore.cancel')}</button>
+          </>}
+        </div>
+      </div>
       {s && s.candidates.length > 0 && (
         <>
-          <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button disabled={busy} onClick={() => run(() => act('pair'))}>
-              {t('explore.evaluate')}
-            </button>
-            <button disabled={busy} onClick={() => run(() => act('pair', { extra: true }))}>
-              {t('explore.extra')}
-            </button>
-            <button disabled={busy || !s.events.some((e) => !e.undone)} onClick={() => run(() => act('undo'))}>
-              {t('explore.undo')}
-            </button>
-            <button disabled={busy} onClick={() => run(() => act('cancel'))}>
-              {t('explore.cancel')}
-            </button>
-          </div>
           {s.pair && (
             <div className="col" style={{ gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 16 }}>
@@ -474,7 +479,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
                       {c.image_missing ? (
                         <p>{t('explore.missing')}</p>
                       ) : (
-                        <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ width: '100%', maxHeight: 560, objectFit: 'contain' }} />
+                        <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ width: '100%', maxHeight: 'min(50vh,560px)', objectFit: 'contain' }} />
                       )}
                       <details>
                         <summary>{t('explore.combination')}</summary>
@@ -484,7 +489,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
                   );
                 })}
               </div>
-              <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+              <div className="row builder-votes" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
                 {['a', 'b', 'tie', 'bad', 'skip'].map((choice) => (
                   <button key={choice} disabled={busy} onClick={() => run(() => act('evaluate', { choice }))}>
                     {t(`explore.vote.${choice}`)}
@@ -493,7 +498,8 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
               </div>
             </div>
           )}
-          <details open>
+          {!s.pair && <p className="builder-wait">{t(s.flow?.reason === 'generating' ? 'builder.wait' : 'builder.review_hint')}</p>}
+          <details>
             <summary>{t('explore.ranking')}</summary>
             <p className="muted">{t('explore.ranking_hint')}</p>
             <div style={{ overflowX: 'auto' }}>
@@ -513,7 +519,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
                     <tr key={c.id}>
                       <td>
                         <input
-                          aria-label={c.id}
+                          aria-label={t('builder.candidate', {n: s.candidates.indexOf(c) + 1})}
                           type="checkbox"
                           checked={chosen.includes(c.id)}
                           onChange={(e) => setChosen(e.target.checked ? [...chosen, c.id] : chosen.filter((id) => id !== c.id))}
@@ -521,7 +527,8 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
                       </td>
                       <td>
                         <details>
-                          <summary>{c.id.slice(0, 8)}</summary>
+                          <summary>{t('builder.candidate', {n: s.candidates.indexOf(c) + 1})}</summary>
+                          {c.image_url && !c.image_missing && <img src={c.image_url} alt="" width={100} loading="lazy" />}
                           <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(c.config, null, 2)}</pre>
                           <p>
                             {c.parent_id?.slice(0, 8)} · {c.change}
@@ -567,6 +574,20 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
             <input type="checkbox" checked={unknown} onChange={(e) => setUnknown(e.target.checked)} />
             {t('explore.confirm_unknown')}
           </label>}
+          <div className="card pad row" style={{flexWrap: 'wrap'}}>
+            <label>{t('builder.base')} <select aria-label={t('builder.base')} value={chosen.length === 1 ? chosen[0] : ''} onChange={e => setChosen(e.target.value ? [e.target.value] : [])}>
+              <option value="">{t('builder.choose')}</option>
+              {scores.filter(c => c.status === 'done' && !c.image_missing).map(c => <option key={c.id} value={c.id}>{t('builder.candidate', {n: s.candidates.indexOf(c) + 1})} · Elo {s.scores[c.id].score.toFixed(0)}</option>)}
+            </select></label>
+            <select aria-label={t('builder.target')} value={target} onChange={e => setTarget(e.target.value)}>
+              <option value="all">{t('builder.all_weights')}</option><option value="artist">Artist</option>{service === 'comfyui' && <option value="lora">LoRA</option>}
+            </select>
+            <button disabled={busy || chosen.length !== 1 || s.candidates.some(c => ['queued','running','cancelling'].includes(c.status))} onClick={() => run(async () => { await act('refine', {candidate: chosen[0], target}); await act('resume', {owner: owner.current}); if (!automatic) await act('refine_next'); })}>{t('builder.refine')}</button>
+            {s.flow?.mode === 'refine' && <>
+              <button disabled={busy || !!s.pair} onClick={() => run(() => act('refine_next'))}>{t('builder.next_weight')}</button>
+              <button disabled={busy} onClick={() => run(() => act('explore'))}>{t('builder.back_explore')}</button>
+            </>}
+          </div>
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <input
               aria-label={t('explore.preset_name')}
@@ -608,7 +629,7 @@ export function StyleExplorer({ openPresets }: { openPresets: () => void }) {
           catalogNames={
             editing === 'models'
               ? service === 'novelai'
-                ? (info.data?.models.map((m) => m.id) ?? [])
+                ? (info.data?.models?.map((m) => m.id) ?? [])
                 : (catalog.data?.models ?? [])
               : (catalog.data?.loras ?? [])
           }
@@ -705,13 +726,13 @@ export function PoolEditor({
     }
   }
   function close() {
-    if (!dirty || confirm(t('explore.discard'))) onClose();
+    if (!busy && (!dirty || confirm(t('explore.discard')))) onClose();
   }
   return (
     <dialog
       ref={dialog}
       className="dialog"
-      style={{ width: 900, maxWidth: '94vw', maxHeight: '90vh', overflow: 'auto' }}
+      style={{ width: 900, minWidth: 0, maxWidth: '94vw', maxHeight: '90vh', overflow: 'auto' }}
       onCancel={(e) => {
         e.preventDefault();
         close();
@@ -724,6 +745,7 @@ export function PoolEditor({
         </h3>
         <button onClick={close}>{t('explore.close')}</button>
       </div>
+      <fieldset disabled={busy} className="builder-pool-fields">
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <select
           aria-label={t('explore.choose_pool')}
@@ -802,7 +824,7 @@ export function PoolEditor({
           <p>{t('explore.results', { n: total })}</p>
           <div className="col" style={{ maxHeight: 310, overflowY: 'auto' }}>
             {names.map((n) => (
-              <label key={n}>
+              <label key={n} className="builder-check">
                 <input
                   type="checkbox"
                   checked={items.some((x) => x.name === n)}
@@ -814,7 +836,7 @@ export function PoolEditor({
                     }
                   }}
                 />
-                {n}
+                <span>{n}</span>
               </label>
             ))}
           </div>
@@ -882,6 +904,7 @@ export function PoolEditor({
       <button className="primary" onClick={() => onApply(items)} disabled={busy}>
         {t('explore.use_pool')}
       </button>
+      </fieldset>
     </dialog>
   );
 }

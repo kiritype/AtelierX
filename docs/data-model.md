@@ -1560,8 +1560,13 @@ history/
 ### 그림체 탐색 세션 (0.6.0, #306)
 
 - `data/image/style-search/pools.json`: `schema_version: 1`, `items`는 `id/name/kind/items` 전역 풀 목록입니다. kind는 artists/models/loras, 각 항목은 name과 mode(always/candidate/exclude)를 갖습니다. 파일 자체를 복제하지 않습니다.
-- `data/image/style-search/sessions/<id>.json`: `schema_version: 1`. 서비스·계열·정규화한 생성 settings(고정 seed 포함), positive/negative, 독립 pools 사본, rules, candidates, rounds, events, pair, rng, changes를 보존합니다. 새 저장 형식이므로 이전 데이터 변환은 없습니다.
-- candidates는 id/config(model, artists의 name/weight, loras의 name/weight/clip), parent_id/change, status, attempts, execution_settings를 가집니다. 시도에는 공용 큐 id/status/image_url/error/prompt_id/result_uncertain을 보존합니다. 실제 이미지가 없어도 후보와 평가는 삭제하지 않습니다.
-- rounds의 ids/start_event로 신규 성공 후보 수와 기본 2N 응답 예산을 계산합니다. events는 pair/choice/at/undone, pair는 현재 좌우 ID입니다. Elo 1000/K24와 승리·비선호 수는 이벤트 재생으로 계산하고 API의 scores에 제공합니다. rng는 이미지 시드와 별도의 Python Random 상태입니다.
+- `data/image/style-search/sessions/<id>.json`: `schema_version: 2`. 서비스·계열·정규화한 생성 settings(고정 seed 포함), positive/negative, 독립 pools 사본, rules, candidates, rounds, events, pair, rng, changes를 보존합니다. schema 1 세션은 읽을 때 flow 기본값과 schema 2를 추가하며 자동 진행은 정지 상태로 복원합니다.
+- candidates는 id/config(model, artists의 name/weight, loras의 name/weight/clip), parent_id/change, status, attempts, execution_settings를 가집니다. 시도에는 공용 큐 id/status/image_url/error/prompt_id/result_uncertain/sent를 보존합니다. 실제 이미지가 없어도 후보와 평가는 삭제하지 않습니다.
+- rounds의 ids/start_event/benchmarks로 신규 성공 후보와 이전 상위 기준 후보를 추적합니다. 사용 가능한 신규 후보마다 점수 평가 3회·서로 다른 상대 2명·이후 라운드의 이전 기준 후보 비교를 확인합니다. events는 pair/choice/at/undone, pair는 현재 좌우 ID입니다. Elo 1000/K24와 승리·비선호 수는 이벤트 재생으로 계산하고 API의 scores에 제공합니다. rng는 이미지 시드와 별도의 Python Random 상태입니다.
 - 전역 풀 및 세션 API는 revision을 확인합니다. 진행 상태와 평가도 원자적으로 저장하며 큐에서 완료 기록을 정리하기 전에 세션에 결과가 남습니다. 재시작한 탐색 요청은 interrupted로 바꾸며 자동 재전송하지 않습니다.
 - 이미지 결과는 기존 `_lab` 출력 및 sidecar 형식을 사용하고 `style_session/style_candidate` 식별자를 더합니다. 세션 삭제의 선택적 이미지 삭제는 해당 식별자만 대상으로 휴지통을 사용합니다. 기존 프리셋 schema 3으로 내보낼 때 장면·seed·장면 negative는 포함하지 않습니다.
+
+- flow는 enabled/limit/count/paused/reason/mode/boot를 보존합니다. 기본값은 자동 켜짐·총 30회·라운드 10개·재개 대기·explore입니다. API flow에는 used/owner/readiness를 계산해 더하며 저장 원본·revision에는 넣지 않습니다.
+- 소유 화면은 메모리의 12초 임대로 관리합니다. 2초 heartbeat는 기존 소유자만 연장하며 새 소유자 등록은 명시적 resume만 가능합니다. 화면 이탈·임대 만료·서버 재시작 후 새 자동 요청은 멈춥니다. heartbeat/leave 이외의 변경은 revision을 검사합니다.
+- used는 attempts의 활성 예약 또는 송신/불명/완료 요청을 셉니다. 송신 직전에 sent를 원자적으로 기록합니다. 송신 전 취소·중단·확실한 실패는 반환하며 구버전 failed 기록은 보수적으로 사용량에 포함합니다. 송신한 실패와 재시도는 각각 집계합니다.
+- refinement는 base/target/seen/pending을 갖습니다. seen은 기준 ID와 변형 조합 signature 쌍입니다. events의 refinement_before로 undo하며, 다듬기 후보의 origin_event로 파생 요청을 추적합니다. 무효화된 탐색 라운드는 invalidated_rounds에 보존하고 송신 전 작업만 취소합니다.

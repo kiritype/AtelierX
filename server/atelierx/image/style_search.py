@@ -15,6 +15,7 @@ from ..core import revisions
 from ..core.i18n import Msg, message_of, wire
 from . import library
 from .job_queue import MAX_QUEUED
+from .style_flow import StyleFlowMixin, parents, readiness
 from .util import atomic_json, now, read_json
 from .workflow import validate_settings
 
@@ -183,59 +184,68 @@ def valid_config(config, session):
 
 
 def mutate(rng, parent, session, weight_only):
-    config = copy.deepcopy(parent['config'])
-    rules = session['rules']
-    pools = session['pools']
-    moves = []
+    # Group equivalent moves before sampling. A full artist dictionary must not produce
+    # one deep copy and one full-pool validation per possible replacement.
+    config, rules, pools = parent['config'], session['rules'], session['pools']
+    groups = []
     for kind, plural in [('artist', 'artists'), ('lora', 'loras')]:
         required = {x['name'] for x in pools[plural] if x['mode'] == 'always'}
         existing = {x['name'] for x in config[plural]}
         choices = [x['name'] for x in pools[plural] if x['mode'] == 'candidate' and x['name'] not in existing]
-        if weight_only:
-            for i, item in enumerate(config[plural]):
-                if item['name'] in required:
-                    continue
+        for i, item in enumerate(config[plural]):
+            if item['name'] in required:
+                continue
+            if weight_only:
                 for field in ['weight', 'clip'] if kind == 'lora' and rules['split_clip'] else ['weight']:
-                    step = rules[('clip' if field == 'clip' else kind) + '_step']
-                    for direction in (-1, 1):
-                        changed = copy.deepcopy(config)
-                        value = round(item[field] + direction * step, 8)
-                        changed[plural][i][field] = value
-                        if kind == 'lora' and not rules['split_clip']:
-                            changed[plural][i]['clip'] = value
-                        moves.append((changed, kind + ' ' + field + ' ' + str(direction)))
-        else:
-            for i, item in enumerate(config[plural]):
-                if item['name'] in required:
-                    continue
-                for name in choices:
-                    changed = copy.deepcopy(config)
-                    changed[plural][i]['name'] = name
-                    moves.append((changed, kind + ' replace'))
-                changed = copy.deepcopy(config)
-                changed[plural].pop(i)
-                moves.append((changed, kind + ' remove'))
-            for name in choices:
-                changed = copy.deepcopy(config)
-                low, count, step = weights(rules, kind)
-                w = round(low + rng.randint(0, count) * step, 8)
-                item = {'name': name, 'weight': w}
-                if kind == 'lora':
-                    cl, cc, cs = weights(rules, 'clip')
-                    item['clip'] = round(cl + rng.randint(0, cc) * cs, 8) if rules['split_clip'] else w
-                changed[plural].append(item)
-                moves.append((changed, kind + ' add'))
+                    low, count, step = weights(rules, 'clip' if field == 'clip' else kind)
+                    values = [round(item[field] + d * step, 8) for d in (-1, 1)]
+                    values = [v for v in values if low - 1e-8 <= v <= low + count * step + 1e-8]
+                    if values:
+                        groups.append((kind, plural, i, field, values))
+            else:
+                if choices:
+                    groups.append((kind, plural, i, 'replace', choices))
+                if len(existing) > rules[kind + '_min']:
+                    groups.append((kind, plural, i, 'remove', [None]))
+        if not weight_only and choices and len(existing) < rules[kind + '_max']:
+            groups.append((kind, plural, None, 'add', choices))
     if not weight_only and not any(x['mode'] == 'always' for x in pools['models']):
-        for model in pools['models']:
-            if model['mode'] == 'candidate' and model['name'] != config['model']:
-                moves.append(({**config, 'model': model['name']}, 'model replace'))
-    valid = []
-    for changed, desc in moves:
-        for plural in ('artists', 'loras'):
-            changed[plural].sort(key=lambda x: x['name'])
-        if valid_config(changed, session):
-            valid.append((changed, desc))
-    return rng.choice(valid) if valid else (None, None)
+        choices = [
+            x['name'] for x in pools['models'] if x['mode'] == 'candidate' and x['name'] != config['model']
+        ]
+        if choices:
+            groups.append(('model', 'models', None, 'replace', choices))
+    if not groups:
+        return None, None
+    offset = rng.randrange(sum(len(g[4]) for g in groups))
+    for kind, plural, i, op, values in groups:
+        if offset >= len(values):
+            offset -= len(values)
+            continue
+        value = values[offset]
+        changed = copy.deepcopy(config)
+        if kind == 'model':
+            changed['model'] = value
+        elif op == 'replace':
+            changed[plural][i]['name'] = value
+        elif op == 'remove':
+            changed[plural].pop(i)
+        elif op == 'add':
+            low, count, step = weights(rules, kind)
+            w = round(low + rng.randint(0, count) * step, 8)
+            item = {'name': value, 'weight': w}
+            if kind == 'lora':
+                cl, cc, cs = weights(rules, 'clip')
+                item['clip'] = round(cl + rng.randint(0, cc) * cs, 8) if rules['split_clip'] else w
+            changed[plural].append(item)
+        else:
+            changed[plural][i][op] = value
+            if kind == 'lora' and not rules['split_clip']:
+                changed[plural][i]['clip'] = value
+        for key in ('artists', 'loras'):
+            changed[key].sort(key=lambda x: x['name'])
+        return (changed, kind + ' ' + op) if valid_config(changed, session) else (None, None)
+    return None, None
 
 
 def propose(session, count):
@@ -311,11 +321,12 @@ def artist_prompt(config, service):
     )
 
 
-class StyleSearch:
+class StyleSearch(StyleFlowMixin):
     def __init__(self, runtime):
         self.runtime = runtime
         self.lock = runtime.lock
         self.root = runtime.paths.data / 'image' / 'style-search'
+        self.init_flow()
         self.pool_path = self.root / 'pools.json'
         with runtime.queue.editing() as jobs:
             for job in jobs:
@@ -385,7 +396,7 @@ class StyleSearch:
                     invalid('one fixed NAI model')
             ident = uuid.uuid4().hex
             session = {
-                'schema_version': 1,
+                'schema_version': 2,
                 'id': ident,
                 'name': str(body.get('name') or now())[:200],
                 'created_at': now(),
@@ -413,6 +424,7 @@ class StyleSearch:
                 session, {'model': model_names[0], 'artists': [], 'loras': []}
             )
             self.check_assets(session)
+            self.normalize_flow(session)
             atomic_json(self.path(ident), session)
             return self.get(ident)
 
@@ -420,7 +432,7 @@ class StyleSearch:
         data = read_json(self.path(ident))
         if not data:
             invalid('session missing')
-        return data
+        return self.normalize_flow(data)
 
     def sync(self, session):
         jobs = self.runtime.queue.by_id()
@@ -433,7 +445,7 @@ class StyleSearch:
                     attempt.update(
                         {
                             k: wire(job[k])
-                            for k in ('status', 'image_url', 'error', 'prompt_id', 'result_uncertain')
+                            for k in ('status', 'image_url', 'error', 'prompt_id', 'result_uncertain', 'sent')
                             if k in job
                         }
                     )
@@ -454,8 +466,9 @@ class StyleSearch:
     def get(self, ident):
         with self.lock:
             session = self.sync(self.load(ident))
+            flow = self.public_flow(session)
             atomic_json(self.path(ident), session)
-            return {**session, 'scores': ranking(session), 'revision': revisions.of(session)}
+            return {**session, 'flow': flow, 'scores': ranking(session), 'revision': revisions.of(session)}
 
     def check_assets(self, session):
         if session['service'] != 'comfyui':
@@ -529,6 +542,7 @@ class StyleSearch:
             'kind': 'lab',
             'service': session['service'],
             'status': 'queued',
+            'sent': False,
             'created_at': now(),
             'seed': settings['seed'],
             'review_requested': False,
@@ -540,13 +554,64 @@ class StyleSearch:
             'title': session['name'],
         }
 
+    def enqueue_plan(self, session):
+        ident = session['id']
+        plan = session['proposal']
+        if session['service'] == 'novelai':
+            self.runtime.services['novelai'].key()
+        self.budget(session, len(plan['candidates']))
+        limit = self.runtime.service_config.limit() if session['service'] == 'novelai' else 0
+        if limit and len(plan['candidates']) > limit:
+            invalid('internet generation limit: ' + str(limit))
+        self.check_assets(session)
+        self.runtime.queue.check_room(len(plan['candidates']))
+        catalog = self.runtime.catalog() if session['service'] == 'comfyui' else None
+        jobs = []
+        for c in plan['candidates']:
+            job = self.job(session, c, catalog)
+            job['lab_index'] = len(session['candidates']) + len(jobs) + 1
+            job['snapshot']['lab_index'] = job['lab_index']
+            job['lab_column'] = job['lab_index']
+            job['snapshot']['lab_column'] = job['lab_index']
+            jobs.append(job)
+        benchmarks = sorted(parents(session), key=lambda c: -ranking(session)[c['id']]['score'])[:3]
+        for c, job in zip(plan['candidates'], jobs, strict=True):
+            c.update(status='queued', attempts=[{'id': job['id'], 'status': 'queued', 'sent': False}])
+            session['candidates'].append(c)
+        if not plan.get('refine'):
+            session['rounds'].append(
+                {
+                    'ids': [c['id'] for c in plan['candidates']],
+                    'start_event': len(session['events']),
+                    'benchmarks': [c['id'] for c in benchmarks],
+                }
+            )
+        session['rng'] = plan['rng']
+        session.pop('proposal')
+        session['pair'] = None
+        # Persist intent first. Missing jobs after a crash require manual reconciliation, never auto-send.
+        atomic_json(self.path(ident), session)
+        self.runtime.queue.add(jobs)
+
     def action(self, ident, body):
         with self.lock:
             session = self.sync(self.load(ident))
             # Runtime progress is not an edit conflict; compare against the persisted document before syncing.
-            revisions.check(body.get('revision'), revisions.of(self.load(ident)))
+            if body.get('action') not in ('heartbeat', 'leave'):
+                revisions.check(body.get('revision'), revisions.of(self.load(ident)))
             action = body.get('action')
-            if action == 'configure':
+            if action in (
+                'heartbeat',
+                'resume',
+                'leave',
+                'pause',
+                'automatic',
+                'refine',
+                'explore',
+                'refine_next',
+            ):
+                self.flow_action(session, body)
+            elif action == 'configure':
                 pools = {
                     k: clean_pool(body.get('pools', session['pools'])[k])
                     for k in ('artists', 'models', 'loras')
@@ -556,6 +621,7 @@ class StyleSearch:
                     invalid('new session for model change')
                 session['changes'].append({'at': now(), 'pools': session['pools'], 'rules': session['rules']})
                 session.update(pools=pools, rules=rules)
+                session['flow'].update(paused=True, reason='resume')
                 session.pop('proposal', None)
             elif action == 'propose':
                 self.check_assets(session)
@@ -573,32 +639,7 @@ class StyleSearch:
                     invalid('no unique candidates; change pool or range')
                 if len(plan['candidates']) < plan['requested'] and not body.get('allow_partial'):
                     invalid('confirm partial generation')
-                limit = self.runtime.service_config.limit() if session['service'] == 'novelai' else 0
-                if limit and len(plan['candidates']) > limit:
-                    invalid('internet generation limit: ' + str(limit))
-                self.check_assets(session)
-                self.runtime.queue.check_room(len(plan['candidates']))
-                catalog = self.runtime.catalog() if session['service'] == 'comfyui' else None
-                jobs = []
-                for c in plan['candidates']:
-                    job = self.job(session, c, catalog)
-                    job['lab_index'] = len(session['candidates']) + len(jobs) + 1
-                    job['snapshot']['lab_index'] = job['lab_index']
-                    job['lab_column'] = job['lab_index']
-                    job['snapshot']['lab_column'] = job['lab_index']
-                    jobs.append(job)
-                for c, job in zip(plan['candidates'], jobs, strict=True):
-                    c.update(status='queued', attempts=[{'id': job['id'], 'status': 'queued'}])
-                    session['candidates'].append(c)
-                session['rounds'].append(
-                    {'ids': [c['id'] for c in plan['candidates']], 'start_event': len(session['events'])}
-                )
-                session['rng'] = plan['rng']
-                session.pop('proposal')
-                session['pair'] = None
-                # Persist intent first. Missing jobs after a crash require manual reconciliation, never auto-send.
-                atomic_json(self.path(ident), session)
-                self.runtime.queue.add(jobs)
+                self.enqueue_plan(session)
             elif action == 'pair':
                 self.pair(session, bool(body.get('extra')))
             elif action == 'evaluate':
@@ -611,12 +652,16 @@ class StyleSearch:
                     if c['id'] in session['pair']
                 ):
                     invalid('image unavailable')
-                session['events'].append({'pair': session['pair'], 'choice': choice, 'at': now()})
+                event = {'pair': session['pair'], 'choice': choice, 'at': now()}
+                if session['flow']['mode'] == 'refine':
+                    self.refine_vote(session, event)
+                session['events'].append(event)
                 session['pair'] = None
                 self.pair(session, False)
             elif action == 'undo':
                 event = next((e for e in reversed(session['events']) if not e.get('undone')), None)
                 if event:
+                    self.undo_flow(session, session['events'].index(event), event)
                     event['undone'] = True
                     session['pair'] = event['pair']
             elif action == 'parent':
@@ -626,6 +671,26 @@ class StyleSearch:
                 c['include_parent'] = bool(body.get('include'))
             elif action in ('cancel', 'retry'):
                 selected = set(body.get('candidates', []))
+                targets = [
+                    c
+                    for c in session['candidates']
+                    if (not selected or c['id'] in selected)
+                    and c['status'] in ('failed', 'cancelled', 'interrupted')
+                ]
+                if action == 'retry':
+                    if session['service'] == 'novelai':
+                        self.runtime.services['novelai'].key()
+                    self.budget(session, len(targets))
+                    self.runtime.queue.check_room(len(targets))
+                    for c in targets:
+                        previous = c['attempts'][-1]
+                        if (previous.get('prompt_id') or previous.get('result_uncertain')) and not body.get(
+                            'confirmed_unknown'
+                        ):
+                            invalid('check remote result before retry')
+                        self.settings_for(session, c['config'])
+                else:
+                    session['flow'].update(paused=True, reason='paused')
                 for c in session['candidates']:
                     if selected and c['id'] not in selected:
                         continue
@@ -640,7 +705,7 @@ class StyleSearch:
                         ):
                             invalid('check remote result before retry')
                         job = self.job(session, c)
-                        c['attempts'].append({'id': job['id'], 'status': 'queued'})
+                        c['attempts'].append({'id': job['id'], 'status': 'queued', 'sent': False})
                         c['status'] = 'queued'
                         atomic_json(self.path(ident), session)
                         self.runtime.queue.add([job])
@@ -698,6 +763,8 @@ class StyleSearch:
             return self.get(ident)
 
     def pair(self, session, extra):
+        if session.get('flow', {}).get('mode') == 'refine':
+            return
         if session['pair']:
             available = {
                 c['id'] for c in session['candidates'] if c['status'] == 'done' and not c.get('image_missing')
@@ -714,9 +781,8 @@ class StyleSearch:
             return
         round_ = session['rounds'][-1] if session['rounds'] else {'ids': [], 'start_event': 0}
         new = set(round_['ids'])
-        n = sum(c['id'] in new for c in done)
         events = [e for e in session['events'][round_['start_event'] :] if not e.get('undone')]
-        if not extra and len(events) >= 2 * n:
+        if not extra and readiness(session)['ready']:
             return
         played = Counter(frozenset(e['pair']) for e in events)
         scores = ranking(session)
@@ -725,15 +791,21 @@ class StyleSearch:
         if len(done) == 2 and played:
             return
         # Select an under-evaluated anchor first; never materialize O(N²) pairs for a large session.
-        anchors = [
-            c['id']
-            for c in done
-            if c['id'] in new or any(d['id'] in new and d['id'] != c['id'] for d in done)
-        ]
+        coverage = readiness(session)
+        benchmarks = set(round_.get('benchmarks', []))
+        anchors = [c['id'] for c in done if c['id'] in new]
         if not anchors:
             return
         rng.shuffle(anchors)
-        anchor = min(anchors, key=lambda x: (scores[x]['count'] >= 3, scores[x]['count']))
+        anchor = min(
+            anchors,
+            key=lambda x: (
+                scores[x]['count'] >= 3
+                and len(coverage['opponents'].get(x, [])) >= 2
+                and (not benchmarks or bool(set(coverage['opponents'].get(x, [])) & benchmarks)),
+                scores[x]['count'],
+            ),
+        )
         opponents = [c['id'] for c in done if c['id'] != anchor and (anchor in new or c['id'] in new)]
         if not opponents:
             return
@@ -741,6 +813,12 @@ class StyleSearch:
         opponent = min(
             opponents,
             key=lambda x: (
+                bool(
+                    benchmarks
+                    and not (set(coverage['opponents'].get(anchor, [])) & benchmarks)
+                    and x not in benchmarks
+                ),
+                x in coverage['opponents'].get(anchor, []),
                 played[frozenset((anchor, x))],
                 scores[x]['count'] >= 3,
                 scores[x]['count'],
@@ -789,6 +867,10 @@ class StyleSearch:
         )
         if common:
             ident = job['snapshot']['style_session']
+            with self.lock:
+                session = self.load(ident)
+                session['flow'].update(paused=True, reason='blocked')
+                atomic_json(self.path(ident), session)
             for pending in self.runtime.queue.by_id().values():
                 if (
                     pending.get('snapshot', {}).get('style_session') == ident
