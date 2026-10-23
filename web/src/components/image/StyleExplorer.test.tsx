@@ -45,6 +45,36 @@ async function render(child: React.ReactNode) {
   });
 }
 const button = (text: string) => [...host.querySelectorAll('button')].find((x) => x.textContent === text)!;
+it('votes by image or number while ignoring typing, repeats and inactive screens', async () => {
+  const candidates = ['left', 'right'].map(id => ({id, status: 'done', config: {}, image_url: `/${id}.png`, attempts: []}));
+  const doc = {id: 'session', revision: 'r', name: 'demo', service: 'comfyui', family: 'anima', pools: {artists: [], models: [], loras: []}, rules: {}, settings: {}, candidates, events: [], scores: Object.fromEntries(candidates.map(c => [c.id, {score: 1000, count: 0, bad: 0}])), pair: ['left', 'right']};
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
+  vi.mocked(get).mockImplementation(async url => url.endsWith('/sessions/session') ? doc : url.endsWith('/sessions') ? [doc] : {revision: 'r', items: []});
+  vi.mocked(post).mockResolvedValue(doc);
+  await render(<StyleExplorer openPresets={vi.fn()} />);
+  await act(async () => {
+    const select = [...host.querySelectorAll('select')].find(el => [...el.options].some(o => o.value === 'session'))!;
+    select.value = 'session';
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+    await new Promise(r => setTimeout(r, 20));
+  });
+  await render(<StyleExplorer openPresets={vi.fn()} />);
+  await act(async () => { host.querySelector<HTMLImageElement>('img[alt="A"]')!.click(); });
+  expect(post).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({action: 'evaluate', choice: 'a'}));
+  for (const [index, choice] of ['a', 'b', 'tie', 'bad', 'skip'].entries()) {
+    await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', {key: String(index + 1)})); });
+    expect(post).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({choice}));
+  }
+  vi.mocked(post).mockClear();
+  await act(async () => {
+    host.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', {key: '1', bubbles: true}));
+    window.dispatchEvent(new KeyboardEvent('keydown', {key: '2', repeat: true}));
+    window.dispatchEvent(new KeyboardEvent('keydown', {key: '3', ctrlKey: true}));
+  });
+  await render(<StyleExplorer openPresets={vi.fn()} active={false} />);
+  await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', {key: '1'})); });
+  expect(post).not.toHaveBeenCalled();
+});
 async function click(text: string) {
   await act(async () => {
     button(text).click();

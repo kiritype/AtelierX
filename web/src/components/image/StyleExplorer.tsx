@@ -9,6 +9,7 @@ import NovelAISettings, { type NovelAIInfo } from './NovelAISettings';
 import ImageLab, { HANDOFF_KEY, hasLabHandoff } from './ImageLab';
 
 const endpoint = '/api/image/explore';
+const VOTES = ['a', 'b', 'tie', 'bad', 'skip'] as const;
 const EMPTY: StylePools = { artists: [], models: [], loras: [] };
 const SCENE =
   '1girl, adult woman, short black hair, blue eyes, white shirt, blue jacket, black pants, standing, upper body, front view, simple gray background';
@@ -198,6 +199,27 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
     } else qc.setQueryData(['style-session', s.id], result);
     return result;
   }
+  function vote(choice: typeof VOTES[number]) {
+    if (!active || busy || editing || !s?.pair) return;
+    const pair = s.pair.join(':');
+    void run(async () => {
+      const current = qc.getQueryData<StyleSession>(['style-session', s.id]);
+      if (current?.pair?.join(':') === pair) await act('evaluate', { choice });
+    });
+  }
+  useEffect(() => {
+    if (!active || !s?.pair || editing) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], [role="textbox"]')) return;
+      const choice = VOTES[Number(event.key) - 1];
+      if (!choice) return;
+      event.preventDefault();
+      vote(choice);
+    };
+    window.addEventListener('keydown', keydown);
+    return () => window.removeEventListener('keydown', keydown);
+  });
   async function create() {
     const result = await post<StyleSession>(`${endpoint}/sessions`, {
       service,
@@ -479,7 +501,9 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
                       {c.image_missing ? (
                         <p>{t('explore.missing')}</p>
                       ) : (
-                        <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ width: '100%', maxHeight: 'min(50vh,560px)', objectFit: 'contain' }} />
+                        <button type="button" disabled={busy} aria-label={t(`explore.vote.${i === 0 ? 'a' : 'b'}`)} onClick={() => vote(i === 0 ? 'a' : 'b')} style={{ display: 'block', width: '100%', padding: 0 }}>
+                          <img alt={i === 0 ? 'A' : 'B'} src={c.image_url} style={{ display: 'block', width: '100%', maxHeight: 'min(50vh,560px)', objectFit: 'contain' }} />
+                        </button>
                       )}
                       <details>
                         <summary>{t('explore.combination')}</summary>
@@ -490,9 +514,9 @@ export function StyleExplorer({ openPresets, active = true, initialService = 'co
                 })}
               </div>
               <div className="row builder-votes" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
-                {['a', 'b', 'tie', 'bad', 'skip'].map((choice) => (
-                  <button key={choice} disabled={busy} onClick={() => run(() => act('evaluate', { choice }))}>
-                    {t(`explore.vote.${choice}`)}
+                {VOTES.map((choice, index) => (
+                  <button key={choice} disabled={busy} aria-keyshortcuts={String(index + 1)} onClick={() => vote(choice)}>
+                    {index + 1}: {t(`explore.vote.${choice}`)}
                   </button>
                 ))}
               </div>

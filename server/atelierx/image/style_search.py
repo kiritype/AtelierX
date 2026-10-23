@@ -466,6 +466,7 @@ class StyleSearch(StyleFlowMixin):
     def get(self, ident):
         with self.lock:
             session = self.sync(self.load(ident))
+            self.present_comparison(session)
             flow = self.public_flow(session)
             atomic_json(self.path(ident), session)
             return {**session, 'flow': flow, 'scores': ranking(session), 'revision': revisions.of(session)}

@@ -100,6 +100,27 @@ def test_owner_resume_expiry_and_restart_never_silently_restart(unlocked):
     assert s['flow']['paused']
 
 
+def test_paused_comparisons_appear_without_claiming_owner_or_generating(unlocked):
+    _, rt = _setup(unlocked)
+    s = ready_session(unlocked, rt)
+    assert s['pair'] and s['flow']['paused'] and s['flow']['owner'] is None
+    initial_pair = s['pair']
+    s = action(unlocked, s, 'heartbeat', owner=OWNER)
+    assert s['pair'] == initial_pair
+    s = action(unlocked, s, 'evaluate', choice='a')
+    assert s['pair'] and len(s['events']) == 1
+    assert s['flow']['paused'] and s['flow']['owner'] is None
+    assert len(s['rounds']) == 1 and len(s['candidates']) == 3 and spent(s) == 3
+    # A completed refinement must also be presented while awaiting resume.
+    ids = [c['id'] for c in s['candidates']]
+    s = action(unlocked, s, 'refine', candidate=ids[0], target='artist')
+    s['pair'] = None
+    s['refinement'].update(base=ids[0], pending=ids[1])
+    s = persist(rt, s)
+    assert set(s['pair']) == set(ids[:2])
+    assert s['flow']['paused'] and s['flow']['owner'] is None and spent(s) == 3
+
+
 def test_auto_round_is_idempotent_and_never_partially_spends_budget(unlocked):
     _, rt = _setup(unlocked)
     s = persist(rt, cover(ready_session(unlocked, rt)))

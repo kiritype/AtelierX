@@ -252,18 +252,22 @@ class StyleFlowMixin:
                 invalid('refinement mode')
             self.refine_next(s)
 
-    def advance(self, s):
-        from .style_search import propose
-
-        f = s['flow']
+    def present_comparison(self, s):
+        """Present finished images independently of permission to generate more."""
         self.pair(s, False)
         # A submitted refinement may finish while automatic admission is disabled/paused.
         # Present its comparison without reserving another request.
-        if f['mode'] == 'refine' and not s['pair'] and s['refinement']['pending']:
+        if s['flow']['mode'] == 'refine' and not s['pair'] and s['refinement']['pending']:
             ids = {c['id'] for c in available(s)}
             r = s['refinement']
             if r['base'] in ids and r['pending'] in ids:
                 self.refine_pair(s, r['base'], r['pending'])
+
+    def advance(self, s):
+        from .style_search import propose
+
+        f = s['flow']
+        self.present_comparison(s)
         if not f['enabled'] or f['paused'] or not self.owner_alive(s['id']):
             if not f['paused']:
                 f['reason'] = 'evaluating' if s['pair'] else readiness(s)['reason']
