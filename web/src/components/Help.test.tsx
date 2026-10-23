@@ -56,7 +56,6 @@ describe('startup update notice', () => {
       }
       return { claimed: true };
     });
-    get.mockImplementation(async () => ({ available_version: serverAvailable }));
     toast.mockReset();
   });
 
@@ -83,7 +82,7 @@ describe('startup update notice', () => {
     expect(host.textContent).toContain('work screen');
     expect(host.querySelector('.update')).toBeNull();
 
-    await act(async () => { pendingNotice = { current: '8.8.0', latest: '8.8.1', newer: true }; serverAvailable = '8.8.1'; resolve({ available_version: '8.8.1' }); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { resolve({ current: '8.8.0', latest: '8.8.1', newer: true }); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     expect(host.querySelector('.update')).not.toBeNull();
     expect(toast).toHaveBeenCalledTimes(1);
 
@@ -92,18 +91,17 @@ describe('startup update notice', () => {
     get.mockClear();
     await act(async () => root.render(createElement(Harness)));
     expect(host.querySelector('.update')).not.toBeNull();
-    expect(get.mock.calls.every(([url]) => url === '/api/update/check-status')).toBe(true);
+    expect(get).not.toHaveBeenCalled();
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
   it('restores the badge from app-root state without another release request', async () => {
-    serverAvailable = '8.8.1';
     post.mockImplementation(async (url: string) => url.endsWith('/begin')
       ? { should_check: false, available_version: '8.8.1', current_version: '8.8.1' }
       : { notice: null });
     await mount();
     expect(host.querySelector('.update')).not.toBeNull();
-    expect(get.mock.calls.every(([url]) => url === '/api/update/check-status')).toBe(true);
+    expect(get).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
   });
 
@@ -118,7 +116,7 @@ describe('startup update notice', () => {
   it('does not request releases when startup checking is disabled', async () => {
     await mount(false);
     expect(host.textContent).toContain('work screen');
-    expect(get.mock.calls.every(([url]) => url === '/api/update/check-status')).toBe(true);
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('delivers a pending result to the next screen after the first screen unmounts', async () => {
@@ -131,18 +129,17 @@ describe('startup update notice', () => {
     await act(async () => root.unmount());
     root = createRoot(host);
     await act(async () => root.render(createElement(Harness)));
-    await act(async () => { pendingNotice = { current: '8.8.0', latest: '8.8.1', newer: true }; serverAvailable = '8.8.1'; resolve({ available_version: '8.8.1' }); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { resolve({ current: '8.8.0', latest: '8.8.1', newer: true }); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 
     expect(host.querySelector('.update')).not.toBeNull();
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenCalledTimes(1);
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
   it('does not depend on browser storage to persist notice state', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000);
     Object.defineProperty(window, 'localStorage', { configurable: true, get: () => { throw new Error('blocked'); } });
-    pendingNotice = { current: '8.8.1', latest: '8.8.2', newer: true };
-    get.mockResolvedValue({ available_version: '8.8.2' });
+    get.mockResolvedValue({ current: '8.8.1', latest: '8.8.2', newer: true });
     await mount();
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
     expect(host.querySelector('.update')).not.toBeNull();
@@ -153,7 +150,7 @@ describe('startup update notice', () => {
     get.mockClear();
     await act(async () => root.render(createElement(Harness)));
     expect(host.querySelector('.update')).not.toBeNull();
-    expect(post).toHaveBeenCalledWith('/api/update/notice/consume');
+    expect(post).toHaveBeenCalledWith('/api/update/notice/begin');
     expect(toast).toHaveBeenCalledTimes(1);
   });
 });

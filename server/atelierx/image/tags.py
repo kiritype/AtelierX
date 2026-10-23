@@ -109,11 +109,3 @@ class TagLookup:
         if index is None:
             return {'available': False, 'error': self._error, 'tags': []}
         return {'available': True, 'tags': [index.check(tag) for tag in tags if str(tag).strip()]}
-
-    def artists(self, query='', offset=0, limit=50):
-        index = self.index()
-        if index is None:
-            return {'available': False, 'error': self._error, 'items': [], 'total': 0}
-        key = norm(query)
-        names = [n for n in index._by_count if index.tags[n][0] == '1' and key in n]
-        return {'available': True, 'total': len(names), 'items': names[offset : offset + limit]}
