@@ -1,6 +1,5 @@
 """HTTP API (Starlette). Every route except /api/auth/* needs a session (architecture: 인증과 세션)."""
 
-import asyncio
 import contextlib
 from datetime import datetime
 from pathlib import Path
@@ -222,15 +221,9 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
     async def lifespan(_app):
         # The image worker thread lives as long as the server.
         state.image.start()
-        update_checks = asyncio.create_task(
-            state.update_notices.run(lambda: state.settings.load().get('update_check_on_start', False))
-        )
         try:
             yield
         finally:
-            update_checks.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await update_checks
             state.image.shutdown()
 
     app = Starlette(

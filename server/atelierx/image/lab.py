@@ -297,7 +297,7 @@ class LabMixin:
                 meta = self.gallery.metadata(item['path'])
             except ValueError:
                 continue
-            if not meta.get('lab_group') or meta.get('style_session'):
+            if not meta.get('lab_group'):
                 continue
             cell(
                 meta['lab_group'],
@@ -317,13 +317,7 @@ class LabMixin:
                     'created_at': meta.get('created_at'),
                 },
             )
-        live = self.queue.select(
-            lambda j: (
-                j.get('kind') == 'lab'
-                and j.get('lab_group')
-                and not j.get('snapshot', {}).get('style_session')
-            )
-        )
+        live = self.queue.select(lambda j: j.get('kind') == 'lab' and j.get('lab_group'))
         for job in live:
             snapshot = job.get('snapshot') or {}
             cell(

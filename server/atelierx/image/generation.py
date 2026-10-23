@@ -501,13 +501,6 @@ class GenerationMixin:
         return {'ok': True}
 
     def retry(self, job_id):
-        if self.queue.get(job_id).get('snapshot', {}).get('style_session'):
-            raise ValueError(
-                Msg(
-                    'server.explore.retry_panel',
-                    'Retry this candidate from Style exploration so its attempt history is preserved.',
-                )
-            )
         if self.queue.get(job_id).get('bulk_id'):
             raise ValueError(
                 Msg('server.bulk.retry_batch', 'Retry failed items from the bulk request panel.')
@@ -517,10 +510,6 @@ class GenerationMixin:
 
     def remove_finished(self, job_id=None):
         with self.lock:
-            if hasattr(self, 'style_search'):
-                for job in self.queue.jobs:
-                    if job_id is None or job['id'] == job_id:
-                        self.style_search.capture(job)
             was_bulk = any(j['id'] == job_id and j.get('bulk_id') for j in self.queue.jobs)
             bulk = getattr(self, 'bulk', None)
             if bulk:
@@ -737,11 +726,7 @@ class GenerationMixin:
                         if stopping:
                             break
                         raise RuntimeError(result['error'])
-                    if (
-                        stopping
-                        and not service.keep_on_cancel
-                        and not job.get('snapshot', {}).get('style_session')
-                    ):
+                    if stopping and not service.keep_on_cancel:
                         break
                     # A paid image that arrives after a cancel is kept: the request could not be called back.
                     self._finish(job, result, sent)
@@ -765,15 +750,9 @@ class GenerationMixin:
                     finished_at=now(),
                     progress=Msg('server.worker.failed', 'Failed'),
                 )
-                if job.get('snapshot', {}).get('style_session'):
-                    self.style_search.failed(job, error)
-                elif not job.get('bulk_id') or not isinstance(error, (OSError, ValueError)):
+                if not job.get('bulk_id') or not isinstance(error, (OSError, ValueError)):
                     self.paused = True
                 self.persist()
-
-        finally:
-            if hasattr(self, 'style_search'):
-                self.style_search.capture(job)
 
     @staticmethod
     def _generating(job):

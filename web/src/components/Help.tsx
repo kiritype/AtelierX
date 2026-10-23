@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
 import {
+  beginStartupUpdateCheck,
   updateResultKey,
   type UpdateSummary,
 } from '../lib/updateNotice';
@@ -25,7 +26,6 @@ type About = {
   desktop: boolean;
 };
 type Update = { current: string; latest: string; newer: boolean; url: string; published_at: string | null; notes: string };
-type CheckStatus = { status: 'unchecked' | 'checking' | 'latest' | 'available' | 'failed'; enabled: boolean; last_success?: number; next_retry?: number; error?: { key: string; text: string; values?: Record<string, unknown> }; result?: Update; available_version?: string };
 type HelpDialog = 'about' | 'shortcuts' | 'update' | 'notices' | null;
 type UpdateState = {
   state: 'idle' | 'checking' | 'downloading' | 'verifying' | 'extracting' | 'backing_up' | 'ready' | 'failed' | 'restarting';
@@ -158,7 +158,6 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
     refetchInterval: (q) => (PREPARING.includes((q.state.data as UpdateState | undefined)?.state ?? '') ? 700 : false),
   });
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
-  const status = useQuery<CheckStatus>({ queryKey: ['update-check-state'], queryFn: () => get('/api/update/check-status'), refetchInterval: 2000 });
   const u = update.data;
   async function start() {
     try {
@@ -191,13 +190,6 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
   );
   return (
     <Dialog title={t('help.check_update')} onClose={onClose} closeLabel={t('common.close')} actions={actions}>
-      <p>{t('help.auto_check')}: {t(status.data?.enabled ? 'help.auto_on' : 'help.auto_off')}</p>
-      <p>{t(`help.check_status.${status.data?.status ?? 'unchecked'}`)}</p>
-      {status.data?.last_success && <p>{t('help.last_success')}: {new Date(status.data.last_success).toLocaleString()}</p>}
-      {status.data?.next_retry && <p>{t('help.next_retry')}: {new Date(status.data.next_retry).toLocaleString()}</p>}
-      {status.data?.error && <p className="error-text">{tm(status.data.error)}</p>}
-      {status.data?.available_version && status.data.status === 'failed' && <p>{t('help.last_known_update', { version: status.data.available_version })}</p>}
-      <button disabled={check.isFetching || status.data?.status === 'checking'} onClick={() => check.refetch()}>{t('help.check_update')}</button>
       {check.isLoading && <p className="faint">{t('help.checking')}</p>}
       {check.error && <p className="error-text">{check.error instanceof ApiError ? tm(check.error.msg) : String(check.error)}</p>}
       {check.data && (
@@ -266,23 +258,44 @@ function NoticesDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// The server owns checks and retry scheduling; all screens observe the same persistent state.
+// Checks at most once a day and stores notice state under the app root, across browser origins.
 export function useStartupUpdateCheck(enabled: boolean, onAvailable: (available: boolean) => void, onOpenUpdate: () => void) {
   const toast = useToast();
   useEffect(() => {
     let active = true;
-    const refresh = async () => {
-      try {
-        const status = await get<CheckStatus>('/api/update/check-status');
-        if (!active) return;
-        onAvailable(!!status.available_version);
-        if (!enabled) return;
-        const { notice } = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
-        if (active && notice?.newer) toast({ text: t('help.update_available', { latest: notice.latest, current: notice.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
-      } catch { /* Network failures remain in the server-owned status. */ }
+    if (!enabled) {
+      onAvailable(false);
+      return () => { active = false; };
+    }
+    const showNotice = (result: UpdateSummary) => {
+      if (result.newer) {
+        toast({ text: t('help.update_available', { latest: result.latest, current: result.current }), action: { label: t('help.check_update'), run: onOpenUpdate } });
+      }
     };
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 5000);
-    return () => { active = false; window.clearInterval(timer); };
+    const check = beginStartupUpdateCheck(async () => {
+      const initial = await post<{ should_check: boolean; available_version: string | null; current_version: string }>('/api/update/notice/begin');
+      let summary: UpdateSummary;
+      if (!initial.should_check) {
+        summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
+      } else {
+        try {
+          const result = await get<Update>('/api/update-check');
+          await post('/api/update/notice/result', { current: result.current, latest: result.latest, newer: result.newer });
+          summary = result;
+        } catch {
+          summary = { current: initial.current_version, latest: initial.available_version ?? '', newer: !!initial.available_version };
+        }
+      }
+      const consumed = await post<{ notice: UpdateSummary | null }>('/api/update/notice/consume');
+      return { summary, notice: consumed.notice };
+    });
+    check
+      .then(({ summary, notice }) => {
+        if (!active) return;
+        onAvailable(summary.newer);
+        if (notice) showNotice(notice);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
   }, [enabled, onAvailable, onOpenUpdate, toast]);
 }

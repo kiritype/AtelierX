@@ -113,18 +113,3 @@ export type DeployPlan = { target: string; target_name: string; public_url: stri
 export type DeployResult = { source: string; path: string; url: string; ok: boolean; overwrote: boolean; status: string; error?: ServerMsg | string; log_error?: ServerMsg | string };
 export type DeployRun = { id: string; status: string; total: number; done: number; results: DeployResult[]; current: { source: string; path: string; status: string } | null };
 export type DeployHistory = { records: (DeployResult & { at: string; target_name: string })[] };
-export type PoolKind = 'artists' | 'models' | 'loras';
-export type PoolItem = { name: string; mode: 'always' | 'candidate' | 'exclude' };
-export type StylePools = Record<PoolKind, PoolItem[]>;
-export type StylePool = { id: string; name: string; kind: PoolKind; items: PoolItem[] };
-export type PoolDocument = { revision: string; items: StylePool[] };
-export type SearchRules = Record<string, number | boolean>;
-export type StyleConfig = { model: string; artists: {name: string; weight: number}[]; loras: {name: string; weight: number; clip: number}[] };
-export type StyleCandidate = {id: string; config: StyleConfig; parent_id: string | null; change: string; status: string; image_url?: string; image_missing?: boolean; include_parent?: boolean; attempts: {id: string; status: string; error?: import('./api').ServerMessage; prompt_id?: string; result_uncertain?: boolean}[]};
-export type StyleSession = {
-  id: string; revision: string; name: string; service: 'comfyui' | 'novelai'; family: 'anima' | 'sdxl';
-  settings: Record<string, unknown>; positive: string; negative: string; pools: StylePools; rules: SearchRules;
-  candidates: StyleCandidate[]; pair: string[] | null; events: {choice: string; undone?: boolean}[];
-  scores: Record<string, {score: number; count: number; wins: number; bad: number}>;
-  proposal?: {requested: number; candidates: StyleCandidate[]}; saved_presets?: string[];
-};
