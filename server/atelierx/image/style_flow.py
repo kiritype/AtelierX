@@ -14,6 +14,8 @@ LEASE_SECONDS = 12
 
 
 def resume_reason(session):
+    if session['flow'].get('reason') in ('limit_reached', 'limit_remaining'):
+        return session['flow']['reason']
     return (
         'choose_base'
         if session.get('refinement', {}).get('needs_base') and session['flow']['mode'] == 'refine'
@@ -146,6 +148,13 @@ class StyleFlowMixin:
                 'mode': 'explore',
             },
         )
+        error = s.get('flow_error')
+        if isinstance(error, dict) and error.get('key') == 'server.explore.budget':
+            self.limit_pause(s)
+        if flow['reason'] in ('limit_reached', 'limit_remaining'):
+            count = 1 if flow['mode'] == 'refine' else flow['count']
+            if spent(s) + count <= flow['limit']:
+                flow['reason'] = 'resume'
         if flow.get('boot') != self.boot:
             flow.update(boot=self.boot, paused=True, reason=resume_reason(s))
         return s
@@ -168,6 +177,13 @@ class StyleFlowMixin:
     def budget(self, s, count):
         if spent(s) + count > s['flow']['limit']:
             raise ValueError(Msg('server.explore.budget', 'The session generation limit would be exceeded.'))
+
+    def limit_pause(self, s):
+        s['flow'].update(
+            paused=True,
+            reason='limit_reached' if spent(s) >= s['flow']['limit'] else 'limit_remaining',
+        )
+        s.pop('flow_error', None)
 
     def before_submit(self, job):
         if not job.get('snapshot', {}).get('style_session'):
@@ -298,6 +314,9 @@ class StyleFlowMixin:
             self.enqueue_plan(s)
             f['reason'] = 'generating'
         except (ValueError, AppError) as exc:
+            if getattr(message_of(exc), 'key', None) == 'server.explore.budget':
+                self.limit_pause(s)
+                return
             f.update(paused=True, reason='blocked')
             s['flow_error'] = wire(message_of(exc))
 

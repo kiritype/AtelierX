@@ -127,6 +127,7 @@ def test_auto_round_is_idempotent_and_never_partially_spends_budget(unlocked):
     s = action(unlocked, s, 'automatic', enabled=True, limit=5, count=3)
     s = action(unlocked, s, 'resume', owner=OWNER)
     assert len(s['rounds']) == 1 and s['flow']['paused'] and spent(s) == 3
+    assert s['flow']['reason'] == 'limit_remaining' and 'flow_error' not in s
     s = action(unlocked, s, 'automatic', enabled=True, limit=6, count=3)
     s = action(unlocked, s, 'resume', owner=OWNER)
     assert len(s['rounds']) == 2 and spent(s) == 6
@@ -139,6 +140,27 @@ def test_auto_round_is_idempotent_and_never_partially_spends_budget(unlocked):
     assert s['flow']['paused'] and spent(s) == 3
     assert len(s['candidates']) == 6 and len(s['invalidated_rounds']) == 1
     assert all(c['status'] == 'cancelled' for c in s['candidates'][3:])
+
+
+def test_limit_completion_is_not_an_error_and_survives_resume_and_restart(unlocked):
+    _, rt = _setup(unlocked)
+    s = persist(rt, cover(ready_session(unlocked, rt)))
+    s = action(unlocked, s, 'automatic', enabled=True, limit=3, count=3)
+    s = action(unlocked, s, 'resume', owner=OWNER)
+    assert s['flow']['reason'] == 'limit_reached' and 'flow_error' not in s
+    s = action(unlocked, s, 'leave', owner=OWNER)
+    restored = StyleSearch(rt).get(s['id'])
+    assert restored['flow']['reason'] == 'limit_reached' and restored['flow']['paused']
+    # Upgrade a session saved by the previous version with a budget error.
+    s['flow']['reason'] = 'blocked'
+    s['flow_error'] = {'key': 'server.explore.budget', 'text': 'budget'}
+    s = persist(rt, s)
+    assert s['flow']['reason'] == 'limit_reached' and 'flow_error' not in s
+    s = action(unlocked, s, 'automatic', enabled=True, limit=6, count=3)
+    assert s['flow']['paused'] and s['flow']['reason'] == 'resume'
+    assert len(s['candidates']) == 3
+    s = action(unlocked, s, 'resume', owner=OWNER)
+    assert len(s['candidates']) == 6
 
 
 def test_attempt_budget_refunds_only_definite_unsent_attempts_and_retry_preflight(unlocked, monkeypatch):
