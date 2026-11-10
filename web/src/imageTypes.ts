@@ -82,7 +82,12 @@ export type SingleRun = {
   service: SingleService;
   seed: number;
   request: SingleRequest | null;
-  actual: { positive: string; negative: string; settings: Record<string, unknown> };
+  actual: {
+    positive: string;
+    negative: string;
+    settings: Record<string, unknown>;
+    generation_preset?: { id?: string; name: string };
+  };
   image_url?: string | null;
   path?: string | null;
   error?: ServerMsg | string | null;

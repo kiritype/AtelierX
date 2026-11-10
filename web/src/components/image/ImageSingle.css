@@ -6,7 +6,7 @@
 .single-heading .seg { flex-wrap: wrap; }
 .single-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr); gap: 24px; align-items: start; }
 .single-form, .single-result { min-width: 0; }
-.single-service, .single-helpers, .single-run, .single-result-actions, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.single-service, .single-helpers, .single-run, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .single-service { margin-bottom: 16px; }
 .single-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
 .single-field textarea { width: 100%; resize: vertical; min-height: 84px; line-height: 1.6; }
@@ -40,9 +40,6 @@ button.single-canvas { cursor: zoom-in; }
 .single-empty { padding: 24px; text-align: center; color: var(--text-3); }
 .single-watermark { position: absolute; bottom: 12px; left: 12px; padding: 5px 10px; border-radius: var(--radius); background: var(--panel); color: var(--text); }
 .single-result progress { width: 100%; margin-bottom: 12px; }
-.single-handoff { margin-top: 16px; padding: 14px; background: var(--accent-bg); border-radius: var(--radius); }
-.single-handoff h4 { margin: 0; }
-.single-handoff button { margin: 0 8px 8px 0; }
 .single-result-links { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
 .single-history { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
 .single-history h4 { margin: 0; }
@@ -57,5 +54,4 @@ button.single-canvas { cursor: zoom-in; }
 .single-history-pages { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
 .single-modal-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .single-modal-path { overflow-wrap: anywhere; }
-.single-modal-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 @media(max-width: 1100px) { .single-layout { grid-template-columns: minmax(0, 1fr); } .single-image { padding: 14px; } }

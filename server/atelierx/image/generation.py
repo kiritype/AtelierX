@@ -445,9 +445,11 @@ class GenerationMixin:
     @staticmethod
     def _single_actual(snapshot):
         settings = snapshot.get('settings') or {}
+        preset = snapshot.get('generation_preset')
         return {
             'positive': snapshot.get('positive') or '',
             'negative': snapshot.get('negative') or '',
+            **({'generation_preset': preset} if isinstance(preset, dict) and preset.get('name') else {}),
             'settings': {
                 key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')
             },

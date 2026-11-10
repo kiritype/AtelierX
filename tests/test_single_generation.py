@@ -65,6 +65,7 @@ def test_single_generation_saves_and_restores_without_character(unlocked, monkey
     assert saved[0]['actual']['positive'] == request['positive']
     assert saved[0]['actual']['negative'] == request['negative']
     assert saved[0]['actual']['settings']['seed'] == 17
+    assert 'generation_preset' not in saved[0]['actual']
 
 
 def test_single_cancel_retry_failure_and_queue_resume(unlocked, monkeypatch):
@@ -153,6 +154,7 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
     assert snapshot['negative'] == 'blurry, noise, darkness'
     run = client.get(f'/api/works/{wid}/image/single/runs').json()['runs'][0]
     assert run['actual']['positive'] == snapshot['positive']
+    assert run['actual']['generation_preset'] == snapshot['generation_preset']
     assert run['actual']['settings']['cfg'] == 6.5
     assert 'model_loader' not in run['actual']['settings']
     (runtime.paths.data / 'image' / 'presets' / f'{resolve(runtime.paths, "presets", "soft")}.json').unlink()
