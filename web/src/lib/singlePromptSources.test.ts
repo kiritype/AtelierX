@@ -37,5 +37,9 @@ describe('single prompt sources', () => {
     expect(old.positive).toBe('literal \\# restored');
     expect(old.negative).toBe('bad \\# note');
     expect(cleanPrompt(old.positive)).toBe('literal # restored');
+
+    const escaped = { actual: { positive: '\\#literal, title#4', negative: '', settings: {} } } as SingleRun;
+    const restoredEscaped = restorePromptSources(escaped);
+    expect(cleanPrompt(restoredEscaped.positive)).toBe(escaped.actual.positive);
   });
 });

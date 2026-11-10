@@ -11,7 +11,8 @@ export function cleanPrompt(value: string): string {
   }).filter(line => line.trim()).join('\n').trim();
 }
 
-export const editablePrompt = (value: string) => value.replace(/(^|[\s,])#/g, '$1\\#');
+// A saved prompt has already passed note processing. Escape every hash so another pass preserves its text.
+export const editablePrompt = (value: string) => value.replaceAll('#', '\\#');
 export const orderedSources = (sources: PromptSource[]) => SOURCE_KINDS.flatMap(kind => sources.filter(source => source.kind === kind));
 export const replaceSource = (sources: PromptSource[], kind: PromptSource['kind'], source?: PromptSource) =>
   orderedSources([...sources.filter(item => item.kind !== kind), ...(source ? [source] : [])]);

@@ -194,12 +194,12 @@ it('restores frozen source metadata and removes only the selected material', asy
     { kind: 'style', id: 'old-style', name: 'Old style', positive: '(soft light:1.1)', negative: 'haze' },
   ];
   rows.unshift({ id: 'frozen', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 42,
-    request: { positive: 'forest, #literal', negative: 'blur', service: 'comfyui', settings: {}, preset_id: '' },
-    actual: { positive: 'warm # frozen note, forest, #literal, (soft light:1.1)', negative: 'blur, haze', settings: { seed: 42 }, prompt_sources: sources },
+    request: { positive: 'forest, \\#literal', negative: 'blur', service: 'comfyui', settings: {}, preset_id: '' },
+    actual: { positive: 'warm # frozen note, forest, \\#literal, (soft light:1.1)', negative: 'blur, haze', settings: { seed: 42 }, prompt_sources: sources },
     image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
   await publish();
   await click(t('single.restore'));
-  expect(positive().value).toBe('forest, \\#literal');
+  expect(positive().value).toBe('forest, \\\\#literal');
   expect(negative().value).toBe('blur');
   const sourceDetails = host.querySelector('.prompt-source-detail') as HTMLDetailsElement;
   sourceDetails.open = true;
@@ -211,6 +211,7 @@ it('restores frozen source metadata and removes only the selected material', asy
   await click(t('single.run'));
   const submitted = vi.mocked(post).mock.calls.find(([url]) => url.endsWith('/single'))?.[1] as { prompt_sources: PromptSource[] };
   expect(submitted.prompt_sources.map(source => source.kind)).toEqual(['direct', 'style']);
+  expect(submitted.prompt_sources[0].positive).toBe(sources[0].positive);
   expect(submitted.prompt_sources.find(source => source.kind === 'style')?.positive).toBe('(soft light:1.1)');
 });
 
@@ -285,4 +286,39 @@ it('replays literal hashes in the saved prompt and does not carry over the curre
   });
   expect(positive().value).toBe('Unsaved draft');
   expect((host.querySelector('.single-field select') as HTMLSelectElement).value).toBe('soft');
+});
+
+it('replaces and clears a restored shot without changing direct input', async () => {
+  const source = {
+    kind: 'composition' as const, id: 'shot:face:side:high', name: 'Saved shot',
+    positive: 'portrait, from side, from above', negative: '',
+  };
+  qc.setQueryData(['image-lib-rules'], { shot_choices: {
+    framing: { face: { prompt: 'portrait' }, upper: { prompt: 'upper body' }, cowboy: { prompt: 'cowboy shot' }, full: { prompt: 'full body' } },
+    direction: { front: 'straight-on', three_quarter: 'three-quarter view', side: 'from side', back: 'from behind' },
+    height: { eye: 'eye level', high: 'from above', low: 'from below' },
+  } });
+  rows = [{
+    id: 'shot-run', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 17,
+    request: { service: 'comfyui', positive: 'by a window', negative: 'blur', preset_id: '', settings: {}, prompt_sources: [source] },
+    actual: { positive: 'by a window, portrait, from side, from above', negative: 'blur', settings: {},
+      prompt_sources: [{ kind: 'direct', id: '', name: '', positive: 'by a window', negative: 'blur' }, source] },
+  }];
+  await publish();
+  await click(t('single.restore'));
+  expect(positive().value).toBe('by a window');
+  const choose = async (key: string) => {
+    const input = [...host.querySelectorAll('label')].find(label => label.textContent === t(key))?.querySelector('input');
+    expect(input?.type).toBe('radio');
+    await act(async () => input!.click());
+  };
+  expect(host.querySelector('.single-form')?.textContent).toContain(source.positive);
+  await choose('shot.framing.full');
+  expect(host.querySelector('.single-form')?.textContent).not.toContain(source.positive);
+  expect(host.querySelector('.single-form')?.textContent).toContain('full body, from side, from above');
+  expect(positive().value).toBe('by a window');
+  await choose('shot.mode.auto');
+  expect(host.querySelector('.single-form')?.textContent).not.toContain('full body, from side, from above');
+  expect(positive().value).toBe('by a window');
+  expect(negative().value).toBe('blur');
 });

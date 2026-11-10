@@ -91,6 +91,7 @@ class GenerationMixin:
                 'common_ids': body.get('common_ids', (preset or {}).get('common') or None),
                 **self._artist(body, preset),
                 'composition_id': body.get('composition_id'),
+                'shot': body.get('shot'),
                 'outfit_slots': body.get('outfit_slots'),
                 'overrides': body.get('overrides') or {},
                 'trigger': False,  # a trigger word only means something to a local LoRA
@@ -104,6 +105,7 @@ class GenerationMixin:
             'common_ids': body.get('common_ids', (preset or {}).get('common') or None),
             **self._artist(body, preset),
             'composition_id': body.get('composition_id'),
+            'shot': body.get('shot'),
             'outfit_slots': body.get('outfit_slots'),
             'overrides': body.get('overrides') or {},
             'trigger': body.get('trigger'),
@@ -496,6 +498,7 @@ class GenerationMixin:
                         'artist',
                         'common_ids',
                         'composition_id',
+                        'shot',
                         'overrides',
                     )
                 },

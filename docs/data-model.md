@@ -903,6 +903,10 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 ```
 
 - 같은 이미지를 다시 만들 수 있는 정보를 모두 남긴다. 갤러리의 "새 시드로 다시 생성"은 이 기록에서 시드만 바꿔 대기열에 넣는다.
+- 시각 샷의 생성 기록에는 선택적 `shot: {framing, direction, height}`가 들어간다. 각각
+  `face|upper|cowboy|full`, `front|three_quarter|side|back`, `eye|high|low` 중 하나다. 적용한 문구는
+  `parts.composition`에, 라이브러리 구도의 Negative 기여분은 `composition_negative`에 남긴다.
+  기존 라이브러리 구도 기록은 `composition_id`와 `composition_name`으로 읽는다.
 - `artist`: 그때 쓴 artist 태그. 이전 기록은 `style_ids`(화풍 id)와 `parts.style`을 가진다.
 - 생성 설정의 뒷단계(#168, 그림체 프리셋의 `settings`도 같은 형식, 모두 선택):
   - `loras[].enabled`: `false`면 목록에 남기되 그래프에서 뺀다(켜진 것은 쓰지 않음).
@@ -933,6 +937,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 `composition`, `style` 중 하나다. 출처마다 최대 한 항목이며 이 순서로 비어 있지 않은 문구를 `, `로 연결한다.
 `common`은 선택한 그림체의 공통 문구, `style`은 artist 문구이며 둘의 ID·이름은 그림체를 가리킨다. 캐릭터는 외형 문구만
 포함하고 의상·LoRA를 추측해 추가하지 않는다. 문구는 가중치나 태그를 다시 분해하지 않은 최종 문자열이다.
+시각 샷의 `composition` ID는 `shot:<framing>:<direction>:<height>`이고, 라이브러리 구도는 프리셋 ID를 사용한다.
 
 단일 생성 API에서 `prompt_sources`를 주면 직접 입력의 주석을 정리해 `direct`로 기록하고 다른 출처는 이미 주석을 처리한
 문자열로 사용한다. `direct`를 함께 보냈다면 정리된 직접 입력과 일치해야 한다. 이 계약에서는 `preset_id`로 현재 라이브러리를

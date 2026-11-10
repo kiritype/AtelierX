@@ -4,7 +4,7 @@ import { ApiError, get, post } from '../../api';
 import { t, tm, msgText } from '../../i18n';
 import type { ImageView } from '../../types';
 import type { GalleryToolsResponse, PromptSource, SingleRun, SingleRuns } from '../../imageTypes';
-import { combineSources, promptSources, restorePromptSources, validSources, cleanPrompt } from '../../lib/singlePromptSources';
+import { combineSources, promptSources, restorePromptSources, validSources, cleanPrompt, editablePrompt, replaceSource } from '../../lib/singlePromptSources';
 import { settingsFromPreset } from '../../lib/presetSettings';
 import { fits } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
@@ -17,9 +17,11 @@ import { sendToLab } from './ImageLab';
 import { sendToTools } from '../../lib/toolHandoff';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import SingleResultDetails from './SingleResultDetails';
-import { editableSinglePrompt, resultSeed, resultSettings } from './singleResult';
+import { resultSeed, resultSettings } from './singleResult';
 import GenerationResolution from './GenerationResolution';
 import SinglePromptMaterials, { StyleThumbnails, tagsText, type StyleChoice } from './SinglePromptMaterials';
+import ShotPicker from './ShotPicker';
+import { AUTO_SHOT, compositionSource, shotChoiceFromSource, useShotLibrary, type ShotChoice } from '../../lib/shots';
 import './ImageSingle.css';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
@@ -64,6 +66,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const [historyPage, setHistoryPage] = useState(0);
   const services = useQuery<ImageServices>({ queryKey: ['image-services'], queryFn: () => get('/api/image/services') });
   const catalog = useCatalog();
+  const { compositions, rules } = useShotLibrary(workId);
+  const [unappliedShot, setUnappliedShot] = useState<ShotChoice>(AUTO_SHOT);
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
   const runs = useQuery<SingleRuns>({ queryKey: ['image-single-runs', workId], queryFn: () => get(`/api/works/${workId}/image/single/runs`), refetchInterval: 1500 });
@@ -93,6 +97,14 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const serviceInfo = services.data?.services.find(service => service.id === draft.service);
   const ready = draft.service === 'comfyui' ? catalog.data?.connected : serviceInfo?.supported && serviceInfo.connected;
   const servicePresets = (presets.data ?? []).filter(preset => preset.service === draft.service);
+  const shotTarget = draft.service === 'comfyui' ? String(settings.family || 'anima') : draft.service;
+  const frozenShot = draft.sources.find(source => source.kind === 'composition');
+  const shotChoice = frozenShot ? shotChoiceFromSource(frozenShot.id) : unappliedShot;
+  function chooseShot(choice: ShotChoice) {
+    const source = compositionSource(choice, rules.data, compositions.data, shotTarget);
+    setUnappliedShot(source ? AUTO_SHOT : choice);
+    setDraft(current => ({ ...current, sources: replaceSource(current.sources, 'composition', source) }));
+  }
   const sourceList = promptSources(draft.positive, draft.negative, draft.sources);
   const positive = combineSources(sourceList, 'positive');
   const negative = combineSources(sourceList, 'negative');
@@ -158,6 +170,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   function restore(selected: SingleRun) {
     if (busy || !selected.actual || !selected.service) return;
     setPreviewOpen(false);
+    setUnappliedShot(AUTO_SHOT);
     setDraft(current => ({ ...current, ...restorePromptSources(selected),
       service: selected.service, preset: '', legacyPreset: false,
       settings: { ...current.settings, [selected.service]: resultSettings(selected) },
@@ -186,7 +199,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   }
   function handoffLab() {
     if (!run?.actual || !run.path || run.service !== 'comfyui') return;
-    sendToLab({ positive: editableSinglePrompt(run.actual.positive), negative: editableSinglePrompt(run.actual.negative),
+    sendToLab({ positive: editablePrompt(run.actual.positive), negative: editablePrompt(run.actual.negative),
       settings: resultSettings(run) as GenerationSettings, source: run.path });
     setPreviewOpen(false);
     openView('lab');
@@ -217,7 +230,9 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
-        <SinglePromptMaterials workId={workId} target={draft.service === 'comfyui' ? String(settings.family || 'anima') : draft.service} sources={draft.sources}
+        <ShotPicker value={shotChoice} rules={rules.data} compositions={compositions.data} target={shotTarget}
+          frozenSource={frozenShot} onChange={chooseShot} />
+        <SinglePromptMaterials workId={workId} target={shotTarget} sources={draft.sources}
           change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={() => openView('library')} />
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
         <div className="section-title">{t('single.settings')}</div>

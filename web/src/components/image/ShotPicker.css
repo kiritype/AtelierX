@@ -1,0 +1,45 @@
+.shot-picker, .shot-axis {
+  min-inline-size: 0;
+  margin: 0;
+}
+.shot-picker {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+.shot-picker legend { padding: 0 4px; }
+.shot-axis { border: 0; padding: 0; }
+.shot-axis legend { padding: 0 0 4px; }
+.shot-axis-options { display: flex; flex-wrap: wrap; gap: 4px; }
+.shot-library { display: grid; gap: 4px; }
+.shot-library select { min-width: 0; }
+.shot-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 75px), 1fr));
+  gap: 4px;
+}
+.shot-option { position: relative; }
+.shot-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.shot-option span {
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-height: 32px;
+  height: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-align: center;
+}
+.shot-option input:checked + span { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.shot-option input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shot-option input:disabled + span { opacity: .5; }
+.shot-diagram { display: block; width: 42px; height: 70px; color: var(--text-3); }
+.shot-crop { fill: none; stroke: var(--accent); stroke-width: 2; }
+.shot-picker p, .shot-details, .shot-details dd { margin: 0; }
+.shot-details { display: grid; gap: 4px; overflow-wrap: anywhere; }
+.shot-details dt { color: var(--text-2); }
+.shot-details dd { white-space: pre-wrap; }

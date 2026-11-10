@@ -38,9 +38,6 @@ export function resultSettings(run: SingleRun, newSeed = false) {
   return settings;
 }
 
-// The editor treats an unescaped hash at the start of a tag as a note. The saved prompt is already resolved.
-export const editableSinglePrompt = (value: string) => value.replaceAll('#', '\\#');
-
 function equivalent(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) || Array.isArray(right)) {

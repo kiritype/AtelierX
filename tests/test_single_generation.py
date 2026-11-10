@@ -304,3 +304,39 @@ def test_missing_character_identity_cannot_create_none_folder(unlocked):
             'fake-id',
         )
     assert not (runtime.paths.output / 'W001' / 'None').exists()
+
+
+def test_single_composition_source_survives_saved_history(unlocked, monkeypatch):
+    client = unlocked
+    wid, runtime = _setup(client)
+    adapter = runtime.services['comfyui']
+    monkeypatch.setattr(adapter, 'busy', lambda: False)
+    monkeypatch.setattr(adapter, 'submit', lambda job: {'id': 'remote-id', 'record': {}})
+    monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
+    source = {
+        'kind': 'composition',
+        'id': 'shot:face:side:high',
+        'name': 'Face · Side · High angle',
+        'positive': 'portrait, from side, from above',
+        'negative': '',
+    }
+    response = client.post(
+        f'/api/works/{wid}/image/single',
+        json={
+            'positive': 'by a window',
+            'negative': 'blurry',
+            'prompt_sources': [source],
+            'settings': {'seed': 17},
+        },
+    )
+    assert response.status_code == 200, response.text
+    job = runtime.queue.get(response.json()['job_id'])
+    job['status'] = 'running'
+    runtime.run_job(job)
+    assert job['status'] == 'done'
+    runtime.remove_finished(job['id'])
+    run = client.get(f'/api/works/{wid}/image/single/runs').json()['runs'][0]
+    assert run['actual']['prompt_sources'] == run['request']['prompt_sources']
+    assert run['actual']['prompt_sources'][1] == source
+    assert run['actual']['positive'].split(', ') == ['by a window', 'portrait', 'from side', 'from above']
+    assert run['actual']['negative'] == 'blurry'
