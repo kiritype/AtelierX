@@ -70,6 +70,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   const [tabMenu, setTabMenu] = useState<{ key: string; x: number; y: number } | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [panel, setPanel] = useState<PanelKey | null>('files');
+  const [imageFocus, setImageFocus] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const [folderCollapsed, setFolderCollapsed] = useState<Record<string, boolean>>({});
@@ -256,6 +257,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         lock();
       } else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
+        setImageFocus(false);
         setPanel('search');
       } else if (e.key === 'F5' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
         // F5 opens and closes the test screen instead of reloading the window (which would drop unsaved edits).
@@ -308,6 +310,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   });
 
   const current = tabs.find((tab) => tabKey(tab) === active) ?? null;
+  const generatingImage = current?.type === 'image' && (current.view === 'single' || current.view === 'generate');
+  const focusingImage = generatingImage && imageFocus;
   const currentStatus = active ? status[active] : undefined;
   const effective = info.data?.effective;
   const limits = effective?.values?.limits ?? {};
@@ -367,7 +371,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       label: t('menu.edit'),
       items: [
         { label: t('editor.quick_open'), shortcut: 'Ctrl+P', run: () => setQuickOpen(true) },
-        { label: t('panel.search'), shortcut: 'Ctrl+Shift+F', run: () => setPanel('search') },
+        { label: t('panel.search'), shortcut: 'Ctrl+Shift+F', run: () => { setImageFocus(false); setPanel('search'); } },
         { label: t('rename.title'), run: () => setRenaming(true) },
       ],
     },
@@ -455,7 +459,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         </ErrorBoundary>
       </div>
       <div
-        className={`main${aux ? '' : ' no-aux'}`}
+        className={`main${aux ? '' : ' no-aux'}${generatingImage ? ' image-generation' : ''}${focusingImage ? ' image-focus' : ''}`}
         style={{ ['--side' as string]: panel && !sidebarCollapsed ? `${sidebarWidth}px` : '0px', display: testing ? 'none' : undefined }}
       >
         <div className="activity">
@@ -591,6 +595,8 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                     {tab.type === 'image' && (
                       <ImageScreen
                         active={key === active}
+                        focused={imageFocus}
+                        toggleFocus={() => setImageFocus(value => !value)}
                         workId={workId}
                         view={tab.view}
                         characterId={tab.characterId}
@@ -609,7 +615,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
             })}
           </div>
         </div>
-        <div className="aux" style={{ display: aux ? 'flex' : 'none' }}>
+        <div className="aux" style={{ display: aux && !focusingImage ? 'flex' : 'none' }}>
           {aux && (
             <AuxPanel
               tab={aux}

@@ -16,6 +16,7 @@ import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSett
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { settingsFromPreset } from '../../lib/presetSettings';
 import CharacterOutfitTable from './CharacterOutfitTable';
+import GenerationResolution from './GenerationResolution';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
@@ -194,7 +195,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
-    <div className="image-gen-page">
+    <div className="generation-page">
+      <div className="generation-content">
       <div className="image-gen-top pad col">
       {handed && (
         <div className="col handed-targets">
@@ -318,8 +320,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             </select>
           </label>
         </div>
-        {!internet && <GenSettings value={settings} onChange={setSettings} />}
-        {internet && (ServicePanel ? <ServicePanel value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
+        {!internet && <GenSettings compact value={settings} onChange={setSettings} />}
+        {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
         {preview && (
@@ -361,16 +363,20 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         )}
       </div>
     </div>
-      <div className="image-gen-bar row">
+      </div>
+      <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
         <label className="col" style={{ gap: 2 }}>
           <span className="muted">{t('gen.count')}</span>
           <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
         </label>
-        <span className="grow">
-          {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
-          <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
-          {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
-        </span>
+        <div className="generation-summary grow">
+          <span>
+            {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
+            <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
+            {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
+          </span>
+          <GenerationResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings} />
+        </div>
         <button
           disabled={!targets.length || busy}
           onClick={async () => {
@@ -416,7 +422,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         >
           {t('gen.enqueue')}
         </button>
-      </div>
+      </footer>
     </div>
   );
 }

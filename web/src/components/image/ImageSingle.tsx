@@ -15,6 +15,7 @@ import { sendToTools } from '../../lib/toolHandoff';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import SingleResultDetails from './SingleResultDetails';
 import { editableSinglePrompt, resultSeed, resultSettings } from './singleResult';
+import GenerationResolution from './GenerationResolution';
 import './ImageSingle.css';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
@@ -181,7 +182,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     busy={busy} handoffPending={handoffPending} restore={() => restore(run)} regenerate={regenerate}
     handoff={target => target === 'tools' ? handoffTools() : handoffLab()} />;
 
-  return <section className="single-image" aria-label={t('image_menu.single')}>
+  return <section className="single-image generation-page" aria-label={t('image_menu.single')}>
+    <div className="generation-content">
     <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t('single.subtitle')}</span></div>
       <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>
     </header>
@@ -202,15 +204,12 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
-        <details className="single-details" open><summary>{t('single.settings')}</summary><p className="faint small">{t('single.settings_hint')}</p>
-          {draft.service === 'comfyui' && <GenSettings value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
-          {draft.service === 'novelai' && <NovelAISettings value={settings} onChange={setSettings} />}
-          {draft.service === 'pixai' && <PixAISettings value={settings} onChange={setSettings} />}
-        </details>
+        <div className="section-title">{t('single.settings')}</div>
+        <p className="faint small">{t('single.settings_hint')}</p>
+        {draft.service === 'comfyui' && <GenSettings compact value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
+        {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
+        {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
         {storageFailed ? <p role="alert" className="warn-text">{t('single.storage_failed')} <button onClick={saveDraft}>{t('common.save')}</button></p> : <p className="faint small">{t('single.local_draft')}</p>}
-        <div className="single-run"><button type="button" className="primary" disabled={busy || !ready || !draft.positive.trim()} onClick={() => enqueue()}>{t('single.run')}</button>
-          {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
-        </div>
       </div>
       <div className="single-result">
         <div className="single-result-head"><h3>{t('single.result')}</h3><span role="status" aria-live="polite">{t(`single.state.${pending && !run ? 'queued' : run?.status ?? 'idle'}`)}</span></div>
@@ -239,6 +238,13 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         </div>}
       </div>
     </div>
+    </div>
+    <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
+      <div className="generation-summary grow"><strong>{t('gen.images', { n: 1 })}</strong>
+        <GenerationResolution service={draft.service} value={settings} /></div>
+      <button type="button" className="primary" disabled={busy || !ready || !draft.positive.trim()} onClick={() => enqueue()}>{t('single.run')}</button>
+      {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
+    </footer>
     {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={`${t('single.result')} · ${filenameOf(run)}`} close={() => setPreviewOpen(false)}>
       <div className="row"><strong className="grow single-modal-name" title={filenameOf(run)}>{filenameOf(run)}</strong>
         <button type="button" className="ghost" aria-label={t('common.close')} onClick={() => setPreviewOpen(false)}>×</button></div>

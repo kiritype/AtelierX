@@ -17,6 +17,8 @@ import { imageFlow } from '../lib/imageNavigation';
 // Image module screens (decision 0018). Views not ported yet say what is coming.
 export default function ImageScreen({
   active = true,
+  focused = false,
+  toggleFocus,
   workId,
   view,
   openView,
@@ -27,6 +29,8 @@ export default function ImageScreen({
   outfitId,
 }: {
   active?: boolean;
+  focused?: boolean;
+  toggleFocus?: () => void;
   workId: string;
   view: ImageView;
   openView: (view: ImageView) => void;
@@ -57,11 +61,13 @@ export default function ImageScreen({
     </div>
   );
   };
+  const canFocus = view === 'single' || view === 'generate';
   return <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-    <nav className="row image-flow" aria-label={t('flow.navigation')}>
+    <nav className={`row image-flow${canFocus && focused ? ' image-flow-focused' : ''}`} aria-label={t('flow.navigation')}>
       {characterId && <strong>{characterId}{outfitId ? ` · ${outfitId}` : ''}</strong>}
       {imageFlow.map((step) => <button key={step} type="button" className={view === step ? 'selected' : 'ghost'} aria-current={view === step ? 'page' : undefined} onClick={() => openView(step)}>{t(`image_menu.${step}`)}</button>)}
+      {canFocus && toggleFocus && <button type="button" className="ghost image-focus-toggle" aria-pressed={focused} onClick={toggleFocus}>{t('gen.focus')}</button>}
     </nav>
-    <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{content()}</div>
+    <div className={`image-screen-content${canFocus ? ' generation-viewport' : ''}`}>{content()}</div>
   </div>;
 }
