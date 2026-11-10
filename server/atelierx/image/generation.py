@@ -21,6 +21,7 @@ from ..core.i18n import AppError, Msg, message_of
 from . import library
 from .comments import strip_text
 from .compose import Composer, _join
+from .prompt_sources import combine_sources, normalize_sources
 from .services import ResultPending
 from .util import atomic_json, code, now, replace_file
 from .workflow import DEFAULTS as COMFY_DEFAULTS
@@ -281,12 +282,21 @@ class GenerationMixin:
                 Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
             )
         positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
-        if not positive:
+        sources = (
+            normalize_sources(body['prompt_sources'], positive, negative)
+            if 'prompt_sources' in body
+            else None
+        )
+        if not positive and sources is None:
             raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
         if not isinstance(body.get('settings', {}), dict):
             raise ValueError(Msg('server.single.settings', 'Choose valid generation settings.'))
         service = self._service(body)
-        raw_settings, options, preset = self._settings(body)
+        # A frozen source request already carries the chosen settings and prompt material.
+        # Resolving preset_id here would silently replace a restored/deleted style.
+        raw_settings, options, preset = self._settings(
+            {**body, 'preset_id': ''} if sources is not None else body
+        )
         if service.id == DEFAULT_SERVICE:
             allowed = set(COMFY_DEFAULTS) | {'family', 'clip_skip', 'shift', 'upscale', 'detailer'}
         elif service.id == 'novelai':
@@ -345,6 +355,11 @@ class GenerationMixin:
         final_negative = ', '.join(
             x for x in (*common_negative, negative, strip_text(artist.get('negative') or '').strip()) if x
         )
+        if sources is not None:
+            final_positive = combine_sources(sources, 'positive')
+            final_negative = combine_sources(sources, 'negative')
+        if not final_positive.strip():
+            raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
         if len(final_positive) > 30000 or len(final_negative) > 30000:
             raise ValueError(
                 Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
@@ -378,6 +393,9 @@ class GenerationMixin:
             'request': request,
             'run_created_at': created,
         }
+        if sources is not None:
+            request['prompt_sources'] = copy.deepcopy(sources)
+            snapshot['prompt_sources'] = copy.deepcopy(sources)
         if common_ids:
             snapshot['common_ids'] = list(common_ids)
         if preset:
@@ -453,6 +471,11 @@ class GenerationMixin:
             'settings': {
                 key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')
             },
+            **(
+                {'prompt_sources': copy.deepcopy(snapshot['prompt_sources'])}
+                if 'prompt_sources' in snapshot
+                else {}
+            ),
         }
 
     REPEAT_WINDOW = 600
@@ -575,7 +598,7 @@ class GenerationMixin:
             index += 1
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
-            schema_version=2 if job.get('kind') == 'single' else 1,
+            schema_version=(3 if 'prompt_sources' in metadata else 2) if job.get('kind') == 'single' else 1,
             created_at=now(),
             job_id=job['id'],
             prompt_id=prompt_id,

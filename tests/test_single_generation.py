@@ -106,6 +106,74 @@ def test_single_validation_rejects_empty_and_unsupported_settings(unlocked):
     assert runtime.queue.queued_count() == 0
 
 
+def test_single_frozen_sources_are_ordered_saved_and_not_reexpanded(unlocked, monkeypatch):
+    client = unlocked
+    wid, runtime = _setup(client)
+    library.save_preset(runtime.paths, 'soft', {
+        'service': 'comfyui', 'family': 'anima', 'settings': {'cfg': 6.5},
+        'artist': {'positive': 'live preset text', 'negative': 'live negative'},
+    })
+    sources = [
+        {'kind': 'style', 'id': 'old-style', 'name': 'Old style', 'positive': 'gentle # keep literally', 'negative': ''},
+        {'kind': 'direct', 'id': '', 'name': '', 'positive': 'forest', 'negative': 'noise'},
+        {'kind': 'common', 'id': 'old-common', 'name': 'Old common', 'positive': 'warm daylight # saved note', 'negative': ''},
+    ]
+    response = client.post(f'/api/works/{wid}/image/single', json={
+        'service': 'comfyui', 'positive': 'forest # note', 'negative': 'noise',
+        'preset_id': 'soft', 'settings': {'seed': 27, 'cfg': 4}, 'prompt_sources': sources,
+    })
+    assert response.status_code == 200, response.text
+    job = runtime.queue.get(response.json()['job_id'])
+    snapshot = job['snapshot']
+    expected = [sources[2], sources[1], sources[0]]
+    assert snapshot['prompt_sources'] == expected
+    assert snapshot['positive'] == 'warm daylight # saved note, forest, gentle # keep literally'
+    assert snapshot['negative'] == 'noise'
+    assert snapshot['settings']['cfg'] == 4
+    assert snapshot['request']['prompt_sources'] == expected
+    assert snapshot['request']['positive'] == 'forest'
+    assert 'generation_preset' not in snapshot
+
+    library.save_preset(runtime.paths, 'soft', {
+        'service': 'comfyui', 'family': 'anima', 'settings': {'cfg': 9},
+        'artist': {'positive': 'changed preset', 'negative': 'changed negative'},
+    })
+    (runtime.paths.data / 'image' / 'presets' / f'{resolve(runtime.paths, "presets", "soft")}.json').unlink()
+    adapter = runtime.services['comfyui']
+    monkeypatch.setattr(adapter, 'busy', lambda: False)
+    monkeypatch.setattr(adapter, 'submit', lambda job: {'id': 'frozen-id', 'record': {}})
+    monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
+    job['status'] = 'running'
+    runtime.run_job(job)
+    assert job['status'] == 'done'
+    metadata = runtime.gallery.metadata(job['image_url'].removeprefix('/api/image/files/'))
+    assert metadata['schema_version'] == 3
+    assert metadata['prompt_sources'] == expected
+
+    # Restoring the saved run cannot depend on a deleted or modified preset.
+    again = client.get(f'/api/works/{wid}/image/single/runs').json()['runs'][0]
+    assert again['actual']['prompt_sources'] == expected
+    assert again['actual']['positive'] == snapshot['positive']
+
+
+@pytest.mark.parametrize('sources', [
+    'not a list',
+    [{'kind': 'direct', 'id': '', 'name': '', 'positive': 'x', 'negative': ''},
+     {'kind': 'direct', 'id': '', 'name': '', 'positive': 'x', 'negative': ''}],
+    [{'kind': 'unknown', 'id': '', 'name': '', 'positive': 'x', 'negative': ''}],
+    [{'kind': 'style', 'id': '', 'name': '', 'positive': 'x' * 30001, 'negative': ''}],
+    [{'kind': 'direct', 'id': '', 'name': '', 'positive': 'different', 'negative': ''}],
+])
+def test_single_rejects_malformed_or_mismatched_frozen_sources(unlocked, sources):
+    client = unlocked
+    wid, runtime = _setup(client)
+    response = client.post(f'/api/works/{wid}/image/single', json={
+        'service': 'comfyui', 'positive': 'x', 'negative': '', 'prompt_sources': sources,
+    })
+    assert response.status_code == 400
+    assert runtime.queue.queued_count() == 0
+
+
 def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocked):
     client = unlocked
     wid, runtime = _setup(client)

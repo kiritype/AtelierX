@@ -3,7 +3,10 @@ import { useEffect, useId, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { t, tm, msgText } from '../../i18n';
 import type { ImageView } from '../../types';
-import type { GalleryToolsResponse, SingleRun, SingleRuns } from '../../imageTypes';
+import type { GalleryToolsResponse, PromptSource, SingleRun, SingleRuns } from '../../imageTypes';
+import { combineSources, promptSources, restorePromptSources, validSources, cleanPrompt } from '../../lib/singlePromptSources';
+import { settingsFromPreset } from '../../lib/presetSettings';
+import { fits } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import type { ImageServices } from '../ImageServiceSettings';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
@@ -16,14 +19,15 @@ import GalleryDetailFrame from './GalleryDetailFrame';
 import SingleResultDetails from './SingleResultDetails';
 import { editableSinglePrompt, resultSeed, resultSettings } from './singleResult';
 import GenerationResolution from './GenerationResolution';
+import SinglePromptMaterials, { StyleThumbnails, tagsText, type StyleChoice } from './SinglePromptMaterials';
 import './ImageSingle.css';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
-type Draft = { positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string };
-type Preset = { id: string; name: string; service: string; family: string; settings: Record<string, unknown>; common?: string[]; artist?: { positive?: string; negative?: string } };
-type Common = { prompt?: string[]; target?: string; targets?: string[] };
+type Draft = { schema_version: 3; positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string; sources: PromptSource[]; legacyPreset?: boolean };
+type Preset = StyleChoice & { service: string; family: string; settings: Record<string, unknown>; common?: string[]; artist?: { positive?: string; negative?: string } };
+type Common = { id: string; name: string; prompt?: string[]; target?: string; targets?: string[] };
 const storageKey = (work: string) => `atelierx-single-v2-${work}`;
-const fresh = (): Draft => ({ positive: '', negative: '', service: 'comfyui', preset: '', settings: {
+const fresh = (): Draft => ({ schema_version: 3, positive: '', negative: '', service: 'comfyui', preset: '', sources: [], settings: {
   comfyui: { family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 }, novelai: {}, pixai: {},
 } });
 function readDraft(work: string): Draft {
@@ -32,16 +36,13 @@ function readDraft(work: string): Draft {
     const saved = JSON.parse(localStorage.getItem(storageKey(work)) || 'null') as Draft | null;
     if (!saved || typeof saved.positive !== 'string' || typeof saved.negative !== 'string' || !['comfyui', 'novelai', 'pixai'].includes(saved.service)) return fallback;
     return { ...fallback, positive: saved.positive, negative: saved.negative, service: saved.service,
-      preset: typeof saved.preset === 'string' ? saved.preset : '',
+      preset: validSources(saved.sources) && typeof saved.preset === 'string' ? saved.preset : '',
+      sources: validSources(saved.sources) ? saved.sources.filter(source => source.kind !== 'direct') : [],
+      legacyPreset: saved.legacyPreset || (!validSources(saved.sources) && !!saved.preset),
       settings: Object.fromEntries(Object.entries(fallback.settings).map(([key, value]) => [key, { ...value, ...saved.settings?.[key as Service] }])) as Draft['settings'] };
   } catch { return fallback; }
 }
 const active = (run: SingleRun | undefined) => !!run && ['queued', 'running', 'cancelling'].includes(run.status);
-const withoutNote = (value: string) => {
-  const note = /(^|[\s,])#/.exec(value);
-  return (note ? value.slice(0, note.index) : value).replaceAll('\\#', '#').trim();
-};
-const promptText = (value: string) => value.split(/\r?\n/).map(line => withoutNote(line)).filter(Boolean).join('\n');
 const filenameOf = (run: SingleRun) => run.path?.split('/').pop() || `${run.id}.png`;
 const localTime = (value: string) => {
   const date = new Date(value);
@@ -92,21 +93,36 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const serviceInfo = services.data?.services.find(service => service.id === draft.service);
   const ready = draft.service === 'comfyui' ? catalog.data?.connected : serviceInfo?.supported && serviceInfo.connected;
   const servicePresets = (presets.data ?? []).filter(preset => preset.service === draft.service);
-  const chosenPreset = servicePresets.find(preset => preset.id === draft.preset);
-  const selectedCommon = (chosenPreset?.common ?? []).map(key => commons.data?.[key]).filter((item): item is Common => !!item);
-  const commonTags = (target: string) => selectedCommon.filter(item => (item.target === 'negative' ? 'negative' : 'positive') === target)
-    .flatMap(item => item.prompt ?? []).map(withoutNote).filter((tag, index, tags) => !!tag && tags.indexOf(tag) === index);
-  const positive = [...commonTags('positive'), promptText(draft.positive), promptText(chosenPreset?.artist?.positive ?? '')].filter(Boolean).join(', ');
-  const negative = [...commonTags('negative'), promptText(draft.negative), promptText(chosenPreset?.artist?.negative ?? '')].filter(Boolean).join(', ');
+  const sourceList = promptSources(draft.positive, draft.negative, draft.sources);
+  const positive = combineSources(sourceList, 'positive');
+  const negative = combineSources(sourceList, 'negative');
+  function choosePreset(ident: string) {
+    const preset = servicePresets.find(item => item.id === ident);
+    const target = preset?.service === 'comfyui' ? preset.family : preset?.service;
+    const items = (preset?.common ?? []).map(key => commons.data?.[key]);
+    if (items.some(item => !item || !fits(item, target))) { setError(t('materials.common_unavailable')); return; }
+    const selected = items.filter((item): item is Common => !!item);
+    const materials: PromptSource[] = preset ? [
+      { kind: 'common', id: preset.id, name: preset.name, positive: tagsText(selected.filter(item => item.target !== 'negative').flatMap(item => item.prompt ?? [])),
+        negative: tagsText(selected.filter(item => item.target === 'negative').flatMap(item => item.prompt ?? [])) },
+      { kind: 'style', id: preset.id, name: preset.name, positive: cleanPrompt(preset.artist?.positive ?? ''), negative: cleanPrompt(preset.artist?.negative ?? '') },
+    ] : [];
+    setError('');
+    setDraft(current => ({ ...current, preset: ident, legacyPreset: false,
+      sources: [...current.sources.filter(source => !['style', 'common'].includes(source.kind)), ...materials],
+      settings: preset ? { ...current.settings, [current.service]: current.service === 'comfyui'
+        ? settingsFromPreset(current.settings.comfyui, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS)
+        : { ...current.settings[current.service], ...preset.settings } } : current.settings }));
+  }
   const fail = (err: unknown) => setError(err instanceof ApiError ? tm(err.msg) : String(err));
   const refresh = () => qc.invalidateQueries({ queryKey: ['image-single-runs', workId] });
   async function enqueue(value = draft, repeatOk = false) {
-    if (busy || !value.positive.trim()) return;
+    if (busy || !combineSources(promptSources(value.positive, value.negative, value.sources), 'positive')) return;
     setPending(true); setError('');
     try {
       const request = {
         positive: value.positive, negative: value.negative, service: value.service,
-        preset_id: value.preset || undefined, settings: value.settings[value.service], repeat_ok: repeatOk,
+        preset_id: value.preset || undefined, prompt_sources: promptSources(value.positive, value.negative, value.sources), settings: value.settings[value.service], repeat_ok: repeatOk,
       };
       let response: { job_id: string };
       try { response = await post(`/api/works/${workId}/image/single`, request); }
@@ -142,17 +158,15 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   function restore(selected: SingleRun) {
     if (busy || !selected.actual || !selected.service) return;
     setPreviewOpen(false);
-    setDraft(current => ({ ...current,
-      positive: editableSinglePrompt(selected.actual.positive), negative: editableSinglePrompt(selected.actual.negative),
-      service: selected.service, preset: '',
+    setDraft(current => ({ ...current, ...restorePromptSources(selected),
+      service: selected.service, preset: '', legacyPreset: false,
       settings: { ...current.settings, [selected.service]: resultSettings(selected) },
     }));
   }
   async function regenerate(newSeed: boolean) {
     if (!run?.actual || !run.service || (!newSeed && resultSeed(run) === undefined)) return;
     const value = {
-      ...draft, service: run.service, preset: '',
-      positive: editableSinglePrompt(run.actual.positive), negative: editableSinglePrompt(run.actual.negative),
+      ...draft, ...restorePromptSources(run), service: run.service, preset: '', legacyPreset: false,
       settings: { ...draft.settings, [run.service]: resultSettings(run, newSeed) },
     };
     await enqueue(value, true);
@@ -178,7 +192,8 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     openView('lab');
   }
   const resultDetails = run && <SingleResultDetails key={run.id} run={run}
-    current={{ service: draft.service, positive, negative, settings, sources: chosenPreset ? [{ kind: 'style', name: chosenPreset.name }] : [] }}
+    current={{ service: draft.service, positive, negative, settings, sources: sourceList.filter(source => source.kind !== 'direct') }}
+    restoredSources={restorePromptSources(run).sources}
     busy={busy} handoffPending={handoffPending} restore={() => restore(run)} regenerate={regenerate}
     handoff={target => target === 'tools' ? handoffTools() : handoffLab()} />;
 
@@ -190,19 +205,20 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     <div className="single-layout">
       <div className="single-form">
         <div className="single-service" role="group" aria-label={t('gen.service')}>
-          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'selected' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '' })}>{SERVICE_NAMES[service]}</button>)}
+          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'selected' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
         </div>
         {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
-        <label className="single-field"><span>{t('single.preset')}</span><select value={draft.preset} onChange={e => {
-          const preset = servicePresets.find(p => p.id === e.target.value);
-          setDraft(current => ({ ...current, preset: e.target.value,
-            settings: preset ? { ...current.settings, [current.service]: { ...current.settings[current.service], ...preset.settings } } : current.settings }));
-        }}>
+        <label className="single-field"><span>{t('single.preset')}</span><select value={draft.preset} onChange={e => choosePreset(e.target.value)} disabled={commons.isPending}>
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select></label>
+        {draft.legacyPreset && <p className="warn-text">{t('materials.legacy_draft')}</p>}
+        <StyleThumbnails presets={servicePresets} selected={draft.preset} choose={choosePreset} disabled={commons.isPending} />
+        <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
         <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
+        <SinglePromptMaterials workId={workId} target={draft.service === 'comfyui' ? String(settings.family || 'anima') : draft.service} sources={draft.sources}
+          change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={() => openView('library')} />
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
         <div className="section-title">{t('single.settings')}</div>
         <p className="faint small">{t('single.settings_hint')}</p>
@@ -242,7 +258,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
       <div className="generation-summary grow"><strong>{t('gen.images', { n: 1 })}</strong>
         <GenerationResolution service={draft.service} value={settings} /></div>
-      <button type="button" className="primary" disabled={busy || !ready || !draft.positive.trim()} onClick={() => enqueue()}>{t('single.run')}</button>
+      <button type="button" className="primary" disabled={busy || !ready || !positive} onClick={() => enqueue()}>{t('single.run')}</button>
       {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
     </footer>
     {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={`${t('single.result')} · ${filenameOf(run)}`} close={() => setPreviewOpen(false)}>

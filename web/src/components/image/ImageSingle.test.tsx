@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { get, post } from '../../api';
 import { t } from '../../i18n';
-import type { SingleRun } from '../../imageTypes';
+import type { PromptSource, SingleRun } from '../../imageTypes';
 import { takeToolHandoff } from '../../lib/toolHandoff';
 import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
@@ -152,6 +152,66 @@ it('previews preset common tags and compares the saved final prompt', async () =
   expect(summary?.textContent).not.toContain('m.safetensors');
   await click(t('single.compare'));
   expect(sendToLab).toHaveBeenCalledWith(expect.objectContaining({ positive: 'warm daylight, forest, soft light', negative: 'low quality', source: '_single/synthetic/a.png' }));
+});
+
+it('keeps manual prompts when changing frozen styles and ignores later preset edits or deletion', async () => {
+  qc.setQueryData(['image-presets'], [
+    { id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'soft light', negative: 'soft shadows' } },
+    { id: 'crisp', name: 'Crisp', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'crisp detail', negative: 'haze' } },
+  ]);
+  await edit(positive(), 'forest, (mist:1.2)'); await edit(negative(), 'blur, (noise:0.7)');
+  const selectPreset = async (id: string) => act(async () => {
+    const select = host.querySelector('.single-field select') as HTMLSelectElement;
+    select.value = id; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await selectPreset('soft');
+  expect(positive().value).toBe('forest, (mist:1.2)');
+  expect(negative().value).toBe('blur, (noise:0.7)');
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('forest, (mist:1.2), soft light');
+  await selectPreset('crisp');
+  expect(positive().value).toBe('forest, (mist:1.2)');
+  expect(negative().value).toBe('blur, (noise:0.7)');
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('forest, (mist:1.2), crisp detail');
+
+  qc.setQueryData(['image-presets'], [{ id: 'crisp', name: 'Crisp revised', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'changed live text', negative: 'changed live negative' } }]);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('crisp detail');
+  expect(host.querySelector('.single-details pre')?.textContent).not.toContain('changed live text');
+  qc.setQueryData(['image-presets'], []);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('crisp detail');
+  await click(t('single.run'));
+  expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({
+    positive: 'forest, (mist:1.2)', negative: 'blur, (noise:0.7)',
+    prompt_sources: expect.arrayContaining([expect.objectContaining({ kind: 'style', id: 'crisp', positive: 'crisp detail' })]),
+  }));
+});
+
+it('restores frozen source metadata and removes only the selected material', async () => {
+  const sources: PromptSource[] = [
+    { kind: 'direct', id: '', name: '', positive: 'forest, \\#literal', negative: 'blur' },
+    { kind: 'common', id: 'old', name: 'Old common', positive: 'warm # frozen note', negative: '' },
+    { kind: 'style', id: 'old-style', name: 'Old style', positive: '(soft light:1.1)', negative: 'haze' },
+  ];
+  rows.unshift({ id: 'frozen', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 42,
+    request: { positive: 'forest, #literal', negative: 'blur', service: 'comfyui', settings: {}, preset_id: '' },
+    actual: { positive: 'warm # frozen note, forest, #literal, (soft light:1.1)', negative: 'blur, haze', settings: { seed: 42 }, prompt_sources: sources },
+    image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
+  await publish();
+  await click(t('single.restore'));
+  expect(positive().value).toBe('forest, \\#literal');
+  expect(negative().value).toBe('blur');
+  const sourceDetails = host.querySelector('.prompt-source-detail') as HTMLDetailsElement;
+  sourceDetails.open = true;
+  expect(sourceDetails.textContent).toContain('warm # frozen note');
+  const remove = [...sourceDetails.querySelectorAll<HTMLButtonElement>('button')].find(item => item.getAttribute('aria-label') === t('materials.remove', { name: 'Old common' }))!;
+  await act(async () => { remove.click(); });
+  expect(sourceDetails.textContent).not.toContain('warm # frozen note');
+  expect(sourceDetails.textContent).toContain('(soft light:1.1)');
+  await click(t('single.run'));
+  const submitted = vi.mocked(post).mock.calls.find(([url]) => url.endsWith('/single'))?.[1] as { prompt_sources: PromptSource[] };
+  expect(submitted.prompt_sources.map(source => source.kind)).toEqual(['direct', 'style']);
+  expect(submitted.prompt_sources.find(source => source.kind === 'style')?.positive).toBe('(soft light:1.1)');
 });
 
 it('hands a saved image to tools and keeps unsupported comparison disabled', async () => {

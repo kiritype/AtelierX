@@ -68,12 +68,20 @@ export type GenerationRecord = {
 };
 
 export type SingleService = 'comfyui' | 'novelai' | 'pixai';
+export type PromptSource = {
+  kind: 'common' | 'direct' | 'character' | 'expression' | 'composition' | 'style';
+  id: string;
+  name: string;
+  positive: string;
+  negative: string;
+};
 export type SingleRequest = {
   positive: string;
   negative: string;
   service: SingleService;
   settings: Record<string, unknown>;
   preset_id: string;
+  prompt_sources?: PromptSource[];
 };
 export type SingleRun = {
   id: string;
@@ -87,6 +95,7 @@ export type SingleRun = {
     negative: string;
     settings: Record<string, unknown>;
     generation_preset?: { id?: string; name: string };
+    prompt_sources?: PromptSource[];
   };
   image_url?: string | null;
   path?: string | null;
