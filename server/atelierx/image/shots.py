@@ -3,16 +3,19 @@
 from ..core.i18n import Msg
 
 SHOT_FRAMING = {
-    'face': {'prompt': 'portrait', 'slots': []},
-    'upper': {'prompt': 'upper body', 'slots': ['full', 'hands', 'top']},
+    'face': {'prompt': 'close-up portrait, face focus, head and shoulders only', 'slots': []},
+    'upper': {
+        'prompt': 'upper body, chest-up portrait, medium close-up',
+        'slots': ['full', 'hands', 'top'],
+    },
     'cowboy': {'prompt': 'cowboy shot', 'slots': ['full', 'hands', 'top', 'bottom']},
     'full': {'prompt': 'full body', 'slots': None},
 }
 SHOT_DIRECTION = {
     'front': 'straight-on',
     'three_quarter': 'three-quarter view',
-    'side': 'from side',
-    'back': 'from behind',
+    'side': 'profile, from side, facing sideways',
+    'back': 'back view, facing away, back of head',
 }
 SHOT_HEIGHT = {'eye': 'eye level', 'high': 'from above', 'low': 'from below'}
 
