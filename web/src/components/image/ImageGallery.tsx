@@ -101,10 +101,18 @@ const OPEN_ROUNDS = ['waiting_generation', 'pending_review', 'reviewing'];
 const REASONS = ['hands', 'face', 'outfit', 'composition', 'other'];
 
 // Image menu → Gallery: browse by work / character / outfit, review (pass adopts), regenerate, export adopted images.
-export default function ImageGallery({ workId, openLab, openTools, characterId, outfitId }: { workId: string; openLab: () => void; openTools: () => void; characterId?: string; outfitId?: string }) {
+type GalleryProps = { workId: string; openLab: () => void; openTools: () => void; characterId?: string; outfitId?: string };
+
+export default function ImageGallery(props: GalleryProps) {
+  return <GalleryContents key={props.workId} {...props} />;
+}
+
+function GalleryContents({ workId, openLab, openTools, characterId, outfitId }: GalleryProps) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [scope, setScope] = useState<Scope>({ work: workId, character: characterId, outfit: outfitId });
+  const [fullLibrary, setFullLibrary] = useState(false);
+  const [scope, setScope] = useState<Scope>(characterId || outfitId ? { work: workId, character: characterId, outfit: outfitId } : {});
+  const libraryWork = fullLibrary ? '' : workId;
   const [filters, setFilters] = useState({
     expression: '',
     rating: '',
@@ -138,6 +146,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
       page_size: '60',
       sort: filters.sort,
     });
+    if (libraryWork) p.set('library_work', libraryWork);
     for (const [k, v] of Object.entries({
       ...scope,
       expression: filters.expression,
@@ -150,17 +159,20 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     if (filters.latest) p.set('latest', '1');
     if (snapshot) p.set('snapshot', snapshot);
     return p.toString();
-  }, [scope, filters, page, snapshot]);
+  }, [scope, filters, page, snapshot, libraryWork]);
 
   const tree = useQuery<Tree>({
-    queryKey: ['gallery-tree'],
-    queryFn: () => get('/api/image/gallery/tree'),
+    queryKey: ['gallery-tree', libraryWork || null],
+    queryFn: () => get(`/api/image/gallery/tree${libraryWork ? `?library_work=${encodeURIComponent(libraryWork)}` : ''}`),
     refetchInterval: 5000,
   });
   const list = useQuery<Page>({
     queryKey: ['gallery', params],
     queryFn: () => get(`/api/image/gallery?${params}`),
-    placeholderData: (prev) => prev,
+    placeholderData: (previous, previousQuery) => {
+      const previousParams = String(previousQuery?.queryKey[1] ?? '');
+      return (new URLSearchParams(previousParams).get('library_work') ?? '') === libraryWork ? previous : undefined;
+    },
     refetchInterval: 5000,
   });
   const rounds = useQuery<{ rounds: Round[]; enabled: boolean }>({
@@ -181,13 +193,13 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   };
   const scopePath = useMemo(() => {
     if (scope.folder) return `${t('gallery.other_folders')} → ${scope.folder}`;
-    if (!scope.work) return t('gallery.all_images');
+    if (!scope.work) return fullLibrary ? t('gallery.all_images') : t('gallery.this_work_images');
     const work = tree.data?.works.find((w) => w.id === scope.work);
     const character = work?.characters.find((c) => c.id === scope.character);
     const outfit = character?.outfits.find((o) => o.id === scope.outfit);
     return [workName(scope.work), scope.character && characterName(scope.work, scope.character),
       outfit?.name || scope.outfit].filter(Boolean).join(' → ');
-  }, [scope, tree.data]);
+  }, [scope, tree.data, fullLibrary]);
 
   const toggleTree = () => {
     const scroll = scrollRef.current;
@@ -214,6 +226,7 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
     if (list.data && !list.isPlaceholderData && !snapshot) setSnapshot(list.data.snapshot);
   }, [list.data, list.isPlaceholderData, snapshot]);
   const newer = list.data?.newer ?? 0;
+  const exportScope = libraryWork ? { ...scope, work: libraryWork } : scope;
   const selectActive = (next: ActiveImage | null) => { activeRef.current = next; setActive(next); };
   const closeDetail = () => {
     navigationEpoch.current += 1;
@@ -284,6 +297,15 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   const changeScope = (next: Scope) => {
     closeDetail();
     setScope(next);
+    setPage(1);
+    setSnapshot('');
+    setSelected(new Set());
+  };
+  const changeLibraryBoundary = (showFullLibrary: boolean) => {
+    closeDetail();
+    setFullLibrary(showFullLibrary);
+    setScope({});
+    setFilters({ expression: '', rating: '', human_status: '', auto_status: '', adopted: false, latest: false, sort: 'newest' });
     setPage(1);
     setSnapshot('');
     setSelected(new Set());
@@ -370,8 +392,11 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
   return (
     <div className={`gallery${treeCollapsed ? ' tree-collapsed' : ''}`}>
       {!treeCollapsed && <aside className="gallery-tree pad col" aria-label={t('gallery.tree')}>
+        <button className="tree-link" onClick={() => changeLibraryBoundary(!fullLibrary)}>
+          {t(fullLibrary ? 'gallery.return_to_work' : 'gallery.load_full_library')}
+        </button>
         <button className={`tree-link ${!scope.work && !scope.folder ? 'on' : ''}`} onClick={() => changeScope({})}>
-          {t('gallery.all_images')}
+          {t(fullLibrary ? 'gallery.all_images' : 'gallery.this_work_images')}
         </button>
         {(tree.data?.works ?? []).map((w) => (
           <div key={w.id} className="col" style={{ gap: 1 }}>
@@ -535,6 +560,8 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
         <div className="gallery-scroll" ref={scrollRef}>
           {showRounds && <RoundsPanel data={rounds.data} names={names} onChange={reload} fail={fail} />}
 
+          {list.isPending && <div className="empty">{t('common.loading')}</div>}
+
           <div className="gallery-grid">
             {results.map((item, index) => (
               <div key={item.path} data-gallery-path={item.path} className={`gallery-cell ${selected.has(item.path) ? 'selected' : ''} human-${item.human_status}`}>
@@ -601,8 +628,8 @@ export default function ImageGallery({ workId, openLab, openTools, characterId, 
           remove={(paths) => remove(paths).then((done) => done && closeDetail())}
         />
       )}
-      {exporting && <DeploymentExport scope={scope} close={() => setExporting(false)} fail={fail} />}
-      {uploading && <DeployUpload scope={scope} close={() => setUploading(false)} fail={fail} />}
+      {exporting && <DeploymentExport scope={exportScope} close={() => setExporting(false)} fail={fail} />}
+      {uploading && <DeployUpload scope={exportScope} close={() => setUploading(false)} fail={fail} />}
       {trashOpen && <TrashDialog close={() => setTrashOpen(false)} fail={fail} onChange={reload} />}
     </div>
   );

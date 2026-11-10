@@ -87,7 +87,7 @@ def test_hashes_survive_a_restart_and_unreviewed_images_filter_without_hashing(p
     assert opened == [B]
 
 
-def test_a_verdict_on_many_images_scans_once(paths):
+def test_a_verdict_on_many_images_does_not_scan_the_global_gallery(paths):
     _image(paths, A, record={})
     _image(paths, B, (255, 255, 255), record={})
     gallery = Gallery(paths)
@@ -97,7 +97,7 @@ def test_a_verdict_on_many_images_scans_once(paths):
     scan = gallery.scan
     gallery.scan = lambda force=False: (calls.append(force), scan(force))
     result = reviews.review({'verdict': 'fail', 'items': [A, B]})
-    assert result['updated'] == 2 and len(calls) == 1
+    assert result['updated'] == 2 and calls == []
     before = reviews.state
     reviews.review({'verdict': 'pass', 'items': [A]})
     # The previous state is left as it was (a failed save would keep it).

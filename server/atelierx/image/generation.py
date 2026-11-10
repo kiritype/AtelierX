@@ -424,7 +424,7 @@ class GenerationMixin:
         """Recent single results survive clearing the queue because the PNG sidecars are authoritative."""
         saved = {}
         prefix = f'_single/{work.id}/'
-        for item in self.gallery.snapshot_items():
+        for item in self.gallery.for_prefixes((prefix.rstrip('/'),)).snapshot_items():
             if not item['path'].startswith(prefix):
                 continue
             try:

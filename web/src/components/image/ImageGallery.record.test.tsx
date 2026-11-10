@@ -33,7 +33,7 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   vi.mocked(get).mockImplementation(async (url) => {
-    if (url === '/api/image/gallery/tree') return { works: [], folders: [], expressions: [], revision: 1 };
+    if (url.startsWith('/api/image/gallery/tree')) return { works: [], folders: [], expressions: [], revision: 1 };
     if (url.startsWith('/api/image/gallery?')) {
       const query = new URL(url, 'http://localhost').searchParams;
       const index = items.findIndex(item => item.path === query.get('anchor'));

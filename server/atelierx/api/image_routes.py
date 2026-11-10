@@ -490,7 +490,7 @@ async def gallery_tree(request):
     runtime = _runtime(request)
 
     def named_tree():
-        tree = runtime.gallery.tree()
+        tree = runtime.gallery.tree(request.query_params.get('library_work'))
         works = {work.doc().get('id'): work for work in runtime.works.all()}
         for branch in tree['works']:
             work = works.get(branch['id'])
