@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import { t } from '../../i18n';
 import { fits } from '../../lib/fragments';
 import {
@@ -6,36 +6,7 @@ import {
   type Composition, type CompositionSource, type Shot, type ShotChoice, type ShotRules,
 } from '../../lib/shots';
 import './ShotPicker.css';
-
-const CROP_END: Record<Shot['framing'], number> = { face: 28, upper: 57, cowboy: 78, full: 103 };
-
-function FramingDiagram({ framing }: { framing: Shot['framing'] }) {
-  return <svg viewBox="0 0 64 108" aria-hidden="true" className="shot-diagram">
-    <g fill="currentColor">
-      <circle cx="32" cy="17" r="10" />
-      <path d="M28 25h8v7l10 5 8 22-5 2-8-17 2 17-3 39h-6l-2-33-2 33h-6l-3-39 2-17-8 17-5-2 8-22 10-5z" />
-    </g>
-    <rect x="2" y="3" width="60" height={CROP_END[framing]} rx="4" className="shot-crop" />
-  </svg>;
-}
-
-function ShotAxis<K extends 'direction' | 'height'>({ axis, options, shot, onChange }: {
-  axis: K;
-  options: readonly Shot[K][];
-  shot: Shot;
-  onChange: (value: Shot) => void;
-}) {
-  const name = useId();
-  return <fieldset className="shot-axis">
-    <legend>{t(`shot.axis.${axis}`)}</legend>
-    <div className="shot-axis-options">
-      {options.map(option => <label key={option} className="shot-option">
-        <input type="radio" name={name} checked={shot[axis] === option} onChange={() => onChange({ ...shot, [axis]: option })} />
-        <span>{t(`shot.${axis}.${option}`)}</span>
-      </label>)}
-    </div>
-  </fieldset>;
-}
+import ShotCamera, { FramePreview } from './ShotCamera';
 
 export function ShotDetails({ positive, negative, slots }: { positive: string; negative: string; slots?: string }) {
   return <dl className="shot-details small">
@@ -45,7 +16,7 @@ export function ShotDetails({ positive, negative, slots }: { positive: string; n
   </dl>;
 }
 
-export default function ShotPicker({ batch = false, value, onChange, rules, compositions, target, frozenSource }: {
+export default function ShotPicker({ batch = false, value, onChange, rules, compositions, target, frozenSource, outputWidth, outputHeight }: {
   batch?: boolean;
   value: ShotChoice;
   onChange: (value: ShotChoice) => void;
@@ -53,6 +24,8 @@ export default function ShotPicker({ batch = false, value, onChange, rules, comp
   compositions?: Record<string, Composition>;
   target?: string;
   frozenSource?: Pick<CompositionSource, 'name' | 'positive' | 'negative'>;
+  outputWidth?: number;
+  outputHeight?: number;
 }) {
   const modeName = useId();
   const framingName = useId();
@@ -60,9 +33,15 @@ export default function ShotPicker({ batch = false, value, onChange, rules, comp
   const chosen = value.mode === 'library' ? compositions?.[value.id] : undefined;
   const source = frozenSource ?? compositionSource(value, rules, compositions, target);
   const visual = value.mode === 'visual' ? value.shot : undefined;
+  const lastShot = useRef<Shot>(DEFAULT_SHOT);
+  const lastLibrary = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (value.mode === 'visual') lastShot.current = value.shot;
+    if (value.mode === 'library') lastLibrary.current = value.id;
+  }, [value]);
   const selectMode = (mode: ShotChoice['mode']) => {
-    if (mode === 'visual') onChange({ mode, shot: DEFAULT_SHOT });
-    else if (mode === 'library') onChange({ mode, id: items.find(item => fits(item, target))?.id ?? '' });
+    if (mode === 'visual') onChange({ mode, shot: lastShot.current });
+    else if (mode === 'library') onChange({ mode, id: lastLibrary.current ?? items.find(item => fits(item, target))?.id ?? '' });
     else onChange(AUTO_SHOT);
   };
   let slots: string | undefined;
@@ -94,24 +73,26 @@ export default function ShotPicker({ batch = false, value, onChange, rules, comp
       </select>
     </label>}
     {value.mode === 'library' && chosen && !source && <span className="warn-text small">{t('gen.not_applied')}</span>}
-    {visual && <fieldset className="shot-axis">
+    {visual && <>
+      <div className="shot-editor-heading"><strong>{t('shot.camera.heading')}</strong>
+        <button type="button" className="ghost" onClick={() => onChange({ mode: 'visual', shot: DEFAULT_SHOT })}>{t('shot.reset')}</button>
+      </div>
+      <ShotCamera shot={visual} onChange={shot => onChange({ mode: 'visual', shot })} outputWidth={outputWidth} outputHeight={outputHeight} />
+      <fieldset className="shot-axis">
       <legend>{t('shot.axis.framing')}</legend>
       <div className="shot-frames">
         {SHOT_OPTIONS.framing.map(framing => <label key={framing} className="shot-option">
           <input type="radio" name={framingName} checked={visual.framing === framing}
             onChange={() => onChange({ mode: 'visual', shot: { ...visual, framing } })} />
-          <span><FramingDiagram framing={framing} />{t(`shot.framing.${framing}`)}</span>
+          <span><span className="shot-preset-diagram" aria-hidden="true"><FramePreview shot={{ ...DEFAULT_SHOT, framing }} width={3} height={4} /></span>{t(`shot.framing.${framing}`)}</span>
         </label>)}
       </div>
-    </fieldset>}
-    {visual && <>
-      <ShotAxis axis="direction" options={SHOT_OPTIONS.direction} shot={visual} onChange={shot => onChange({ mode: 'visual', shot })} />
-      <ShotAxis axis="height" options={SHOT_OPTIONS.height} shot={visual} onChange={shot => onChange({ mode: 'visual', shot })} />
+      </fieldset>
       <p className="small faint">{t('shot.hint')}</p>
     </>}
-    <div className="small" aria-live="polite">{t('shot.summary', { name: visual ? shotLabel(visual) : source?.name ?? chosen?.name
+    <div className="shot-summary small" aria-live="polite">{t('shot.summary', { name: visual ? shotLabel(visual) : source?.name ?? chosen?.name
       ?? (value.mode === 'auto' ? t(batch ? 'gen.composition_auto' : 'shot.mode.auto') : t('shot.choose_preset')) })}</div>
-    {source && <ShotDetails positive={source.positive} negative={source.negative} slots={slots} />}
+    {source && <details className="shot-applied"><summary>{t('shot.applied')}</summary><ShotDetails positive={source.positive} negative={source.negative} slots={slots} /></details>}
     {batch && value.mode === 'auto' && <p className="small faint">{t('shot.auto_hint')}</p>}
   </fieldset>;
 }

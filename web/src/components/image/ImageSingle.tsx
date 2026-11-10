@@ -18,7 +18,7 @@ import { sendToTools } from '../../lib/toolHandoff';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import SingleResultDetails from './SingleResultDetails';
 import { resultSeed, resultSettings } from './singleResult';
-import GenerationResolution from './GenerationResolution';
+import GenerationResolution, { ShotResolution } from './GenerationResolution';
 import SinglePromptMaterials, { StyleThumbnails, tagsText, type StyleChoice } from './SinglePromptMaterials';
 import ShotPicker from './ShotPicker';
 import { AUTO_SHOT, compositionSource, shotChoiceFromSource, useShotLibrary, type ShotChoice } from '../../lib/shots';
@@ -232,8 +232,10 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
         <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
-        <ShotPicker value={shotChoice} rules={rules.data} compositions={compositions.data} target={shotTarget}
-          frozenSource={frozenShot} onChange={chooseShot} />
+        <ShotResolution service={draft.service} value={settings}>
+          {size => <ShotPicker value={shotChoice} rules={rules.data} compositions={compositions.data} target={shotTarget}
+            frozenSource={frozenShot} onChange={chooseShot} {...size} />}
+        </ShotResolution>
         <SinglePromptMaterials workId={workId} target={shotTarget} sources={draft.sources}
           change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={() => openView('library')} />
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>

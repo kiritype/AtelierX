@@ -3,11 +3,13 @@
   margin: 0;
 }
 .shot-picker {
+  container: shot-picker / inline-size;
   display: grid;
-  gap: 8px;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px;
+  padding: 12px;
+  background: var(--panel);
 }
 .shot-picker legend { padding: 0 4px; }
 .shot-axis { border: 0; padding: 0; }
@@ -22,7 +24,7 @@
 }
 .shot-option { position: relative; }
 .shot-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
-.shot-option span {
+.shot-option > span {
   box-sizing: border-box;
   display: grid;
   align-content: center;
@@ -37,9 +39,52 @@
 .shot-option input:checked + span { color: var(--selection-text); border-color: var(--accent); background: var(--accent-bg); }
 .shot-option input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .shot-option input:disabled + span { opacity: .5; }
-.shot-diagram { display: block; width: 42px; height: 70px; color: var(--text-3); }
-.shot-crop { fill: none; stroke: var(--accent); stroke-width: 2; }
+.shot-preset-diagram { display: block; width: 56px; height: 62px; }
+.shot-preset-diagram .shot-preview { width: 100%; height: 100%; }
 .shot-picker p, .shot-details, .shot-details dd { margin: 0; }
 .shot-details { display: grid; gap: 4px; overflow-wrap: anywhere; }
 .shot-details dt { color: var(--text-2); }
 .shot-details dd { white-space: pre-wrap; }
+.shot-editor-heading, .shot-panel-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shot-editor-heading button { font-size: 12px; }
+.shot-workspace { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; }
+.shot-camera-panel, .shot-preview-panel { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); overflow: hidden; }
+.shot-panel-title { padding: 10px 10px 0; font-size: 12px; font-weight: 600; flex-wrap: wrap; }
+.shot-panel-title span { color: var(--text-2); font-size: 11px; font-weight: 400; }
+.shot-orbit, .shot-preview-panel > .shot-preview { display: block; width: 100%; height: 200px; }
+.shot-orbit { cursor: grab; touch-action: none; user-select: none; border-radius: 6px; }
+.shot-orbit:active { cursor: grabbing; }
+.shot-orbit:focus:not(:focus-visible) { outline: none; }
+.shot-orbit:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -3px; }
+.shot-floor, .shot-axis-guide { fill: none; stroke: var(--border-strong); stroke-width: 1; }
+.shot-axis-guide { stroke-dasharray: 3 5; }
+.shot-orbit-guide { fill: none; stroke: var(--text-3); stroke-dasharray: 4 4; }
+.shot-stage-person { fill: var(--text-3); }
+.shot-facing { fill: none; stroke: var(--text-2); stroke-width: 2; }
+.shot-orbit-label { fill: var(--text-2); font-size: 12px; }
+.shot-orbit-stop { fill: var(--text-2); }
+.shot-sight { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.shot-camera-marker circle { fill: var(--accent); stroke: var(--panel); stroke-width: 3; }
+.shot-camera-marker rect, .shot-camera-marker path { fill: var(--panel); }
+.shot-frame-bg { fill: var(--panel); }
+.shot-frame-border { fill: none; stroke: var(--control-border); stroke-width: 1.5; }
+.shot-thirds { fill: none; stroke: var(--border); stroke-dasharray: 3 4; }
+.shot-subject { fill: var(--text-3); stroke: var(--text-3); }
+.shot-face { fill: var(--panel); stroke: var(--panel); }
+.shot-camera-hint { color: var(--text-2); }
+.shot-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.shot-range { display: grid; gap: 5px; min-width: 0; }
+.shot-range > span:first-child { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-2); }
+.shot-range strong { color: var(--selection-text); font-size: 13px; font-weight: 600; }
+.shot-range input[type='range'] { width: 100%; min-width: 0; min-height: 24px; margin: 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+.shot-range-ends { display: flex; justify-content: space-between; gap: 4px; color: var(--text-2); font-size: 10px; }
+.shot-summary { padding: 8px 10px; border-radius: 6px; background: var(--accent-bg); color: var(--selection-text); }
+.shot-applied { font-size: 12px; }
+.shot-applied summary { cursor: pointer; color: var(--text-2); }
+.shot-applied[open] summary { margin-bottom: 8px; }
+@container shot-picker (max-width: 360px) {
+  .shot-workspace { grid-template-columns: 1fr; }
+  .shot-controls { grid-template-columns: 1fr; gap: 10px; }
+  .shot-range > span:first-child { flex-direction: row; justify-content: space-between; }
+  .shot-orbit, .shot-preview-panel > .shot-preview { height: 180px; }
+}

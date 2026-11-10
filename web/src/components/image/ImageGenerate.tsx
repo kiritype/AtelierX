@@ -16,7 +16,7 @@ import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSett
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { settingsFromPreset } from '../../lib/presetSettings';
 import CharacterOutfitTable from './CharacterOutfitTable';
-import GenerationResolution from './GenerationResolution';
+import GenerationResolution, { ShotResolution } from './GenerationResolution';
 import ShotPicker, { ShotDetails } from './ShotPicker';
 import { AUTO_SHOT, shotChoiceRequest, shotLabel, shotSlotLabels, useShotLibrary, type Shot, type ShotChoice } from '../../lib/shots';
 
@@ -244,10 +244,12 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         ))}
         </div>
         <div className="section-title">{t('gen.extras')}</div>
-        <ShotPicker batch value={shotChoice} rules={rules.data} compositions={compositions.data} target={target} onChange={value => {
-          setShotChoice(value);
-          setOverrides(({ composition: _composition, ...rest }) => rest);
-        }} />
+        <ShotResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings}>
+          {size => <ShotPicker batch value={shotChoice} rules={rules.data} compositions={compositions.data} target={target} {...size} onChange={value => {
+            setShotChoice(value);
+            setOverrides(({ composition: _composition, ...rest }) => rest);
+          }} />}
+        </ShotResolution>
         <label className="col" style={{ gap: 2 }}>
           <span className="muted">{t('gen.artist')}</span>
           <textarea rows={2} value={artist.positive} placeholder={t('gen.artist_hint')} onChange={(e) => setArtist({ ...artist, positive: e.target.value })} />
