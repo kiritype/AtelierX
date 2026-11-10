@@ -111,7 +111,7 @@ export default function RelationsTab({ workId, openItem }: { workId: string; ope
   return (
     <div className="relations">
       {saveError && <div className="pad" role="alert">{saveError} <button onClick={() => saver.flush().catch((err) => setSaveError(err instanceof ApiError && err.status === 409 ? t('save.conflict_preserved') : err instanceof ApiError ? tm(err.msg) : String(err)))}>{t('common.save')}</button></div>}
-      <div className="row pad" style={{ paddingBottom: 0 }}>
+      <div className="row pad relations-toolbar" style={{ paddingBottom: 0 }}>
         <div className="seg">
           <button className={mode === 'graph' ? 'on' : ''} onClick={() => setMode('graph')}>
             {t('relations.graph')}
