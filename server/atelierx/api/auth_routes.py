@@ -19,11 +19,13 @@ def _session_response(request, value):
 
 async def auth_status(request):
     s = st(request)
+    settings = s.settings.load()
     return ok(
         {
             'initialized': s.vault.initialized,
             'unlocked': s.sessions.valid(request.cookies.get(st(request).cookie_name)),
-            'language': s.settings.load()['language'],
+            'language': settings['language'],
+            'theme': settings['theme'],
             'wait': round(s.sessions.wait_seconds()),
             'password_change_suggested': s.password_change_suggested,
         }

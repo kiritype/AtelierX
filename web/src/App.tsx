@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { get, patch, setConsentHandler, setUnauthorizedHandler } from './api';
 import { Toasts, ToastProvider } from './components/Toasts';
@@ -9,8 +9,17 @@ import Lock from './screens/Lock';
 import WorkSelect from './screens/WorkSelect';
 import { Loading } from './components/ui';
 import PasswordSuggest from './components/PasswordSuggest';
+import { AppThemeProvider } from './AppTheme';
+import type { GeneralSettings, ThemePreference } from './types';
 
-type Status = { initialized: boolean; unlocked: boolean; language: string; wait: number; password_change_suggested?: boolean };
+type Status = {
+  initialized: boolean;
+  unlocked: boolean;
+  language: string;
+  theme: ThemePreference;
+  wait: number;
+  password_change_suggested?: boolean;
+};
 
 // The work window and everything in it are read when a work opens (#83): the lock and work list stay small.
 const WorkWindow = lazy(() => import('./screens/WorkWindow'));
@@ -21,6 +30,11 @@ export default function App() {
   // Unlocked with a password shorter than new ones may be (#82): suggest changing it, once per unlock.
   const [suggestPassword, setSuggestPassword] = useState(false);
   const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => get<GeneralSettings>('/api/settings'),
+    enabled: status?.unlocked === true,
+  });
 
   const refresh = useCallback(async () => {
     const value = await get<Status>('/api/auth/status');
@@ -60,11 +74,13 @@ export default function App() {
   else screen = <WorkWindow key={workId} workId={workId} onLeave={() => setWorkId(null)} onLock={refresh} />;
 
   return (
-    <ToastProvider>
-      <Suspense fallback={<Loading />}>{screen}</Suspense>
-      {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}
-      <Toasts />
-      <TooltipLayer />
-    </ToastProvider>
+    <AppThemeProvider preference={(status.unlocked ? settings.data?.theme : undefined) ?? status.theme ?? 'system'}>
+      <ToastProvider>
+        <Suspense fallback={<Loading />}>{screen}</Suspense>
+        {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}
+        <Toasts />
+        <TooltipLayer />
+      </ToastProvider>
+    </AppThemeProvider>
   );
 }

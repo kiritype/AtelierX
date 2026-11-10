@@ -7,6 +7,7 @@ from starlette.routing import Route
 from ..core import guidelines, personas
 from ..core.fsutil import read_json, write_json
 from ..core.i18n import AppError, Msg
+from ..core.settings import THEMES
 from .common import body, ok, st
 
 
@@ -15,7 +16,10 @@ async def settings_get(request):
 
 
 async def settings_patch(request):
-    return ok(st(request).settings.update(await body(request)))
+    changes = await body(request)
+    if isinstance(changes, dict) and 'theme' in changes and changes['theme'] not in THEMES:
+        raise AppError(Msg('server.settings.invalid_theme', 'Choose System, Light, or Dark.'), 400)
+    return ok(st(request).settings.update(changes))
 
 
 async def compression_guideline_get(request):

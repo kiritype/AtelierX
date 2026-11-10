@@ -57,7 +57,7 @@
 │   ├── defaults/                 기본 가이드라인·이미지 라이브러리 (처음 실행 때 data/로 복사)
 │   └── samples/                  샘플 작품 (읽기 전용 원본. "샘플 작품"은 복사본을 data/works/에 만든다)
 ├── config/
-│   ├── settings.json             화면 언어, 창 상태, 기본 플랫폼 프리셋, LoRA 폴더, 이미지 생성·학습 연결
+│   ├── settings.json             화면 언어, 테마, 창 상태, 기본 플랫폼 프리셋, LoRA 폴더, 이미지 생성·학습 연결
 │   └── vault.json                금고: API 키 등 인증 정보 (마스터 비밀번호로 암호화)
 ├── state/                        작업 대기열, GPU 상태, 화면 상태 (작품 데이터가 아니다)
 ├── data/                         데이터 루트 (아래 "데이터 루트")
@@ -76,6 +76,8 @@
 | LoRA 폴더 | `output/loras/` | 학습한 LoRA의 원본. 설정에서 다른 폴더로 바꿀 수 있다(앱 밖을 가리키는 유일한 경로). 이미지 생성 서버에는 그 LoRA 폴더 안의 `atelierx` 폴더 링크로 보인다([결정 0025](decisions/0025-lora-folder-link.md)) |
 
 - 앱 폴더는 쓰기 가능한 위치에 둬야 한다(예: `Program Files` 아래는 쓰기 제한이 있어 맞지 않는다).
+- `settings.json`의 `theme` 값은 `system`(기본값), `light`, `dark` 중 하나다. `schema_version: 1` 또는 버전 필드가 없는
+  설정은 읽을 때 2로 변환한다. 테마 값이 없거나 알 수 없는 값이면 `system`으로 읽는다.
 - `settings.json`의 `default_platform_preset`: 새 작품에 자동으로 붙일 플랫폼 프리셋 ID. 비어 있으면 새 작품은 어떤 프리셋에도
   연결되지 않는다([플랫폼 프리셋](#플랫폼-프리셋)).
 

@@ -17,6 +17,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put } from '../api';
+import { useAppTheme } from '../AppTheme';
 import { t, tm } from '../i18n';
 import { createSaver } from '../lib/exampleSaver';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
@@ -409,7 +410,7 @@ function Graph({
   );
 
   const person = doc.view.find((p) => p.id === focus);
-  const prefersDark = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+  const theme = useAppTheme();
 
   return (
     <div className="graph-wrap">
@@ -418,7 +419,7 @@ function Graph({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        colorMode={prefersDark ? 'dark' : 'light'}
+        colorMode={theme}
         fitView
         nodesConnectable={false}
         onNodeClick={(_, node) => setFocus(focus === node.id ? null : node.id)}

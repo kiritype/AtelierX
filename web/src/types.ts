@@ -1,3 +1,16 @@
+export type AppTheme = 'light' | 'dark';
+export type ThemePreference = 'system' | AppTheme;
+
+// GET/PATCH /api/settings: the general settings the web UI uses.
+export type GeneralSettings = {
+  language: string;
+  theme: ThemePreference;
+  autosave: { enabled: boolean; delay_ms: number };
+  update_check_on_start: boolean;
+  default_platform_preset: string | null;
+  snapshot_interval_minutes: number;
+};
+
 export type Kind = 'main' | 'start' | 'lorebook' | 'character' | 'jsx' | 'note';
 
 export const KINDS: Kind[] = ['main', 'start', 'lorebook', 'character', 'jsx', 'note'];
