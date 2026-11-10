@@ -1,4 +1,5 @@
 import { GenerationDetails } from './GenerationDetails';
+import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../../api';
 import { t, tm } from '../../i18n';
@@ -66,6 +67,7 @@ export function useCatalog(preview = false) {
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop();
 
 export default function GenSettings({ value, onChange, preview = false, compact = false }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void; preview?: boolean; compact?: boolean }) {
+  const familyLabelId = useId();
   const catalog = useCatalog(preview);
   const c = catalog.data;
   if (!c) return null;
@@ -105,20 +107,21 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   return (
     <div className="col gen-settings">
       <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <label className="col gen-field">
-          <span className="muted">{t('gen.family')}</span>
+        <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
+          <span id={familyLabelId} className="muted">{t('gen.family')}</span>
           <div className="seg">
             {(['anima', 'sdxl'] as const).map((f) => (
               <button
                 key={f}
                 className={family === f ? 'on' : ''}
+                aria-pressed={family === f}
                 onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), seed: value.seed, loras: [] })}
               >
                 {f === 'anima' ? 'Anima' : 'SDXL·IL'}
               </button>
             ))}
           </div>
-        </label>
+        </div>
         {pick('model', t('gen.model'), models, t('gen.default'))}
       </div>
       <div className="row gen-core-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
