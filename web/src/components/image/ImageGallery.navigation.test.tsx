@@ -36,7 +36,7 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   statuses = {}; delayNext = null; failNext = false;
   vi.mocked(get).mockImplementation(async (url) => {
-    if (url === '/api/image/gallery/tree') return { works: [], folders: [], expressions: [], revision: 1 };
+    if (url.startsWith('/api/image/gallery/tree')) return { works: [], folders: [], expressions: [], revision: 1 };
     if (url === '/api/image/review/rounds') return { rounds: [], enabled: false };
     if (url === '/api/works/w0/image/designs') return [];
     if (url.startsWith('/api/image/gallery/detail?')) {
@@ -46,7 +46,8 @@ beforeEach(() => {
     }
     if (url.startsWith('/api/image/gallery?')) {
       const query = new URL(url, 'http://localhost').searchParams;
-      expect(query.get('work')).toBe('w0');
+      expect(query.get('work')).toBeNull();
+      expect(query.get('library_work')).toBe('w0');
       expect(query.get('sort')).toBe('oldest');
       if (query.get('direction') === 'next' && delayNext) await delayNext();
       if (query.get('direction') && failNext) { failNext = false; throw new Error('load failed'); }

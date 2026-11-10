@@ -11,7 +11,7 @@ export type ToFrame = {
   props: unknown;
   hooks: string[];
   globals: GlobalStub[];
-  theme: 'light' | 'dark' | 'inline';
+  theme: 'light' | 'dark' | 'inline' | 'inline-dark';
 };
 
 export type FromFrame =
@@ -32,7 +32,7 @@ export function validRender(value: unknown): value is ToFrame {
     && Array.isArray(value.hooks) && value.hooks.every((h) => typeof h === 'string' && IDENTIFIER.test(h))
     && Array.isArray(value.globals) && value.globals.every((g) => record(g)
       && typeof g.name === 'string' && IDENTIFIER.test(g.name) && (g.stub === undefined || typeof g.stub === 'string'))
-    && ['light', 'dark', 'inline'].includes(String(value.theme));
+    && ['light', 'dark', 'inline', 'inline-dark'].includes(String(value.theme));
 }
 
 export function validReply(value: unknown): value is FromFrame {

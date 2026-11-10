@@ -1,0 +1,14 @@
+.prompt-materials { margin-block: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
+.prompt-materials h4 { margin: 0; }
+.prompt-materials summary { cursor: pointer; padding-block: 4px; }
+.prompt-materials pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); }
+.prompt-material-picker { display: flex; gap: 8px; align-items: end; margin-block: 10px; flex-wrap: wrap; }
+.prompt-material-picker label { display: grid; gap: 4px; flex: 1; min-width: 150px; }
+.prompt-source-detail article { border-top: 1px solid var(--border); padding-block: 8px; }
+.style-picker input { width: 100%; margin-block: 8px; }
+.style-thumbnail-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; max-height: 320px; overflow: auto; }
+.style-thumbnail-list button { display: flex; flex-direction: column; gap: 5px; padding: 6px; min-width: 0; text-align: left; }
+.style-thumbnail-list img, .style-thumbnail-placeholder { width: 100%; height: 94px; object-fit: contain; background: var(--panel-2); }
+.style-thumbnail-placeholder { display: grid; place-items: center; font-size: 30px; color: var(--text-3); }
+.style-thumbnail-list button > span:not(.style-thumbnail-placeholder) { overflow-wrap: anywhere; }
+.style-thumbnail-list .is-selected { border-color: var(--accent); background: var(--accent-bg); }

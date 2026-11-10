@@ -12,6 +12,7 @@ import os
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -19,7 +20,7 @@ from urllib.parse import quote
 from PIL import Image
 
 from ..core.i18n import Msg
-from .util import replace_file, state_file
+from .util import code, replace_file, state_file
 
 IMAGE_SUFFIXES = ('.png', '.webp', '.jpg', '.jpeg')
 MAX_DEPTH = 8
@@ -41,7 +42,7 @@ def invalid_path():
 
 
 class Gallery:
-    def __init__(self, paths):
+    def __init__(self, paths, *, prefixes=None):
         self.paths = paths
         self.root = Path(paths.output)
         self.cache = state_file(paths, 'thumbnails')
@@ -52,7 +53,31 @@ class Gallery:
         self._entries = {}
         self._meta_cache = {}
         self._last_scan = 0.0
+        self._complete = False
+        self._prefixes = prefixes
+        self._scoped = OrderedDict()
+        self._scope_lock = threading.RLock()
         self.revision = 0
+
+    def for_work(self, work):
+        """Independent index of this work's assets and single generations; never walk other works."""
+        work = code(work)
+        return self.for_prefixes((work, f'_single/{work}'))
+
+    def for_prefixes(self, prefixes):
+        prefixes = tuple(prefixes)
+        # Validate before caching, including links in any parent directory.
+        for prefix in prefixes:
+            self.safe_path(f'{prefix}/__gallery__.png')
+        with self._scope_lock:
+            index = self._scoped.get(prefixes)
+            if index is None:
+                index = Gallery(self.paths, prefixes=prefixes)
+                self._scoped[prefixes] = index
+                if len(self._scoped) > 8:
+                    self._scoped.popitem(last=False)
+            self._scoped.move_to_end(prefixes)
+        return index
 
     # --- paths ------------------------------------------------------------------------------------------------------
     def safe_path(self, relative, suffixes=IMAGE_SUFFIXES):
@@ -127,7 +152,14 @@ class Gallery:
     def _discover(self, deadline):
         """Images as (path, mtime, size) and records as {path: (mtime, size)}, from the folder listings alone."""
         images, records = [], {}
-        stack = [(str(self.root), 0)]
+        if self._prefixes is None:
+            stack = [(str(self.root), 0)]
+        else:
+            stack = []
+            for prefix in self._prefixes:
+                directory = self.safe_path(f'{prefix}/__gallery__.png').parent
+                if directory.is_dir():
+                    stack.append((str(directory), len(PurePosixPath(prefix).parts)))
         while stack:
             directory, depth = stack.pop()
             with os.scandir(directory) as entries:
@@ -152,12 +184,16 @@ class Gallery:
 
     def scan(self, force=False):
         """Refresh the index when files changed; at most every 0.75 s unless ``force``."""
+        if force:
+            with self._scope_lock:
+                self._scoped.clear()
         with self.lock:
             moment = time.monotonic()
             if not force and moment - self._last_scan < 0.75:
                 return
             self._last_scan = moment
             if not self.root.is_dir():
+                self._complete = True
                 if self.items:
                     self.items, self._by_path, self._entries = [], {}, {}
                     self.revision += 1
@@ -171,6 +207,7 @@ class Gallery:
                 self._last_scan = time.monotonic() + 4
                 return
             images, records = found
+            self._complete = True
             current = {}
             for path, mtime, size in images:
                 record = os.path.splitext(path)[0] + '.json'
@@ -178,6 +215,7 @@ class Gallery:
             if len(current) == len(self._entries) and all(
                 self._entries.get(path, (None,))[0] == value[0] for path, value in current.items()
             ):
+                self._last_scan = time.monotonic()
                 return
             entries, items = {}, []
             for path, (signature, record) in current.items():
@@ -191,6 +229,7 @@ class Gallery:
             self._entries, self.items = entries, items
             self._by_path = {item['path']: item for item in items}
             self.revision += 1
+            self._last_scan = time.monotonic()
 
     def _item(self, path, signature, meta):
         relative = os.path.relpath(path, self.root).replace(os.sep, '/')
@@ -249,10 +288,23 @@ class Gallery:
         return {k: v for k, v in item.items() if not k.startswith('_')}
 
     def find(self, relative, refresh=True):
-        """The indexed image at ``relative``; ``refresh=False`` skips the rescan (several lookups in a row)."""
-        self.safe_path(relative)
+        """Read one image directly; opening or reviewing it must not scan the entire library."""
+        image = self.safe_path(relative)
+        if any(part.startswith('.') for part in PurePosixPath(relative).parts):
+            raise invalid_path()
         if refresh:
-            self.scan()
+            try:
+                stat = image.stat()
+                if not image.is_file():
+                    raise OSError
+            except OSError as error:
+                raise ValueError(Msg('server.gallery.not_found', 'The image does not exist.')) from error
+            with self.lock:
+                item = self._item(
+                    str(image), (stat.st_mtime_ns, stat.st_size), self._read_meta(image.with_suffix('.json'))
+                )
+                self._by_path[relative] = item
+                return dict(item)
         with self.lock:
             item = self._by_path.get(relative)
         if item is None:
@@ -266,13 +318,23 @@ class Gallery:
             return list(self.items)
 
     def indexed_paths(self):
-        """The paths in the index as it is, without rescanning."""
+        """Known paths after a full scan, or None when only part of the library has been loaded."""
         with self.lock:
-            return set(self._by_path)
+            if not self._complete:
+                return None
+            known = set(self._by_path)
+        with self._scope_lock:
+            indexes = list(self._scoped.values())
+        for index in indexes:
+            with index.lock:
+                known.update(index._by_path)
+        return known
 
     # --- listing ----------------------------------------------------------------------------------------------------
-    def tree(self):
+    def tree(self, work=None):
         """Counts by work → character → outfit, expressions seen, and other folders."""
+        if work:
+            return self.for_work(work).tree()
         works, expressions, folders = {}, {}, {}
         for item in self.snapshot_items():
             if item['kind'] != 'image':

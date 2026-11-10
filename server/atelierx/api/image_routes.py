@@ -9,7 +9,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library, library_share
+from ..image import library, library_share, shots
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
@@ -197,7 +197,9 @@ async def library_get(request):
     work = _work_or_none(runtime, request)
     kind = request.path_params['kind']
     if kind == 'rules':
-        return await call(library.compose_rules, runtime.paths)
+        return await call(
+            lambda: {**library.compose_rules(runtime.paths), 'shot_choices': shots.SHOT_CHOICES}
+        )
     return await call(library.items, runtime.paths, work, kind)
 
 
@@ -488,7 +490,7 @@ async def gallery_tree(request):
     runtime = _runtime(request)
 
     def named_tree():
-        tree = runtime.gallery.tree()
+        tree = runtime.gallery.tree(request.query_params.get('library_work'))
         works = {work.doc().get('id'): work for work in runtime.works.all()}
         for branch in tree['works']:
             work = works.get(branch['id'])

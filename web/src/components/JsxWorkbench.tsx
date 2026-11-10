@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { ApiError, del, get, post, q } from '../api';
+import { useAppTheme } from '../AppTheme';
 import { t, tm } from '../i18n';
 import RunLlmSelector, { type LlmOverride } from './RunLlmSelector';
-import type { WorkInfo } from '../types';
+import type { AppTheme, WorkInfo } from '../types';
 import { findCalls, type ResponseRule } from '../lib/componentCalls';
 import type { Saver } from '../lib/exampleSaver';
 import CodeEditor from './LazyCodeEditor';
@@ -53,7 +54,9 @@ export default function JsxWorkbench({
   const [selected, setSelected] = useState<string | null>(waiting?.key.name ?? null);
   const [text, setText] = useState('');
   const [width, setWidth] = useState<keyof typeof WIDTHS>('normal');
-  const [dark, setDark] = useState(false);
+  const appTheme = useAppTheme();
+  const [previewTheme, setPreviewTheme] = useState<'app' | AppTheme>('app');
+  const theme = previewTheme === 'app' ? appTheme : previewTheme;
   const [calls, setCalls] = useState<PreviewCall[]>([]);
   const [dialog, setDialog] = useState<'prompt' | null>(null);
   const usages = useQuery<{ path: string; elements: { raw: string; errors: string[] }[] }[]>({
@@ -108,7 +111,7 @@ export default function JsxWorkbench({
 
   return (
     <div className="jsx-bench">
-      <div className="row jsx-bench-bar">
+      <div className="row wrap jsx-bench-bar">
         <div className="seg">
           {(['narrow', 'normal', 'wide'] as const).map((w) => (
             <button key={w} className={width === w ? 'on' : ''} onClick={() => setWidth(w)}>
@@ -116,19 +119,23 @@ export default function JsxWorkbench({
             </button>
           ))}
         </div>
-        <div className="seg">
-          <button className={!dark ? 'on' : ''} onClick={() => setDark(false)}>
-            {t('jsx.light')}
-          </button>
-          <button className={dark ? 'on' : ''} onClick={() => setDark(true)}>
-            {t('jsx.dark')}
-          </button>
+        <div className="seg" role="group" aria-label={t('jsx.preview_theme')}>
+          {(['app', 'light', 'dark'] as const).map((choice) => (
+            <button
+              key={choice}
+              className={previewTheme === choice ? 'on' : ''}
+              aria-pressed={previewTheme === choice}
+              onClick={() => setPreviewTheme(choice)}
+            >
+              {t(`jsx.${choice}`)}
+            </button>
+          ))}
         </div>
         <span className="grow" />
         <button onClick={() => setDialog('prompt')}>{t('jsx.prompt_text')}</button>
       </div>
       <div className="jsx-bench-body">
-        <div className={`jsx-stage${dark ? ' dark' : ''}`}>
+        <div className="jsx-stage">
           {list.length === 0 ? (
             <JsxPreview
               code={source}
@@ -136,7 +143,7 @@ export default function JsxWorkbench({
               props={{}}
               hooks={rules.hooks ?? []}
               globals={rules.globals ?? []}
-              theme={dark ? 'dark' : 'light'}
+              theme={theme}
               width={WIDTHS[width]}
               onCall={(call) => setCalls((all) => [call, ...all].slice(0, 30))}
             />
@@ -152,7 +159,7 @@ export default function JsxWorkbench({
                 props={call.attrs}
                 hooks={rules.hooks ?? []}
                 globals={rules.globals ?? []}
-                theme={dark ? 'dark' : 'light'}
+                theme={theme}
                 width={WIDTHS[width]}
                 autoHeight={found.length > 1}
                 onCall={(c) => setCalls((all) => [c, ...all].slice(0, 30))}

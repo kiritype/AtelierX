@@ -1,3 +1,4 @@
+import { GenerationDetails } from './GenerationDetails';
 import { NOVELAI_PREVIEW_INFO } from './singlePreviewSettings';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -26,13 +27,17 @@ export function freeForOpus(width: number, height: number, steps: number, free: 
 }
 
 // The generate screen's settings for NovelAI (#42): model (V4.5, V5 …), size, sampling, and the account's Anlas.
-export default function NovelAISettings({ value, onChange, preview = false }: ServicePanelProps) {
-  const info = useQuery<NovelAIInfo>({
+export function useNovelAIInfo(preview = false) {
+  return useQuery<NovelAIInfo>({
     queryKey: preview ? ['image-single-preview', 'novelai-info'] : ['image-service-info', 'novelai'],
     queryFn: () => preview ? Promise.resolve(NOVELAI_PREVIEW_INFO) : get('/api/image/services/novelai/info'),
     initialData: preview ? NOVELAI_PREVIEW_INFO : undefined,
     staleTime: Infinity,
   });
+}
+
+export default function NovelAISettings({ value, onChange, preview = false, compact = false }: ServicePanelProps) {
+  const info = useNovelAIInfo(preview);
   const account = useQuery<Account, ApiError>({
     queryKey: preview ? ['image-single-preview', 'novelai-account'] : ['image-service-account', 'novelai'],
     queryFn: () => preview ? Promise.resolve({ tier: null, active: null, anlas: null, opus: false }) : get('/api/image/services/novelai/account'),
@@ -45,8 +50,8 @@ export default function NovelAISettings({ value, onChange, preview = false }: Se
   const v = { ...info.data.defaults, ...value } as Record<string, any>;
   const set = (change: Record<string, unknown>) => onChange({ ...value, ...change });
   const known = info.data.models.some((m) => m.id === v.model);
-  const num = (key: string, step = 1) => (
-    <input type="number" step={step} style={{ width: 80 }} value={v[key]} onChange={(e) => set({ [key]: Number(e.target.value) })} />
+  const num = (key: string, step = 1, label?: string) => (
+    <input type="number" aria-label={label} step={step} style={{ width: 80 }} value={v[key]} onChange={(e) => set({ [key]: Number(e.target.value) })} />
   );
   const free = freeForOpus(v.width, v.height, v.steps, info.data.free);
 
@@ -79,56 +84,60 @@ export default function NovelAISettings({ value, onChange, preview = false }: Se
             {t(`nai.${size.label}`)}
           </button>
         ))}
-        {num('width', 64)}×{num('height', 64)}
+        {num('width', 64, t('gen.width'))}×{num('height', 64, t('gen.height'))}
       </div>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.steps')}</span>
-          {num('steps')}
-        </label>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.scale')}</span>
-          {num('scale', 0.1)}
-        </label>
+      <div className="row">
         <label className="row" style={{ gap: 4 }}>
           <span className="muted">{t('nai.seed')}</span>
           <input type="number" style={{ width: 120 }} value={v.seed} onChange={(e) => set({ seed: Number(e.target.value) })} />
         </label>
       </div>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.sampler')}</span>
-          <select value={v.sampler} onChange={(e) => set({ sampler: e.target.value })}>
-            {info.data.samplers.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.noise_schedule')}</span>
-          <select value={v.noise_schedule} onChange={(e) => set({ noise_schedule: e.target.value })}>
-            {info.data.noise_schedules.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="row" style={{ flexWrap: 'wrap' }}>
-        <label className="row" style={{ gap: 4 }}>
-          <input type="checkbox" checked={v.quality_toggle !== false} onChange={(e) => set({ quality_toggle: e.target.checked })} />
-          {t('nai.quality_toggle')}
-        </label>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.uc_preset')}</span>
-          <select value={v.uc_preset} onChange={(e) => set({ uc_preset: Number(e.target.value) })}>
-            {[0, 1, 2, 3, 4].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <GenerationDetails compact={compact} summary={[v.sampler, v.noise_schedule, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.scale}`]}>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.steps')}</span>
+            {num('steps')}
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.scale')}</span>
+            {num('scale', 0.1)}
+          </label>
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.sampler')}</span>
+            <select value={v.sampler} onChange={(e) => set({ sampler: e.target.value })}>
+              {info.data.samplers.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.noise_schedule')}</span>
+            <select value={v.noise_schedule} onChange={(e) => set({ noise_schedule: e.target.value })}>
+              {info.data.noise_schedules.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <label className="row" style={{ gap: 4 }}>
+            <input type="checkbox" checked={v.quality_toggle !== false} onChange={(e) => set({ quality_toggle: e.target.checked })} />
+            {t('nai.quality_toggle')}
+          </label>
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.uc_preset')}</span>
+            <select value={v.uc_preset} onChange={(e) => set({ uc_preset: Number(e.target.value) })}>
+              {[0, 1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </GenerationDetails>
       {!preview && <div className="row small">
         {account.data ? (
           <span className="faint">

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
+import type { GeneralSettings, ThemePreference } from '../types';
 import DeploySettings from './DeploySettings';
 import ImageSettings from './ImageSettings';
 import InstallSettings from './InstallSettings';
@@ -68,12 +69,19 @@ function useFail() {
 
 function General() {
   const qc = useQueryClient();
-  const settings = useQuery({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
+  const fail = useFail();
+  const [savingTheme, setSavingTheme] = useState(false);
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => get<GeneralSettings>('/api/settings') });
   const presets = useQuery({ queryKey: ['platforms'], queryFn: () => get('/api/platforms') });
   if (!settings.data) return null;
   const s = settings.data;
-  const update = async (changes: Record<string, any>) => {
-    qc.setQueryData(['settings'], await patch('/api/settings', changes));
+  const update = async (changes: Partial<Omit<GeneralSettings, 'autosave'>> & { autosave?: { enabled: boolean } }) => {
+    try {
+      await patch<GeneralSettings>('/api/settings', changes);
+      await qc.invalidateQueries({ queryKey: ['settings'] });
+    } catch (err) {
+      fail(err);
+    }
   };
   return (
     <div className="col" style={{ maxWidth: 520 }}>
@@ -88,6 +96,22 @@ function General() {
         >
           <option value="ko">한국어</option>
           <option value="en">English</option>
+        </select>
+      </label>
+      <label className="col" style={{ gap: 2 }}>
+        <span className="muted">{t('settings.theme')}</span>
+        <select
+          value={s.theme}
+          disabled={savingTheme}
+          onChange={async (e) => {
+            setSavingTheme(true);
+            await update({ theme: e.target.value as ThemePreference });
+            setSavingTheme(false);
+          }}
+        >
+          {(['system', 'light', 'dark'] as const).map((theme) => (
+            <option key={theme} value={theme}>{t(`settings.theme.${theme}`)}</option>
+          ))}
         </select>
       </label>
       <label className="row">

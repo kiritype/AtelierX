@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, type ServerMsg } from '../../i18n';
 import { byGroup, fits, visibleFor, type Fragment } from '../../lib/fragments';
 import type { ImageServices } from '../ImageServiceSettings';
 import NovelAISettings from './NovelAISettings';
@@ -16,6 +16,9 @@ import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSett
 import { PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { settingsFromPreset } from '../../lib/presetSettings';
 import CharacterOutfitTable from './CharacterOutfitTable';
+import GenerationResolution, { ShotResolution } from './GenerationResolution';
+import ShotPicker, { ShotDetails } from './ShotPicker';
+import { AUTO_SHOT, shotChoiceRequest, shotLabel, shotSlotLabels, useShotLibrary, type Shot, type ShotChoice } from '../../lib/shots';
 
 type Design = { id: string; name: string; path: string; has_design: boolean; trigger?: string; default_outfit?: string; outfits: { id: string; name: string }[] };
 type LibItem = { id: string; name: string; rating?: string; target?: string; default?: boolean; group?: string; targets?: string[] };
@@ -27,11 +30,14 @@ type Composed = {
   outfit_name: string;
   expression_name: string;
   composition_name?: string | null;
+  composition_negative: string;
+  shot?: Shot;
+  outfit_slots: string[];
   outfit_hidden?: boolean;
   parts: Record<string, string>;
   positive: string;
   negative: string;
-  warnings: any[];
+  warnings: ServerMsg[];
 };
 const PARTS = ['common', 'artist', 'composition', 'trigger', 'appearance', 'expression', 'outfit', 'negative'];
 
@@ -69,15 +75,14 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
   const lib = (kind: string) => ({ queryKey: ['image-lib', kind, workId], queryFn: () => get<Record<string, LibItem>>(`/api/image/library/${kind}?work=${workId}`) });
   const expressions = useQuery(lib('expressions'));
-  const compositions = useQuery(lib('compositions'));
+  const { compositions, rules } = useShotLibrary(workId);
   const commons = useQuery(lib('common'));
-  const rules = useQuery<{ ratings: { id: string; name: string }[] }>({ queryKey: ['image-lib-rules'], queryFn: () => get('/api/image/library/rules') });
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const reviewSettings = useQuery<{ enabled: boolean }>({ queryKey: ['review-settings'], queryFn: () => get('/api/image/review/settings') });
 
   const [chars, setChars] = useState<Record<string, string[]>>({});
   const [exprs, setExprs] = useState<string[]>([]);
-  const [composition, setComposition] = useState('');
+  const [shotChoice, setShotChoice] = useState<ShotChoice>(AUTO_SHOT);
   const [artist, setArtist] = useState<Artist>({ positive: '', negative: '' });
   const [commonIds, setCommonIds] = useState<string[] | null>(null);
   const [presetId, setPresetId] = useState('');
@@ -102,7 +107,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const ServicePanel = SERVICE_PANELS[service];
   const [count, setCount] = useState(1);
   const [reviewLlm, setReviewLlm] = useState<LlmOverride | undefined>();
-  const [preview, setPreview] = useState<Composed[] | null>(null);
+  const [preview, setPreview] = useState<{ results: Composed[]; overrides: Record<string, string> } | null>(null);
+  const previewRevision = useRef(0);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [showOthers, setShowOthers] = useState(false);
@@ -141,13 +147,17 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
     service,
     artist,
     common_ids: chosenCommons,
-    composition_id: composition || undefined,
+    ...shotChoiceRequest(shotChoice),
     preset_id: presetId || undefined,
     settings: internet ? (serviceSettings[service] ?? {}) : settings,
     overrides: single ? overrides : {},
   });
 
-  useEffect(() => setPreview(null), [chars, exprs, composition, artist, commonIds, settings, handed, service, serviceSettings]);
+  useEffect(() => {
+    previewRevision.current += 1;
+    setPreview(null);
+  }, [targets, shotChoice, artist, chosenCommons, settings, presetId, service, serviceSettings]);
+  const previewCurrent = !single || overrides === preview?.overrides;
 
   function applyPreset(id: string) {
     setPresetId(id);
@@ -194,7 +204,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
-    <div className="image-gen-page">
+    <div className="generation-page">
+      <div className="generation-content">
       <div className="image-gen-top pad col">
       {handed && (
         <div className="col handed-targets">
@@ -233,18 +244,12 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         ))}
         </div>
         <div className="section-title">{t('gen.extras')}</div>
-        <label className="col" style={{ gap: 2 }}>
-          <span className="muted">{t('lib.composition')}</span>
-          <select value={composition} onChange={(e) => setComposition(e.target.value)}>
-            <option value="">{t('gen.composition_auto')}</option>
-            {Object.values(compositions.data ?? {}).map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-                {fits(c, target) ? '' : ` (${t('gen.not_applied')})`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <ShotResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings}>
+          {size => <ShotPicker batch value={shotChoice} rules={rules.data} compositions={compositions.data} target={target} {...size} onChange={value => {
+            setShotChoice(value);
+            setOverrides(({ composition: _composition, ...rest }) => rest);
+          }} />}
+        </ShotResolution>
         <label className="col" style={{ gap: 2 }}>
           <span className="muted">{t('gen.artist')}</span>
           <textarea rows={2} value={artist.positive} placeholder={t('gen.artist_hint')} onChange={(e) => setArtist({ ...artist, positive: e.target.value })} />
@@ -318,13 +323,13 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             </select>
           </label>
         </div>
-        {!internet && <GenSettings value={settings} onChange={setSettings} />}
-        {internet && (ServicePanel ? <ServicePanel value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
+        {!internet && <GenSettings compact value={settings} onChange={setSettings} />}
+        {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
         {preview && (
           <div className="col">
-            {preview.map((p, n) => (
+            {preview.results.map((p, n) => (
               <div key={n} className="compose-card">
                 <div className="row">
                   <strong>
@@ -332,6 +337,9 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
                   </strong>
                   {p.outfit_hidden && <span className="chip small">{t('gen.outfit_hidden', { name: p.composition_name ?? '' })}</span>}
                 </div>
+                {(p.shot || p.composition_name) && <div className="small">{t('shot.summary', { name: p.shot ? shotLabel(p.shot) : p.composition_name })}</div>}
+                {previewCurrent && <ShotDetails positive={p.parts.composition}
+                  negative={p.composition_negative} slots={shotSlotLabels(p.outfit_slots, rules.data) || t('shot.slots_none')} />}
                 {p.warnings.map((w, i) => (
                   <div key={i} className="warn-text">
                     {tm(w)}
@@ -348,36 +356,43 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
                       />
                     </label>
                   ))
-                ) : (
-                  <>
-                    <div className="mono small">{p.positive}</div>
-                    <div className="mono small faint">− {p.negative}</div>
-                  </>
-                )}
+                ) : null}
+                {previewCurrent ? <details className="single-details" open={!single}>
+                  <summary>{t('single.final_prompt')}</summary>
+                  <p className="mono small">{p.positive || '—'}</p>
+                  <p className="mono small faint">− {p.negative || '—'}</p>
+                </details> : <p className="small faint">{t('shot.refresh_preview')}</p>}
               </div>
             ))}
-            {targets.length > preview.length && <div className="faint">{t('gen.more', { n: targets.length - preview.length })}</div>}
+            {targets.length > preview.results.length && <div className="faint">{t('gen.more', { n: targets.length - preview.results.length })}</div>}
           </div>
         )}
       </div>
     </div>
-      <div className="image-gen-bar row">
+      </div>
+      <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
         <label className="col" style={{ gap: 2 }}>
           <span className="muted">{t('gen.count')}</span>
           <input type="number" min={1} max={50} style={{ width: 72 }} value={count} onChange={(e) => setCount(Number(e.target.value))} />
         </label>
-        <span className="grow">
-          {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
-          <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
-          {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
-        </span>
+        <div className="generation-summary grow">
+          <span>
+            {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
+            <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
+            {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
+          </span>
+          <GenerationResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings} />
+        </div>
         <button
           disabled={!targets.length || busy}
           onClick={async () => {
+            const revision = ++previewRevision.current;
+            const request = options();
             try {
-              setPreview(await post(`/api/works/${workId}/image/compose`, options()));
+              const results = await post<Composed[]>(`/api/works/${workId}/image/compose`, request);
+              if (revision === previewRevision.current) setPreview({ results, overrides: request.overrides });
             } catch (err) {
-              fail(err);
+              if (revision === previewRevision.current) fail(err);
             }
           }}
         >
@@ -416,7 +431,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         >
           {t('gen.enqueue')}
         </button>
-      </div>
+      </footer>
     </div>
   );
 }

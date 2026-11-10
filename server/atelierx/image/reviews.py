@@ -124,7 +124,9 @@ class ReviewStore:
             if not self._hashes_dirty:
                 return
             known = self.gallery.indexed_paths()
-            files = {k: [v[0][0], v[0][1], v[1]] for k, v in self._hashes.items() if k in known}
+            files = {
+                k: [v[0][0], v[0][1], v[1]] for k, v in self._hashes.items() if known is None or k in known
+            }
             self._hashes_dirty = False
         try:
             atomic_json(self._hash_file, {'schema_version': 1, 'files': files}, indent=None)
@@ -179,7 +181,9 @@ class ReviewStore:
     # --- listing ----------------------------------------------------------------------------------------------------
     def list(self, params):
         """One page of the gallery with filters, newest first by default."""
-        items = self.gallery.snapshot_items()
+        library_work = params.get('library_work')
+        gallery = self.gallery.for_work(library_work) if library_work else self.gallery
+        items = gallery.snapshot_items()
         page = _number(params.get('page'), 1, 1_000_000)
         size = _number(params.get('page_size'), 60, 200)
         snapshot = params.get('snapshot')
@@ -316,13 +320,12 @@ class ReviewStore:
                 Msg('server.gallery.invalid_review', 'Choose images and pass, fail or unreviewed.')
             )
         chosen, seen = [], set()
-        self.gallery.scan()
         for entry in items:
             relative = entry.get('path') if isinstance(entry, dict) else entry
             if not isinstance(relative, str) or relative in seen:
                 continue
             seen.add(relative)
-            item = self.gallery.find(relative, refresh=False)
+            item = self.gallery.find(relative)
             sha = self.sha256(relative, fresh=True)
             expected = entry.get('sha256') if isinstance(entry, dict) else None
             if expected and expected != sha:

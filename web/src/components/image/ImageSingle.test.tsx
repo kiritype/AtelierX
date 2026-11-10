@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { get, post } from '../../api';
 import { t } from '../../i18n';
-import type { SingleRun } from '../../imageTypes';
+import type { PromptSource, SingleRun } from '../../imageTypes';
 import { takeToolHandoff } from '../../lib/toolHandoff';
 import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
@@ -104,14 +104,30 @@ it('cancels, retries, restores and regenerates the saved request', async () => {
     actual: { positive: 'Preserved tag, Original', negative: 'No blur, preserved negative', settings: { ...rows[0].actual.settings, cfg: 6.5 } } };
   await publish();
   expect(button(t('single.restore')).hasAttribute('disabled')).toBe(false);
+  const diff = host.querySelector('.single-result-diff');
+  expect(diff?.textContent).toContain('New draft');
+  expect(diff?.textContent).toContain('Preserved tag, Original');
+  expect(diff?.textContent).toContain('6.5');
+  const beforeRestore = vi.mocked(post).mock.calls.length;
   await click(t('single.restore'));
+  expect(post).toHaveBeenCalledTimes(beforeRestore);
+  expect(host.querySelector('.single-result-diff')).toBeNull();
   expect(positive().value).toBe('Preserved tag, Original'); expect(negative().value).toBe('No blur, preserved negative');
+  await edit(positive(), 'Keep this draft');
   await click(t('single.regenerate'));
   expect(rows[0].request?.positive).toBe('Preserved tag, Original');
   expect(rows[0].request?.negative).toBe('No blur, preserved negative');
   expect(rows[0].request?.preset_id).toBe('');
   expect(rows[0].request?.settings.cfg).toBe(6.5);
   expect(rows[0].request?.settings.seed).toBe(17);
+  expect(positive().value).toBe('Keep this draft');
+  expect(button(t('single.result_new_seed')).disabled).toBe(true);
+  rows[0].status = 'done';
+  await publish();
+  await click(t('single.result_new_seed'));
+  expect(rows[0].request?.settings).toMatchObject({ cfg: 6.5, seed: -1 });
+  expect(rows[0].request?.positive).toBe('Preserved tag, Original');
+  expect(positive().value).toBe('Keep this draft');
 });
 
 it('previews preset common tags and compares the saved final prompt', async () => {
@@ -124,12 +140,81 @@ it('previews preset common tags and compares the saved final prompt', async () =
   expect(host.querySelector('.single-details pre')?.textContent).toContain('warm daylight, forest, soft light');
   rows.unshift({ id: 'saved', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 42,
     request: { positive: 'forest', negative: '', service: 'comfyui', settings: {}, preset_id: 'soft' },
-    actual: { positive: 'warm daylight, forest, soft light', negative: 'low quality', settings: { family: 'anima', seed: 42 } },
+    actual: { positive: 'warm daylight, forest, soft light', negative: 'low quality', generation_preset: { name: 'Archived Soft' },
+      settings: { family: 'anima', model: 'historical.safetensors', width: 768, height: 1024, steps: 24, cfg: 6.5, seed: 42 } },
     image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
   await publish();
+  const summary = host.querySelector('.single-result-summary');
+  expect(summary?.textContent).toContain('Archived Soft');
+  expect(summary?.textContent).toContain('768 × 1024');
+  expect(summary?.textContent).toContain('historical.safetensors');
+  expect(summary?.textContent).toContain(t('single.result_missing'));
+  expect(summary?.textContent).not.toContain('m.safetensors');
   await click(t('single.compare'));
-  await click(t('single.open_existing'));
-  expect(sendToLab).toHaveBeenCalledWith(expect.objectContaining({ positive: 'warm daylight, forest, soft light', negative: 'low quality' }));
+  expect(sendToLab).toHaveBeenCalledWith(expect.objectContaining({ positive: 'warm daylight, forest, soft light', negative: 'low quality', source: '_single/synthetic/a.png' }));
+});
+
+it('keeps manual prompts when changing frozen styles and ignores later preset edits or deletion', async () => {
+  qc.setQueryData(['image-presets'], [
+    { id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'soft light', negative: 'soft shadows' } },
+    { id: 'crisp', name: 'Crisp', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'crisp detail', negative: 'haze' } },
+  ]);
+  await edit(positive(), 'forest, (mist:1.2)'); await edit(negative(), 'blur, (noise:0.7)');
+  const selectPreset = async (id: string) => act(async () => {
+    const select = host.querySelector('.single-field select') as HTMLSelectElement;
+    select.value = id; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await selectPreset('soft');
+  expect(positive().value).toBe('forest, (mist:1.2)');
+  expect(negative().value).toBe('blur, (noise:0.7)');
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('forest, (mist:1.2), soft light');
+  await selectPreset('crisp');
+  expect(positive().value).toBe('forest, (mist:1.2)');
+  expect(negative().value).toBe('blur, (noise:0.7)');
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('forest, (mist:1.2), crisp detail');
+
+  qc.setQueryData(['image-presets'], [{ id: 'crisp', name: 'Crisp revised', service: 'comfyui', family: 'anima', common: [], settings: {}, artist: { positive: 'changed live text', negative: 'changed live negative' } }]);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('crisp detail');
+  expect(host.querySelector('.single-details pre')?.textContent).not.toContain('changed live text');
+  qc.setQueryData(['image-presets'], []);
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(host.querySelector('.single-details pre')?.textContent).toContain('crisp detail');
+  await click(t('single.run'));
+  expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({
+    positive: 'forest, (mist:1.2)', negative: 'blur, (noise:0.7)',
+    prompt_sources: expect.arrayContaining([expect.objectContaining({ kind: 'style', id: 'crisp', positive: 'crisp detail' })]),
+  }));
+});
+
+it('restores frozen source metadata and removes only the selected material', async () => {
+  const sources: PromptSource[] = [
+    { kind: 'direct', id: '', name: '', positive: 'forest, \\#literal', negative: 'blur' },
+    { kind: 'common', id: 'old', name: 'Old common', positive: 'warm # frozen note', negative: '' },
+    { kind: 'style', id: 'old-style', name: 'Old style', positive: '(soft light:1.1)', negative: 'haze' },
+  ];
+  rows.unshift({ id: 'frozen', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 42,
+    request: { positive: 'forest, \\#literal', negative: 'blur', service: 'comfyui', settings: {}, preset_id: '' },
+    actual: { positive: 'warm # frozen note, forest, \\#literal, (soft light:1.1)', negative: 'blur, haze', settings: { seed: 42 }, prompt_sources: sources },
+    image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
+  await publish();
+  await click(t('single.restore'));
+  expect(positive().value).toBe('forest, \\\\#literal');
+  expect(negative().value).toBe('blur');
+  const sourceDetails = host.querySelector('.prompt-source-detail') as HTMLDetailsElement;
+  const styleSelect = host.querySelector('.single-field select') as HTMLSelectElement;
+  expect(styleSelect.selectedOptions[0].textContent).toBe(t('materials.applied_style', { name: 'Old style' }));
+  sourceDetails.open = true;
+  expect(sourceDetails.textContent).toContain('warm # frozen note');
+  const remove = [...sourceDetails.querySelectorAll<HTMLButtonElement>('button')].find(item => item.getAttribute('aria-label') === t('materials.remove', { name: 'Old common' }))!;
+  await act(async () => { remove.click(); });
+  expect(sourceDetails.textContent).not.toContain('warm # frozen note');
+  expect(sourceDetails.textContent).toContain('(soft light:1.1)');
+  await click(t('single.run'));
+  const submitted = vi.mocked(post).mock.calls.find(([url]) => url.endsWith('/single'))?.[1] as { prompt_sources: PromptSource[] };
+  expect(submitted.prompt_sources.map(source => source.kind)).toEqual(['direct', 'style']);
+  expect(submitted.prompt_sources[0].positive).toBe(sources[0].positive);
+  expect(submitted.prompt_sources.find(source => source.kind === 'style')?.positive).toBe('(soft light:1.1)');
 });
 
 it('hands a saved image to tools and keeps unsupported comparison disabled', async () => {
@@ -139,8 +224,8 @@ it('hands a saved image to tools and keeps unsupported comparison disabled', asy
     image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png' });
   await publish();
   expect(button(t('single.compare')).hasAttribute('disabled')).toBe(true);
+  expect(host.querySelector('.single-result-details')?.textContent).toContain(t('single.compare_comfy_only'));
   await click(t('single.send_tools'));
-  await click(t('single.open_existing'));
   expect(post).toHaveBeenCalledWith('/api/image/tools/gallery', { paths: ['_single/synthetic/a.png'] });
   expect(takeToolHandoff()).toBe('tool-1');
   expect(openView).toHaveBeenCalledWith('tools');
@@ -176,7 +261,7 @@ it('pages six recent results, preserves the draft on selection, and opens a deta
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true })); });
   expect(dialog.contains(document.activeElement)).toBe(true);
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true })); });
-  expect(document.activeElement).toBe([...dialog.querySelectorAll('button')].at(-1));
+  expect(document.activeElement).toBe([...dialog.querySelectorAll('summary')].at(-1));
   await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(document.activeElement).toBe(preview);
@@ -185,4 +270,58 @@ it('pages six recent results, preserves the draft on selection, and opens a deta
   await act(async () => { modalTools.click(); });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(openView).toHaveBeenCalledWith('tools');
+});
+
+it('replays literal hashes in the saved prompt and does not carry over the current style preset', async () => {
+  await edit(positive(), 'Unsaved draft');
+  await act(async () => {
+    const preset = host.querySelector('.single-field select') as HTMLSelectElement;
+    preset.value = 'soft';
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  rows.unshift({ id: 'past', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 0,
+    request: null, actual: { positive: '#compass, pose', negative: 'text, #caption', settings: { seed: 0 } } });
+  await publish();
+  await click(t('single.regenerate'));
+  expect(rows[0].request).toMatchObject({
+    positive: '\\#compass, pose', negative: 'text, \\#caption', preset_id: '', settings: { seed: 0 },
+  });
+  expect(positive().value).toBe('Unsaved draft');
+  expect((host.querySelector('.single-field select') as HTMLSelectElement).selectedOptions[0].textContent)
+    .toBe(t('materials.applied_style', { name: 'Soft' }));
+});
+
+it('replaces and clears a restored shot without changing direct input', async () => {
+  const source = {
+    kind: 'composition' as const, id: 'shot:face:side:high', name: 'Saved shot',
+    positive: 'portrait, from side, from above', negative: '',
+  };
+  qc.setQueryData(['image-lib-rules'], { shot_choices: {
+    framing: { face: { prompt: 'portrait' }, upper: { prompt: 'upper body' }, cowboy: { prompt: 'cowboy shot' }, full: { prompt: 'full body' } },
+    direction: { front: 'straight-on', three_quarter: 'three-quarter view', side: 'from side', back: 'from behind' },
+    height: { eye: 'eye level', high: 'from above', low: 'from below' },
+  } });
+  rows = [{
+    id: 'shot-run', status: 'done', created_at: '2026-10-13', service: 'comfyui', seed: 17,
+    request: { service: 'comfyui', positive: 'by a window', negative: 'blur', preset_id: '', settings: {}, prompt_sources: [source] },
+    actual: { positive: 'by a window, portrait, from side, from above', negative: 'blur', settings: {},
+      prompt_sources: [{ kind: 'direct', id: '', name: '', positive: 'by a window', negative: 'blur' }, source] },
+  }];
+  await publish();
+  await click(t('single.restore'));
+  expect(positive().value).toBe('by a window');
+  const choose = async (key: string) => {
+    const input = [...host.querySelectorAll('label')].find(label => label.textContent === t(key))?.querySelector('input');
+    expect(input?.type).toBe('radio');
+    await act(async () => input!.click());
+  };
+  expect(host.querySelector('.single-form')?.textContent).toContain(source.positive);
+  await choose('shot.framing.full');
+  expect(host.querySelector('.single-form')?.textContent).not.toContain(source.positive);
+  expect(host.querySelector('.single-form')?.textContent).toContain('full body, from side, from above');
+  expect(positive().value).toBe('by a window');
+  await choose('shot.mode.auto');
+  expect(host.querySelector('.single-form')?.textContent).not.toContain('full body, from side, from above');
+  expect(positive().value).toBe('by a window');
+  expect(negative().value).toBe('blur');
 });

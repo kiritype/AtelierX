@@ -28,7 +28,7 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   vi.mocked(get).mockImplementation(async (url) => {
-    if (url === '/api/image/gallery/tree') return { works, folders: [], expressions: [], revision: 1 };
+    if (url.startsWith('/api/image/gallery/tree')) return { works: url.includes('library_work=') ? [works[0]] : works, folders: [], expressions: [], revision: 1 };
     if (url.startsWith('/api/image/gallery?')) return {
       results: [{ path: 'image.png', filename: 'image.png', thumbnail_url: '/thumb', kind: 'image', work_id: 'w0',
         character_id: 'c0', expression_id: 'e0', expression_name: 'Smile', human_status: 'unreviewed', auto_status: 'pending' }],
@@ -46,9 +46,12 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
   await act(async () => root.render(<QueryClientProvider client={qc}>
     <ImageGallery workId="w0" characterId="c0" outfitId="o0" openLab={() => {}} openTools={() => {}} />
   </QueryClientProvider>));
-  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
+  expect(vi.mocked(get).mock.calls.some(([url]) => url.startsWith('/api/image/gallery/tree?') && url.includes('library_work=w0'))).toBe(true);
+  await act(async () => host.querySelector<HTMLButtonElement>('.gallery-tree .tree-link')!.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
   expect(host.querySelectorAll('.gallery-branch-toggle')).toHaveLength(420);
-  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe('w0 → c0 → Outfit 0');
+  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe(t('gallery.all_images'));
 
   const gallery = host.querySelector('.gallery')!;
   const controls = host.querySelectorAll<HTMLSelectElement>('.gallery-toolbar select');
@@ -56,6 +59,7 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
     controls[1].value = 'pass';
     controls[1].dispatchEvent(new Event('change', { bubbles: true }));
   });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 30)); });
   const nextPage = [...host.querySelectorAll<HTMLButtonElement>('.gallery-scroll button')].find((b) => b.textContent === '›')!;
   await act(async () => nextPage.click());
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
@@ -66,7 +70,7 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
   workToggle.focus();
   await act(async () => workToggle.click());
   expect(workToggle.getAttribute('aria-expanded')).toBe('false');
-  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe('w0 → c0 → Outfit 0');
+  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe(t('gallery.all_images'));
   expect(host.querySelectorAll('.gallery-branch-toggle')).toHaveLength(400);
   expect(document.activeElement).toBe(workToggle);
 
@@ -77,7 +81,7 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
   expect(host.querySelector('.gallery-tree')).toBeNull();
   expect(panelToggle.getAttribute('aria-expanded')).toBe('false');
   expect(host.textContent).toContain(t('gallery.selected', { n: 1 }));
-  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe('w0 → c0 → Outfit 0');
+  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe(t('gallery.all_images'));
   expect(host.textContent).toContain('2 / 2');
   expect(controls[1].value).toBe('pass');
 
@@ -91,6 +95,6 @@ it('keeps scope, filters, selection and page while folding a long tree and its p
   await act(async () => characterToggle.click());
   expect(characterToggle.getAttribute('aria-expanded')).toBe('false');
   expect(host.querySelectorAll('.gallery-tree .tree-link')).toHaveLength(linksBefore - 5);
-  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe('w0 → c0 → Outfit 0');
+  expect(host.querySelector('.gallery-scope-path')?.textContent).toBe(t('gallery.all_images'));
   expect(host.querySelector('.gallery-tree-row .tree-link')?.textContent).toContain(t('gallery.this_work'));
 });

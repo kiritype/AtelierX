@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { markdown } from '@codemirror/lang-markdown';
-import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { Annotation, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
@@ -16,6 +16,7 @@ const base = {
   '.cm-content': { padding: '14px 0', caretColor: 'var(--text)' },
   '.cm-gutters': { backgroundColor: 'var(--panel)', color: 'var(--text-3)', border: 'none' },
   '.cm-activeLine': { backgroundColor: 'transparent' },
+  '.cm-content ::selection': { backgroundColor: 'var(--accent-bg)', color: 'var(--text)' },
   '.cm-line': { padding: '0 20px' },
 };
 
@@ -45,6 +46,13 @@ const markdownStyle = HighlightStyle.define([
   { tag: tags.quote, color: 'var(--text-2)' },
   { tag: tags.monospace, fontFamily: 'var(--mono)', fontSize: '0.92em' },
   { tag: tags.contentSeparator, color: 'var(--text-3)' },
+]);
+
+const jsxStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.tagName, tags.number, tags.bool, tags.null], color: 'var(--accent)' },
+  { tag: [tags.string, tags.regexp], color: 'var(--text-2)' },
+  { tag: tags.comment, color: 'var(--text-3)', fontStyle: 'italic' },
+  { tag: tags.invalid, color: 'var(--danger)' },
 ]);
 
 // The editor owns its text; the parent gets changes through onChange and replaces the text only when `doc` changes
@@ -134,7 +142,7 @@ export default function CodeEditor({
         ]),
         EditorView.lineWrapping,
         ...(language === 'jsx'
-          ? [syntaxHighlighting(defaultHighlightStyle), javascript({ jsx: true }), codeTheme]
+          ? [syntaxHighlighting(jsxStyle), javascript({ jsx: true }), codeTheme]
           : [syntaxHighlighting(markdownStyle), markdown(), proseTheme]),
         EditorView.updateListener.of((update) => {
           // Text put in from outside (the loaded file, a reload) is not an edit of the user's.

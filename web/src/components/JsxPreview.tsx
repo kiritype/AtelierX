@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAppTheme } from '../AppTheme';
 import { t } from '../i18n';
+import type { AppTheme } from '../types';
 import type { FromFrame, GlobalStub, ToFrame } from '../preview/protocol';
 import { validReply } from '../preview/protocol';
 
@@ -15,7 +17,7 @@ export default function JsxPreview({
   props,
   hooks,
   globals,
-  theme = 'light',
+  theme,
   width,
   autoHeight = false,
   onCall,
@@ -26,12 +28,15 @@ export default function JsxPreview({
   props: unknown;
   hooks: string[];
   globals: GlobalStub[];
-  theme?: 'light' | 'dark' | 'inline';
+  theme?: AppTheme | 'inline';
   width?: number;
   autoHeight?: boolean;
   onCall?: (call: PreviewCall) => void;
   onError?: (error: { message: string; line: number | null } | null) => void;
 }) {
+  const appTheme = useAppTheme();
+  const colorScheme = theme === 'inline' ? appTheme : theme ?? appTheme;
+  const frameTheme = theme === 'inline' && colorScheme === 'dark' ? 'inline-dark' : theme ?? colorScheme;
   const frame = useRef<HTMLIFrameElement>(null);
   const [generation, setGeneration] = useState(0);
   const channel = useMemo(() => crypto.randomUUID(), [generation]);
@@ -83,7 +88,7 @@ export default function JsxPreview({
   }, [ready]);
 
   // Parents pass fresh objects each render; send again only when the content changes.
-  const payload = JSON.stringify({ code, name, props, hooks, globals, theme });
+  const payload = JSON.stringify({ code, name, props, hooks, globals, theme: frameTheme });
   useEffect(() => {
     if (!ready || !frame.current?.contentWindow) return;
     const { code, name, props, hooks, globals, theme } = JSON.parse(payload) as Omit<ToFrame, 'type' | 'id'>;
@@ -137,7 +142,7 @@ export default function JsxPreview({
         title={name}
         src={`/preview.html#${channel}`}
         sandbox="allow-scripts"
-        style={{ width: '100%', height: autoHeight ? height : '100%', border: 0, display: 'block', background: 'transparent' }}
+        style={{ width: '100%', height: autoHeight ? height : '100%', border: 0, display: 'block', background: 'transparent', colorScheme }}
       />
     </div>
   );

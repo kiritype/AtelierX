@@ -57,7 +57,7 @@
 │   ├── defaults/                 기본 가이드라인·이미지 라이브러리 (처음 실행 때 data/로 복사)
 │   └── samples/                  샘플 작품 (읽기 전용 원본. "샘플 작품"은 복사본을 data/works/에 만든다)
 ├── config/
-│   ├── settings.json             화면 언어, 창 상태, 기본 플랫폼 프리셋, LoRA 폴더, 이미지 생성·학습 연결
+│   ├── settings.json             화면 언어, 테마, 창 상태, 기본 플랫폼 프리셋, LoRA 폴더, 이미지 생성·학습 연결
 │   └── vault.json                금고: API 키 등 인증 정보 (마스터 비밀번호로 암호화)
 ├── state/                        작업 대기열, GPU 상태, 화면 상태 (작품 데이터가 아니다)
 ├── data/                         데이터 루트 (아래 "데이터 루트")
@@ -76,6 +76,8 @@
 | LoRA 폴더 | `output/loras/` | 학습한 LoRA의 원본. 설정에서 다른 폴더로 바꿀 수 있다(앱 밖을 가리키는 유일한 경로). 이미지 생성 서버에는 그 LoRA 폴더 안의 `atelierx` 폴더 링크로 보인다([결정 0025](decisions/0025-lora-folder-link.md)) |
 
 - 앱 폴더는 쓰기 가능한 위치에 둬야 한다(예: `Program Files` 아래는 쓰기 제한이 있어 맞지 않는다).
+- `settings.json`의 `theme` 값은 `system`(기본값), `light`, `dark` 중 하나다. `schema_version: 1` 또는 버전 필드가 없는
+  설정은 읽을 때 2로 변환한다. 테마 값이 없거나 알 수 없는 값이면 `system`으로 읽는다.
 - `settings.json`의 `default_platform_preset`: 새 작품에 자동으로 붙일 플랫폼 프리셋 ID. 비어 있으면 새 작품은 어떤 프리셋에도
   연결되지 않는다([플랫폼 프리셋](#플랫폼-프리셋)).
 
@@ -901,6 +903,10 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 ```
 
 - 같은 이미지를 다시 만들 수 있는 정보를 모두 남긴다. 갤러리의 "새 시드로 다시 생성"은 이 기록에서 시드만 바꿔 대기열에 넣는다.
+- 시각 샷의 생성 기록에는 선택적 `shot: {framing, direction, height}`가 들어간다. 각각
+  `face|upper|cowboy|full`, `front|three_quarter|side|back`, `eye|high|low` 중 하나다. 적용한 문구는
+  `parts.composition`에, 라이브러리 구도의 Negative 기여분은 `composition_negative`에 남긴다.
+  기존 라이브러리 구도 기록은 `composition_id`와 `composition_name`으로 읽는다.
 - `artist`: 그때 쓴 artist 태그. 이전 기록은 `style_ids`(화풍 id)와 `parts.style`을 가진다.
 - 생성 설정의 뒷단계(#168, 그림체 프리셋의 `settings`도 같은 형식, 모두 선택):
   - `loras[].enabled`: `false`면 목록에 남기되 그래프에서 뺀다(켜진 것은 쓰지 않음).
@@ -924,6 +930,27 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 복원·재생성은 프리셋이 바뀌거나 삭제되어도 결과의 최종 프롬프트·설정·시드를 사용한다. 캐릭터·의상·표정 필드는 없다. 기존 `schema_version: 1` 조합 및
 생성·비교 기록은 그대로 읽는다. 큐 작업은 기존 `state/image/queue.json` 형식에 `kind: "single"`과 작품·요청
 스냅샷을 더하며, 완료 작업을 큐에서 지운 뒤에도 출력 파일에서 단일 생성 이력을 다시 만든다.
+
+출처를 분리한 단일 생성 기록은 `schema_version: 3`이며 위 필드를 그대로 유지하고 `prompt_sources`를 추가한다.
+`request.prompt_sources`와 단일 생성 목록 API의 `actual.prompt_sources`에도 같은 적용 당시 값을 둔다.
+각 항목은 `{kind, id, name, positive, negative}`이고 `kind`는 `common`, `direct`, `character`, `expression`,
+`composition`, `style` 중 하나다. 출처마다 최대 한 항목이며 이 순서로 비어 있지 않은 문구를 `, `로 연결한다.
+`common`은 선택한 그림체의 공통 문구, `style`은 artist 문구이며 둘의 ID·이름은 그림체를 가리킨다. 캐릭터는 외형 문구만
+포함하고 의상·LoRA를 추측해 추가하지 않는다. 문구는 가중치나 태그를 다시 분해하지 않은 최종 문자열이다.
+시각 샷의 `composition` ID는 `shot:<framing>:<direction>:<height>`이고, 라이브러리 구도는 프리셋 ID를 사용한다.
+
+단일 생성 API에서 `prompt_sources`를 주면 직접 입력의 주석을 정리해 `direct`로 기록하고 다른 출처는 이미 주석을 처리한
+문자열로 사용한다. `direct`를 함께 보냈다면 정리된 직접 입력과 일치해야 한다. 이 계약에서는 `preset_id`로 현재 라이브러리를
+다시 조회하지 않으며 전달한 생성 설정을 사용한다. 직접 입력이 비어도 재료를 합친 Positive가 있으면 생성할 수 있다.
+목록은 최대 6개, ID는 256자, 이름은 1,000자, 개별 문구와 최종 Positive·Negative는 각각 30,000자 이내다.
+기존 출처 없는 요청은 기존 프리셋 합성 경로와 v2 기록을 유지한다. v1/v2 기록은 다시 쓰지 않는다.
+
+브라우저의 작품별 단일 생성 초안은 기존 `atelierx-single-v2-<작품 ID>` 키에서 `schema_version: 3`과 `sources`를 추가해
+읽고 쓴다. `sources`에는 `direct`를 제외한 당시 재료가 들어가고 직접 입력은 기존 `positive`·`negative`에 남는다.
+출처 없는 이전 초안은 직접 입력·서비스별 설정을 유지하고, ID만 남은 그림체는 `legacyPreset` 안내와 함께 재선택하게 한다.
+새 결과 복원은 기록된 출처와 직접 입력을 복원하고, 예전 결과는 최종 문구 전체를 직접 입력으로 옮긴다. 복원할 때 실제 `#`는
+주석으로 재해석되지 않도록 입력용 이스케이프를 되돌린다. 재료 변경·삭제는 과거 기록과 저장된 초안을 자동 갱신하지 않는다.
+
 갤러리에서 단일 이미지를 새 시드로 재생성할 때도 `kind: "single"`과 작품 연결을 작업에 복원한다. 새 결과는
 같은 `_single/<작품 ID>/` 계열에 별도 파일로 남고 원본 파일은 유지된다. 단일 이미지에는 자동 검수 라운드를 열지 않는다.
 

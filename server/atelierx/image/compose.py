@@ -8,6 +8,7 @@ from the request (or a style preset). Parts are joined in the order of compose.j
 from ..core.i18n import Msg
 from . import library
 from .comments import strip_tag, strip_text
+from .shots import SHOT_FRAMING, clean_shot, shot_tags
 from .util import read_json
 from .uuid_migration import resolve
 
@@ -94,10 +95,15 @@ class Composer:
                 Msg('server.image.compose.no_outfit', 'Outfit {id} is not in this design.', id=outfit_id)
             )
         expression = self._pick('expressions', target.get('expression_id'), 'Expression')
+        shot = clean_shot(options.get('shot')) if not target.get('composition_id') else None
         composition_id = (
             target.get('composition_id') or options.get('composition_id') or expression.get('composition')
         )
-        composition = self._pick('compositions', composition_id, 'Composition') if composition_id else None
+        requested = (
+            self._pick('compositions', composition_id, 'Composition') if composition_id and not shot else None
+        )
+        family = options.get('family') or 'anima'
+        composition = requested if requested and library.fits(requested, family) else None
 
         # A composition that hides the outfit (#162: a bath, a bed) leaves the whole outfit part out; the expression says
         # what is worn instead (completely nude, pajamas …).
@@ -108,7 +114,11 @@ class Composer:
         if not wanted and composition and composition.get('suggest_slots'):
             # 'full' (one-piece outfits) always shows; otherwise only what the framing reveals.
             wanted = [*composition['suggest_slots'], 'full']
-        slots = [s for s in defined if not wanted or s in wanted]
+        if shot and not wanted:
+            visible = SHOT_FRAMING[shot['framing']]['slots']
+            slots = [s for s in defined if visible is None or s in visible]
+        else:
+            slots = [s for s in defined if not wanted or s in wanted]
         outfit_prompt, outfit_negative = [], [] if hidden else list(outfit.get('negative') or [])
         for slot in slots:
             prompt, negative = self._slot(outfit, slot)
@@ -128,7 +138,6 @@ class Composer:
 
         # Items written for other targets (#80) stay out of the prompt and are named in the warnings. The expression
         # is what the image is of, so it stays and is only named.
-        family = options.get('family') or 'anima'
         names = {t['id']: t['name'] for t in self.rules['targets']}
         warnings = []
 
@@ -154,9 +163,8 @@ class Composer:
 
         if not library.fits(expression, family):
             unfit('expression', expression, left_out=False)
-        if composition and not library.fits(composition, family):
-            unfit('composition', composition)
-            composition = None
+        if requested and composition is None:
+            unfit('composition', requested)
         for record in [r for r in commons if not library.fits(r, family)]:
             unfit('common', record)
             commons.remove(record)
@@ -164,7 +172,9 @@ class Composer:
         parts = {
             'common': _join(*(c.get('prompt') for c in commons if c.get('target') != 'negative')),
             'artist': [artist_positive] if artist_positive else [],
-            'composition': _join(composition.get('prompt') if composition else []),
+            'composition': _join(
+                shot_tags(shot) if shot else composition.get('prompt') if composition else []
+            ),
             # The trigger word only means something to a LoRA trained on it: by default it is added when the
             # character has a registered LoRA; options['trigger'] True/False forces it on or off.
             'trigger': _join(
@@ -181,13 +191,14 @@ class Composer:
             'expression': _join(expression.get('prompt')),
             'outfit': _join(outfit_prompt),
         }
+        composition_negative = composition.get('negative') if composition else []
         negative = _join(
             *(c.get('prompt') for c in commons if c.get('target') == 'negative'),
             [artist_negative] if artist_negative else [],
             (design.get('appearance') or {}).get('negative'),
             outfit_negative,
             expression.get('negative'),
-            composition.get('negative') if composition else [],
+            composition_negative,
         )
         texts = {key: ', '.join(value) for key, value in parts.items()}
         texts['negative'] = ', '.join(negative)
@@ -212,7 +223,9 @@ class Composer:
             'expression_id': expression['id'],
             'expression_name': expression.get('name', expression['id']),
             'rating': expression.get('rating'),
+            **({'shot': shot} if shot else {}),
             'composition_id': composition['id'] if composition else None,
+            'composition_negative': '' if 'negative' in overrides else ', '.join(_join(composition_negative)),
             'composition_name': composition.get('name', composition['id']) if composition else None,
             'outfit_slots': slots,
             'outfit_hidden': hidden,
