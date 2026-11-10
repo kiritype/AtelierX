@@ -60,7 +60,7 @@ export default function ImageScreen({
   return <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
     <nav className="row image-flow" aria-label={t('flow.navigation')}>
       {characterId && <strong>{characterId}{outfitId ? ` · ${outfitId}` : ''}</strong>}
-      {imageFlow.map((step) => <button key={step} className={view === step ? 'primary' : 'ghost'} onClick={() => openView(step)}>{t(`image_menu.${step}`)}</button>)}
+      {imageFlow.map((step) => <button key={step} type="button" className={view === step ? 'selected' : 'ghost'} aria-current={view === step ? 'page' : undefined} onClick={() => openView(step)}>{t(`image_menu.${step}`)}</button>)}
     </nav>
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{content()}</div>
   </div>;

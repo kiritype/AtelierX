@@ -179,7 +179,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     <div className="single-layout">
       <div className="single-form">
         <div className="single-service" role="group" aria-label={t('gen.service')}>
-          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'primary' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '' })}>{SERVICE_NAMES[service]}</button>)}
+          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'selected' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '' })}>{SERVICE_NAMES[service]}</button>)}
         </div>
         {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
         <label className="single-field"><span>{t('single.preset')}</span><select value={draft.preset} onChange={e => {
