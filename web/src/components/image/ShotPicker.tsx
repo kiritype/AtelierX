@@ -59,7 +59,10 @@ export default function ShotPicker({ batch = false, value, onChange, rules, comp
       {(['auto', 'visual', 'library'] as const).map(mode => <label key={mode} className="shot-option">
         <input type="radio" name={modeName} checked={value.mode === mode} disabled={mode === 'visual' && !rules?.shot_choices}
           onChange={() => selectMode(mode)} />
-        <span>{t(mode === 'auto' && batch ? 'gen.composition_auto' : `shot.mode.${mode}`)}</span>
+        <span className="shot-mode-label">
+          <span>{t(mode === 'auto' && batch ? 'gen.composition_auto' : `shot.mode.${mode}`)}</span>
+          {mode === 'visual' && <span className="shot-beta">{t('shot.beta')}</span>}
+        </span>
       </label>)}
     </div>
     {value.mode === 'library' && <label className="shot-library">

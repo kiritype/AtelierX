@@ -32,7 +32,7 @@ it('shows the direct camera controls, keeps the framing presets in sync, and ret
   }
   const labels = () => [...host.querySelectorAll('label')];
   const choose = async (text: string) => {
-    const input = labels().find(label => label.textContent === text)?.querySelector('input');
+    const input = labels().find(label => (label.querySelector('.shot-mode-label > span')?.textContent ?? label.textContent) === text)?.querySelector('input');
     expect(input?.type).toBe('radio');
     await act(async () => input!.click());
     expect(input!.checked).toBe(true);
@@ -162,7 +162,7 @@ it('uses an externally restored visual shot as the next manual shot', async () =
     </>;
   }
   const choose = async (text: string) => {
-    const input = [...host.querySelectorAll('label')].find(label => label.textContent === text)?.querySelector('input');
+    const input = [...host.querySelectorAll('label')].find(label => (label.querySelector('.shot-mode-label > span')?.textContent ?? label.textContent) === text)?.querySelector('input');
     expect(input).not.toBeNull();
     await act(async () => input!.click());
   };
@@ -194,7 +194,7 @@ it('remembers the selected library preset while switching through auto', async (
     return <ShotPicker value={value} onChange={setValue} rules={rules} compositions={compositions} target="novelai" />;
   }
   const choose = async (text: string) => {
-    const input = [...host.querySelectorAll('label')].find(label => label.textContent === text)?.querySelector('input');
+    const input = [...host.querySelectorAll('label')].find(label => (label.querySelector('.shot-mode-label > span')?.textContent ?? label.textContent) === text)?.querySelector('input');
     expect(input).not.toBeNull();
     await act(async () => input!.click());
   };
