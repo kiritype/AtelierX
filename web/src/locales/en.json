@@ -1,5 +1,6 @@
 {
   "materials.title": "Prompt materials",
+  "materials.applied_style": "Applied style: {name}",
   "materials.browse_styles": "Browse style thumbnails",
   "materials.search_styles": "Search style names",
   "materials.no_styles": "No styles match this selection.",

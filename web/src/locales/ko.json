@@ -1,5 +1,6 @@
 {
   "materials.title": "프롬프트 재료",
+  "materials.applied_style": "적용된 그림체: {name}",
   "materials.browse_styles": "그림체 썸네일로 찾기",
   "materials.search_styles": "그림체 이름 검색",
   "materials.no_styles": "선택 조건에 맞는 그림체가 없습니다.",

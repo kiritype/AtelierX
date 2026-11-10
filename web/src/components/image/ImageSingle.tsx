@@ -105,6 +105,7 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
     setUnappliedShot(source ? AUTO_SHOT : choice);
     setDraft(current => ({ ...current, sources: replaceSource(current.sources, 'composition', source) }));
   }
+  const appliedStyle = draft.sources.find(source => source.kind === 'style');
   const sourceList = promptSources(draft.positive, draft.negative, draft.sources);
   const positive = combineSources(sourceList, 'positive');
   const negative = combineSources(sourceList, 'negative');
@@ -221,11 +222,12 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
           {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'selected' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
         </div>
         {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
-        <label className="single-field"><span>{t('single.preset')}</span><select value={draft.preset} onChange={e => choosePreset(e.target.value)} disabled={commons.isPending}>
+        <label className="single-field"><span>{t('single.preset')}</span><select value={appliedStyle ? '__snapshot__' : ''} onChange={e => { if (e.target.value !== '__snapshot__') choosePreset(e.target.value); }} disabled={commons.isPending}>
+          {appliedStyle && <option value="__snapshot__" disabled>{t('materials.applied_style', { name: appliedStyle.name })}</option>}
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select></label>
         {draft.legacyPreset && <p className="warn-text">{t('materials.legacy_draft')}</p>}
-        <StyleThumbnails presets={servicePresets} selected={draft.preset} choose={choosePreset} disabled={commons.isPending} />
+        <StyleThumbnails presets={servicePresets} selected={appliedStyle?.id ?? ''} choose={choosePreset} disabled={commons.isPending} />
         <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
         <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>

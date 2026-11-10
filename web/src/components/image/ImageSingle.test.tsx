@@ -202,6 +202,8 @@ it('restores frozen source metadata and removes only the selected material', asy
   expect(positive().value).toBe('forest, \\\\#literal');
   expect(negative().value).toBe('blur');
   const sourceDetails = host.querySelector('.prompt-source-detail') as HTMLDetailsElement;
+  const styleSelect = host.querySelector('.single-field select') as HTMLSelectElement;
+  expect(styleSelect.selectedOptions[0].textContent).toBe(t('materials.applied_style', { name: 'Old style' }));
   sourceDetails.open = true;
   expect(sourceDetails.textContent).toContain('warm # frozen note');
   const remove = [...sourceDetails.querySelectorAll<HTMLButtonElement>('button')].find(item => item.getAttribute('aria-label') === t('materials.remove', { name: 'Old common' }))!;
@@ -285,7 +287,8 @@ it('replays literal hashes in the saved prompt and does not carry over the curre
     positive: '\\#compass, pose', negative: 'text, \\#caption', preset_id: '', settings: { seed: 0 },
   });
   expect(positive().value).toBe('Unsaved draft');
-  expect((host.querySelector('.single-field select') as HTMLSelectElement).value).toBe('soft');
+  expect((host.querySelector('.single-field select') as HTMLSelectElement).selectedOptions[0].textContent)
+    .toBe(t('materials.applied_style', { name: 'Soft' }));
 });
 
 it('replaces and clears a restored shot without changing direct input', async () => {
