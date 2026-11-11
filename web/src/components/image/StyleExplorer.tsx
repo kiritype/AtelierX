@@ -11,6 +11,7 @@ import type {
   ExplorerSummary,
 } from '../../styleExplorerTypes';
 import type { ImageServices } from '../ImageServiceSettings';
+import type { Activity } from '../JobsPopover';
 import { useUnsaved } from '../Unsaved';
 import { useCatalog } from './GenSettings';
 import { useNovelAIInfo } from './NovelAISettings';
@@ -72,8 +73,8 @@ export default function StyleExplorer({
   });
   const session = query.data;
   const queue = useQuery({
-    queryKey: ['image-queue'],
-    queryFn: () => get<{ paused: boolean }>('/api/image/queue'),
+    queryKey: ['activity'],
+    queryFn: () => get<{ items: Activity[] }>('/api/activity'),
     enabled: !!id && active,
     refetchInterval: active ? 1500 : false,
   });
@@ -313,7 +314,7 @@ export default function StyleExplorer({
           <h4>{session.name}</h4>
           <div className="row">
             <button onClick={() => openView('queue')}>{t('image_menu.queue')}</button>
-            {queue.data?.paused && <span className="warn-text">{t('queue.paused')}</span>}
+            {queue.data?.items?.some(item => item.kind === 'image_queue' && item.paused) && <span className="warn-text">{t('queue.paused')}</span>}
           </div>
           <p>
             {t('style_explorer.progress', {
