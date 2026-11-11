@@ -1,3 +1,5 @@
+import type { ServerMessage } from './api';
+
 export type ExplorerRules = {
   artist_min: number;
   artist_max: number;
@@ -38,9 +40,9 @@ export type ExplorerCandidate = {
   seed: number;
   status: string;
   job_id?: string;
-  image_url?: string;
+  image_url?: string | null;
   image_missing?: boolean;
-  path?: string;
+  path?: string | null;
   error?: unknown;
   elo: number;
   matches: number;
@@ -72,7 +74,7 @@ export type ExplorerSummary = {
   revision: number;
 };
 export type ExplorerSession = ExplorerSummary & {
-  config: ExplorerConfig;
+  config: Omit<ExplorerConfig, 'request_id'>;
   candidates: ExplorerCandidate[];
   pair: ExplorerPair | null;
   votes: ExplorerVote[];
@@ -83,7 +85,7 @@ export type ExplorerCapabilities = {
     id: string;
     name: string;
     enabled: boolean;
-    families: { id: string; name: string; enabled: boolean; reason?: string }[];
+    families: { id: string; name: string; enabled: boolean; reason?: string | ServerMessage }[];
   }[];
   max_batch: number;
   max_budget: number;
