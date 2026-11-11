@@ -9,8 +9,11 @@ import math
 import random
 import re
 import secrets
+import sys
 import uuid
 from collections import Counter
+from decimal import Decimal
+from fractions import Fraction
 from itertools import combinations
 from urllib.parse import unquote
 
@@ -18,12 +21,18 @@ from ..core import revisions
 from ..core.i18n import AppError, Msg
 from . import library
 from .comments import strip_text
+from .internet.pixai import MAX_LORAS as PIXAI_MAX_LORAS
 from .internet.pixai import MODELS as PIXAI_MODELS
+from .internet.pixai import VERSION_ID as PIXAI_VERSION_ID
 from .util import atomic_json, now, read_json, state_file
 from .workflow import validate_settings
 
 MAX_BATCH = 16
 MAX_BUDGET = 200
+SCHEMA_VERSION = 2
+COMFY_MAX_LORAS = 16
+MAX_MATERIALS = 10000
+MATERIAL_MODES = ('always', 'candidate', 'exclude')
 DEFAULT_RULES = {
     'artist_min': 1,
     'artist_max': 3,
@@ -60,6 +69,89 @@ def text(value, detail, limit=30000):
 
 def joined(*values):
     return ', '.join(value for value in values if value)
+
+
+def finite(value):
+    return type(value) in (int, float) and abs(value) <= sys.float_info.max
+
+
+def weight_range(low, high, step, maximum, detail, legacy=False):
+    if not all(map(finite, (low, high, step))) or not 0 <= low <= high <= maximum or step <= 0:
+        invalid(detail)
+    if legacy:
+        slots = (high - low) / step
+    else:
+        first, last, stride = (Fraction(str(x)) for x in (low, high, step))
+        slots = (last - first) / stride
+    if slots > 10000:
+        invalid(detail)
+
+
+def material_weight(raw, maximum):
+    if not isinstance(raw, dict):
+        invalid('material weight')
+    mode = raw.get('mode')
+    if mode == 'fixed':
+        value = raw.get('value')
+        if not finite(value) or not 0 <= value <= maximum:
+            invalid('material fixed weight')
+        return {'mode': mode, 'value': value}
+    if mode == 'random':
+        low, high, step = (raw.get(key) for key in ('low', 'high', 'step'))
+        weight_range(low, high, step, maximum, 'material random weight range')
+        return {'mode': mode, 'low': low, 'high': high, 'step': step}
+    invalid('material weight mode')
+
+
+def legacy_materials(config):
+    """Project the v1 pools and their global random ranges onto individual rows."""
+    rules = config['rules']
+    random_weight = {
+        kind: {'mode': 'random', **{key: rules[f'{kind}_{key}'] for key in ('low', 'high', 'step')}}
+        for kind in ('artist', 'lora')
+    }
+    return [
+        {**tag, 'kind': 'tag', 'role': 'style', 'weight': random_weight['artist']}
+        for tag in config['artists']
+    ] + [
+        {
+            'kind': 'lora',
+            'name': lora.get('name') or lora['id'],
+            'role': 'style',
+            'mode': 'candidate',
+            'weight': random_weight['lora'],
+            **{key: lora[key] for key in ('id', 'trigger_words') if key in lora},
+        }
+        for lora in config['settings'].get('loras') or []
+    ]
+
+
+def upgrade(doc):
+    if doc.get('schema_version') == 1:
+        doc['config']['materials'] = legacy_materials(doc['config'])
+        doc['schema_version'] = SCHEMA_VERSION
+    elif doc.get('schema_version') != SCHEMA_VERSION:
+        raise AppError(
+            Msg('server.explorer.schema_version', 'This exploration session uses an unsupported format.'), 409
+        )
+    return doc
+
+
+def resolved_weight(weight, rng, legacy):
+    if weight['mode'] == 'fixed':
+        return weight['value']
+    low, high, step = (weight[key] for key in ('low', 'high', 'step'))
+    if legacy:
+        return round(low + rng.randint(0, math.floor((high - low) / step + 1e-8)) * step, 8)
+    first, last, stride = (Fraction(str(x)) for x in (low, high, step))
+    return float(first + rng.randint(0, (last - first) // stride) * stride)
+
+
+def weighted_tag(name, value, service, legacy):
+    if value == 1:
+        return name
+    weight = f'{value:g}' if legacy else format(Decimal(str(value)).normalize(), 'f')
+    return f'{weight}::{name}::' if service == 'novelai' else f'({name}:{weight})'
 
 
 def replay(doc):
@@ -144,10 +236,10 @@ class StyleExplorer:
         doc = read_json(self._path(ident))
         if not isinstance(doc, dict):
             raise AppError(Msg('server.explorer.not_found', 'Exploration session not found.'), 404)
-        return doc
+        return upgrade(doc)
 
     def _save(self, doc):
-        atomic_json(self._path(doc['id']), doc)
+        atomic_json(self._path(doc['id']), upgrade(doc))
 
     def _request(self, body):
         if not isinstance(body, dict):
@@ -223,6 +315,108 @@ class StyleExplorer:
             )
         return self.rt.services[service].validate_settings(settings)
 
+    def _materials(self, raw, service, family, settings, catalog):
+        if not isinstance(raw, list) or len(raw) > MAX_MATERIALS:
+            invalid('materials')
+        result = []
+        comfy = []
+        for item in raw:
+            if not isinstance(item, dict) or item.get('kind') not in ('tag', 'lora'):
+                invalid('material kind')
+            kind = item['kind']
+            role, mode = item.get('role'), item.get('mode')
+            if role not in ('style', 'character', 'other') or mode not in MATERIAL_MODES:
+                invalid('material role or mode')
+            name = item.get('name')
+            if not isinstance(name, str) or len(name) > 500:
+                invalid('material name')
+            name = text(name, 'tag name', 500) if kind == 'tag' else name.strip()
+            if not name:
+                invalid('empty material name')
+
+            pixai_lora = kind == 'lora' and service == 'pixai'
+            row = {
+                'kind': kind,
+                'name': name,
+                'role': role,
+                'mode': mode,
+                'weight': material_weight(item.get('weight'), 1 if pixai_lora else 10),
+            }
+            if pixai_lora:
+                ident = item.get('id')
+                if not isinstance(ident, str) or not PIXAI_VERSION_ID.fullmatch(ident):
+                    raise ValueError(Msg('server.pixai.lora_id', 'A LoRA needs its PixAI version id.'))
+                row['id'] = ident
+            elif 'id' in item:
+                invalid('material id')
+            if kind == 'lora':
+                if service == 'novelai':
+                    invalid('NovelAI does not support LoRAs')
+                if 'trigger_words' in item:
+                    triggers = item['trigger_words']
+                    if not isinstance(triggers, str) or len(triggers) > 500:
+                        invalid('LoRA trigger words')
+                    if triggers.strip():
+                        row['trigger_words'] = triggers.strip()
+                if service == 'comfyui' and mode != 'exclude':
+                    comfy.append(row)
+            result.append(row)
+
+        # Validate and resolve the entire selectable pool, in groups the shared settings validator accepts.
+        for start in range(0, len(comfy), COMFY_MAX_LORAS):
+            rows = comfy[start : start + COMFY_MAX_LORAS]
+            inputs = [{'name': row['name']} for row in rows]
+            checked = self._validate_settings(service, family, {**settings, 'loras': inputs}, catalog)
+            for row, lora in zip(rows, checked['loras'], strict=True):
+                row['name'] = lora['name']
+        keys = [(row['kind'], row.get('id', row['name'])) for row in result]
+        if len(set(keys)) != len(keys):
+            invalid('duplicate materials')
+        return result
+
+    def _legacy_artists(self, raw):
+        if not isinstance(raw, list) or len(raw) > MAX_MATERIALS:
+            invalid('artists')
+        picked, seen = [], set()
+        for item in raw:
+            if not isinstance(item, dict) or item.get('mode', 'candidate') not in MATERIAL_MODES:
+                invalid('artist mode')
+            name = text(item.get('name'), 'artist name', 500)
+            if not name or name in seen:
+                invalid('empty or duplicate artist')
+            seen.add(name)
+            picked.append({'name': name, 'mode': item.get('mode', 'candidate')})
+        return picked
+
+    def _rules(self, supplied, materials, service, legacy):
+        if not isinstance(supplied, dict):
+            invalid('rules')
+        if supplied.keys() - DEFAULT_RULES.keys():
+            invalid('unknown rule')
+        rules = {
+            **DEFAULT_RULES,
+            **{key: value for key, value in supplied.items() if legacy or key.endswith(('_min', '_max'))},
+        }
+        for kind, prefix in (('tag', 'artist'), ('lora', 'lora')):
+            pool = [row for row in materials if row['kind'] == kind and row['mode'] != 'exclude']
+            required = sum(row['mode'] == 'always' for row in pool)
+            for edge in ('min', 'max'):
+                key = f'{prefix}_{edge}'
+                if key not in supplied:
+                    rules[key] = min(rules[key], len(pool))
+                    if edge == 'max' and not legacy:
+                        rules[key] = max(rules[key], required)
+                integer(rules[key], 0, len(pool), key)
+            if rules[f'{prefix}_min'] > rules[f'{prefix}_max'] or required > rules[f'{prefix}_max']:
+                invalid(f'{prefix} count / always included')
+            if legacy:
+                low, high, step = (rules[f'{prefix}_{key}'] for key in ('low', 'high', 'step'))
+                maximum = 1 if kind == 'lora' and service == 'pixai' else 10
+                weight_range(low, high, step, maximum, f'{prefix} weight range', legacy=True)
+        if rules['lora_max'] > {'comfyui': COMFY_MAX_LORAS, 'pixai': PIXAI_MAX_LORAS, 'novelai': 0}[service]:
+            invalid('LoRA count limit')
+        return rules
+
     def _config(self, body):
         self._request(body)
         service = body.get('service', 'comfyui')
@@ -246,7 +440,10 @@ class StyleExplorer:
         if not isinstance(raw, dict):
             invalid('settings')
         raw = copy.deepcopy(raw)
-        if isinstance(raw.get('loras'), list):
+        legacy = 'materials' not in body
+        if not legacy:
+            raw['loras'] = []
+        elif isinstance(raw.get('loras'), list):
             raw['loras'] = [
                 x for x in raw['loras'] if not isinstance(x, dict) or x.get('enabled') is not False
             ]
@@ -276,55 +473,23 @@ class StyleExplorer:
         ]
         if len(set(models)) != len(models):
             invalid('duplicate models after resolving catalog names')
-        artists = body.get('artists') or []
-        if not isinstance(artists, list) or len(artists) > 10000:
-            invalid('artists')
-        picked, seen = [], set()
-        for item in artists:
-            if not isinstance(item, dict) or item.get('mode', 'candidate') not in (
-                'always',
-                'candidate',
-                'exclude',
-            ):
-                invalid('artist mode')
-            name = text(item.get('name'), 'artist name', 500)
-            if not name or name in seen:
-                invalid('empty or duplicate artist')
-            seen.add(name)
-            picked.append({'name': name, 'mode': item.get('mode', 'candidate')})
         supplied_rules = body.get('rules') or {}
         if not isinstance(supplied_rules, dict):
             invalid('rules')
-        rules = {**DEFAULT_RULES, **supplied_rules}
-        if set(rules) != set(DEFAULT_RULES):
-            invalid('unknown rule')
-        loras = checked.get('loras') or []
-        lora_names = [x.get('name') if service == 'comfyui' else x.get('id') for x in loras]
-        if len(set(lora_names)) != len(lora_names):
-            invalid('duplicate LoRAs')
-        for kind, size, required in (
-            (
-                'artist',
-                sum(x['mode'] != 'exclude' for x in picked),
-                sum(x['mode'] == 'always' for x in picked),
-            ),
-            ('lora', len(loras), 0),
-        ):
-            for edge in ('min', 'max'):
-                key = f'{kind}_{edge}'
-                if key not in supplied_rules:
-                    rules[key] = min(rules[key], size)
-                integer(rules[key], 0, size, key)
-            if rules[f'{kind}_min'] > rules[f'{kind}_max'] or required > rules[f'{kind}_max']:
-                invalid(f'{kind} count / always included')
-            low, high, step = (rules[f'{kind}_{key}'] for key in ('low', 'high', 'step'))
-            if any(type(x) not in (int, float) or not math.isfinite(x) for x in (low, high, step)):
-                invalid(f'{kind} weight range')
-            maximum = 1 if kind == 'lora' and service == 'pixai' else 10
-            if not 0 <= low <= high <= maximum or step <= 0 or (high - low) / step > 10000:
-                invalid(f'{kind} weight range')
-        if rules['lora_max'] > (5 if service == 'pixai' else 16):
-            invalid('LoRA count limit')
+        compatibility = {}
+        if legacy:
+            artists = self._legacy_artists(body.get('artists') or [])
+            compatibility['artists'] = artists
+            lora_names = [x.get('id', x.get('name')) for x in checked.get('loras') or []]
+            if len(set(lora_names)) != len(lora_names):
+                invalid('duplicate LoRAs')
+            materials = legacy_materials(
+                {'artists': artists, 'settings': checked, 'rules': {**DEFAULT_RULES, **supplied_rules}}
+            )
+        else:
+            checked.pop('loras', None)
+            materials = self._materials(body['materials'], service, family, checked, catalog)
+        rules = self._rules(supplied_rules, materials, service, legacy)
         return {
             'name': text(body.get('name') or 'Style exploration', 'name', 200),
             'service': service,
@@ -334,7 +499,8 @@ class StyleExplorer:
             'seed': seed,
             'settings': checked,
             'models': models,
-            'artists': picked,
+            'materials': materials,
+            **compatibility,
             'rules': rules,
             'budget': integer(body.get('budget', 30), 1, MAX_BUDGET, 'budget'),
         }
@@ -350,10 +516,10 @@ class StyleExplorer:
                         raise AppError(
                             Msg('server.explorer.request_conflict', 'This request ID was already used.'), 409
                         )
-                    return self._public(old)
+                    return self._public(upgrade(old))
             config = self._config(body)
             doc = {
-                'schema_version': 1,
+                'schema_version': SCHEMA_VERSION,
                 'id': uuid.uuid4().hex,
                 'name': config['name'],
                 'service': config['service'],
@@ -457,45 +623,41 @@ class StyleExplorer:
 
     def _recipe(self, config, rng):
         rules = config['rules']
-        always = [x['name'] for x in config['artists'] if x['mode'] == 'always']
-        choices = [x['name'] for x in config['artists'] if x['mode'] == 'candidate']
-        count = rng.randint(max(len(always), rules['artist_min']), rules['artist_max'])
-        names = sorted(always + rng.sample(choices, count - len(always)))
+        service = config['service']
+        legacy = 'artists' in config
+        pool = config['materials']
 
-        def weight(kind):
-            low, high, step = (rules[f'{kind}_{key}'] for key in ('low', 'high', 'step'))
-            return round(low + rng.randint(0, math.floor((high - low) / step + 1e-8)) * step, 8)
+        def select(kind, prefix):
+            always = [row for row in pool if row['kind'] == kind and row['mode'] == 'always']
+            choices = [row for row in pool if row['kind'] == kind and row['mode'] == 'candidate']
+            count = rng.randint(max(len(always), rules[f'{prefix}_min']), rules[f'{prefix}_max'])
+            return always + rng.sample(choices, count - len(always))
 
-        artists = [{'name': name, 'weight': weight('artist')} for name in names]
-        pool = config['settings'].get('loras') or []
-        loras = []
-        for item in rng.sample(pool, rng.randint(rules['lora_min'], rules['lora_max'])):
-            value = weight('lora')
-            loras.append(
-                {
-                    **item,
-                    **(
-                        {'strength_model': value, 'strength_clip': value}
-                        if config['service'] == 'comfyui'
-                        else {'weight': value}
-                    ),
-                }
-            )
-        loras.sort(key=lambda x: x.get('name') or x.get('id'))
+        tags = sorted(select('tag', 'artist'), key=lambda row: row['name'])
+        tags = [{**row, 'weight': resolved_weight(row['weight'], rng, legacy)} for row in tags]
+        loras = [
+            {**row, 'weight': resolved_weight(row['weight'], rng, legacy)} for row in select('lora', 'lora')
+        ]
+        loras.sort(key=lambda row: row.get('id', row['name']))
         settings = {**copy.deepcopy(config['settings']), 'model': rng.choice(config['models'])}
-        if config['service'] != 'novelai':
-            settings['loras'] = loras
-        tags = ', '.join(
-            x['name']
-            if x['weight'] == 1
-            else (
-                f'{x["weight"]:g}::{x["name"]}::'
-                if config['service'] == 'novelai'
-                else f'({x["name"]}:{x["weight"]:g})'
-            )
-            for x in artists
-        )
-        return {'settings': settings, 'artists': artists, 'style_positive': tags, 'style_negative': ''}
+        prompt_tags = [weighted_tag(row['name'], row['weight'], service, legacy) for row in tags]
+        if service == 'comfyui':
+            settings['loras'] = [
+                {'name': row['name'], 'strength_model': row['weight'], 'strength_clip': row['weight']}
+                for row in loras
+            ]
+            prompt_tags.extend(row['trigger_words'] for row in loras if row.get('trigger_words'))
+        elif service == 'pixai':
+            settings['loras'] = [
+                {key: row[key] for key in ('id', 'weight', 'trigger_words') if key in row} for row in loras
+            ]
+        return {
+            'settings': settings,
+            'artists': [{'name': row['name'], 'weight': row['weight']} for row in tags],
+            'materials': tags + loras,
+            'style_positive': joined(*prompt_tags),
+            'style_negative': '',
+        }
 
     def _resume(self, doc, candidate, job=None):
         if not self.rt.services[doc['service']].resumable:
@@ -562,7 +724,9 @@ class StyleExplorer:
                         'negative': candidate['negative'],
                         'settings': copy.deepcopy(candidate['settings']),
                         'explorer_recipe': {
-                            key: copy.deepcopy(candidate[key]) for key in ('artists', 'style_positive')
+                            key: copy.deepcopy(candidate[key])
+                            for key in ('artists', 'materials', 'style_positive')
+                            if key in candidate
                         },
                     },
                 }
@@ -587,7 +751,8 @@ class StyleExplorer:
             catalog = self._catalog() if doc['service'] == 'comfyui' else None
             for _ in range(max(1000, count * 100)):
                 recipe = self._recipe(config, rng)
-                signature = revisions.of(recipe)
+                # Material labels are inspection metadata. Keep v1 recipe identities for resumed sessions.
+                signature = revisions.of({key: value for key, value in recipe.items() if key != 'materials'})
                 if signature in seen:
                     continue
                 seen.add(signature)
@@ -790,7 +955,7 @@ class StyleExplorer:
             )
             for path in paths:
                 doc = read_json(path)
-                if not doc:
+                if not isinstance(doc, dict) or doc.get('schema_version') not in (1, SCHEMA_VERSION):
                     continue
                 changed = False
                 for candidate in doc['candidates']:

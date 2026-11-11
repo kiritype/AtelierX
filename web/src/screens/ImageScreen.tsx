@@ -1,4 +1,3 @@
-import StyleExplorer from '../components/image/StyleExplorer';
 import ImageBoard from '../components/image/ImageBoard';
 import ImageGallery from '../components/image/ImageGallery';
 import ImageGenerate from '../components/image/ImageGenerate';
@@ -42,7 +41,6 @@ export default function ImageScreen({
   outfitId?: string;
 }) {
   const content = () => {
-  if (view === 'explorer') return <StyleExplorer workId={workId} active={active} openView={openView} openSettings={() => openSettings?.('image')} />;
   if (view === 'single') return <ImageSingle workId={workId} openView={openView} />;
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'models') return <ModelsScreen openSettings={openSettings} />;

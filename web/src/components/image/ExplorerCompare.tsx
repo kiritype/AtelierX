@@ -35,7 +35,7 @@ export default function ExplorerCompare({
       e.repeat ||
       e.nativeEvent.isComposing ||
       (e.target as HTMLElement).closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])') ||
-      document.querySelector('[aria-modal="true"]') ||
+      [...document.querySelectorAll('[aria-modal="true"]')].some((modal) => !modal.closest('[hidden], [inert]')) ||
       e.ctrlKey ||
       e.altKey ||
       e.metaKey ||
@@ -136,6 +136,7 @@ export default function ExplorerCompare({
                         negative: candidate.negative,
                         settings: candidate.settings,
                         artists: candidate.artists,
+                        materials: candidate.materials,
                       },
                       null,
                       2,

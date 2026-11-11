@@ -49,8 +49,8 @@ export const blankPreset = (id: string): Preset => ({
 
 type Common = { id: string; name: string };
 
-export default function PresetEditor({ workId, draft, onChange }: { workId: string; draft: Preset; onChange: (draft: Preset) => void }) {
-  const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
+export default function PresetEditor({ workId, draft, onChange }: { workId?: string; draft: Preset; onChange: (draft: Preset) => void }) {
+  const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`), enabled: !!workId });
   const commonItems = Object.values(commons.data ?? {});
   const set = (patch: Partial<Preset>) => onChange({ ...draft, ...patch });
   const toggle = (list: string[], id: string, on: boolean) => (on ? [...list, id] : list.filter((x) => x !== id));
@@ -93,7 +93,7 @@ export default function PresetEditor({ workId, draft, onChange }: { workId: stri
       ) : (
         <PixAISettings value={draft.settings} onChange={(settings) => set({ settings })} />
       )}
-      <div className="col" style={{ gap: 2 }}>
+      {workId && <div className="col" style={{ gap: 2 }}>
         <span className="muted">{t('lib.kind.common')}</span>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {commonItems.map((c) => (
@@ -104,7 +104,7 @@ export default function PresetEditor({ workId, draft, onChange }: { workId: stri
           ))}
         </div>
         <span className="faint">{t('lib.preset_common_note')}</span>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -12,9 +12,22 @@ export type ExplorerRules = {
   lora_high: number;
   lora_step: number;
 };
+export type ExplorerSelectionRules = Pick<ExplorerRules, 'artist_min' | 'artist_max' | 'lora_min' | 'lora_max'>;
 export type ExplorerArtist = {
   name: string;
   mode: 'always' | 'candidate' | 'exclude';
+};
+export type ExplorerWeight =
+  | { mode: 'fixed'; value?: number }
+  | { mode: 'random'; low?: number; high?: number; step?: number };
+export type ExplorerMaterial = {
+  kind: 'tag' | 'lora';
+  name: string;
+  id?: string;
+  role: 'style' | 'character' | 'other';
+  mode: 'always' | 'candidate' | 'exclude';
+  weight: ExplorerWeight;
+  trigger_words?: string;
 };
 export type ExplorerConfig = {
   request_id: string;
@@ -26,8 +39,9 @@ export type ExplorerConfig = {
   seed: number;
   settings: Record<string, unknown>;
   models?: string[];
-  artists: ExplorerArtist[];
-  rules: ExplorerRules;
+  artists?: ExplorerArtist[];
+  materials?: ExplorerMaterial[];
+  rules: ExplorerSelectionRules & Partial<ExplorerRules>;
   budget: number;
 };
 export type ExplorerCandidate = {
@@ -37,6 +51,7 @@ export type ExplorerCandidate = {
   negative: string;
   settings: Record<string, unknown>;
   artists: { name: string; weight: number }[];
+  materials?: (Omit<ExplorerMaterial, 'weight'> & { weight: number })[];
   seed: number;
   status: string;
   job_id?: string;

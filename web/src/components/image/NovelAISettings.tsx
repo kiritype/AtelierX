@@ -36,12 +36,12 @@ export function useNovelAIInfo(preview = false) {
   });
 }
 
-export default function NovelAISettings({ value, onChange, preview = false, compact = false }: ServicePanelProps) {
+export default function NovelAISettings({ value, onChange, preview = false, compact = false, section }: ServicePanelProps) {
   const info = useNovelAIInfo(preview);
   const account = useQuery<Account, ApiError>({
     queryKey: preview ? ['image-single-preview', 'novelai-account'] : ['image-service-account', 'novelai'],
     queryFn: () => preview ? Promise.resolve({ tier: null, active: null, anlas: null, opus: false }) : get('/api/image/services/novelai/account'),
-    enabled: !preview,
+    enabled: !preview && section !== 'model',
     retry: false,
     staleTime: 60_000,
   });
@@ -55,8 +55,8 @@ export default function NovelAISettings({ value, onChange, preview = false, comp
   );
   const free = freeForOpus(v.width, v.height, v.steps, info.data.free);
 
-  return (
-    <div className="col" style={{ gap: 8 }}>
+  const modelFields = (
+    <>
       <label className="col" style={{ gap: 2 }}>
         <span className="muted">{t('nai.model')}</span>
         {customModel || !known ? (
@@ -77,6 +77,10 @@ export default function NovelAISettings({ value, onChange, preview = false, comp
           </select>
         )}
       </label>
+    </>
+  );
+  const parameters = (
+    <>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <span className="muted">{t('nai.size')}</span>
         {SIZES.map((size) => (
@@ -86,12 +90,14 @@ export default function NovelAISettings({ value, onChange, preview = false, comp
         ))}
         {num('width', 64, t('gen.width'))}×{num('height', 64, t('gen.height'))}
       </div>
-      <div className="row">
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.seed')}</span>
-          <input type="number" style={{ width: 120 }} value={v.seed} onChange={(e) => set({ seed: Number(e.target.value) })} />
-        </label>
-      </div>
+      {!section && (
+        <div className="row">
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.seed')}</span>
+            <input type="number" style={{ width: 120 }} value={v.seed} onChange={(e) => set({ seed: Number(e.target.value) })} />
+          </label>
+        </div>
+      )}
       <GenerationDetails compact={compact} summary={[v.sampler, v.noise_schedule, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.scale}`]}>
         <div className="row" style={{ flexWrap: 'wrap' }}>
           <label className="row" style={{ gap: 4 }}>
@@ -153,6 +159,12 @@ export default function NovelAISettings({ value, onChange, preview = false, comp
           {t('nai.account_refresh')}
         </button>
       </div>}
+    </>
+  );
+  return (
+    <div className="col" style={{ gap: 8 }}>
+      {section !== 'parameters' && modelFields}
+      {section !== 'model' && parameters}
     </div>
   );
 }

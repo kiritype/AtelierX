@@ -22,7 +22,7 @@ const facets = (): Facet<Preset>[] => [
   { id: 'lora', label: t('presets.facet.lora'), values: loraNames },
 ];
 
-export default function PresetExplorer({ workId, openGenerate }: { workId: string; openGenerate: () => void }) {
+export default function PresetExplorer({ workId, openGenerate, canOpenGenerate }: { workId?: string; openGenerate?: () => void; canOpenGenerate?: () => boolean }) {
   const [FACETS] = useState(facets);
   const qc = useQueryClient();
   const toast = useToast();
@@ -206,12 +206,13 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
           {storedPreset?.preview_url ? t('presets.preview_again') : t('presets.preview_make')}
         </button>
         <button
-          disabled={!storedPreset}
+          disabled={!storedPreset || !workId}
+          title={!workId ? t('tools.open_work_for_preset') : undefined}
           onClick={() => {
-            if (!leave()) return;
+            if (!leave() || (canOpenGenerate && !canOpenGenerate())) return;
             sessionStorage.setItem(PRESET_HANDOFF, draft.id);
             window.dispatchEvent(new CustomEvent(PRESET_HANDOFF, { detail: draft.id }));
-            openGenerate();
+            openGenerate?.();
           }}
         >
           {t('presets.apply')}

@@ -17,8 +17,12 @@ import { useCatalog } from './GenSettings';
 import { useNovelAIInfo } from './NovelAISettings';
 import { usePixAIInfo } from './PixAISettings';
 import ExplorerSetup from './ExplorerSetup';
+import { materialIsReady } from './ExplorerMaterials';
 import ExplorerCompare from './ExplorerCompare';
-import { effectiveRules, readDraft, settingsKey } from './styleExplorerDraft';
+import {
+  effectiveRules, EXPLORER_DRAFT_KEY, findLora, legacyDraftKey, loraLimit, materialCounts, materialPool, parseNames, readDraft, settingsKey,
+  type ExplorerLoraOption,
+} from './styleExplorerDraft';
 import './StyleExplorer.css';
 const base = '/api/image/explorer';
 const running = (s: ExplorerSession) =>
@@ -29,13 +33,12 @@ export default function StyleExplorer({
   openView,
   openSettings,
 }: {
-  workId: string;
+  workId?: string;
   active?: boolean;
   openView: (view: ImageView) => void;
   openSettings?: () => void;
 }) {
-  const storage = `atelierx-explorer-v1-${workId}`;
-  const [draft, setDraft] = useState(() => readDraft(storage));
+  const [draft, setDraft] = useState(() => readDraft(workId));
   const [dirty, setDirty] = useState(false),
     [storageError, setStorageError] = useState(false);
   const [id, setId] = useState(''),
@@ -60,6 +63,17 @@ export default function StyleExplorer({
   const catalog = useCatalog();
   const novelai = useNovelAIInfo(),
     pixai = usePixAIInfo();
+  const materials = materialPool(draft).materials;
+  const availableLoras: ExplorerLoraOption[] | undefined =
+    draft.service === 'pixai'
+      ? pixai.data?.loras
+      : draft.service === 'comfyui' && catalog.data?.connected
+        ? catalog.data.loras
+          .filter((name) => catalog.data?.families?.loras?.[name] === draft.family)
+          .map((name) => ({ name }))
+        : undefined;
+  const maxLoras = loraLimit(draft.service, pixai.data?.max_loras);
+  const selection = effectiveRules(draft, maxLoras);
   const sessions = useQuery({
     queryKey: ['explorer-sessions'],
     queryFn: () => get<{ sessions: ExplorerSummary[] }>(`${base}/sessions`),
@@ -100,12 +114,15 @@ export default function StyleExplorer({
   }, [catalog.data]);
   useEffect(() => {
     try {
-      localStorage.setItem(storage, JSON.stringify(draft));
+      const stored = localStorage.getItem(EXPLORER_DRAFT_KEY);
+      const legacy = workId && localStorage.getItem(legacyDraftKey(workId));
+      if (!dirty && stored === null && !legacy) return;
+      localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify(draft));
       setStorageError(false);
     } catch {
       setStorageError(true);
     }
-  }, [draft, storage]);
+  }, [draft, dirty, workId]);
   const requestId = (key: string) => requests.current[key] ?? (requests.current[key] = crypto.randomUUID());
   const accept = (s: ExplorerSession) => {
     qc.setQueryData(['explorer-session', s.id], s);
@@ -163,14 +180,13 @@ export default function StyleExplorer({
     void mutation('pair');
   }, [session, active, busy]);
   async function start() {
-    if (busy) return;
+    if (busy || !active || !valid || !capabilities.data || serviceUnavailable) return;
     setConfirm(false);
     setBusy(true);
     setError('');
     let created: ExplorerSession | undefined;
     try {
-      const key = 'create:' + JSON.stringify(draft);
-      const settings = {
+      const { loras: _loras, ...settings } = {
         ...(draft.service === 'novelai'
           ? novelai.data?.defaults
           : draft.service === 'pixai'
@@ -178,8 +194,7 @@ export default function StyleExplorer({
             : {}),
         ...draft.settings[settingsKey(draft)],
       };
-      const config: ExplorerConfig = {
-        request_id: requestId(key),
+      const config: Omit<ExplorerConfig, 'request_id'> = {
         name: draft.name.trim(),
         service: draft.service,
         family: draft.service === 'comfyui' ? draft.family : draft.service,
@@ -187,15 +202,16 @@ export default function StyleExplorer({
         negative: draft.negative,
         seed: draft.seed,
         settings,
-        artists: draft.artists,
-        models: draft.models
-          .split(/[\n,]/)
-          .map((s) => s.trim())
-          .filter(Boolean),
-        rules: effectiveRules(draft),
+        materials: materials.map((material) => {
+          const option = material.kind === 'lora' ? findLora(material, availableLoras) : undefined;
+          return option ? { ...material, name: option.name } : material;
+        }),
+        models: parseNames(draft.models),
+        rules: selection,
         budget: draft.budget,
       };
-      created = await post<ExplorerSession>(`${base}/sessions`, config);
+      const key = 'create:' + JSON.stringify(config);
+      created = await post<ExplorerSession>(`${base}/sessions`, { ...config, request_id: requestId(key) });
       delete requests.current[key];
       accept(created);
       setId(created.id);
@@ -229,29 +245,27 @@ export default function StyleExplorer({
     draft.budget >= draft.count &&
     draft.budget <= (capabilities.data?.max_budget ?? 200) &&
     Number.isInteger(draft.seed) &&
+    draft.seed >= -1 &&
+    draft.seed <= (draft.service === 'pixai' ? 2 ** 31 - 1 : 2 ** 32 - 1) &&
     Number.isInteger(draft.budget) &&
-    Object.values(draft.rules).every((v) => Number.isFinite(v) && v >= 0) &&
-    draft.rules.artist_low <= draft.rules.artist_high &&
-    draft.rules.lora_low <= draft.rules.lora_high &&
-    draft.rules.artist_step > 0 &&
-    draft.rules.lora_step > 0 &&
-    ['artist_min', 'artist_max', 'lora_min', 'lora_max'].every((k) =>
-      Number.isInteger(draft.rules[k as keyof typeof draft.rules]),
-    );
+    materials.length <= 10_000 &&
+    materials.every((material) => materialIsReady(material, draft.service, availableLoras)) &&
+    materialCounts(materials, 'lora').always <= maxLoras &&
+    [selection.artist_min, selection.artist_max, selection.lora_min, selection.lora_max].every(Number.isInteger);
   const serviceUnavailable = capabilities.data?.services.find((s) => s.id === draft.service)?.enabled === false;
   const configured = services.data?.services.find((s) => s.id === draft.service);
   return (
     <div className="pad col style-explorer">
       <h3>{t('image_menu.explorer')}</h3>
       <nav className="row" aria-label={t('style_explorer.stages')}>
-        {(['setup', 'compare', 'ranking'] as const).map((step, i) => (
+        {(['setup', 'compare', 'ranking'] as const).map((step) => (
           <button
             key={step}
             className={stage === step ? 'selected' : 'ghost'}
             disabled={(step !== 'setup' && !session) || (step === 'ranking' && !session?.votes.length)}
             onClick={() => setStage(step)}
           >
-            {i + 1}. {t(`style_explorer.${step}`)}
+            {t(`style_explorer.${step}`)}
           </button>
         ))}
       </nav>
@@ -289,6 +303,8 @@ export default function StyleExplorer({
               setDirty(true);
             }}
             capabilities={capabilities.data}
+            loras={availableLoras}
+            loraLimit={maxLoras}
             openSettings={openSettings}
           />
           {configured && !configured.connected && (
@@ -299,7 +315,7 @@ export default function StyleExplorer({
           )}
           <button
             className="primary"
-            disabled={busy || !valid || !capabilities.data || serviceUnavailable}
+            disabled={!active || busy || !valid || !capabilities.data || serviceUnavailable}
             onClick={() => {
               setRetryCandidate('');
               setConfirm(true);
@@ -498,6 +514,7 @@ export default function StyleExplorer({
           <div className="row">
             <button
               className="primary"
+              disabled={!active || busy || (stage === 'setup' && (!valid || !capabilities.data || serviceUnavailable))}
               onClick={() => {
                 if (stage === 'setup') void start();
                 else {

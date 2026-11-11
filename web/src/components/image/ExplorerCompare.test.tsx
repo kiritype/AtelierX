@@ -167,6 +167,22 @@ it('blocks shortcuts and buttons while inactive, busy, or either image is broken
   expect(vote).not.toHaveBeenCalled();
 });
 
+it('ignores dialogs in the covered work window while guarding visible dialogs', async () => {
+  const vote = vi.fn();
+  await render(session(), vote);
+  const covered = host.appendChild(document.createElement('div'));
+  covered.hidden = true;
+  covered.setAttribute('inert', '');
+  const modal = covered.appendChild(document.createElement('div'));
+  modal.setAttribute('aria-modal', 'true');
+  await press(section(), '3');
+  expect(vote).toHaveBeenCalledWith('tie');
+  covered.hidden = false;
+  covered.removeAttribute('inert');
+  await press(section(), '4');
+  expect(vote).toHaveBeenCalledTimes(1);
+});
+
 it('keeps focus on the comparator between pairs and hides revealed details for the next pair', async () => {
   const vote = vi.fn();
   const first = session();

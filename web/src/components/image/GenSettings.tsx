@@ -3,6 +3,7 @@ import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../../api';
 import { t, tm } from '../../i18n';
+import type { SettingsSection } from './serviceSettings';
 import { COMFY_PREVIEW_CATALOG } from './singlePreviewSettings';
 
 export type Lora = { name: string; strength_model: number; strength_clip: number; enabled?: boolean };
@@ -66,7 +67,14 @@ export function useCatalog(preview = false) {
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop();
 
-export default function GenSettings({ value, onChange, preview = false, compact = false }: { value: GenerationSettings; onChange: (value: GenerationSettings) => void; preview?: boolean; compact?: boolean }) {
+export default function GenSettings({ value, onChange, preview = false, compact = false, section, showLoras = true }: {
+  value: GenerationSettings;
+  onChange: (value: GenerationSettings) => void;
+  preview?: boolean;
+  compact?: boolean;
+  section?: SettingsSection;
+  showLoras?: boolean;
+}) {
   const familyLabelId = useId();
   const catalog = useCatalog(preview);
   const c = catalog.data;
@@ -104,33 +112,41 @@ export default function GenSettings({ value, onChange, preview = false, compact 
     </label>
   );
 
-  return (
-    <div className="col gen-settings">
+  const modelFields = (
+    <>
       <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
-          <span id={familyLabelId} className="muted">{t('gen.family')}</span>
-          <div className="seg">
-            {(['anima', 'sdxl'] as const).map((f) => (
-              <button
-                key={f}
-                className={family === f ? 'on' : ''}
-                aria-pressed={family === f}
-                onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), seed: value.seed, loras: [] })}
-              >
-                {f === 'anima' ? 'Anima' : 'SDXL·IL'}
-              </button>
-            ))}
+        {!section && (
+          <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
+            <span id={familyLabelId} className="muted">{t('gen.family')}</span>
+            <div className="seg">
+              {(['anima', 'sdxl'] as const).map((f) => (
+                <button
+                  key={f}
+                  className={family === f ? 'on' : ''}
+                  aria-pressed={family === f}
+                  onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), seed: value.seed, loras: [] })}
+                >
+                  {f === 'anima' ? 'Anima' : 'SDXL·IL'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {pick('model', t('gen.model'), models, t('gen.default'))}
       </div>
+    </>
+  );
+  const parameters = (
+    <>
       <div className="row gen-core-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {num('width', t('gen.width'), 16, 84)}
         {num('height', t('gen.height'), 16, 84)}
-        <label className="col gen-field" data-setting="seed">
-          <span className="muted">{t('gen.seed')}</span>
-          <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
-        </label>
+        {!section && (
+          <label className="col gen-field" data-setting="seed">
+            <span className="muted">{t('gen.seed')}</span>
+            <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
+          </label>
+        )}
       </div>
       <GenerationDetails compact={compact} summary={[
         value.sampler || c.defaults.sampler,
@@ -149,48 +165,50 @@ export default function GenSettings({ value, onChange, preview = false, compact 
           {num('cfg', 'CFG', 0.5)}
           {family === 'sdxl' && num('clip_skip', 'clip skip')}
         </div>
-        <div className="col" style={{ gap: 4 }}>
-          <span className="muted">{t('gen.loras')}</span>
-          {(value.loras ?? []).map((lora, n) => (
-            <div key={n} className={lora.enabled === false ? 'row faint' : 'row'}>
-              <input
-                type="checkbox"
-                checked={lora.enabled !== false}
-                title={t('gen.lora_enabled')}
-                aria-label={t('gen.lora_enabled')}
-                onChange={(e) => set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, enabled: e.target.checked ? undefined : false } : x)) })}
-              />
-              <select
-                value={lora.name}
-                onChange={(e) => set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, name: e.target.value } : x)) })}
-              >
-                {[lora.name, ...loras.filter((l) => l !== lora.name)].map((l) => (
-                  <option key={l} value={l}>
-                    {base(l)}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                step={0.05}
-                style={{ width: 72 }}
-                value={lora.strength_model}
-                title={t('gen.lora_strength')}
-                onChange={(e) =>
-                  set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, strength_model: Number(e.target.value), strength_clip: Number(e.target.value) } : x)) })
-                }
-              />
-              <button className="ghost" onClick={() => set({ loras: (value.loras ?? []).filter((_, i) => i !== n) })}>
-                ×
-              </button>
-            </div>
-          ))}
-          {loras.length > 0 && (
-            <div>
-              <button onClick={() => set({ loras: [...(value.loras ?? []), { name: loras[0], strength_model: 1, strength_clip: 1 }] })}>{t('gen.add_lora')}</button>
-            </div>
-          )}
-        </div>
+        {showLoras && (
+          <div className="col" style={{ gap: 4 }}>
+            <span className="muted">{t('gen.loras')}</span>
+            {(value.loras ?? []).map((lora, n) => (
+              <div key={n} className={lora.enabled === false ? 'row faint' : 'row'}>
+                <input
+                  type="checkbox"
+                  checked={lora.enabled !== false}
+                  title={t('gen.lora_enabled')}
+                  aria-label={t('gen.lora_enabled')}
+                  onChange={(e) => set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, enabled: e.target.checked ? undefined : false } : x)) })}
+                />
+                <select
+                  value={lora.name}
+                  onChange={(e) => set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, name: e.target.value } : x)) })}
+                >
+                  {[lora.name, ...loras.filter((l) => l !== lora.name)].map((l) => (
+                    <option key={l} value={l}>
+                      {base(l)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  step={0.05}
+                  style={{ width: 72 }}
+                  value={lora.strength_model}
+                  title={t('gen.lora_strength')}
+                  onChange={(e) =>
+                    set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, strength_model: Number(e.target.value), strength_clip: Number(e.target.value) } : x)) })
+                  }
+                />
+                <button className="ghost" onClick={() => set({ loras: (value.loras ?? []).filter((_, i) => i !== n) })}>
+                  ×
+                </button>
+              </div>
+            ))}
+            {loras.length > 0 && (
+              <div>
+                <button onClick={() => set({ loras: [...(value.loras ?? []), { name: loras[0], strength_model: 1, strength_clip: 1 }] })}>{t('gen.add_lora')}</button>
+              </div>
+            )}
+          </div>
+        )}
         {family === 'anima' && (
           <label className="col gen-field">
             <span className="muted">{t('gen.shift')}</span>
@@ -203,6 +221,12 @@ export default function GenSettings({ value, onChange, preview = false, compact 
         <UpscaleFields value={value} set={set} catalog={c} />
         <DetailerFields value={value} set={set} catalog={c} />
       </GenerationDetails>
+    </>
+  );
+  return (
+    <div className="col gen-settings">
+      {section !== 'parameters' && modelFields}
+      {section !== 'model' && parameters}
     </div>
   );
 }
