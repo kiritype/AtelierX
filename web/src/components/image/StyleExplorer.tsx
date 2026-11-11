@@ -471,6 +471,15 @@ export default function StyleExplorer({
         </>
       )}
       {confirm && (
+        <div className="overlay" style={{ zIndex: 200 }} onClick={e => { if (e.target === e.currentTarget) setConfirm(false); }} onKeyDown={e => {
+          if (e.key === 'Escape') { e.preventDefault(); setConfirm(false); }
+          if (e.key === 'Tab') {
+            const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+            const first = buttons[0], last = buttons[buttons.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+          }
+        }}>
         <div
           className="explorer-confirm"
           role="dialog"
@@ -499,8 +508,9 @@ export default function StyleExplorer({
             >
               {t('style_explorer.confirm_action')}
             </button>
-            <button onClick={() => setConfirm(false)}>{t('style_explorer.back')}</button>
+            <button autoFocus onClick={() => setConfirm(false)}>{t('style_explorer.back')}</button>
           </div>
+        </div>
         </div>
       )}
       <button
@@ -516,4 +526,5 @@ export default function StyleExplorer({
     </div>
   );
 }
+
 
