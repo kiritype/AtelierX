@@ -447,6 +447,33 @@ async def job_action(request):
     return await call(actions[p['action']], p['jid'])
 
 
+async def explorer_capabilities(request):
+    return await call(_runtime(request).explorer.capabilities)
+
+
+async def explorer_sessions(request):
+    explorer = _runtime(request).explorer
+    if request.method == 'POST':
+        return await call(explorer.create, await _body(request))
+    return await call(explorer.list)
+
+
+async def explorer_session(request):
+    return await call(_runtime(request).explorer.get, request.path_params['ident'])
+
+
+async def explorer_action(request):
+    explorer = _runtime(request).explorer
+    action = request.path_params['action']
+    actions = {
+        name: getattr(explorer, name)
+        for name in ('generate', 'pair', 'vote', 'undo', 'cancel', 'retry', 'preset')
+    }
+    if action not in actions:
+        raise AppError(Msg('server.explorer.unknown_action', 'Unknown exploration action.'), 404)
+    return await call(actions[action], request.path_params['ident'], await _body(request))
+
+
 async def lab_import(request):
     runtime = _runtime(request)
     return await call(runtime.import_lab, await _body(request))
@@ -745,6 +772,10 @@ def routes():
         Route(f'{p}/queue', queue_get),
         Route(f'{p}/queue/{{action}}', queue_action, methods=['POST']),
         Route(f'{p}/jobs/{{jid}}/{{action}}', job_action, methods=['POST']),
+        Route(f'{p}/explorer/capabilities', explorer_capabilities),
+        Route(f'{p}/explorer/sessions', explorer_sessions, methods=['GET', 'POST']),
+        Route(f'{p}/explorer/sessions/{{ident}}', explorer_session),
+        Route(f'{p}/explorer/sessions/{{ident}}/{{action}}', explorer_action, methods=['POST']),
         Route(f'{p}/lab', lab_enqueue, methods=['POST']),
         Route(f'{p}/lab/runs', lab_runs),
         Route(f'{p}/lab/import', lab_import, methods=['POST']),

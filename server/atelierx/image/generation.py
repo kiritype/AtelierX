@@ -529,6 +529,10 @@ class GenerationMixin:
         return {'ok': True}
 
     def retry(self, job_id):
+        if self.queue.get(job_id).get('kind') == 'style_explorer':
+            raise ValueError(
+                Msg('server.explorer.retry_panel', 'Retry this candidate from its exploration session.')
+            )
         if self.queue.get(job_id).get('bulk_id'):
             raise ValueError(
                 Msg('server.bulk.retry_batch', 'Retry failed items from the bulk request panel.')
@@ -538,6 +542,9 @@ class GenerationMixin:
 
     def remove_finished(self, job_id=None):
         with self.lock:
+            explorer = getattr(self, 'explorer', None)
+            if explorer:
+                explorer.reconcile()
             was_bulk = any(j['id'] == job_id and j.get('bulk_id') for j in self.queue.jobs)
             bulk = getattr(self, 'bulk', None)
             if bulk:
@@ -572,7 +579,10 @@ class GenerationMixin:
                     'An all-black image came back. It was not saved and the queue is paused.',
                 )
             )
-        if job.get('kind') == 'single':
+        if job.get('kind') == 'style_explorer':
+            folder = self.paths.output / '_explorer' / code(job['explorer_session'])
+            stem = job['id']
+        elif job.get('kind') == 'single':
             folder = self.paths.output / '_single' / code(job['work_id']) / time.strftime('%Y-%m-%d')
             stem = job['id']
         elif job.get('kind') == 'lab':
@@ -734,7 +744,7 @@ class GenerationMixin:
             sent = {'id': resume, 'record': service.request_body(job)} if resume else service.submit(job)
             working = (
                 self._generating(job)
-                if kind in (None, 'lab', 'single')
+                if kind in (None, 'lab', 'single', 'style_explorer')
                 else Msg('server.worker.processing', 'Processing')
             )
             self.queue.update(job, prompt_id=sent['id'], progress=working)
