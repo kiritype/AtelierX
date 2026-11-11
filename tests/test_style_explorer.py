@@ -190,6 +190,8 @@ def test_retry_is_manual_bounded_and_cannot_bypass_session(explorer):
     job = runtime.queue.get(candidate['job_id'])
     runtime.queue.update(job, status='failed', error='test refusal')
     assert client.post(f'/api/image/jobs/{job["id"]}/retry').status_code == 400
+    with pytest.raises(ValueError):
+        runtime.queue.retry(job['id'])
     frozen = copy.deepcopy(job['snapshot'])
     retried = action(client, session, 'retry', candidate_id=candidate['id'])
     assert retried.status_code == 200, retried.text
@@ -407,3 +409,50 @@ def test_internet_limit_applies_to_explorer_batches(explorer):
 
 def test_explorer_requires_auth_and_rejects_unsafe_ids(client):
     assert client.get('/api/image/explorer/capabilities').status_code in (401, 423)
+
+
+def test_pixai_known_task_survives_clear_and_retry_fetches_without_new_submit(explorer):
+    client, runtime = explorer
+    session, _ = create(client, service='pixai', family='pixai', settings={'model': '1861558740588989558'})
+    session = generate(client, session, 1)
+    candidate = session['candidates'][0]
+    job = runtime.queue.get(candidate['job_id'])
+    runtime.queue.update(
+        job, status='failed', prompt_id='existing-paid-task', error='connection reset during polling'
+    )
+    client.post('/api/image/queue/clear-finished')
+    session = StyleExplorer(runtime).get(session['id'])
+    response = action(client, session, 'retry', candidate_id=candidate['id'])
+    assert response.status_code == 200, response.text
+    new_job = runtime.queue.get(response.json()['candidates'][0]['job_id'])
+    assert new_job['resume'] == 'existing-paid-task'
+    service = runtime.services['pixai']
+    service.submit = lambda _: pytest.fail('must retrieve the existing paid task')
+    from test_single_generation import _png
+
+    service.poll = lambda job, sent: {'image': _png()}
+    new_job['status'] = 'running'
+    runtime.run_job(new_job)
+    assert new_job['status'] == 'done'
+    assert new_job['prompt_id'] == 'existing-paid-task'
+
+
+def test_pixai_confirmed_terminal_failure_does_not_resume_dead_task(explorer):
+    from atelierx.core.i18n import Msg
+
+    client, runtime = explorer
+    session, _ = create(client, service='pixai', family='pixai', settings={'model': '1861558740588989558'})
+    session = generate(client, session, 1)
+    job = runtime.queue.get(session['candidates'][0]['job_id'])
+    runtime.queue.update(
+        job,
+        status='failed',
+        resume='dead-task',
+        prompt_id='dead-task',
+        error=Msg('server.pixai.task_failed', 'PixAI could not make the image.'),
+    )
+    client.post('/api/image/queue/clear-finished')
+    response = action(client, session, 'retry', candidate_id=session['candidates'][0]['id'])
+    assert response.status_code == 200, response.text
+    new_job = runtime.queue.get(response.json()['candidates'][0]['job_id'])
+    assert 'resume' not in new_job

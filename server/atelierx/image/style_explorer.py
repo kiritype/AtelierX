@@ -450,6 +450,8 @@ class StyleExplorer:
         scores = replay(doc)
         result['candidates'] = [{**self._candidate_view(c), **scores[c['id']]} for c in doc['candidates']]
         result['votes'] = [v for v in result['votes'] if not v.get('undone')]
+        result['candidate_count'] = len(result['candidates'])
+        result['vote_count'] = len(result['votes'])
         result['ranking'] = sorted(result['candidates'], key=lambda c: -c['elo'])
         return result
 
@@ -495,6 +497,21 @@ class StyleExplorer:
         )
         return {'settings': settings, 'artists': artists, 'style_positive': tags, 'style_negative': ''}
 
+    def _resume(self, doc, candidate, job=None):
+        if not self.rt.services[doc['service']].resumable:
+            return None
+        if job:
+            error = job.get('error')
+            key = error.get('key') if isinstance(error, dict) else getattr(error, 'key', None)
+            if key in ('server.pixai.task_failed', 'server.pixai.expired', 'server.pixai.no_image'):
+                return None
+            if job.get('resume'):
+                return job['resume']
+            if job.get('prompt_id') and job['status'] != 'done':
+                # An interrupted status/download check is not permission to send another paid task.
+                return job['prompt_id']
+        return candidate.get('_resume')
+
     def _admit(self, doc, candidates, retry=None):
         if doc['used'] + len(candidates) > doc['budget']:
             raise ValueError(
@@ -514,6 +531,11 @@ class StyleExplorer:
         self.rt.queue.check_room(len(candidates))
         jobs = []
         for candidate in candidates:
+            resume = self._resume(doc, candidate, retry) if retry or candidate.get('_resume') else None
+            if resume:
+                candidate['_resume'] = resume
+            else:
+                candidate.pop('_resume', None)
             job_id = uuid.uuid4().hex
             candidate.update(job_id=job_id, status='queued')
             candidate.pop('error', None)
@@ -530,7 +552,7 @@ class StyleExplorer:
                     'review_requested': False,
                     'explorer_session': doc['id'],
                     'explorer_candidate': candidate['id'],
-                    **({'resume': retry['resume']} if retry and retry.get('resume') else {}),
+                    **({'resume': resume} if resume else {}),
                     'snapshot': {
                         'kind': 'style_explorer',
                         'service': doc['service'],
@@ -772,6 +794,16 @@ class StyleExplorer:
                     continue
                 changed = False
                 for candidate in doc['candidates']:
+                    job = next((j for j in self.rt.queue.jobs if j['id'] == candidate.get('job_id')), None)
+                    resume = self._resume(doc, candidate, job)
+                    if job and job['status'] == 'done':
+                        resume = None
+                    if resume != candidate.get('_resume'):
+                        if resume:
+                            candidate['_resume'] = resume
+                        else:
+                            candidate.pop('_resume', None)
+                        changed = True
                     view = self._candidate_view(candidate)
                     for key in ('status', 'image_url', 'path', 'error', 'image_missing'):
                         if key in view and candidate.get(key) != view[key]:
