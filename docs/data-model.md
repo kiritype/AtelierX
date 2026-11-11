@@ -979,7 +979,9 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   한 번의 생성은 최대 16개다. 시드 `-1`은 탐색 생성 때 한 번 실제 시드로 확정한다.
 - 후보: `id`, 1부터 시작하는 `index`, 실제 `positive`·`negative`·`seed`·`settings`, `artists: [{name, weight}]`,
   `style_positive`·`style_negative`, `status`, `job_id`, 결과가 있으면 `image_url`·`path`, 오류면 `error`, 저장하면 `preset_id`.
-  `_signature`는 조합 중복 검사용 해시다. 각 후보는 고정된 레시피이며 재시도는 동일한 설정과 시드로 새 작업을 만든다.
+  `_signature`는 조합 중복 검사용 해시, `_session`은 결과 파일 복구용 탐색 ID다. 이미지가 사라지면 `status: "failed"`와
+  `image_missing: true`로 표시한다. 각 후보는 고정된 레시피이며 재시도는 동일한 설정과 시드로 새 작업을 만든다.
+  평가가 남아 있는 누락 이미지는 재시도하지 못하며, 평가를 되돌리거나 새 탐색을 만들어야 한다.
 - `pair`: 없으면 `null`, 있으면 `{id, a, b}`. `a`·`b`는 실제 이미지가 있는 서로 다른 후보 ID다.
 - `votes`: `{id, pair_id, a, b, result, created_at, undone?}`의 시간순 기록이다. 결과는 `a`·`b`·`tie`·`neither`·`skip`.
   되돌리기는 마지막 유효 기록에 `undone: true`를 남기고 그 쌍을 복원한다. Elo는 초기 1000, K=24로 기록을 재생해 계산한다.
