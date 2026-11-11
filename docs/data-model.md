@@ -966,6 +966,37 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 가리킨다. 생성·비교 목록은 같은 실행·셀의 원본을 유지하고 `source_path`가 있는 결과를 그 셀의 재생성 시도로 보여 준다.
 행·열이 없는 기록은 (0, 0)으로 추측하지 않고 재생성을 거절한다. 파일을 옮기거나 원본 기록을 고치지 않는다.
 
+#### 그림체 탐색
+
+위치: `state/image/explorer/<id>.json`. `id`는 UUIDv4의 32자리 hex다. 첫 형식은 `schema_version: 1`이며,
+기존 그림체 프리셋이나 생성·비교 기록을 변환하지 않는다. 탐색은 작품과 독립적이고, 앱 폴더를 옮기면 함께 이동한다.
+
+- 최상위: `id`, `name`, `service`, `family`, `created_at`, `revision`, `config`, `budget`, `used`, `candidates`, `pair`, `votes`.
+- `config`: 생성 시 확정한 이름·서비스·계열, 장면 `positive`·`negative`, 실제 `seed`, 서비스별 `settings`, `models` 후보,
+  `artists: [{name, mode}]`, `rules`, `budget`. `mode`는 `always`·`candidate`·`exclude`다. `settings.loras`는 LoRA 후보군이다.
+  `rules`는 artist/lora 각각의 `min`·`max` 개수와 `low`·`high`·`step` 가중치다. 이후 변경하지 않는다.
+- `budget`은 최대 생성 시도 수(최대 200), `used`는 대기열에 접수한 시도 수다. 재시도도 증가하며 실패·취소해도 돌려주지 않는다.
+  한 번의 생성은 최대 16개다. 시드 `-1`은 탐색 생성 때 한 번 실제 시드로 확정한다.
+- 후보: `id`, 1부터 시작하는 `index`, 실제 `positive`·`negative`·`seed`·`settings`, `artists: [{name, weight}]`,
+  `style_positive`·`style_negative`, `status`, `job_id`, 결과가 있으면 `image_url`·`path`, 오류면 `error`, 저장하면 `preset_id`.
+  `_signature`는 조합 중복 검사용 해시다. 각 후보는 고정된 레시피이며 재시도는 동일한 설정과 시드로 새 작업을 만든다.
+- `pair`: 없으면 `null`, 있으면 `{id, a, b}`. `a`·`b`는 실제 이미지가 있는 서로 다른 후보 ID다.
+- `votes`: `{id, pair_id, a, b, result, created_at, undone?}`의 시간순 기록이다. 결과는 `a`·`b`·`tie`·`neither`·`skip`.
+  되돌리기는 마지막 유효 기록에 `undone: true`를 남기고 그 쌍을 복원한다. Elo는 초기 1000, K=24로 기록을 재생해 계산한다.
+  `tie`는 0.5점 결과, `neither`는 비선호 횟수만, `skip`은 평가 점수를 바꾸지 않는다. 파생 점수는 저장하지 않는다.
+- `revision`은 1부터 시작하는 정수이며 사용자 변경마다 증가한다. 작업 진행 상태 갱신은 리비전을 올리지 않는다.
+  변경 요청은 현재 `revision`을 보내고 오래된 요청은 409로 거절한다. GET은 쌍 선택이나 작업 접수를 수행하지 않는다.
+- `_create_request`·`_create_fingerprint` 및 `_requests`는 요청 ID와 내용 지문을 기록해 응답 유실 후 같은 요청을
+  재전송해도 중복 생성·평가·프리셋 저장을 막는다. 같은 ID로 다른 내용을 보내면 409다. 밑줄 필드는 API 응답에서 제외한다.
+
+생성 대기열은 `kind: "style_explorer"`, `explorer_session`, `explorer_candidate`로 연결한다. `snapshot`에는 실제 프롬프트·
+설정과 `explorer_recipe`를 담는다. 출력은 `output/_explorer/<탐색 ID>/`에 생성 작업 ID 이름으로 저장하며, 기존 이미지의
+sidecar 형식에 같은 연결을 남긴다. 작업 종료 및 대기열 정리 전에 결과 연결을 탐색 파일로 보존한다. 탐색을 다시 열어도
+자동 생성하지 않으며, 기존 PixAI 작업의 결과 수신만 공용 재시작 규칙을 따른다. 재시도는 탐색 API를 거쳐 상한을 확인한다.
+
+프리셋 저장은 매번 새 UUID로 기존 그림체 프리셋 형식을 사용한다. 후보의 서비스·계열·생성 설정과 작가 태그만 저장하고,
+시드와 탐색 장면 프롬프트는 제외한다. 탐색의 후보에 저장한 프리셋 ID를 연결한다.
+
 #### 인터넷 이미지 서비스 설정 (`<데이터 루트>/image/services.json`)
 
 ```json
