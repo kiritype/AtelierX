@@ -365,9 +365,9 @@ export default function StyleExplorer({
           {!ready && !running(session) && <p>{t('style_explorer.no_images')}</p>}
           {stage === 'compare' && (
             <ExplorerCompare
-              key={session.pair?.id ?? 'none'}
               session={session}
               busy={busy}
+              active={active && !confirm}
               vote={(result: ExplorerResult) => void mutation('vote', { pair_id: session.pair?.id, result })}
             />
           )}

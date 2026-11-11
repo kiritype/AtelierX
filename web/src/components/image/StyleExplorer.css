@@ -35,6 +35,17 @@
 .explorer-comparator:focus {
   outline: 2px solid var(--focus-ring);
 }
+.explorer-comparator kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-right: 0.25em;
+  padding: 0.1em 0.3em;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.2;
+}
 .explorer-pair pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
