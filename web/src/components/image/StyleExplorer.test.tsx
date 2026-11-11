@@ -247,3 +247,40 @@ it('requests a new pair when more images complete without a session revision cha
     expect.objectContaining({ revision: 1 }),
   );
 });
+it('preserves model pools separately across service and family switches and browser draft reloads', async () => {
+  const { switchContext, readDraft } = await import('./styleExplorerDraft');
+  const initial = { ...freshDraft(), models: 'anima-model', artists: [{ name: 'shared', mode: 'candidate' as const }] };
+  const novelai = switchContext(initial, { service: 'novelai' });
+  expect(novelai.models).toBe('');
+  const pixai = switchContext({ ...novelai, models: 'nai-model' }, { service: 'pixai' });
+  expect(pixai.models).toBe('');
+  const comfy = switchContext({ ...pixai, models: 'pixai-model' }, { service: 'comfyui' });
+  expect(comfy.models).toBe('anima-model');
+  const sdxl = switchContext(comfy, { family: 'sdxl' });
+  expect(sdxl.models).toBe('');
+  const anima = switchContext({ ...sdxl, models: 'sdxl-model' }, { family: 'anima' });
+  expect(anima.models).toBe('anima-model');
+  expect(anima.artists).toEqual(initial.artists);
+  expect(anima.rules).toEqual(initial.rules);
+  localStorage.setItem('model-pools', JSON.stringify(anima));
+  const restored = readDraft('model-pools');
+  expect(switchContext(restored, { family: 'sdxl' }).models).toBe('sdxl-model');
+  expect(switchContext(restored, { service: 'novelai' }).models).toBe('nai-model');
+  expect(switchContext(restored, { service: 'pixai' }).models).toBe('pixai-model');
+});
+it('does not submit ComfyUI model candidates after selecting NovelAI', async () => {
+  localStorage.setItem(
+    'atelierx-explorer-v1-work',
+    JSON.stringify({ ...freshDraft(), name: 'Example', positive: 'scene', models: 'comfy-model' }),
+  );
+  vi.mocked(post).mockResolvedValue(makeSession());
+  await render();
+  await act(async () => button('NovelAI').click());
+  await act(async () => button(t('style_explorer.review_generate')).click());
+  await act(async () => button(t('style_explorer.confirm_action')).click());
+  expect(post).toHaveBeenNthCalledWith(
+    1,
+    '/api/image/explorer/sessions',
+    expect.objectContaining({ service: 'novelai', models: [] }),
+  );
+});

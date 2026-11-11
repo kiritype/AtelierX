@@ -24,6 +24,7 @@ export type ExplorerDraft = {
   artists: ExplorerArtist[];
   pool: string;
   models: string;
+  modelPools: Record<string, string>;
   rules: ExplorerRules;
   settings: Record<string, Record<string, unknown>>;
 };
@@ -39,6 +40,7 @@ export const freshDraft = (): ExplorerDraft => ({
   artists: [],
   pool: '',
   models: '',
+  modelPools: {},
   rules: { ...rules },
   settings: {
     'comfyui:anima': { family: 'anima', ...FAMILY_DEFAULTS.anima },
@@ -57,6 +59,7 @@ export function readDraft(key: string): ExplorerDraft {
     return {
       ...base,
       ...value,
+      modelPools: { ...base.modelPools, ...value.modelPools },
       rules: { ...rules, ...value.rules },
       settings: { ...base.settings, ...value.settings },
     };
@@ -93,4 +96,15 @@ export function effectiveRules(d: ExplorerDraft): ExplorerRules {
     lora_min: Math.min(d.rules.lora_min, loraMax),
     lora_max: loraMax,
   };
+}
+export function switchContext(
+  d: ExplorerDraft,
+  context: Partial<Pick<ExplorerDraft, 'service' | 'family'>>,
+): ExplorerDraft {
+  const next = { ...d, ...context };
+  const oldKey = settingsKey(d),
+    newKey = settingsKey(next);
+  if (oldKey === newKey) return next;
+  const modelPools = { ...d.modelPools, [oldKey]: d.models };
+  return { ...next, modelPools, models: modelPools[newKey] ?? '' };
 }

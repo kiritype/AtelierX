@@ -3,7 +3,7 @@ import GenSettings, { type GenerationSettings } from './GenSettings';
 import NovelAISettings from './NovelAISettings';
 import PixAISettings from './PixAISettings';
 import type { ExplorerCapabilities } from '../../styleExplorerTypes';
-import { effectiveRules, parseArtists, settingsKey, type ExplorerDraft } from './styleExplorerDraft';
+import { effectiveRules, parseArtists, settingsKey, switchContext, type ExplorerDraft } from './styleExplorerDraft';
 export default function ExplorerSetup({
   draft: d,
   setDraft,
@@ -39,7 +39,7 @@ export default function ExplorerSetup({
             type="button"
             key={service}
             className={d.service === service ? 'selected' : 'ghost'}
-            onClick={() => set({ service })}
+            onClick={() => setDraft(switchContext(d, { service }))}
           >
             {{ novelai: 'NovelAI', pixai: 'PixAI', comfyui: 'ComfyUI' }[service]}
           </button>
@@ -60,7 +60,7 @@ export default function ExplorerSetup({
               type="button"
               key={family}
               className={d.family === family ? 'selected' : 'ghost'}
-              onClick={() => set({ family })}
+              onClick={() => setDraft(switchContext(d, { family }))}
             >
               {family === 'anima' ? 'Anima' : 'SDXL'}
             </button>
@@ -83,7 +83,9 @@ export default function ExplorerSetup({
           <GenSettings
             value={settings as GenerationSettings}
             onChange={(v) =>
-              v.family && v.family !== d.family ? set({ family: v.family }) : update(v as Record<string, unknown>)
+              v.family && v.family !== d.family
+                ? setDraft(switchContext(d, { family: v.family }))
+                : update(v as Record<string, unknown>)
             }
           />
         ) : d.service === 'novelai' ? (
