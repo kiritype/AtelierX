@@ -974,12 +974,15 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - 최상위: `id`, `name`, `service`, `family`, `created_at`, `revision`, `config`, `budget`, `used`, `candidates`, `pair`, `votes`.
 - `config`: 생성 시 확정한 이름·서비스·계열, 장면 `positive`·`negative`, 실제 `seed`, 서비스별 `settings`, `models` 후보,
   `materials`, `rules`, `budget`. 생성 후에는 이 설정을 변경하지 않는다.
-- `materials`의 행은 `{kind, name, id?, role, mode, weight, trigger_words?}`다. `kind`는 `tag` 또는 `lora`다.
+- `materials`의 행은 `{kind, name, id?, role?, mode, weight, trigger_words?}`다. `kind`는 `tag` 또는 `lora`다.
   `name`은 태그, ComfyUI LoRA 파일명, PixAI LoRA 표시 이름 중 하나다. PixAI LoRA에는 버전 `id`가 필요하다.
-  `role`은 `style`·`character`·`other` 중 하나로 화면에서 용도를 구분한다. `mode`가 `always`인 행은 매번 포함하고,
-  `candidate`에서 남은 자리를 뽑는다. `exclude`는 생성에 쓰지 않는다. `weight`는 고정 `{mode: "fixed", value}` 또는
-  무작위 `{mode: "random", low, high, step}`다. 무작위 가중치는 `low + n * step <= high`인 음이 아닌 정수 `n`에서
-  고른다. 가중치 범위는 태그 및 ComfyUI LoRA가 0~10, PixAI LoRA가 0~1이다. NovelAI에서는 태그만 쓴다.
+  생성 요청에서 `mode`를 생략하면 `candidate`로 저장한다. 화면의 새 탐색은 태그 목록과 LoRA 목록에 각각 설정한 무작위
+  가중치 범위를 해당 목록의 각 행에 보낸다. 요청에 용도 `role`(`style`·`character`·`other`)이 있으면 그대로 보존한다.
+  `mode`가 `always`인 행은 매번 포함하고 `candidate`에서 남은 자리를 뽑는다. `exclude`는 생성에 쓰지 않는다.
+  `weight`는 고정 `{mode: "fixed", value}` 또는 무작위 `{mode: "random", low, high, step, include_high?}`다.
+  무작위 가중치는 `low + n * step <= high`인 음이 아닌 정수 `n`에서 고른다. 새 화면의 `include_high: true`는
+  이 간격에 맞지 않는 상한 `high`도 같은 확률의 후보에 추가한다. 필드가 생략되면 기존 간격으로 뽑는다.
+  가중치 범위는 태그 및 ComfyUI LoRA가 0~10, PixAI LoRA가 0~1이다. NovelAI에서는 태그만 쓴다.
 - `rules.artist_min`·`artist_max`와 `rules.lora_min`·`lora_max`는 각각 이미지에 포함할 태그와 LoRA의 총개수 범위다.
   각 개수에는 `always`가 포함된다. 이미지당 LoRA 최대 개수는 ComfyUI 16개, PixAI 5개다. `materials`로 생성한 탐색은
   LoRA 후보군을 이 목록에 저장한다. 생성 요청에 함께 들어온 `settings.loras`, `artists`, 이전 전역 가중치 규칙은

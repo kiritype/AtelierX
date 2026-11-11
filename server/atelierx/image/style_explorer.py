@@ -99,7 +99,16 @@ def material_weight(raw, maximum):
     if mode == 'random':
         low, high, step = (raw.get(key) for key in ('low', 'high', 'step'))
         weight_range(low, high, step, maximum, 'material random weight range')
-        return {'mode': mode, 'low': low, 'high': high, 'step': step}
+        include_high = raw.get('include_high', False)
+        if not isinstance(include_high, bool):
+            invalid('material random weight include_high')
+        return {
+            'mode': mode,
+            'low': low,
+            'high': high,
+            'step': step,
+            **({'include_high': True} if include_high else {}),
+        }
     invalid('material weight mode')
 
 
@@ -144,7 +153,10 @@ def resolved_weight(weight, rng, legacy):
     if legacy:
         return round(low + rng.randint(0, math.floor((high - low) / step + 1e-8)) * step, 8)
     first, last, stride = (Fraction(str(x)) for x in (low, high, step))
-    return float(first + rng.randint(0, (last - first) // stride) * stride)
+    steps, remainder = divmod(last - first, stride)
+    include_high = weight.get('include_high', False) and remainder != 0
+    index = rng.randint(0, steps + include_high)
+    return float(last if index > steps else first + index * stride)
 
 
 def weighted_tag(name, value, service, legacy):
@@ -324,9 +336,9 @@ class StyleExplorer:
             if not isinstance(item, dict) or item.get('kind') not in ('tag', 'lora'):
                 invalid('material kind')
             kind = item['kind']
-            role, mode = item.get('role'), item.get('mode')
-            if role not in ('style', 'character', 'other') or mode not in MATERIAL_MODES:
-                invalid('material role or mode')
+            mode = item.get('mode', 'candidate')
+            if mode not in MATERIAL_MODES:
+                invalid('material mode')
             name = item.get('name')
             if not isinstance(name, str) or len(name) > 500:
                 invalid('material name')
@@ -338,10 +350,13 @@ class StyleExplorer:
             row = {
                 'kind': kind,
                 'name': name,
-                'role': role,
                 'mode': mode,
                 'weight': material_weight(item.get('weight'), 1 if pixai_lora else 10),
             }
+            if 'role' in item:
+                if item['role'] not in ('style', 'character', 'other'):
+                    invalid('material role')
+                row['role'] = item['role']
             if pixai_lora:
                 ident = item.get('id')
                 if not isinstance(ident, str) or not PIXAI_VERSION_ID.fullmatch(ident):

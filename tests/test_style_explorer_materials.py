@@ -2,12 +2,14 @@
 
 import copy
 import json
+from random import Random
 
 import httpx
 import pytest
 
 from atelierx.core import revisions
 from atelierx.image.runtime import ImageRuntime
+from atelierx.image.style_explorer import resolved_weight
 from atelierx.image.util import atomic_json
 from test_style_explorer import BASE, action, complete, create, explorer, generate, token
 
@@ -207,6 +209,111 @@ def test_novelai_weighted_prompt_uses_materials_instead_of_legacy_pools(explorer
 
 
 @pytest.mark.parametrize(
+    'service,family',
+    [('novelai', 'novelai'), ('pixai', 'pixai'), ('comfyui', 'anima'), ('comfyui', 'sdxl')],
+)
+def test_provider_requests_sample_roleless_lists_with_shared_ranges(explorer, service, family):
+    client, runtime = explorer
+    tag_names = ('ink', 'watercolor')
+    tag_range = {**random_weight(0.72, 0.93, 0.1), 'include_high': True}
+    lora_range = {**random_weight(0.34, 0.56, 0.1), 'include_high': True}
+    rows = [{'kind': 'tag', 'name': name, 'weight': tag_range} for name in tag_names]
+    if service == 'comfyui':
+        names = [f'{family}/{name}.safetensors' for name in tag_names]
+        install_loras(runtime, names, family)
+        rows.extend({'kind': 'lora', 'name': name, 'weight': lora_range} for name in names)
+    elif service == 'pixai':
+        rows.extend(
+            {'kind': 'lora', 'name': name, 'id': f'12345678{i}', 'weight': lora_range}
+            for i, name in enumerate(tag_names)
+        )
+    lora_count = int(service != 'novelai')
+    session, _ = create(
+        client,
+        service=service,
+        family=family,
+        materials=rows,
+        rules={'artist_min': 1, 'artist_max': 1, 'lora_min': lora_count, 'lora_max': lora_count},
+    )
+    assert session['config']['materials'] == [{**row, 'mode': 'candidate'} for row in rows]
+    candidate = generate(client, session, 1)['candidates'][0]
+    job = runtime.queue.get(candidate['job_id'])
+    provider = runtime.services[service]
+    request = provider.submit(job)['record'] if service == 'comfyui' else provider.request_body(job)
+    assert all(row['mode'] == 'candidate' and 'role' not in row for row in candidate['materials'])
+    tag, *loras = candidate['materials']
+    assert tag['name'] in tag_names
+    assert tag['weight'] in (0.72, 0.82, 0.92, 0.93)
+    if service == 'novelai':
+        assert not loras
+        assert request['input'] == f'a red lighthouse, {tag["weight"]}::{tag["name"]}::'
+    else:
+        (lora,) = loras
+        assert lora['weight'] in (0.34, 0.44, 0.54, 0.56)
+        positive = f'a red lighthouse, ({tag["name"]}:{tag["weight"]})'
+        if service == 'pixai':
+            assert request['prompt'] == positive
+            assert request['loras'] == [{'modelId': lora['id'], 'weight': lora['weight']}]
+        else:
+            (loader,) = (node['inputs'] for node in request.values() if node['class_type'] == 'LoraLoader')
+            assert loader['lora_name'] == lora['name']
+            assert loader['strength_model'] == loader['strength_clip'] == lora['weight']
+            assert {
+                node['inputs']['text'] for node in request.values() if node['class_type'] == 'CLIPTextEncode'
+            } == {
+                positive,
+                'blurry',
+            }
+
+
+@pytest.mark.parametrize(
+    'service,kind,low,high,expected',
+    [
+        ('novelai', 'tag', 0.8, 0.85, {0.8, 0.85}),
+        ('pixai', 'lora', 0.65, 1, {0.65, 0.75, 0.85, 0.95, 1}),
+    ],
+)
+def test_roleless_session_can_sample_an_off_grid_upper_bound(explorer, service, kind, low, high, expected):
+    client, _ = explorer
+    weight = {**random_weight(low, high, 0.1), 'include_high': True}
+    row = {'kind': kind, 'name': 'ink', 'weight': weight}
+    lora_count = int(kind == 'lora')
+    if lora_count:
+        row['id'] = '123456789'
+    session, _ = create(
+        client,
+        service=service,
+        family=service,
+        materials=[row],
+        rules={
+            'artist_min': 1 - lora_count,
+            'artist_max': 1 - lora_count,
+            'lora_min': lora_count,
+            'lora_max': lora_count,
+        },
+    )
+    assert session['config']['materials'][0]['weight'] == weight
+    session = generate(client, session, len(expected))
+    assert {candidate['materials'][0]['weight'] for candidate in session['candidates']} == expected
+    assert {candidate['seed'] for candidate in session['candidates']} == {123}
+
+
+@pytest.mark.parametrize(
+    'include_high,high',
+    [({}, 0.96), ({'include_high': False}, 0.96), ({'include_high': True}, 0.95)],
+)
+def test_existing_random_grid_draws_keep_the_same_seed_sequence(include_high, high):
+    weight = {**random_weight(0.65, high, 0.1), **include_high}
+    values = [0.65, 0.75, 0.85, 0.95]
+    actual_rng = Random(2026)
+    legacy_rng = Random(2026)
+    assert [resolved_weight(weight, actual_rng, legacy=False) for _ in range(20)] == [
+        values[legacy_rng.randint(0, len(values) - 1)] for _ in range(20)
+    ]
+    assert actual_rng.getstate() == legacy_rng.getstate()
+
+
+@pytest.mark.parametrize(
     'service,rows,rules',
     [
         ('comfyui', [material('ink'), material('ink', mode='exclude')], {}),
@@ -218,8 +325,12 @@ def test_novelai_weighted_prompt_uses_materials_instead_of_legacy_pools(explorer
         ('comfyui', [material('ink', weight=random_weight(0, 1, 0))], {}),
         ('comfyui', [material('ink', weight=random_weight(0, 1, 0.00001))], {}),
         ('comfyui', [material('ink', weight=random_weight(1, 0, 0.1))], {}),
+        ('comfyui', [material('ink', weight={**random_weight(0, 1, 0.1), 'include_high': 'true'})], {}),
+        ('comfyui', [material('ink', weight={**random_weight(0, 1, 0.1), 'include_high': 1})], {}),
         ('comfyui', [material('ink', role='unrecognized')], {}),
         ('comfyui', [material('ink', mode='unrecognized')], {}),
+        ('comfyui', [material('ink', role=None)], {}),
+        ('comfyui', [material('ink', mode=None)], {}),
         ('comfyui', [material('wrong.safetensors', kind='lora')], {}),
         ('comfyui', [material('sdxl/ink.safetensors', kind='lora')], {}),
         (

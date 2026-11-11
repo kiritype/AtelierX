@@ -1,9 +1,10 @@
 import { FAMILY_DEFAULTS } from './GenSettings';
 import type { ExplorerArtist, ExplorerMaterial, ExplorerRules, ExplorerSelectionRules, ExplorerWeight } from '../../styleExplorerTypes';
 
-export const EXPLORER_DRAFT_KEY = 'atelierx-explorer-v2-global';
-
-const defaultRules: ExplorerRules = {
+export const EXPLORER_DRAFT_KEY = 'atelierx-explorer-v3-global';
+const V2_DRAFT_KEY = 'atelierx-explorer-v2-global';
+const WEIGHT_STEP = 0.1;
+const legacyRules: ExplorerRules = {
   artist_min: 1,
   artist_max: 3,
   artist_low: 0.7,
@@ -15,12 +16,23 @@ const defaultRules: ExplorerRules = {
   lora_high: 1,
   lora_step: 0.1,
 };
-const { artist_min, artist_max, lora_min, lora_max } = defaultRules;
-const defaultCounts = { artist_min, artist_max, lora_min, lora_max };
-type MaterialPool = { materials: ExplorerMaterial[]; rules: ExplorerSelectionRules };
-type LegacyDraft = Partial<ExplorerDraft> & { artists?: ExplorerArtist[]; pool?: string; rules?: Partial<ExplorerRules> };
 
-export type ExplorerLoraOption = { name: string; id?: string; weight?: number; trigger_words?: string };
+export type ExplorerLora = { name: string; id?: string; trigger_words?: string };
+export type MaterialGroup<T> = {
+  items: T[];
+  countMin: number;
+  countMax: number;
+  weightMin?: number;
+  weightMax?: number;
+};
+export type MaterialPool = { tags: MaterialGroup<string>; loras: MaterialGroup<ExplorerLora> };
+type LegacyDraft = Partial<Omit<ExplorerDraft, 'materialPools'>> & {
+  artists?: ExplorerArtist[];
+  pool?: string;
+  rules?: Partial<ExplorerRules>;
+  materialPools?: Record<string, { materials: ExplorerMaterial[]; rules: ExplorerSelectionRules }>;
+};
+
 export type ExplorerDraft = {
   name: string;
   service: string;
@@ -63,97 +75,142 @@ export function parseNames(text: string) {
   return [...new Set(text.split(/[\n,]/).map((name) => name.trim()).filter(Boolean))];
 }
 
+function newPool(rules = legacyRules): MaterialPool {
+  return {
+    tags: { items: [], countMin: rules.artist_min, countMax: rules.artist_max, weightMin: rules.artist_low, weightMax: rules.artist_high },
+    loras: { items: [], countMin: rules.lora_min, countMax: rules.lora_max, weightMin: rules.lora_low, weightMax: rules.lora_high },
+  };
+}
+
 export function materialPool(d: ExplorerDraft): MaterialPool {
-  return d.materialPools[settingsKey(d)] ?? { materials: [], rules: { ...defaultCounts } };
+  return d.materialPools[settingsKey(d)] ?? newPool();
 }
 
-export const materialKey = (material: Pick<ExplorerMaterial, 'kind' | 'name' | 'id'>) =>
-  `${material.kind}:${material.id ?? material.name}`;
+export const loraKey = (lora: ExplorerLora) => lora.id ?? lora.name;
 
-export function findLora(material: Pick<ExplorerLoraOption, 'id' | 'name'>, options?: ExplorerLoraOption[]) {
-  return options?.find((option) => (option.id ?? option.name) === (material.id ?? material.name));
+export function findLora(lora: ExplorerLora, catalog?: ExplorerLora[]) {
+  return catalog?.find((option) => loraKey(option) === loraKey(lora));
 }
 
-export function randomWeight(kind: ExplorerMaterial['kind'], rules = defaultRules): ExplorerWeight {
-  return kind === 'tag'
-    ? { mode: 'random', low: rules.artist_low, high: rules.artist_high, step: rules.artist_step }
-    : { mode: 'random', low: rules.lora_low, high: rules.lora_high, step: rules.lora_step };
+function weightBounds(materials: ExplorerMaterial[]) {
+  const endpoints = materials.flatMap(({ weight }) => weight.mode === 'fixed' ? [weight.value] : [weight.low, weight.high])
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  return endpoints.length ? { weightMin: Math.min(...endpoints), weightMax: Math.max(...endpoints) } : {};
 }
 
-function migrateMaterials(value: LegacyDraft, settings: ExplorerDraft['settings']) {
-  const rules = { ...defaultRules, ...value.rules };
-  const { artist_min, artist_max, lora_min, lora_max } = rules;
-  const counts = { artist_min, artist_max, lora_min, lora_max };
-  const tags = (value.artists ?? parseNames(value.pool ?? '').map((name) => ({ name, mode: 'candidate' as const })))
-    .map((artist): ExplorerMaterial => ({ ...artist, kind: 'tag', role: 'style', weight: randomWeight('tag', rules) }));
+function migrateV2(pools: NonNullable<LegacyDraft['materialPools']>) {
+  return Object.fromEntries(Object.entries(pools).map(([key, { materials, rules }]) => {
+    const pool = newPool({ ...legacyRules, ...rules });
+    const tags = materials.filter((row) => row.kind === 'tag' && row.mode !== 'exclude');
+    const loras = key === 'novelai' ? [] : materials.filter((row) => row.kind === 'lora' && row.mode !== 'exclude');
+    return [key, {
+      tags: { ...pool.tags, ...weightBounds(tags), items: tags.map(({ name }) => name) },
+      loras: { ...pool.loras, ...weightBounds(loras), items: loras.map(({ name, id, trigger_words }) => ({ name, id, trigger_words })) },
+    }];
+  }));
+}
+
+function migrateV1(value: LegacyDraft, settings: ExplorerDraft['settings']) {
+  const tags = value.artists
+    ? [...new Set(value.artists.filter(({ mode }) => mode !== 'exclude').map(({ name }) => name))]
+    : parseNames(value.pool ?? '');
+  const rules = { ...legacyRules, ...value.rules };
   const pools: Record<string, MaterialPool> = {};
   for (const [key, entry] of Object.entries(settings)) {
-    const loras: ExplorerMaterial[] = [];
+    const pool = newPool(rules);
+    const loras = new Map<string, ExplorerLora>();
     if (key !== 'novelai' && Array.isArray(entry.loras)) {
       for (const item of entry.loras) {
-        if (!item || typeof item !== 'object') continue;
+        if (!item || typeof item !== 'object' || item.enabled === false) continue;
         const id = key === 'pixai' && typeof item.id === 'string' ? item.id : undefined;
         const name = typeof item.name === 'string' && item.name.trim() ? item.name.trim() : id;
         if (!name || (key === 'pixai' && !id)) continue;
-        loras.push({
-          kind: 'lora',
-          name,
-          ...(id ? { id } : {}),
-          role: 'style',
-          mode: item.enabled === false ? 'exclude' : 'candidate',
-          weight: randomWeight('lora', rules),
-          ...(typeof item.trigger_words === 'string' ? { trigger_words: item.trigger_words } : {}),
-        });
+        loras.set(id ?? name, { name, id, trigger_words: typeof item.trigger_words === 'string' ? item.trigger_words : undefined });
       }
     }
-    const unique = new Map([...tags, ...loras].map((material) => [materialKey(material), material]));
-    pools[key] = { materials: [...unique.values()], rules: { ...counts } };
+    pool.tags.items = tags;
+    pool.loras.items = [...loras.values()];
+    pools[key] = pool;
   }
   return pools;
 }
 
-export const legacyDraftKey = (workId: string) => `atelierx-explorer-v1-${workId}`;
+export function storedDraft(workId?: string) {
+  const current = localStorage.getItem(EXPLORER_DRAFT_KEY);
+  if (current !== null) return { version: 3, raw: current } as const;
+  const v2 = localStorage.getItem(V2_DRAFT_KEY);
+  if (v2 !== null) return { version: 2, raw: v2 } as const;
+  const v1 = workId ? localStorage.getItem(`atelierx-explorer-v1-${workId}`) : null;
+  return v1 === null ? null : { version: 1, raw: v1 } as const;
+}
 
 export function readDraft(workId?: string): ExplorerDraft {
   const base = freshDraft();
   try {
-    const stored = localStorage.getItem(EXPLORER_DRAFT_KEY)
-      ?? (workId ? localStorage.getItem(legacyDraftKey(workId)) : null);
-    const value: LegacyDraft | null = JSON.parse(stored ?? 'null');
-    if (!value?.service || !['comfyui', 'novelai', 'pixai'].includes(value.service)) return base;
-    const { artists, pool, rules, ...draft } = value;
-    const settings = { ...base.settings, ...value.settings };
-    const materialPools = value.materialPools ?? migrateMaterials({ artists, pool, rules }, settings);
+    const stored = storedDraft(workId);
+    if (!stored) return base;
+    const value = JSON.parse(stored.raw);
+    if (!value || !['comfyui', 'novelai', 'pixai'].includes(value.service)) return base;
+    if (stored.version === 3) return { ...base, ...value, settings: { ...base.settings, ...value.settings } };
+    const { artists, pool, rules, materialPools, ...draft } = value as LegacyDraft;
+    const settings = { ...base.settings, ...draft.settings };
+    const migratedPools = stored.version === 2 && materialPools
+      ? migrateV2(materialPools)
+      : migrateV1({ artists, pool, rules }, settings);
     for (const key of Object.keys(settings)) {
       const { loras: _loras, ...generation } = settings[key];
       settings[key] = generation;
     }
-    return { ...base, ...draft, materialPools, settings };
+    return { ...base, ...draft, settings, materialPools: migratedPools };
   } catch {
     return base;
   }
 }
 
-export function materialCounts(materials: ExplorerMaterial[], kind: ExplorerMaterial['kind']) {
-  const eligible = materials.filter((material) => material.kind === kind && material.mode !== 'exclude');
-  return { available: eligible.length, always: eligible.filter((material) => material.mode === 'always').length };
-}
-
 export const loraLimit = (service: string, pixaiLimit = 5) =>
   service === 'novelai' ? 0 : service === 'pixai' ? pixaiLimit : 16;
 
-export function effectiveRules(d: ExplorerDraft, maxLoras = loraLimit(d.service)): ExplorerSelectionRules {
-  const { materials, rules } = materialPool(d);
-  const tags = materialCounts(materials, 'tag');
-  const loras = materialCounts(materials, 'lora');
-  const artistMax = Math.max(tags.always, Math.min(rules.artist_max, tags.available));
-  const loraMax = Math.min(maxLoras, Math.max(loras.always, Math.min(rules.lora_max, loras.available)));
-  return {
-    artist_min: Math.max(tags.always, Math.min(rules.artist_min, artistMax)),
-    artist_max: artistMax,
-    lora_min: Math.min(loraMax, Math.max(loras.always, rules.lora_min)),
-    lora_max: loraMax,
-  };
+export const loraWeightLimit = (service: string) => service === 'pixai' ? 1 : 10;
+
+export function effectiveCount(group: MaterialGroup<unknown>, limit = group.items.length) {
+  const cap = Math.min(group.items.length, limit);
+  const max = Math.max(0, Math.min(group.countMax, cap));
+  const min = Math.max(0, Math.min(group.countMin, max));
+  return { min, max, cap };
+}
+
+export function effectiveRules(pool: MaterialPool, maxLoras: number): ExplorerSelectionRules {
+  const { min: artist_min, max: artist_max } = effectiveCount(pool.tags);
+  const { min: lora_min, max: lora_max } = effectiveCount(pool.loras, maxLoras);
+  return { artist_min, artist_max, lora_min, lora_max };
+}
+
+export function validWeight(group: MaterialGroup<unknown>, max: number) {
+  const { weightMin, weightMax } = group;
+  return weightMin != null && weightMax != null && Number.isFinite(weightMin) && Number.isFinite(weightMax)
+    && 0 <= weightMin && weightMin <= weightMax && weightMax <= max;
+}
+
+function groupWeight(group: MaterialGroup<unknown>): ExplorerWeight {
+  return { mode: 'random', low: group.weightMin, high: group.weightMax, step: WEIGHT_STEP, include_high: true };
+}
+
+export function requestMaterials(pool: MaterialPool, catalog?: ExplorerLora[]): ExplorerMaterial[] {
+  const tagWeight = groupWeight(pool.tags);
+  const loraWeight = groupWeight(pool.loras);
+  return [
+    ...pool.tags.items.map((name): ExplorerMaterial => ({ kind: 'tag', name, weight: tagWeight })),
+    ...pool.loras.items.map((lora): ExplorerMaterial => {
+      const option = findLora(lora, catalog);
+      return {
+        ...lora,
+        kind: 'lora',
+        name: option?.name ?? lora.name,
+        trigger_words: lora.trigger_words ?? option?.trigger_words,
+        weight: loraWeight,
+      };
+    }),
+  ];
 }
 
 export function switchContext(

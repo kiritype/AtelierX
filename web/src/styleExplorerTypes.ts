@@ -19,13 +19,13 @@ export type ExplorerArtist = {
 };
 export type ExplorerWeight =
   | { mode: 'fixed'; value?: number }
-  | { mode: 'random'; low?: number; high?: number; step?: number };
+  | { mode: 'random'; low?: number; high?: number; step?: number; include_high?: boolean };
 export type ExplorerMaterial = {
   kind: 'tag' | 'lora';
   name: string;
   id?: string;
-  role: 'style' | 'character' | 'other';
-  mode: 'always' | 'candidate' | 'exclude';
+  role?: 'style' | 'character' | 'other';
+  mode?: 'always' | 'candidate' | 'exclude';
   weight: ExplorerWeight;
   trigger_words?: string;
 };

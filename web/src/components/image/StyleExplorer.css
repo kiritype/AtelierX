@@ -10,7 +10,8 @@
   resize: vertical;
 }
 .explorer-setup p,
-.explorer-materials h4 {
+.explorer-materials h4,
+.explorer-material-panel h5 {
   margin: 0;
 }
 .explorer-context,
@@ -40,73 +41,89 @@
   width: 110px;
 }
 .explorer-prompts,
-.explorer-material-add {
+.explorer-material-panels {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 12px;
-}
-.explorer-material-add > div {
-  align-items: flex-start;
-  min-width: 0;
-}
-.explorer-material-add > div > label {
-  align-self: stretch;
-}
-.explorer-material-add select {
-  min-width: 0;
 }
 .explorer-materials {
   border: 1px solid var(--accent);
   border-radius: 10px;
   background: var(--panel-2);
-  padding: 16px;
-  gap: 14px;
+  padding: 12px;
+  gap: 10px;
 }
 .explorer-materials h4 {
-  font-size: 1.2em;
+  font-size: 1.15em;
 }
-.explorer-materials header {
-  gap: 4px;
+.explorer-material-heading {
+  gap: 3px;
 }
-.explorer-material-row,
-.explorer-material-range {
+.explorer-material-panel {
   min-width: 0;
-  margin: 0;
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
 }
-.explorer-material-row legend,
-.explorer-material-range legend {
+.explorer-material-panel h5 {
+  font-size: 1em;
+}
+.explorer-material-add > :is(textarea, select) {
+  flex: 1;
+  min-width: 0;
+}
+.explorer-material-add textarea {
+  min-height: 32px;
+}
+.explorer-material-add button {
+  white-space: nowrap;
+}
+.explorer-material-list {
+  display: grid;
+  max-height: 160px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.explorer-material-list li {
+  justify-content: space-between;
+  min-width: 0;
   padding-inline: 4px;
-  font-weight: 600;
-  max-width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+.explorer-material-list li span {
   overflow-wrap: anywhere;
 }
-.explorer-material-controls,
-.explorer-material-range .row {
+.explorer-material-list button {
+  flex: none;
+}
+.explorer-material-ranges {
+  margin-top: auto;
+}
+.explorer-material-ranges > div {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
+  gap: 6px 16px;
 }
-.explorer-material-controls label,
-.explorer-material-range label,
-.explorer-trigger-field {
-  gap: 4px;
+.explorer-material-ranges fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
-.explorer-material-controls input[type='number'],
-.explorer-material-range input[type='number'] {
-  width: 80px;
+.explorer-material-ranges legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-weight: 600;
 }
-.explorer-trigger-field,
-.explorer-material-row p,
-.explorer-material-range p {
-  margin-top: 8px;
+.explorer-material-ranges label {
+  gap: 2px;
+  font-size: .9em;
 }
-.explorer-trigger-field {
-  max-width: 420px;
+.explorer-material-ranges input {
+  width: 60px;
 }
 .explorer-pair {
   display: grid;

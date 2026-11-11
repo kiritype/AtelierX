@@ -17,11 +17,10 @@ import { useCatalog } from './GenSettings';
 import { useNovelAIInfo } from './NovelAISettings';
 import { usePixAIInfo } from './PixAISettings';
 import ExplorerSetup from './ExplorerSetup';
-import { materialIsReady } from './ExplorerMaterials';
 import ExplorerCompare from './ExplorerCompare';
 import {
-  effectiveRules, EXPLORER_DRAFT_KEY, findLora, legacyDraftKey, loraLimit, materialCounts, materialPool, parseNames, readDraft, settingsKey,
-  type ExplorerLoraOption,
+  effectiveRules, EXPLORER_DRAFT_KEY, findLora, loraLimit, loraWeightLimit, materialPool, parseNames,
+  readDraft, requestMaterials, settingsKey, storedDraft, validWeight, type ExplorerLora,
 } from './styleExplorerDraft';
 import './StyleExplorer.css';
 const base = '/api/image/explorer';
@@ -63,8 +62,8 @@ export default function StyleExplorer({
   const catalog = useCatalog();
   const novelai = useNovelAIInfo(),
     pixai = usePixAIInfo();
-  const materials = materialPool(draft).materials;
-  const availableLoras: ExplorerLoraOption[] | undefined =
+  const pool = materialPool(draft);
+  const availableLoras: ExplorerLora[] | undefined =
     draft.service === 'pixai'
       ? pixai.data?.loras
       : draft.service === 'comfyui' && catalog.data?.connected
@@ -73,7 +72,7 @@ export default function StyleExplorer({
           .map((name) => ({ name }))
         : undefined;
   const maxLoras = loraLimit(draft.service, pixai.data?.max_loras);
-  const selection = effectiveRules(draft, maxLoras);
+  const selection = effectiveRules(pool, maxLoras);
   const sessions = useQuery({
     queryKey: ['explorer-sessions'],
     queryFn: () => get<{ sessions: ExplorerSummary[] }>(`${base}/sessions`),
@@ -114,9 +113,7 @@ export default function StyleExplorer({
   }, [catalog.data]);
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(EXPLORER_DRAFT_KEY);
-      const legacy = workId && localStorage.getItem(legacyDraftKey(workId));
-      if (!dirty && stored === null && !legacy) return;
+      if (!dirty && !storedDraft(workId)) return;
       localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify(draft));
       setStorageError(false);
     } catch {
@@ -202,10 +199,7 @@ export default function StyleExplorer({
         negative: draft.negative,
         seed: draft.seed,
         settings,
-        materials: materials.map((material) => {
-          const option = material.kind === 'lora' ? findLora(material, availableLoras) : undefined;
-          return option ? { ...material, name: option.name } : material;
-        }),
+        materials: requestMaterials(pool, availableLoras),
         models: parseNames(draft.models),
         rules: selection,
         budget: draft.budget,
@@ -248,9 +242,10 @@ export default function StyleExplorer({
     draft.seed >= -1 &&
     draft.seed <= (draft.service === 'pixai' ? 2 ** 31 - 1 : 2 ** 32 - 1) &&
     Number.isInteger(draft.budget) &&
-    materials.length <= 10_000 &&
-    materials.every((material) => materialIsReady(material, draft.service, availableLoras)) &&
-    materialCounts(materials, 'lora').always <= maxLoras &&
+    pool.tags.items.length + pool.loras.items.length <= 10_000 &&
+    (!pool.tags.items.length || validWeight(pool.tags, 10)) &&
+    (!pool.loras.items.length || (validWeight(pool.loras, loraWeightLimit(draft.service)) &&
+      pool.loras.items.every((lora) => !!findLora(lora, availableLoras)))) &&
     [selection.artist_min, selection.artist_max, selection.lora_min, selection.lora_max].every(Number.isInteger);
   const serviceUnavailable = capabilities.data?.services.find((s) => s.id === draft.service)?.enabled === false;
   const configured = services.data?.services.find((s) => s.id === draft.service);

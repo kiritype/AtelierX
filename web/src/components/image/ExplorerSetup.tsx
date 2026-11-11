@@ -5,7 +5,7 @@ import PixAISettings from './PixAISettings';
 import ExplorerMaterials from './ExplorerMaterials';
 import { SERVICE_NAMES, type SettingsSection } from './serviceSettings';
 import type { ExplorerCapabilities } from '../../styleExplorerTypes';
-import { effectiveRules, materialPool, parseNames, settingsKey, switchContext, type ExplorerDraft, type ExplorerLoraOption } from './styleExplorerDraft';
+import { materialPool, parseNames, settingsKey, switchContext, type ExplorerDraft, type ExplorerLora } from './styleExplorerDraft';
 
 export default function ExplorerSetup({
   draft: d,
@@ -18,7 +18,7 @@ export default function ExplorerSetup({
   draft: ExplorerDraft;
   setDraft: (d: ExplorerDraft) => void;
   capabilities?: ExplorerCapabilities;
-  loras?: ExplorerLoraOption[];
+  loras?: ExplorerLora[];
   loraLimit: number;
   openSettings?: () => void;
 }) {
@@ -109,15 +109,11 @@ export default function ExplorerSetup({
       </div>
       <ExplorerMaterials
         key={key}
-        materials={pool.materials}
-        rules={effectiveRules(d, loraLimit)}
+        pool={pool}
         service={d.service}
-        loras={loras}
+        catalog={loras}
         loraLimit={loraLimit}
-        onMaterials={(materials) => set({ materialPools: { ...d.materialPools, [key]: { ...pool, materials } } })}
-        onRules={(change) => set({
-          materialPools: { ...d.materialPools, [key]: { ...pool, rules: { ...pool.rules, ...change } } },
-        })}
+        onChange={(change) => set({ materialPools: { ...d.materialPools, [key]: { ...pool, ...change } } })}
         openSettings={openSettings}
       />
       <details className="explorer-generation">
