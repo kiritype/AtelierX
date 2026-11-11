@@ -172,7 +172,7 @@ it('keeps focus on the comparator between pairs and hides revealed details for t
   const first = session();
   await render(first, vote);
   const compare = section();
-  await act(async () => host.querySelector('button.ghost')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button.ghost')!.click());
   expect(host.textContent).toContain('a hidden model');
 
   await press(compare, '1');
