@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from atelierx.image.style_explorer import StyleExplorer
+from atelierx.image.runtime import ImageRuntime
 from test_image import FakeComfy
 
 BASE = '/api/image/explorer/sessions'
@@ -263,6 +264,119 @@ def test_internet_admission_without_network_or_spending(explorer, service, setti
     candidate = session['candidates'][0]
     request = runtime.services[service].request_body(runtime.queue.get(candidate['job_id']))
     assert request.get('seed', request.get('parameters', {}).get('seed')) == 123
+
+
+def test_novelai_request_uses_candidate_prompt_negative_prompt_and_seed(explorer):
+    client, runtime = explorer
+    session, _ = create(
+        client,
+        service='novelai',
+        family='novelai',
+        settings={'model': 'nai-diffusion-4-5-full', 'width': 832, 'height': 1216},
+        artists=[{'name': 'ink artist', 'mode': 'always'}],
+        rules={
+            'artist_min': 1,
+            'artist_max': 1,
+            'artist_low': 0.8,
+            'artist_high': 0.8,
+            'artist_step': 0.1,
+        },
+    )
+    session = generate(client, session, 1)
+    candidate = session['candidates'][0]
+    job = runtime.queue.get(candidate['job_id'])
+    request = runtime.services['novelai'].request_body(job)
+    assert request['input'] == candidate['positive']
+    assert request['parameters']['negative_prompt'] == candidate['negative'] == 'blurry'
+    assert request['parameters']['seed'] == candidate['seed'] == 123
+    assert request['model'] == 'nai-diffusion-4-5-full'
+    assert candidate['style_positive'] == '0.8::ink artist::'
+
+
+def test_pixai_request_uses_candidate_seed_and_randomized_lora_weight(explorer):
+    client, runtime = explorer
+    model = '1861558740588989558'
+    session, _ = create(
+        client,
+        service='pixai',
+        family='pixai',
+        settings={
+            'model': model,
+            'loras': [{'id': '123456789', 'weight': 0.9, 'trigger_words': 'pixai trigger'}],
+        },
+        artists=[{'name': 'ink artist', 'mode': 'always'}],
+        rules={
+            'artist_min': 1,
+            'artist_max': 1,
+            'artist_low': 1.2,
+            'artist_high': 1.2,
+            'artist_step': 0.1,
+            'lora_min': 1,
+            'lora_max': 1,
+            'lora_low': 0.6,
+            'lora_high': 0.6,
+            'lora_step': 0.1,
+        },
+    )
+    session = generate(client, session, 1)
+    candidate = session['candidates'][0]
+    job = runtime.queue.get(candidate['job_id'])
+    request = runtime.services['pixai'].request_body(job)
+    assert request['prompt'] == candidate['positive'] == 'a red lighthouse, (ink artist:1.2)'
+    assert request['negativePrompt'] == candidate['negative'] == 'blurry'
+    assert request['seed'] == candidate['seed'] == 123
+    assert request['modelVersionId'] == model
+    assert request['loras'] == [
+        {'modelId': '123456789', 'weight': 0.6, 'triggerWords': 'pixai trigger'},
+    ]
+
+
+def test_restart_does_not_generate_and_pixai_resumes_the_existing_task(explorer):
+    client, runtime = explorer
+    idle, _ = create(client, name='Idle restart session')
+    session, _ = create(
+        client,
+        service='pixai',
+        family='pixai',
+        settings={'model': '1861558740588989558'},
+    )
+    session = generate(client, session, 1)
+    job = runtime.queue.get(session['candidates'][0]['job_id'])
+    runtime.queue.update(job, status='running', prompt_id='pixai-task-123')
+
+    # Constructing a runtime over persisted state models restart recovery without starting its worker thread.
+    restarted = ImageRuntime(runtime.paths, runtime.works, runtime.llm)
+    assert restarted._thread is None
+    restored = restarted.explorer.get(session['id'])
+    assert restored['used'] == 1 and len(restored['candidates']) == 1
+    idle_restored = restarted.explorer.get(idle['id'])
+    assert idle_restored['used'] == 0 and not idle_restored['candidates']
+    assert len(restarted.jobs) == 1 and restarted.jobs[0]['id'] == job['id']
+    resumed = restarted.queue.get(job['id'])
+    assert resumed['status'] == 'queued' and resumed['resume'] == 'pixai-task-123'
+
+    from test_single_generation import _png
+
+    service = restarted.services['pixai']
+    submits = []
+    service.submit = lambda queued: submits.append(queued)  # any resubmission would be a duplicate paid request
+    service.poll = lambda queued, sent: {'image': _png()}
+
+    class FastStop:
+        @staticmethod
+        def wait(_seconds):
+            return False
+
+        @staticmethod
+        def is_set():
+            return False
+
+    restarted.stop = FastStop()
+    restarted.queue.update(resumed, status='running')
+    restarted.run_job(resumed)
+    assert not submits
+    assert resumed['status'] == 'done' and resumed['prompt_id'] == 'pixai-task-123'
+    assert restarted.explorer.get(session['id'])['candidates'][0]['status'] == 'done'
 
 
 def test_exhausted_unique_space_never_admits_partial_batch(explorer):
