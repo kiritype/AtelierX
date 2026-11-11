@@ -6,8 +6,8 @@ import uuid
 
 import pytest
 
-from atelierx.image.style_explorer import StyleExplorer
 from atelierx.image.runtime import ImageRuntime
+from atelierx.image.style_explorer import StyleExplorer
 from test_image import FakeComfy
 
 BASE = '/api/image/explorer/sessions'
@@ -359,7 +359,9 @@ def test_restart_does_not_generate_and_pixai_resumes_the_existing_task(explorer)
 
     service = restarted.services['pixai']
     submits = []
-    service.submit = lambda queued: submits.append(queued)  # any resubmission would be a duplicate paid request
+    service.submit = lambda queued: submits.append(
+        queued
+    )  # any resubmission would be a duplicate paid request
     service.poll = lambda queued, sent: {'image': _png()}
 
     class FastStop:
