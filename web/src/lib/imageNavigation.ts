@@ -5,7 +5,7 @@ export const imageNavigation: { group: string; views: ImageView[] }[] = [
   { group: 'prepare', views: ['library', 'presets', 'models'] },
   { group: 'make', views: ['single', 'generate', 'board'] },
   { group: 'refine', views: ['gallery', 'tools', 'info'] },
-  { group: 'experiment', views: ['lab', 'lora'] },
+  { group: 'experiment', views: ['explorer', 'lab', 'lora'] },
   { group: 'manage', views: ['queue'] },
 ];
 

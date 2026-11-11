@@ -113,7 +113,7 @@ export type Tab =
   | { type: 'glossary' }
   | { type: 'image'; view: ImageView; characterId?: string; outfitId?: string };
 
-export type ImageView = 'library' | 'presets' | 'models' | 'single' | 'board' | 'generate' | 'queue' | 'lab' | 'gallery' | 'tools' | 'info' | 'lora';
+export type ImageView = 'library' | 'presets' | 'models' | 'single' | 'board' | 'generate' | 'queue' | 'lab' | 'gallery' | 'tools' | 'info' | 'lora' | 'explorer';
 
 // "10-06 03:56" from a snapshot ID such as 20261006T035650966-37f8, for titles that should not show the raw ID.
 export function snapshotTime(id: string): string {

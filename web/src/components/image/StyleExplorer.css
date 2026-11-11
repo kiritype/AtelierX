@@ -1,0 +1,79 @@
+.style-explorer {
+  max-width: 1120px;
+  margin: 0 auto;
+  gap: 16px;
+}
+.explorer-setup {
+  gap: 14px;
+}
+.explorer-setup textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+.explorer-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.explorer-pair img {
+  width: 100%;
+  height: min(52vh, 560px);
+  object-fit: contain;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.explorer-choice {
+  width: 100%;
+  min-height: 64px;
+  font-size: 21px;
+}
+.explorer-comparator {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.explorer-comparator:focus {
+  outline: 2px solid var(--focus-ring);
+}
+.explorer-pair pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.explorer-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 12px 0;
+}
+.explorer-ranking {
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 6px;
+}
+.explorer-ranking img {
+  width: 160px;
+  max-height: 180px;
+  object-fit: contain;
+}
+.explorer-confirm {
+  position: fixed;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 90vw);
+  padding: 24px;
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 100vmax #0008;
+}
+@media (max-width: 640px) {
+  .explorer-pair {
+    gap: 8px;
+  }
+  .explorer-ranking img {
+    width: 90px;
+  }
+}
