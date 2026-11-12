@@ -29,6 +29,11 @@ export type ExplorerMaterial = {
   weight: ExplorerWeight;
   trigger_words?: string;
 };
+export type ExplorerBasePreset = {
+  id: string;
+  name: string;
+  artist: { positive: string; negative: string };
+};
 export type ExplorerConfig = {
   request_id: string;
   name: string;
@@ -38,6 +43,7 @@ export type ExplorerConfig = {
   negative: string;
   seed: number;
   settings: Record<string, unknown>;
+  base_preset?: ExplorerBasePreset;
   models?: string[];
   artists?: ExplorerArtist[];
   materials?: ExplorerMaterial[];

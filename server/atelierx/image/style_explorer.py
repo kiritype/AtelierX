@@ -29,8 +29,8 @@ from .workflow import validate_settings
 
 MAX_BATCH = 16
 MAX_BUDGET = 200
-SCHEMA_VERSION = 3
-READABLE_SCHEMAS = (1, 2, SCHEMA_VERSION)
+SCHEMA_VERSION = 4
+READABLE_SCHEMAS = (1, 2, 3, SCHEMA_VERSION)
 COMFY_MAX_LORAS = 16
 MAX_MATERIALS = 10000
 MATERIAL_MODES = ('always', 'candidate', 'exclude')
@@ -144,8 +144,9 @@ def upgrade(doc):
         )
     if version == 1:
         doc['config']['materials'] = legacy_materials(doc['config'])
-    if version != SCHEMA_VERSION:
+    if version < 3:
         doc['config']['artist_format'] = 'literal'
+    if version != SCHEMA_VERSION:
         doc['schema_version'] = SCHEMA_VERSION
     return doc
 
@@ -477,10 +478,22 @@ class StyleExplorer:
             invalid('settings')
         raw = copy.deepcopy(raw)
         legacy = 'materials' not in body
+        base = body.get('base_preset')
+        if base is not None:
+            if legacy or not isinstance(base, dict) or not isinstance(base.get('artist'), dict):
+                invalid('base preset')
+            base = {
+                'id': text(base.get('id'), 'base preset id', 200),
+                'name': text(base.get('name'), 'base preset name', 200),
+                'artist': {
+                    key: text(base['artist'].get(key, ''), f'base artist {key}')
+                    for key in ('positive', 'negative')
+                },
+            }
         artist_format = 'anima' if service == 'comfyui' and family == 'anima' and not legacy else 'literal'
-        if not legacy:
+        if not legacy and base is None:
             raw['loras'] = []
-        elif isinstance(raw.get('loras'), list):
+        elif legacy and isinstance(raw.get('loras'), list):
             raw['loras'] = [
                 x for x in raw['loras'] if not isinstance(x, dict) or x.get('enabled') is not False
             ]
@@ -526,9 +539,24 @@ class StyleExplorer:
                 {'artists': artists, 'settings': checked, 'rules': {**DEFAULT_RULES, **supplied_rules}}
             )
         else:
-            checked.pop('loras', None)
+            if base is None:
+                checked.pop('loras', None)
             materials = self._materials(body['materials'], service, family, checked, catalog, artist_format)
         rules = self._rules(supplied_rules, materials, service, legacy)
+        if base is not None:
+            base_loras = checked.get('loras') or []
+            keys = [row.get('id', row.get('name')) for row in base_loras]
+            additional = [
+                row.get('id', row['name'])
+                for row in materials
+                if row['kind'] == 'lora' and row['mode'] != 'exclude'
+            ]
+            if len(set(keys)) != len(keys) or set(keys) & set(additional):
+                invalid('duplicate base / candidate LoRAs')
+            maximum = {'comfyui': COMFY_MAX_LORAS, 'pixai': PIXAI_MAX_LORAS, 'novelai': 0}[service]
+            if len(base_loras) + rules['lora_max'] > maximum:
+                invalid('base + candidate LoRA count limit')
+            compatibility['base_preset'] = base
         return {
             'name': text(body.get('name') or 'Style exploration', 'name', 200),
             'service': service,
@@ -680,26 +708,28 @@ class StyleExplorer:
         ]
         loras.sort(key=lambda row: row.get('id', row['name']))
         settings = {**copy.deepcopy(config['settings']), 'model': rng.choice(config['models'])}
+        base = config.get('base_preset')
+        base_loras = copy.deepcopy(settings.get('loras') or []) if base is not None else []
         prompt_tags = [
             weighted_tag(material_tag_name(row, config['artist_format']), row['weight'], service, legacy)
             for row in tags
         ]
         if service == 'comfyui':
-            settings['loras'] = [
+            settings['loras'] = base_loras + [
                 {'name': row['name'], 'strength_model': row['weight'], 'strength_clip': row['weight']}
                 for row in loras
             ]
             prompt_tags.extend(row['trigger_words'] for row in loras if row.get('trigger_words'))
         elif service == 'pixai':
-            settings['loras'] = [
+            settings['loras'] = base_loras + [
                 {key: row[key] for key in ('id', 'weight', 'trigger_words') if key in row} for row in loras
             ]
         return {
             'settings': settings,
             'artists': [{'name': row['name'], 'weight': row['weight']} for row in tags],
             'materials': tags + loras,
-            'style_positive': joined(*prompt_tags),
-            'style_negative': '',
+            'style_positive': joined(base['artist']['positive'] if base else '', *prompt_tags),
+            'style_negative': base['artist']['negative'] if base else '',
         }
 
     def _resume(self, doc, candidate, job=None):
@@ -803,14 +833,16 @@ class StyleExplorer:
                     doc['service'], doc['family'], recipe['settings'], catalog
                 )
                 positive = joined(config['positive'], recipe['style_positive'])
+                negative = joined(config['negative'], recipe['style_negative'])
                 text(positive, 'combined positive prompt')
+                text(negative, 'combined negative prompt')
                 selected.append(
                     {
                         'id': uuid.uuid4().hex,
                         '_session': doc['id'],
                         'index': len(doc['candidates']) + len(selected) + 1,
                         'positive': positive,
-                        'negative': config['negative'],
+                        'negative': negative,
                         'seed': config['seed'],
                         'status': 'queued',
                         '_signature': signature,

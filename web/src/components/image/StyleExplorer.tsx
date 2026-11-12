@@ -64,6 +64,8 @@ export default function StyleExplorer({
   const novelai = useNovelAIInfo(),
     pixai = usePixAIInfo();
   const pool = materialPool(draft);
+  const basePreset = draft.basePresets[settingsKey(draft)];
+  const baseLoras = basePreset ? (draft.settings[settingsKey(draft)]?.loras ?? []) as { name?: string; id?: string }[] : [];
   const availableLoras: ExplorerLora[] | undefined =
     draft.service === 'pixai'
       ? pixai.data?.loras
@@ -80,7 +82,11 @@ export default function StyleExplorer({
   const usesModelCatalog = draft.service === 'comfyui' || draft.service === 'pixai';
   const validModelPool = !usesModelCatalog || models.length === 0 ||
     (models.length <= MODEL_POOL_LIMIT && !!modelCatalog && models.every((model) => modelCatalog.some(({ id }) => id === model)));
-  const maxLoras = loraLimit(draft.service, pixai.data?.max_loras);
+  const unknownBaseModel = !!basePreset && draft.service === 'pixai' && models.length === 0 &&
+    !modelCatalog?.some(model => model.id === draft.settings[settingsKey(draft)]?.model);
+  const maxLoras = loraLimit(draft.service, pixai.data?.max_loras) - baseLoras.length;
+  const duplicateBaseLora = pool.loras.items.some(lora => baseLoras.some(base =>
+    draft.service === 'pixai' ? base.id === lora.id : base.name === lora.name));
   const selection = effectiveRules(pool, maxLoras);
   const sessions = useQuery({
     queryKey: ['explorer-sessions'],
@@ -208,6 +214,10 @@ export default function StyleExplorer({
         negative: draft.negative,
         seed: draft.seed,
         settings: usesModelCatalog && models.length ? { ...settings, model: models[0] } : settings,
+        ...(basePreset ? { base_preset: basePreset, settings: {
+          ...settings, loras: baseLoras,
+          ...(usesModelCatalog && models.length ? { model: models[0] } : {}),
+        } } : {}),
         materials: requestMaterials(pool, availableLoras),
         models,
         rules: selection,
@@ -252,6 +262,8 @@ export default function StyleExplorer({
     draft.seed <= (draft.service === 'pixai' ? 2 ** 31 - 1 : 2 ** 32 - 1) &&
     Number.isInteger(draft.budget) &&
     validModelPool &&
+    !unknownBaseModel &&
+    maxLoras >= 0 && !duplicateBaseLora &&
     pool.tags.items.length + pool.loras.items.length <= 10_000 &&
     (!pool.tags.items.length || validWeight(pool.tags, 10)) &&
     (!pool.loras.items.length || (validWeight(pool.loras, loraWeightLimit(draft.service)) &&
@@ -314,6 +326,9 @@ export default function StyleExplorer({
             loraLimit={maxLoras}
             openSettings={openSettings}
           />
+          {duplicateBaseLora && <p className="warn-text">{t('style_explorer.base_duplicate')}</p>}
+          {unknownBaseModel && <p className="warn-text">{t('style_explorer.base_model_unknown')}</p>}
+          {basePreset && maxLoras <= 0 && draft.service !== 'novelai' && <p className="warn-text">{t('style_explorer.base_lora_full')}</p>}
           {configured && !configured.connected && (
             <p className="warn-text">
               {t('style_explorer.service_unavailable')}{' '}

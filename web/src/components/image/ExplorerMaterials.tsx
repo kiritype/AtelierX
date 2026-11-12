@@ -29,7 +29,7 @@ export default function ExplorerMaterials({ pool, service, family, catalog, lora
   const loraKeys = new Set(loras.items.map(loraKey));
   const options = catalog?.filter((option) => !loraKeys.has(loraKey(option)));
   const nextLora = options?.find((option) => loraKey(option) === loraInput);
-  const canAddLora = !!nextLora && materialCount < 10_000;
+  const canAddLora = !!nextLora && materialCount < 10_000 && loraLimit > 0;
   const missingLoras = loras.items.some((lora) => !findLora(lora, catalog));
   const updateTags = (patch: Partial<MaterialGroup<string>>) => onChange({ tags: { ...tags, ...patch } });
   const updateLoras = (patch: Partial<MaterialGroup<ExplorerLora>>) => onChange({ loras: { ...loras, ...patch } });
@@ -80,7 +80,7 @@ export default function ExplorerMaterials({ pool, service, family, catalog, lora
               <select
                 aria-label={t('style_explorer.choose_lora')}
                 value={loraInput}
-                disabled={!options?.length || materialCount >= 10_000}
+                disabled={!options?.length || materialCount >= 10_000 || loraLimit <= 0}
                 onChange={(event) => setLoraInput(event.target.value)}
               >
                 <option value="">{t('style_explorer.choose_lora')}</option>

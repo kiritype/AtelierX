@@ -1,5 +1,5 @@
 import { FAMILY_DEFAULTS, type Catalog } from './GenSettings';
-import type { ExplorerArtist, ExplorerMaterial, ExplorerRules, ExplorerSelectionRules, ExplorerWeight } from '../../styleExplorerTypes';
+import type { ExplorerArtist, ExplorerBasePreset, ExplorerMaterial, ExplorerRules, ExplorerSelectionRules, ExplorerWeight } from '../../styleExplorerTypes';
 
 export const EXPLORER_DRAFT_KEY = 'atelierx-explorer-v3-global';
 const V2_DRAFT_KEY = 'atelierx-explorer-v2-global';
@@ -49,6 +49,7 @@ export type ExplorerDraft = {
   modelPools: Record<string, string | string[]>;
   materialPools: Record<string, MaterialPool>;
   settings: Record<string, Record<string, unknown>>;
+  basePresets: Record<string, ExplorerBasePreset | undefined>;
 };
 
 export const freshDraft = (): ExplorerDraft => ({
@@ -63,6 +64,7 @@ export const freshDraft = (): ExplorerDraft => ({
   models: '',
   modelPools: {},
   materialPools: {},
+  basePresets: {},
   settings: {
     'comfyui:anima': { family: 'anima', ...FAMILY_DEFAULTS.anima },
     'comfyui:sdxl': { family: 'sdxl', ...FAMILY_DEFAULTS.sdxl },

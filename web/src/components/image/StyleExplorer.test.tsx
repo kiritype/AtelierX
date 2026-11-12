@@ -95,6 +95,7 @@ beforeEach(() => {
         defaults: { count: 8, budget: 30 },
       };
     if (url === '/api/image/services') return { services: [] };
+    if (url === '/api/image/presets') return [];
     if (url.endsWith('/sessions')) return { sessions: [] };
     return makeSession();
   });
@@ -305,6 +306,7 @@ it('requests a new pair when more images complete without a session revision cha
       };
     if (url === '/api/image/services') return { services: [] };
     if (url.endsWith('/sessions')) return { sessions: [s] };
+    if (url === '/api/image/presets') return [];
     return s;
   });
   vi.mocked(post).mockResolvedValue(s);
@@ -393,6 +395,35 @@ async function input(element: HTMLInputElement | HTMLTextAreaElement, value: str
     element.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+
+it('keeps base preset settings and artist snapshots across contexts and submits additional lists separately', async () => {
+  const settings = { family: 'anima', model: comfyCatalog.models[0],
+    loras: [{ name: 'anima.safetensors', strength_model: 0.37, strength_clip: 0 }],
+    upscale: { model: 'up.pth', scale: 1.5, steps: 8, denoise: 0.25 } };
+  const preset = { id: 'base', name: 'Base', service: 'comfyui', family: 'anima', settings,
+    artist: { positive: '(base artist:0.8)', negative: 'base negative' }, common: [], tags: [] };
+  qc.setQueryDefaults(['image-presets'], { staleTime: Infinity });
+  qc.setQueryData(['image-presets'], [preset]);
+  localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify({ ...freshDraft(), name: 'Base test', positive: 'scene', count: 2 }));
+  vi.mocked(post).mockResolvedValue(makeSession());
+  await render({});
+  await select(host.querySelector<HTMLSelectElement>('.explorer-base select')!, 'base');
+  expect(host.querySelector('.explorer-base')?.textContent).toContain('anima.safetensors (0.37 · CLIP 0)');
+  await act(async () => button('PixAI').click());
+  expect(host.querySelector<HTMLSelectElement>('.explorer-base select')!.value).toBe('');
+  await act(async () => button('ComfyUI').click());
+  expect(host.querySelector<HTMLSelectElement>('.explorer-base select')!.value).toBe('base');
+  expect(readDraft().settings['comfyui:anima']).toEqual(settings);
+  await input(host.querySelector<HTMLTextAreaElement>('.explorer-material-add textarea')!, 'one, two');
+  await act(async () => button(t('style_explorer.add_tags')).click());
+  await act(async () => button(t('style_explorer.review_generate')).click());
+  await act(async () => button(t('style_explorer.confirm_action')).click());
+  expect(post).toHaveBeenCalledWith('/api/image/explorer/sessions', expect.objectContaining({
+    settings, base_preset: { id: 'base', name: 'Base', artist: preset.artist },
+    materials: expect.arrayContaining([expect.objectContaining({ kind: 'tag', name: 'one' })]),
+    rules: expect.objectContaining({ lora_min: 0, lora_max: 0 }),
+  }));
+});
 
 it('submits two simple lists with shared ranges and registered LoRA trigger words', async () => {
   localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify({ ...freshDraft(), name: 'Example', positive: 'scene' }));

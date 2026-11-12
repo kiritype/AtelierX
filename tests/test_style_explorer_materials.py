@@ -441,7 +441,7 @@ def test_legacy_session_read_and_restart_preserve_frozen_records_and_recipe_iden
         },
     )
     migrated = json.loads(path.read_text(encoding='utf-8'))
-    assert migrated['schema_version'] == 3
+    assert migrated['schema_version'] == 4
     assert migrated['candidates'][:3] == v1['candidates']
     for key in ('pair', 'votes', '_create_request', '_create_fingerprint'):
         assert migrated[key] == v1[key]

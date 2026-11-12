@@ -968,7 +968,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 #### 그림체 탐색
 
-위치: `state/image/explorer/<id>.json`. `id`는 UUIDv4의 32자리 hex다. 현재 형식은 `schema_version: 3`이다.
+위치: `state/image/explorer/<id>.json`. `id`는 UUIDv4의 32자리 hex다. 현재 형식은 `schema_version: 4`이다.
 탐색은 작품과 독립적이고, 앱 폴더를 옮기면 함께 이동한다.
 
 - 최상위: `id`, `name`, `service`, `family`, `created_at`, `revision`, `config`, `budget`, `used`, `candidates`, `pair`, `votes`.
@@ -992,12 +992,17 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 - `rules.artist_min`·`artist_max`와 `rules.lora_min`·`lora_max`는 각각 이미지에 포함할 태그와 LoRA의 총개수 범위다.
   각 개수에는 `always`가 포함된다. 이미지당 LoRA 최대 개수는 ComfyUI 16개, PixAI 5개다. `materials`로 생성한 탐색은
   LoRA 후보군을 이 목록에 저장한다. 생성 요청에 함께 들어온 `settings.loras`, `artists`, 이전 전역 가중치 규칙은
-  재료 선택에 쓰지 않는다.
+  재료 선택에 쓰지 않는다. 단, 형식 4의 선택적 `base_preset: {id, name, artist: {positive, negative}}`가
+  있으면 `settings.loras`는 고정 기준 목록이다. 순서·개별 모델/CLIP 강도를 유지하고 선택한 추가 LoRA를
+  뒤에 붙인다. 개수 범위는 추가 목록에만 적용하며 기준과 추가분의 합계 한도 및 중복을 검사한다.
+  기준 artist 양쪽은 레시피의 `style_positive`·`style_negative`에 포함된다. `id`·`name`은 출처이며
+  원본 프리셋을 다시 조회하지 않는다. 따라서 기존 프리셋 변경·삭제가 탐색에 영향을 주지 않는다.
 - 형식 1을 읽을 때 `artists`를 같은 포함 방식의 태그로, `settings.loras`를 LoRA 후보로 옮긴다.
   각 행에는 이전 `rules`의 `artist_low`·`artist_high`·`artist_step` 또는 `lora_low`·`lora_high`·`lora_step`을
   무작위 가중치로 복사한다. 이전 생성 요청도 이 방식으로 받으며 두 기존 필드를 호환용으로 유지한다.
   형식 1과 2는 이후에도 동일한 레시피를 뽑도록 `artist_format: "literal"`로 읽는다. 읽기에서는 변환한 구성을
-  응답에만 보여 주며, 이후 탐색에 기록을 저장할 때 형식 3으로 저장한다. 기존 후보의 실제 생성 설정과 프롬프트,
+  응답에만 보여 주며, 이후 탐색에 기록을 저장할 때 형식 4로 저장한다. 형식 3은 `artist_format`을 유지하고
+  기준 프리셋 없이 읽는다. 기존 후보의 실제 생성 설정과 프롬프트,
   평가와 비교 쌍, 기존 요청 지문과 대기열 스냅샷은 변환하지 않는다.
 - `budget`은 최대 생성 시도 수(최대 200), `used`는 대기열에 접수한 시도 수다. 재시도도 증가하며 실패·취소해도 돌려주지 않는다.
   한 번의 생성은 최대 16개다. 시드 `-1`은 탐색 생성 때 한 번 실제 시드로 확정한다.

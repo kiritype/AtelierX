@@ -247,6 +247,6 @@ def test_saved_v2_anima_session_keeps_literal_artists_and_existing_recipe_hashes
     continued = generate(client, viewed, 1)
     assert {row['style_positive'] for row in continued['candidates']} == {name, f'({name}:0.8)'}
     migrated = json.loads(path.read_text(encoding='utf-8'))
-    assert migrated['schema_version'] == 3
+    assert migrated['schema_version'] == 4
     assert migrated['candidates'][0] == doc['candidates'][0]
     assert runtime.jobs[0]['snapshot'] == queue_snapshot

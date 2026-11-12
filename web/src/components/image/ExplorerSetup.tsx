@@ -4,6 +4,7 @@ import NovelAISettings from './NovelAISettings';
 import PixAISettings from './PixAISettings';
 import ExplorerMaterials from './ExplorerMaterials';
 import ExplorerModels from './ExplorerModels';
+import ExplorerBasePreset from './ExplorerBasePreset';
 import { SERVICE_NAMES, type SettingsSection } from './serviceSettings';
 import type { ExplorerCapabilities } from '../../styleExplorerTypes';
 import { materialPool, settingsKey, switchContext, type ExplorerDraft, type ExplorerLora, type ExplorerModel } from './styleExplorerDraft';
@@ -92,6 +93,7 @@ export default function ExplorerSetup({
             </button>
           </div>
         )}
+        <ExplorerBasePreset draft={d} onChange={setDraft} />
         {(!hasModelCatalog || modelCount === 0) && providerSettings('model')}
         {hasModelCatalog ? (
           <ExplorerModels
