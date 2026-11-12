@@ -44,7 +44,9 @@ beforeEach(() => {
     if (url.startsWith('/api/image/gallery/detail?')) {
       const path = new URL(url, 'http://localhost').searchParams.get('path')!;
       const item = items.find(value => value.path === path)!;
-      return { ...item, record: { positive: `prompt ${path}`, seed: items.indexOf(item), settings: { model: path } }, history: [], adopted_path: null };
+      return { ...item, record: { positive: `prompt ${path}`, seed: items.indexOf(item), settings: { model: path,
+        loras: [{ name: 'style', strength_model: 0.37, strength_clip: 0 }, { name: 'zero', strength_model: 0, strength_clip: 0.8 },
+          { name: 'legacy', model_strength: 0.6 }, { name: 'pixai', weight: 0.5 }] } }, history: [], adopted_path: null };
     }
     if (url === '/api/image/review/rounds') return { rounds: [], enabled: false };
     if (url === '/api/works/w0/image/designs') return [];
@@ -64,6 +66,10 @@ it('keeps one record and preset control through real modal navigation, expansion
 
   for (const [index, name] of ['a', 'b', 'c', 'd', 'c', 'b'].entries()) {
     expect(host.querySelector('.gallery-detail .mono')?.textContent).toContain(`${name}.png`);
+    expect(host.querySelector('.gallery-detail')?.textContent).toContain('style (0.37 · CLIP 0)');
+    expect(host.querySelector('.gallery-detail')?.textContent).toContain('zero (0 · CLIP 0.8)');
+    expect(host.querySelector('.gallery-detail')?.textContent).toContain('legacy (0.6)');
+    expect(host.querySelector('.gallery-detail')?.textContent).toContain('pixai (0.5)');
     expect([...host.querySelectorAll('.gallery-detail button')].filter(button => button.textContent === t('gallery.open_record'))).toHaveLength(1);
     expect([...host.querySelectorAll('.gallery-detail button')].filter(button => button.textContent === t('gallery.save_preset'))).toHaveLength(1);
     await click(byText(t('gallery.open_record')));
@@ -78,6 +84,7 @@ it('keeps one record and preset control through real modal navigation, expansion
       await click(byText(t('gallery.save_preset')));
       expect(host.querySelectorAll('.gallery-detail .save-preset')).toHaveLength(1);
       expect(host.querySelector('.gallery-detail .save-preset')?.textContent).toContain('c.png');
+      expect(host.querySelector('.gallery-detail .save-preset')?.textContent).toContain('style (0.37 · CLIP 0)');
     }
     if (index < 5) await click(host.querySelector<HTMLButtonElement>(index >= 3 ? '.gallery-detail .nav.prev' : '.gallery-detail .nav.next')!);
   }

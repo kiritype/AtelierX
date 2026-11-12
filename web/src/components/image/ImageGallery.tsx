@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post, put, q } from '../../api';
 import { presetFromRecord } from '../../lib/presetFromRecord';
+import { loraLabel } from '../../lib/loraLabel';
 import { t, tm, msgText } from '../../i18n';
 import { SERVICE_NAMES } from './serviceSettings';
 import { useToast } from '../Toasts';
@@ -12,7 +13,7 @@ import { DeployUpload } from './DeployUpload';
 import GalleryToolSend from './GalleryToolSend';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import GalleryRecord from './GalleryRecord';
-import type { GenerationRecord, GenerationSettings, LoraRef, ReviewHistoryEntry } from '../../imageTypes';
+import type { GenerationRecord, GenerationSettings, ReviewHistoryEntry } from '../../imageTypes';
 import { useReferenceNames } from './useReferenceNames';
 
 export type GalleryItem = {
@@ -810,7 +811,7 @@ function Detail({
                   ['CFG', settings.cfg],
                   ['gen.seed', record.seed],
                   ['gallery.size', record.image_size?.join(' × ')],
-                  ['gen.loras', (settings.loras ?? []).map((l: LoraRef) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
+                  ['gen.loras', (settings.loras ?? []).map(loraLabel).join(', ')],
                   ['gen.preset', record.generation_preset?.name],
                   ['gallery.created', new Date(record.created_at ?? item.created_at).toLocaleString()],
                   ] as [string, unknown][]
@@ -868,7 +869,7 @@ function SavePreset({ record }: { record: GenerationRecord }) {
     ['gen.steps', s.steps],
     ['CFG', s.cfg],
     ['gallery.size', s.width && s.height ? `${s.width} × ${s.height}` : undefined],
-    ['gen.loras', (s.loras ?? []).map((l: LoraRef) => `${l.name} (${l.strength ?? l.model_strength ?? 1})`).join(', ')],
+    ['gen.loras', (s.loras ?? []).map(loraLabel).join(', ')],
     ['gallery.preset_common', draft.common.join(', ')],
     ['gen.artist', draft.artist.positive],
   ];
