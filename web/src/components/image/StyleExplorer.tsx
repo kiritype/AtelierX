@@ -566,5 +566,3 @@ export default function StyleExplorer({
     </div>
   );
 }
-
-
