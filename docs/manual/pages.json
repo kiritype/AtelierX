@@ -1,14 +1,39 @@
 {
   "groups": [
     {
-      "text": "처음 사용하기",
+      "text": "목적별 시작과 따라 하기",
       "folder": "tutorial",
-      "pages": ["first-run", "create-work", "connect-llm", "image-setup", "write-with-agent", "character-images", "post-processing", "refine-with-llm", "test-and-export"]
+      "pages": ["choose-path", "first-run", "create-work", "connect-llm", "image-setup", "write-with-agent", "character-images", "post-processing", "refine-with-llm", "test-and-export"]
     },
     {
-      "text": "사용 설명서",
+      "text": "작품과 원고 관리",
       "folder": "guide",
-      "pages": ["getting-started", "works", "editing", "relations", "history", "ai-tools", "agent", "guidelines", "chat-test", "connections", "settings", "image-setup", "image-services", "character-images", "image-library", "style-presets", "style-explorer", "models", "generation", "gallery-export", "image-tools", "deployment", "lora", "platforms", "maintenance", "external", "release-status"]
+      "pages": ["works", "editing", "relations", "history", "platforms"]
+    },
+    {
+      "text": "AI로 쓰기와 대화 테스트",
+      "folder": "guide",
+      "pages": ["connections", "agent", "ai-tools", "guidelines", "chat-test"]
+    },
+    {
+      "text": "이미지 준비와 재료",
+      "folder": "guide",
+      "pages": ["image-setup", "image-services", "models", "character-images", "image-library"]
+    },
+    {
+      "text": "이미지 생성과 그림체",
+      "folder": "guide",
+      "pages": ["generation", "single-generation", "batch-generation", "composition", "style-presets", "style-explorer", "gallery-export"]
+    },
+    {
+      "text": "후처리·배포·학습",
+      "folder": "guide",
+      "pages": ["image-tools", "deployment", "lora"]
+    },
+    {
+      "text": "설치·설정·문제 해결",
+      "folder": "guide",
+      "pages": ["getting-started", "settings", "maintenance", "terms", "external", "release-status"]
     },
     {
       "text": "버전",

@@ -2,39 +2,37 @@
 
 ## 준비물
 
-[릴리스 페이지](https://github.com/kiritype/AtelierX/releases/latest)의 Windows x64 포터블 패키지와 Windows 10/11 x64 PC가 필요합니다. PC에 Microsoft Edge WebView2 Runtime과 .NET Framework 4.8이 준비되어야 합니다. Python, Node.js, Git은 앱 실행에 필요하지 않습니다. 1.0 이전 버전이며 확인한 범위는 [검증 범위](release-status.md)에 있습니다. 처음이라면 [처음 사용하기](../tutorial/first-run.md)를 따라가는 편이 빠릅니다.
+Windows 10/11 x64 PC와 파일을 쓸 수 있는 폴더가 필요합니다. 앱 창을 열려면 Microsoft Edge WebView2 Runtime과 .NET Framework 4.8이 있어야 합니다. Python, Node.js, Git 설치 없이 앱을 실행할 수 있습니다.
 
 ## 압축 풀고 실행
 
-1. 다운로드한 ZIP의 **모든 파일**을 쓰기 가능한 폴더에 풉니다. 예: `D:\Apps\AtelierX`. `Program Files`처럼 앱이 파일을 쓰기 어려운 폴더는 피합니다.
-2. 폴더 안에 `AtelierX.exe`와 `_internal` 폴더가 함께 있는지 확인합니다. 둘을 분리하거나 exe만 다른 곳으로 옮기지 마세요.
-3. `AtelierX.exe`를 더블 클릭합니다. 관리자 권한은 필요하지 않습니다.
-4. 창이 열리지 않고 WebView 오류가 보이면 Microsoft 공식 WebView2 배포처에서 Evergreen Runtime을 설치한 뒤 다시 실행합니다. .NET Framework 4.8 요구 사항도 확인합니다.
+1. **Assets**에서 `AtelierX-0.5.1-windows-x64.zip`처럼 `-windows-x64.zip`으로 끝나는 포터블 패키지를 받습니다. [AtelierX 정식 릴리스](https://github.com/kiritype/AtelierX/releases/latest)
+2. ZIP 전체를 `D:\Apps\AtelierX`처럼 쓰기 가능한 폴더에 풉니다. `Program Files`는 피하고 `AtelierX.exe`와 `_internal` 폴더를 함께 둡니다.
+3. `AtelierX.exe`를 더블 클릭합니다. 관리자 권한은 필요하지 않습니다. 새 설치라면 마스터 비밀번호를 정하는 화면이 열립니다.
+4. WebView 오류가 보이면 **Evergreen Bootstrapper** 또는 **Evergreen Standalone Installer**의 x64판을 설치한 뒤 다시 엽니다. 계속 열리지 않으면 .NET Framework 4.8과 앱 폴더의 `state/logs/desktop.log`를 확인합니다. [Microsoft WebView2 Runtime 다운로드](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
 
-## 처음 한 번: 언어와 잠금 비밀번호
+## 언어와 마스터 비밀번호 정하기
 
-1. 첫 실행 카드의 언어를 **한국어** 또는 **English**로 고릅니다.
-2. **마스터 비밀번호**와 **비밀번호 확인** 칸에 앱 전용 비밀번호를 입력합니다. 최소 8글자이고 두 칸이 같아야 합니다. 0.3.0 전에 더 짧게 정한 비밀번호도 그대로 열리며, 열 때 바꾸기를 권합니다(**나중에**를 눌러 넘길 수 있습니다).
-3. **시작**을 누릅니다. 이후 실행할 때마다 잠금 화면에서 이 비밀번호를 입력합니다.
+1. **언어**에서 **한국어** 또는 **English**를 고릅니다.
+2. **마스터 비밀번호**에 8글자 이상의 앱 전용 비밀번호를 적고 **비밀번호 확인**에도 똑같이 적습니다.
+3. **시작**을 누릅니다. 작품 목록이 열리면 초기 설정이 끝난 것입니다. 이후에는 잠금 화면에서 정한 비밀번호를 입력하고 **열기**를 누릅니다.
 
-![첫 실행 화면](../screenshots/first-run.webp)
+[![첫 실행 화면](../screenshots/first-run.webp)](../screenshots/first-run.webp)
 
-비밀번호는 앱 잠금 해제와 인증 정보 금고를 여는 데 쓰입니다. 작품 파일은 암호화되지 않으므로 PC 계정과 포터블 폴더를 안전하게 관리하세요. 비밀번호를 분실하면 저장한 API 키 등 인증 정보를 초기화한 뒤 다시 입력해야 합니다.
+이 비밀번호는 앱 잠금을 풀고 API 키 금고를 여는 데 쓰입니다. 작품 파일은 평문으로 저장되므로 PC 계정과 앱 폴더에 대한 접근을 관리하세요. 비밀번호를 잊으면 금고를 초기화하고 키를 다시 등록해야 합니다. 0.3.0 전에 8글자보다 짧은 비밀번호를 정했다면 기존 비밀번호로 열 수 있습니다. 변경 안내에서 **나중에**를 누르면 지금 설정을 유지합니다. [유지 관리와 문제 해결](maintenance.md)
 
 ## 샘플 작품 열기
 
-1. 작품 선택 화면에서 **샘플**을 누릅니다.
-2. 목록에서 연습할 샘플의 **설치**를 누릅니다. 앱은 샘플 원본을 직접 편집하지 않고 새 작품 복사본을 만듭니다.
+1. 작품 목록에서 **샘플**을 누릅니다.
+2. 연습할 샘플의 **설치**를 누릅니다. 샘플이 복제되어 새 작품이 생깁니다.
+3. 작품 창 왼쪽 파일 트리에서 메인 또는 캐릭터 파일을 엽니다. 파일이 열리면 [처음 사용하기](../tutorial/first-run.md)를 이어서 따라갈 수 있습니다.
 
-![샘플 목록](../screenshots/works-samples.webp)
-3. 왼쪽 파일 트리에서 메인 또는 캐릭터 파일을 열어 봅니다.
+[![샘플 목록](../screenshots/works-samples.webp)](../screenshots/works-samples.webp)
 
-화면에 작품이 하나도 없다면 **새 작품**으로 이름을 입력해 빈 작품을 만들 수도 있습니다. 설치된 패키지의 수동 안내는 `manual/index.html`로도 오프라인에서 열 수 있습니다.
+빈 작품으로 시작하려면 작품 목록에서 **새 작품**을 누르고 이름을 입력합니다. 오프라인 설명서는 **도움말 → 사용 설명서(이 PC)** 또는 앱 폴더의 `manual/index.html`에서 엽니다.
 
-## 어디에 저장되나요?
+## 데이터와 선택 기능
 
-앱은 실행 파일 옆 `config`, `state`, `data`, `output` 폴더를 사용합니다. 다른 PC로 이동하거나 업데이트하기 전에 앱을 닫고 이 네 폴더를 백업하세요. 외부 LLM, 이미지 서버, 모델은 기본 패키지에 포함되지 않습니다.
+설정, 앱 상태, 작품, 생성 결과는 실행 파일 옆 `config`, `state`, `data`, `output`에 저장됩니다. 이동·업데이트 전에는 앱을 종료하고 네 폴더를 복사합니다. [백업과 업데이트](maintenance.md)
 
-## 다음 단계
-
-[처음 사용하기](../tutorial/first-run.md)에서 샘플 작품 하나로 전체 흐름을 따라 하거나, [작품 목록과 작품 설정](works.md)과 [파일과 편집기](editing.md)에서 작품을 다루는 방법을 보세요. 설정 화면 전체는 [설정 한눈에 보기](settings.md)에 정리했습니다.
+편집은 바로 시작할 수 있습니다. LLM과 이미지 생성에 쓰는 서버·모델은 필요할 때 연결합니다. [설정 한눈에 보기](settings.md), [검증 범위와 출시 상태](release-status.md)

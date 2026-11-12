@@ -12,7 +12,7 @@ const version = (await readFile(resolve(root, 'server/atelierx/__init__.py'), 'u
 const esc = s => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const files = ['index.md', ...groups.flatMap(g => g.pages.map(p => (g.folder ? `${g.folder}/${p}.md` : `${p}.md`)))];
 const pages = await Promise.all(files.map(async file => {
-  const text = await readFile(resolve(source, file), 'utf8');
+  const text = (await readFile(resolve(source, file), 'utf8')).replace(/\r\n?/g, '\n');
   const head = text.match(/^---\n([\s\S]*?)\n---\n/);
   const md = head ? text.slice(head[0].length) : text;
   return { file, md, head: head?.[1] ?? '', title: md.match(/^# (.+)$/m)?.[1] ?? 'AtelierX', url: file.replace(/\.md$/, '.html') };
@@ -44,7 +44,11 @@ for (let n = 0; n < pages.length; n++) {
     return `<h${level} id="${id}">${text}</h${level}>`;
   });
   const nav = [`<a href="${prefix}index.html"${n === 0 ? ' aria-current="page"' : ''}>처음 화면</a>`]
-    .concat(groups.map(g => `<strong>${esc(g.text)}</strong>` + pages.filter(p => p.file !== 'index.md' && (g.folder ? p.file.startsWith(`${g.folder}/`) : !p.file.includes('/'))).map(p => `<a href="${link(p)}"${p === page ? ' aria-current="page"' : ''}>${esc(p.title)}</a>`).join('')))
+    .concat(groups.map(g => `<strong>${esc(g.text)}</strong>` + g.pages.map(name => {
+      const file = `${g.folder ? `${g.folder}/` : ''}${name}.md`;
+      const item = pages.find(p => p.file === file);
+      return `<a href="${link(item)}"${item === page ? ' aria-current="page"' : ''}>${esc(item.title)}</a>`;
+    }).join('')))
     .join('');
   // The home page opens with its hero; a page index above it would come first.
   const toc = page.head ? '' : headings.filter(h => h.level === '2').map(h => `<a href="#${h.id}">${h.text}</a>`).join(' · ');
