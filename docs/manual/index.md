@@ -39,7 +39,7 @@ features:
 | 처음 설치하고 샘플 열기 | [첫 실행](tutorial/first-run.md) → [작품 만들기](tutorial/create-work.md) | 작품 목록에서 샘플을 열고 파일을 편집할 수 있음 |
 | 원고를 쓰고 AI와 다듬기 | [LLM 연결](tutorial/connect-llm.md) → [에이전트로 쓰기](tutorial/write-with-agent.md) → [테스트·내보내기](tutorial/test-and-export.md) | 채택한 원고로 대화하고 내보낸 파일을 확인 |
 | 이미지 한 장 만들기 | [서비스 준비](guide/image-setup.md) → [단일 이미지 생성](guide/single-generation.md) | 결과 이미지와 실제 생성 설정 확인 |
-| 마음에 드는 그림체 찾기 **(개발본)** | [그림체 탐색](guide/style-explorer.md) → [프리셋 저장·적용](guide/style-presets.md) → [단일 생성](guide/single-generation.md) | 저장한 그림체를 다른 장면에 다시 사용 |
+| 마음에 드는 그림체 찾기 | [그림체 탐색](guide/style-explorer.md) → [프리셋 저장·적용](guide/style-presets.md) → [단일 생성](guide/single-generation.md) | 저장한 그림체를 다른 장면에 다시 사용 |
 | 캐릭터의 의상·표정 이미지 만들기 | [캐릭터 이미지 설계](guide/character-images.md) → [일괄 생성](guide/batch-generation.md) → [갤러리·채택](guide/gallery-export.md) | 필요한 조합의 채택 이미지를 내보냄 |
 | 이미지 다듬기·배포하기 | [이미지 도구](guide/image-tools.md) → [R2 업로드](guide/deployment.md) | 원본을 보존한 결과 또는 배포 URL 확인 |
 | 업데이트·백업·문제 해결 | [유지 관리](guide/maintenance.md) | 버전, 백업 범위와 복원할 파일 확인 |
@@ -50,9 +50,7 @@ features:
 
 ## 설명서와 앱 버전 확인
 
-이 설명서의 앱 버전은 상단 또는 하단에 표시됩니다. 앱에서는 **도움말 → 사용 설명서(이 PC)** 로 같은 내용을 인터넷 없이 볼 수 있습니다. 업데이트 전후의 차이는 [바뀐 점](changelog.md), 확인한 환경과 제한은 [검증 범위](guide/release-status.md)를 참고하세요.
-
-> **출시 전 문서:** 현재 작업본에는 정식 0.5.1에 없는 그림체 탐색과 프리셋의 단일·일괄 적용 구분이 포함되어 있습니다. 해당 페이지에도 표시했습니다. 이 문서는 기능과 함께 출시할 때 공개하며, 현재 정식 앱에서 같은 메뉴가 보이지 않을 수 있습니다.
+이 설명서가 다루는 앱 버전은 페이지 상단 또는 하단에 표시됩니다. 설치한 앱 버전은 **도움말 → AtelierX 정보**에서 확인합니다. **도움말 → 사용 설명서(이 PC)**를 누르면 설치한 버전의 설명서가 인터넷 없이 열립니다. 업데이트 전후의 차이는 [바뀐 점](changelog.md), 확인한 환경과 제한은 [검증 범위](guide/release-status.md)를 참고하세요.
 
 캡처는 가상 작품과 예시 설정을 사용한 실제 앱 화면입니다. 캡처의 모델·LoRA 이름과 숫자는 설명용 예이며 설치된 항목이나 권장값을 뜻하지 않습니다. 화면에서 **무엇을 누르고 어떤 상태가 되면 완료인지**를 캡처 아래 설명과 함께 확인하세요. 캡처를 누르면 원본 크기로 열리며, 뒤로 가기로 설명서에 돌아옵니다.
 

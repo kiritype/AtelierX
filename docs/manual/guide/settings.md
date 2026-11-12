@@ -27,9 +27,7 @@
 - **새 작품의 기본 플랫폼 프리셋**: 고르면 새 작품의 태그에 그 프리셋이 미리 들어갑니다.
 - **자동 스냅숏 간격 (분)**: 저장할 때 생기는 스냅숏을 몇 분 간격으로 묶을지. → [기록과 휴지통](history.md)
 
-[![일반 설정에서 다크 테마를 선택한 실제 개발본 화면](../screenshots/settings-theme-dark.jpg)](../screenshots/settings-theme-dark.jpg)
-
-위 화면은 개발본의 **일반** 설정입니다. 테마 선택은 즉시 반영되고 다음 실행에도 유지됩니다.
+[![설정의 일반에서 다크 테마를 선택한 화면](../screenshots/settings-theme-dark.jpg)](../screenshots/settings-theme-dark.jpg)
 
 ## 인증 정보·보안
 

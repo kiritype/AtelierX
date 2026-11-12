@@ -4,7 +4,7 @@
 
 [![단일 생성의 현재 입력과 최근에 연 결과](../screenshots/single-generation-light.jpg)](../screenshots/single-generation-light.jpg)
 
-화면 예시의 오른쪽은 **연습용 기본 그림체**로 만든 단색 시험 결과입니다. 왼쪽에서 **연습용 잉크 그림체**를 적용한 상태이며, 다음 **1장 생성** 요청에 왼쪽 입력과 설정이 사용됩니다.
+화면 오른쪽은 이전에 실제 ComfyUI로 만든 단일 생성 결과입니다. 왼쪽은 **비교에서 고른 그림체**를 새로 적용한 상태입니다. 프리셋을 바꿔도 이미 완성된 결과는 유지되며, 다음 **1장 생성** 요청에 왼쪽 입력과 설정이 사용됩니다.
 
 ## 장면 만들기
 
@@ -26,7 +26,7 @@
 
 ## 결과 확인과 다시 생성
 
-[![단색 시험 이미지의 기록된 설정과 재생성 버튼](../screenshots/single-record-light.jpg)](../screenshots/single-record-light.jpg)
+[![실제 생성 이미지의 기록된 설정과 재생성 버튼](../screenshots/single-record-light.jpg)](../screenshots/single-record-light.jpg)
 
 결과를 누르면 이미지와 **기록된 설정**이 크게 열립니다. 모델·크기·구도·그림체·시드·스텝·CFG를 확인하고 **현재 입력과 다른 값**을 펼쳐 비교합니다. 오래된 결과에 빠진 값은 **기록 없음**으로 표시되며, 세부 값은 **기록된 설정 JSON**에 있습니다.
 
