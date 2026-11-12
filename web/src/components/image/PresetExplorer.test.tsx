@@ -6,6 +6,7 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { get, post, put } from '../../api';
 import { t } from '../../i18n';
 import PresetExplorer from './PresetExplorer';
+import { PRESET_HANDOFF, SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 
 vi.mock('../../api', () => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn(), ApiError: class extends Error {} }));
 const { toast } = vi.hoisted(() => ({ toast: vi.fn() }));
@@ -74,6 +75,26 @@ it('keeps the saved seed when confirmation is cancelled', async () => {
   await edit('-1'); vi.mocked(confirm).mockReturnValue(false);
   await act(async () => input().dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
   expect(put).not.toHaveBeenCalled(); expect(input().value).toBe('1234567');
+});
+it('routes single and batch application separately and requires a work', async () => {
+  sessionStorage.clear();
+  const openSingle = vi.fn(), openGenerate = vi.fn();
+  const render = async (workId?: string) => act(async () => root.render(<QueryClientProvider client={qc}>
+    <PresetExplorer workId={workId} openSingle={openSingle} openGenerate={openGenerate} />
+  </QueryClientProvider>));
+  await render('w');
+  await act(async () => (host.querySelector('.explorer-card') as HTMLElement).click());
+  const apply = (key: string) => [...host.querySelectorAll('button')].find(button => button.textContent === t(key))!;
+  await act(async () => apply('presets.apply_single').click());
+  expect(openSingle).toHaveBeenCalledOnce();
+  expect(JSON.parse(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)!)).toEqual({ workId: 'w', presetId: 'one' });
+  expect(sessionStorage.getItem(PRESET_HANDOFF)).toBeNull();
+  await act(async () => apply('presets.apply_batch').click());
+  expect(openGenerate).toHaveBeenCalledOnce();
+  expect(sessionStorage.getItem(PRESET_HANDOFF)).toBe('one');
+  await render();
+  expect(apply('presets.apply_single').disabled).toBe(true);
+  expect(apply('presets.apply_batch').disabled).toBe(true);
 });
 it('shows names first with IDs to distinguish duplicates and falls back to IDs for blank names', async () => {
   await act(async () => qc.setQueryData(['image-presets'], [

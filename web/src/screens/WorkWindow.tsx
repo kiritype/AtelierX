@@ -53,7 +53,7 @@ const LAUNCHERS: { tab: 'relations' | 'glossary'; icon: IconName }[] = [
   { tab: 'glossary', icon: 'glossary' },
 ];
 
-export default function WorkWindow({ workId, onLeave, onLock }: { workId: string; onLeave: () => void; onLock: () => void }) {
+export default function WorkWindow({ workId, active: windowActive = true, onOpenTools, onLeave, onLock }: { workId: string; active?: boolean; onOpenTools?: () => void; onLeave: () => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const info = useQuery<WorkInfo>({ queryKey: ['work', workId], queryFn: () => get(`/api/works/${workId}`) });
@@ -107,9 +107,13 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     get('/api/ui-state').then((state) => {
       const saved = state?.works?.[workId];
       if (saved?.tabs) {
-        setTabs(saved.tabs);
-        setPinned(Array.isArray(saved.pinned) ? saved.pinned : []);
-        setActive(saved.active ?? null);
+        const restoredTabs: Tab[] = saved.tabs.filter((tab: Tab) => !(tab.type === 'image' && tab.view === 'explorer'));
+        const legacyExplorer = saved.tabs.some((tab: Tab) => tab.type === 'image' && tab.view === 'explorer' && tabKey(tab) === saved.active);
+        const fallbackActive = restoredTabs.at(-1);
+        setTabs(restoredTabs);
+        setPinned(Array.isArray(saved.pinned) ? saved.pinned.filter((key: string) => restoredTabs.some((tab) => tabKey(tab) === key)) : []);
+        setActive(legacyExplorer ? (fallbackActive ? tabKey(fallbackActive) : null) : saved.active ?? null);
+        if (legacyExplorer) onOpenTools?.();
       }
       if (saved?.sidebar && typeof saved.sidebar === 'object') {
         setSidebarCollapsed(!!saved.sidebar.collapsed);
@@ -118,7 +122,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
       }
       setRestored(true);
     });
-  }, [workId]);
+  }, [workId, onOpenTools]);
   useEffect(() => {
     if (!restored) return;
     const timer = setTimeout(() => {
@@ -142,6 +146,10 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
   }, [sidebarCollapsed, panel]);
 
   const open = useCallback((tab: Tab) => {
+    if (tab.type === 'image' && tab.view === 'explorer') {
+      onOpenTools?.();
+      return;
+    }
     // The queue view has no character-specific state. Reuse even an older
     // character-scoped queue tab instead of opening a second queue.
     if (tab.type === 'image' && tab.view === 'queue') {
@@ -158,7 +166,13 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
     setTabs((list) => (list.some((x) => tabKey(x) === key) ? list.map((x) => (tabKey(x) === key ? { ...x, ...tab } : x)) : [...list, tab]));
     setActive(key);
     setTesting(false);
-  }, [tabs]);
+  }, [tabs, onOpenTools]);
+
+  useEffect(() => {
+    const openGenerate = (event: Event) => open({ type: 'image', view: (event as CustomEvent).detail === 'single' ? 'single' : 'generate' });
+    window.addEventListener('atelierx:open-image-generate', openGenerate);
+    return () => window.removeEventListener('atelierx:open-image-generate', openGenerate);
+  }, [open]);
 
   const confirmClose = useCallback((keys: string[]) => {
     const dirty = tabs.filter((tab) => keys.includes(tabKey(tab)) && unsaved.dirty(tabKey(tab)));
@@ -249,6 +263,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!windowActive) return;
       if (e.ctrlKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         setQuickOpen(true);
@@ -381,6 +396,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
         { label: t('authoring.title'), run: () => setAuthoring(true) },
         { label: t('panel.relations'), run: () => open({ type: 'relations' }) },
         { label: t('panel.glossary'), run: () => open({ type: 'glossary' }) },
+        { label: t('image_menu.explorer'), run: onOpenTools ?? (() => undefined) },
         null,
         { label: t('relations.extract'), run: startJob(`/api/works/${workId}/relations/extract`, t('relations.extract_started')) },
         { label: t('consistency.run'), run: startJob(`/api/works/${workId}/consistency`, t('consistency.started')) },
@@ -594,7 +610,7 @@ export default function WorkWindow({ workId, onLeave, onLock }: { workId: string
                     {tab.type === 'glossary' && <GlossaryTab workId={workId} />}
                     {tab.type === 'image' && (
                       <ImageScreen
-                        active={key === active}
+                        active={windowActive && key === active}
                         focused={imageFocus}
                         toggleFocus={() => setImageFocus(value => !value)}
                         workId={workId}

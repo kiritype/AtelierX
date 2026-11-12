@@ -1,0 +1,213 @@
+.style-explorer {
+  max-width: 1120px;
+  margin: 0 auto;
+  gap: 16px;
+}
+.explorer-setup {
+  gap: 14px;
+}
+.explorer-setup textarea {
+  resize: vertical;
+}
+.explorer-setup p,
+.explorer-materials h4,
+.explorer-material-panel h5 {
+  margin: 0;
+}
+.explorer-context,
+.explorer-generation {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.explorer-context > .row,
+.explorer-run-fields {
+  flex-wrap: wrap;
+}
+.explorer-generation > :not(summary),
+.explorer-context details > :not(summary) {
+  margin-top: 12px;
+}
+.explorer-context select {
+  max-width: 100%;
+}
+.explorer-generation > label,
+.explorer-run-fields > label {
+  width: fit-content;
+}
+.explorer-generation > label input,
+.explorer-run-fields input {
+  width: 110px;
+}
+.explorer-prompts,
+.explorer-material-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 12px;
+}
+.explorer-materials {
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--panel-2);
+  padding: 12px;
+  gap: 10px;
+}
+.explorer-materials h4 {
+  font-size: 1.15em;
+}
+.explorer-material-heading {
+  gap: 3px;
+}
+.explorer-material-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.explorer-material-panel h5 {
+  font-size: 1em;
+}
+.explorer-material-add > :is(textarea, select) {
+  flex: 1;
+  min-width: 0;
+}
+.explorer-material-add textarea {
+  min-height: 32px;
+}
+.explorer-material-add button {
+  white-space: nowrap;
+}
+.explorer-model-pool {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.explorer-model-add {
+  flex-wrap: wrap;
+}
+.explorer-model-add input {
+  flex: 0 1 190px;
+  min-width: 0;
+}
+.explorer-model-add select {
+  flex-basis: 170px;
+}
+.explorer-material-list {
+  display: grid;
+  max-height: 160px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.explorer-material-list li {
+  justify-content: space-between;
+  min-width: 0;
+  padding-inline: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.explorer-material-list li span {
+  overflow-wrap: anywhere;
+}
+.explorer-material-list button {
+  flex: none;
+}
+.explorer-material-ranges {
+  margin-top: auto;
+}
+.explorer-material-ranges > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.explorer-material-ranges fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.explorer-material-ranges legend {
+  padding: 0;
+  margin-bottom: 2px;
+  font-weight: 600;
+}
+.explorer-material-ranges label {
+  gap: 2px;
+  font-size: .9em;
+}
+.explorer-material-ranges input {
+  width: 60px;
+}
+.explorer-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.explorer-pair img {
+  width: 100%;
+  height: min(52vh, 560px);
+  object-fit: contain;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+.explorer-choice {
+  width: 100%;
+  min-height: 64px;
+  font-size: 21px;
+}
+.explorer-comparator {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.explorer-comparator:focus {
+  outline: 2px solid var(--focus-ring);
+}
+.explorer-comparator kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-right: 0.25em;
+  padding: 0.1em 0.3em;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.8em;
+  line-height: 1.2;
+}
+.explorer-pair pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.explorer-ranking {
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 6px;
+}
+.explorer-ranking img {
+  width: 160px;
+  max-height: 180px;
+  object-fit: contain;
+}
+.explorer-confirm {
+  position: fixed;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, 90vw);
+  padding: 24px;
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 0 0 100vmax #0008;
+}
+@media (max-width: 640px) {
+  .explorer-pair {
+    gap: 8px;
+  }
+  .explorer-ranking img {
+    width: 90px;
+  }
+}

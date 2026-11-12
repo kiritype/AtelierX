@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, del, get, post, put } from '../../api';
 import { t, tm } from '../../i18n';
-import { PRESET_HANDOFF } from '../../lib/presetHandoff';
+import { PRESET_HANDOFF, SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { displayName, nameIdHint } from '../../lib/nameLabels';
 import Explorer, { type Facet } from '../explorer/Explorer';
 import { useToast } from '../Toasts';
@@ -22,7 +22,7 @@ const facets = (): Facet<Preset>[] => [
   { id: 'lora', label: t('presets.facet.lora'), values: loraNames },
 ];
 
-export default function PresetExplorer({ workId, openGenerate }: { workId: string; openGenerate: () => void }) {
+export default function PresetExplorer({ workId, openGenerate, openSingle, canOpenGenerate }: { workId?: string; openGenerate?: () => void; openSingle?: () => void; canOpenGenerate?: () => boolean }) {
   const [FACETS] = useState(facets);
   const qc = useQueryClient();
   const toast = useToast();
@@ -206,16 +206,27 @@ export default function PresetExplorer({ workId, openGenerate }: { workId: strin
           {storedPreset?.preview_url ? t('presets.preview_again') : t('presets.preview_make')}
         </button>
         <button
-          disabled={!storedPreset}
+          disabled={!storedPreset || !workId}
+          title={!workId ? t('tools.open_work_for_preset') : undefined}
           onClick={() => {
-            if (!leave()) return;
+            if (!leave() || (canOpenGenerate && !canOpenGenerate())) return;
             sessionStorage.setItem(PRESET_HANDOFF, draft.id);
             window.dispatchEvent(new CustomEvent(PRESET_HANDOFF, { detail: draft.id }));
-            openGenerate();
+            openGenerate?.();
           }}
         >
-          {t('presets.apply')}
+          {t('presets.apply_batch')}
         </button>
+        {openSingle && <button
+          disabled={!storedPreset || !workId}
+          title={!workId ? t('tools.open_work_for_preset') : undefined}
+          onClick={() => {
+            if (!leave() || (canOpenGenerate && !canOpenGenerate())) return;
+            sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId, presetId: draft.id }));
+            window.dispatchEvent(new Event(SINGLE_PRESET_HANDOFF));
+            openSingle();
+          }}
+        >{t('presets.apply_single')}</button>}
         <button
           disabled={!storedPreset}
           onClick={async () => {

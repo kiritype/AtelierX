@@ -41,10 +41,10 @@ export default function ImageScreen({
   outfitId?: string;
 }) {
   const content = () => {
-  if (view === 'single') return <ImageSingle workId={workId} openView={openView} />;
+  if (view === 'single') return <ImageSingle workId={workId} openView={openView} active={active} />;
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'models') return <ModelsScreen openSettings={openSettings} />;
-  if (view === 'presets') return <PresetExplorer workId={workId} openGenerate={() => openView('generate')} />;
+  if (view === 'presets') return <PresetExplorer workId={workId} openGenerate={() => openView('generate')} openSingle={() => openView('single')} />;
   if (view === 'board') return <ImageBoard workId={workId} openGenerate={() => openImage('generate')} openGallery={(c, o) => openImage('gallery', c, o)} />;
   if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
   if (view === 'queue') return <ImageQueue />;

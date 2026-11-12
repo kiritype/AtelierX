@@ -11,7 +11,7 @@ import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/H
 import { MenuButton } from '../components/MenuBar';
 import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
 
-export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) => void; onLock: () => void }) {
+export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (id: string) => void; onOpenTools: () => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
@@ -65,6 +65,7 @@ export default function WorkSelect({ onOpen, onLock }: { onOpen: (id: string) =>
             <Icon name="release" size={14} /> <span className="update-badge-label">{t('help.update_badge')}</span>
           </button>
         )}
+        <MenuButton className="ghost" label={t('menu.tools')} items={[{ label: t('image_menu.explorer'), run: onOpenTools }]} />
         <MenuButton className="ghost" label={t('menu.help')} items={help.entries} />
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitepress';
 import { readFileSync } from 'node:fs';
+import { cp } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 // Page order lives in pages.json, shared with the offline manual (tools/render_manual.mjs).
@@ -23,6 +24,11 @@ export default defineConfig({
   base, outDir: '../../dist/manual-site',
   srcExclude: ['node_modules/**', 'README.md'],
   cleanUrls: false,
+  // Markdown image links keep their original paths; Vite only hashes embedded images.
+  // Publish originals too so readers can open full-size captures, as in the offline manual.
+  async buildEnd(site) {
+    await cp(`${manual}/screenshots`, `${site.outDir}/screenshots`, { recursive: true });
+  },
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${base}icon.svg` }],
     // Visit counts and referrers for the online site, without cookies. The offline manual in the app is rendered
@@ -32,8 +38,8 @@ export default defineConfig({
   themeConfig: {
     logo: '/icon.svg',
     nav: [
-      { text: '처음 사용하기', link: '/tutorial/first-run' },
-      { text: '사용 설명서', link: '/guide/getting-started' },
+      { text: '목적별 시작', link: '/tutorial/choose-path' },
+      { text: '이미지 생성', link: '/guide/generation' },
       { text: `${version} 기준`, link: '/changelog' },
       { text: '다운로드', link: 'https://github.com/kiritype/AtelierX/releases/latest' },
     ],

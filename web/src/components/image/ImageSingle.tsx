@@ -6,6 +6,7 @@ import type { ImageView } from '../../types';
 import type { GalleryToolsResponse, PromptSource, SingleRun, SingleRuns } from '../../imageTypes';
 import { combineSources, promptSources, restorePromptSources, validSources, cleanPrompt, editablePrompt, replaceSource } from '../../lib/singlePromptSources';
 import { settingsFromPreset } from '../../lib/presetSettings';
+import { SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { fits } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import type { ImageServices } from '../ImageServiceSettings';
@@ -52,7 +53,7 @@ const localTime = (value: string) => {
 };
 const HISTORY_PAGE_SIZE = 6;
 
-export default function ImageSingle({ workId, openView }: { workId: string; openView: (view: ImageView) => void }) {
+export default function ImageSingle({ workId, openView, active: screenActive = true }: { workId: string; openView: (view: ImageView) => void; active?: boolean }) {
   const id = useId();
   const qc = useQueryClient();
   const [draft, setDraft] = useState(() => readDraft(workId));
@@ -109,8 +110,9 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
   const sourceList = promptSources(draft.positive, draft.negative, draft.sources);
   const positive = combineSources(sourceList, 'positive');
   const negative = combineSources(sourceList, 'negative');
-  function choosePreset(ident: string) {
-    const preset = servicePresets.find(item => item.id === ident);
+  function choosePreset(ident: string, fromHandoff = false) {
+    const preset = (fromHandoff ? presets.data : servicePresets)?.find(item => item.id === ident);
+    const service = (preset?.service ?? draft.service) as Service;
     const target = preset?.service === 'comfyui' ? preset.family : preset?.service;
     const items = (preset?.common ?? []).map(key => commons.data?.[key]);
     if (items.some(item => !item || !fits(item, target))) { setError(t('materials.common_unavailable')); return; }
@@ -121,12 +123,28 @@ export default function ImageSingle({ workId, openView }: { workId: string; open
       { kind: 'style', id: preset.id, name: preset.name, positive: cleanPrompt(preset.artist?.positive ?? ''), negative: cleanPrompt(preset.artist?.negative ?? '') },
     ] : [];
     setError('');
-    setDraft(current => ({ ...current, preset: ident, legacyPreset: false,
+    setDraft(current => ({ ...current, service, preset: ident, legacyPreset: false,
       sources: [...current.sources.filter(source => !['style', 'common'].includes(source.kind)), ...materials],
-      settings: preset ? { ...current.settings, [current.service]: current.service === 'comfyui'
+      settings: preset ? { ...current.settings, [service]: service === 'comfyui'
         ? settingsFromPreset(current.settings.comfyui, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS)
-        : { ...current.settings[current.service], ...preset.settings } } : current.settings }));
+        : { ...(!(fromHandoff && preset.settings.model) ? current.settings[service] : {}), ...preset.settings } } : current.settings }));
   }
+  useEffect(() => {
+    const receive = () => {
+      if (!screenActive || !presets.data || !commons.data) return;
+      const raw = sessionStorage.getItem(SINGLE_PRESET_HANDOFF);
+      if (!raw) return;
+      try {
+        const handoff = JSON.parse(raw) as { workId: string; presetId: string };
+        if (handoff.workId !== workId) return;
+        sessionStorage.removeItem(SINGLE_PRESET_HANDOFF);
+        if (presets.data.some(preset => preset.id === handoff.presetId)) choosePreset(handoff.presetId, true);
+      } catch { sessionStorage.removeItem(SINGLE_PRESET_HANDOFF); }
+    };
+    receive();
+    window.addEventListener(SINGLE_PRESET_HANDOFF, receive);
+    return () => window.removeEventListener(SINGLE_PRESET_HANDOFF, receive);
+  }, [presets.data, commons.data, workId, screenActive]);
   const fail = (err: unknown) => setError(err instanceof ApiError ? tm(err.msg) : String(err));
   const refresh = () => qc.invalidateQueries({ queryKey: ['image-single-runs', workId] });
   async function enqueue(value = draft, repeatOk = false) {

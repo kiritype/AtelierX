@@ -23,10 +23,13 @@ type Status = {
 
 // The work window and everything in it are read when a work opens (#83): the lock and work list stay small.
 const WorkWindow = lazy(() => import('./screens/WorkWindow'));
+const GlobalToolsWindow = lazy(() => import('./screens/GlobalToolsWindow'));
 
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [workId, setWorkId] = useState<string | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const openTools = useCallback(() => setToolsOpen(true), []);
   // Unlocked with a password shorter than new ones may be (#82): suggest changing it, once per unlock.
   const [suggestPassword, setSuggestPassword] = useState(false);
   const queryClient = useQueryClient();
@@ -40,6 +43,7 @@ export default function App() {
     const value = await get<Status>('/api/auth/status');
     setLanguage(value.language);
     setStatus(value);
+    if (!value.unlocked) setToolsOpen(false);
     setSuggestPassword(!!value.unlocked && !!value.password_change_suggested);
   }, []);
 
@@ -47,6 +51,7 @@ export default function App() {
     refresh();
     setUnauthorizedHandler(() => {
       queryClient.clear();
+      setToolsOpen(false);
       refresh();
     });
     setConsentHandler(async (msg, url) => {
@@ -70,13 +75,20 @@ export default function App() {
   let screen;
   if (!status.initialized) screen = <FirstRun onDone={refresh} />;
   else if (!status.unlocked) screen = <Lock wait={status.wait} onDone={refresh} />;
-  else if (!workId) screen = <WorkSelect onOpen={openWork} onLock={refresh} />;
-  else screen = <WorkWindow key={workId} workId={workId} onLeave={() => setWorkId(null)} onLock={refresh} />;
+  else if (!workId) screen = <WorkSelect onOpen={openWork} onOpenTools={openTools} onLock={refresh} />;
+  else screen = <WorkWindow key={workId} workId={workId} active={!toolsOpen} onOpenTools={openTools} onLeave={() => setWorkId(null)} onLock={refresh} />;
 
   return (
     <AppThemeProvider preference={(status.unlocked ? settings.data?.theme : undefined) ?? status.theme ?? 'system'}>
       <ToastProvider>
-        <Suspense fallback={<Loading />}>{screen}</Suspense>
+        <div hidden={toolsOpen && status.unlocked} inert={toolsOpen && status.unlocked} style={{ display: toolsOpen && status.unlocked ? 'none' : 'contents' }} aria-hidden={toolsOpen && status.unlocked || undefined}>
+          <Suspense fallback={<Loading />}>{screen}</Suspense>
+        </div>
+        {toolsOpen && status.unlocked && (
+          <Suspense fallback={<Loading />}>
+            <GlobalToolsWindow workId={workId ?? undefined} onClose={() => setToolsOpen(false)} />
+          </Suspense>
+        )}
         {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}
         <Toasts />
         <TooltipLayer />

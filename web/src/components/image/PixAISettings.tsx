@@ -29,14 +29,21 @@ export function usePixAIInfo(preview = false) {
   });
 }
 
-export default function PixAISettings({ value, onChange, preview = false, compact = false }: ServicePanelProps) {
+export default function PixAISettings({ value, onChange, preview = false, compact = false, section, showLoras = true, modelCandidates }: ServicePanelProps & {
+  showLoras?: boolean;
+  modelCandidates?: string[];
+}) {
   const info = usePixAIInfo(preview);
   const [customModel, setCustomModel] = useState(false);
   if (!info.data) return null;
   const v = { ...info.data.defaults, ...value } as Record<string, any>;
   const set = (change: Record<string, unknown>) => onChange({ ...value, ...change });
   const model = info.data.models.find((m) => m.id === v.model);
-  const dit = model?.type === 'dit';
+  const types = modelCandidates?.length
+    ? info.data.models.filter(({ id }) => modelCandidates.includes(id)).map(({ type }) => type)
+    : [model?.type ?? 'sdxl'];
+  const dit = types.includes('dit');
+  const sdxl = types.includes('sdxl');
   const picked: Picked[] = v.loras ?? [];
   const registered = info.data.loras;
   const toggleLora = (lora: PixAILora, on: boolean) =>
@@ -46,8 +53,8 @@ export default function PixAISettings({ value, onChange, preview = false, compac
         : picked.filter((p) => p.id !== lora.id),
     });
 
-  return (
-    <div className="col" style={{ gap: 8 }}>
+  const modelFields = (
+    <>
       <label className="col" style={{ gap: 2 }}>
         <span className="muted">{t('pixai.model')}</span>
         {customModel || !model ? (
@@ -68,6 +75,10 @@ export default function PixAISettings({ value, onChange, preview = false, compac
           </select>
         )}
       </label>
+    </>
+  );
+  const parameters = (
+    <>
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <label className="row" style={{ gap: 4 }}>
           <span className="muted">{t('pixai.aspect_ratio')}</span>
@@ -85,13 +96,18 @@ export default function PixAISettings({ value, onChange, preview = false, compac
             ))}
           </select>
         </label>
-        <label className="row" style={{ gap: 4 }}>
-          <span className="muted">{t('nai.seed')}</span>
-          <input type="number" style={{ width: 120 }} value={v.seed} onChange={(e) => set({ seed: Number(e.target.value) })} />
-        </label>
+        {!section && (
+          <label className="row" style={{ gap: 4 }}>
+            <span className="muted">{t('nai.seed')}</span>
+            <input type="number" style={{ width: 120 }} value={v.seed} onChange={(e) => set({ seed: Number(e.target.value) })} />
+          </label>
+        )}
       </div>
-      <GenerationDetails compact={compact} summary={dit ? [v.mode] : [v.sampler, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.cfg_scale}`]}>
-        {dit ? (
+      <GenerationDetails compact={compact} summary={[
+        ...(dit ? [v.mode] : []),
+        ...(sdxl ? [v.sampler, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.cfg_scale}`] : []),
+      ]}>
+        {dit && (
           <label className="row" style={{ gap: 4 }}>
             <span className="muted">{t('pixai.mode')}</span>
             <select value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
@@ -100,7 +116,8 @@ export default function PixAISettings({ value, onChange, preview = false, compac
               ))}
             </select>
           </label>
-        ) : (
+        )}
+        {sdxl && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <label className="row" style={{ gap: 4 }}>
               <span className="muted">{t('nai.sampler')}</span>
@@ -124,38 +141,46 @@ export default function PixAISettings({ value, onChange, preview = false, compac
           <input type="checkbox" checked={!!v.prompt_helper} onChange={(e) => set({ prompt_helper: e.target.checked })} />
           {t('pixai.prompt_helper')}
         </label>
-        <div className="col" style={{ gap: 4 }}>
-          <span className="muted">
-            {t('pixai.loras', { n: picked.length, max: info.data.max_loras })}
-          </span>
-          {registered.length === 0 && <span className="faint small">{t('pixai.no_loras')}</span>}
-          {registered.map((lora) => {
-            const pick = picked.find((p) => p.id === lora.id);
-            return (
-              <div key={lora.id} className="row">
-                <label className="row grow" style={{ gap: 4 }}>
-                  <input type="checkbox" checked={!!pick} disabled={!pick && picked.length >= info.data!.max_loras} onChange={(e) => toggleLora(lora, e.target.checked)} />
-                  {lora.name}
-                  {lora.trigger_words && <span className="faint small">· {lora.trigger_words}</span>}
-                </label>
-                {pick && (
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    style={{ width: 72 }}
-                    aria-label={t('pixai.lora_weight')}
-                    value={pick.weight}
-                    onChange={(e) => set({ loras: picked.map((p) => (p.id === lora.id ? { ...p, weight: Number(e.target.value) } : p)) })}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {showLoras && (
+          <div className="col" style={{ gap: 4 }}>
+            <span className="muted">
+              {t('pixai.loras', { n: picked.length, max: info.data.max_loras })}
+            </span>
+            {registered.length === 0 && <span className="faint small">{t('pixai.no_loras')}</span>}
+            {registered.map((lora) => {
+              const pick = picked.find((p) => p.id === lora.id);
+              return (
+                <div key={lora.id} className="row">
+                  <label className="row grow" style={{ gap: 4 }}>
+                    <input type="checkbox" checked={!!pick} disabled={!pick && picked.length >= info.data!.max_loras} onChange={(e) => toggleLora(lora, e.target.checked)} />
+                    {lora.name}
+                    {lora.trigger_words && <span className="faint small">· {lora.trigger_words}</span>}
+                  </label>
+                  {pick && (
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      style={{ width: 72 }}
+                      aria-label={t('pixai.lora_weight')}
+                      value={pick.weight}
+                      onChange={(e) => set({ loras: picked.map((p) => (p.id === lora.id ? { ...p, weight: Number(e.target.value) } : p)) })}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </GenerationDetails>
       {!preview && <p className="faint small">{t('pixai.cost_unknown')}</p>}
+    </>
+  );
+  return (
+    <div className="col" style={{ gap: 8 }}>
+      {section !== 'parameters' && modelFields}
+      {section !== 'model' && parameters}
     </div>
   );
 }

@@ -336,7 +336,7 @@ def _text(value, limit):
 
 
 def preset_doc(preset, ident):
-    """A style preset as stored (schema 2). Reads presets from before #169 too: they had no service, tags or artist."""
+    """Normalize current presets and those saved before the service, tags and artist fields."""
     service = preset.get('service') if preset.get('service') in SERVICES else 'comfyui'
     family = service
     if service == 'comfyui':
@@ -347,13 +347,19 @@ def preset_doc(preset, ident):
         if tag and tag not in tags:
             tags.append(tag)
     artist = preset.get('artist') if isinstance(preset.get('artist'), dict) else {}
+    settings = preset.get('settings') if isinstance(preset.get('settings'), dict) else {}
+    if service == 'comfyui':
+        # Older Explorer presets stored these derived fields. They are resolved from the current catalog.
+        settings = {
+            key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')
+        }
     return {
         'schema_version': 3,
         'name': str(preset.get('name') or ident)[:200],
         'service': service,
         'family': family,
         'tags': tags[:MAX_PRESET_TAGS],
-        'settings': preset.get('settings') if isinstance(preset.get('settings'), dict) else {},
+        'settings': settings,
         'artist': {
             'positive': _text(artist.get('positive'), MAX_ARTIST),
             'negative': _text(artist.get('negative'), MAX_ARTIST),

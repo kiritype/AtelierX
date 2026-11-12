@@ -297,6 +297,10 @@ class ReviewRounds:
         }
         job['snapshot'] = snapshot
         service = meta.get('service')
+        if meta.get('kind') == 'style_explorer':
+            raise ValueError(
+                Msg('server.explorer.retry_panel', 'Retry this candidate from its exploration session.')
+            )
         if not service and meta.get('kind') == 'lab':
             # Older lab records omit the service; lab has only ever used ComfyUI.
             service = 'comfyui'

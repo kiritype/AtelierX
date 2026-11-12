@@ -29,6 +29,7 @@ from .review_rounds import ReviewRounds
 from .reviews import ReviewStore
 from .service_config import ServiceConfig
 from .services import ComfyService
+from .style_explorer import StyleExplorer
 from .tags import TagLookup
 from .tools.batches import ToolBatches
 from .tools.convert import ConvertTasks
@@ -92,6 +93,8 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.rounds = ReviewRounds(self)
         self.reviews.listeners.append(self.rounds.human_changed)
         self.bulk = ToolBatches(self)
+        self.explorer = StyleExplorer(self)
+        self.explorer.reconcile()
 
     def _resume_sent_jobs(self):
         """Jobs a restart cut off after their request went to a service that keeps results (PixAI) wait again for that
@@ -293,6 +296,10 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
 
     def process_ready(self):
         return self.rounds.process_ready()
+
+    def after_generation(self, job):
+        if job.get('explorer_session'):
+            self.explorer.reconcile(job['explorer_session'])
 
     def after_remove(self):
         # Inpaint jobs keep a copy of their mask; copies of jobs that are gone are deleted.

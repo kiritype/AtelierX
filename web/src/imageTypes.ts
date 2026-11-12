@@ -33,7 +33,7 @@ export type TrainingStatus = {
   methods: { id: string; label: string }[];
 };
 
-export type LoraRef = { name: string; strength?: number; model_strength?: number; clip_strength?: number };
+export type LoraRef = { name: string; strength_model?: number; strength_clip?: number; strength?: number; model_strength?: number; clip_strength?: number; weight?: number; id?: string };
 
 export type GenerationSettings = {
   model?: string;
