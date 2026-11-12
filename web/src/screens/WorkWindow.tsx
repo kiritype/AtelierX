@@ -169,7 +169,7 @@ export default function WorkWindow({ workId, active: windowActive = true, onOpen
   }, [tabs, onOpenTools]);
 
   useEffect(() => {
-    const openGenerate = () => open({ type: 'image', view: 'generate' });
+    const openGenerate = (event: Event) => open({ type: 'image', view: (event as CustomEvent).detail === 'single' ? 'single' : 'generate' });
     window.addEventListener('atelierx:open-image-generate', openGenerate);
     return () => window.removeEventListener('atelierx:open-image-generate', openGenerate);
   }, [open]);

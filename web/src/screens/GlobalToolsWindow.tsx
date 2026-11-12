@@ -32,9 +32,9 @@ export default function GlobalToolsWindow({ workId, onClose }: { workId?: string
   const close = () => {
     if (canLeave()) onClose();
   };
-  const openGenerate = () => {
+  const openGenerate = (view: 'generate' | 'single' = 'generate') => {
     onClose();
-    window.dispatchEvent(new Event('atelierx:open-image-generate'));
+    window.dispatchEvent(new CustomEvent('atelierx:open-image-generate', { detail: view }));
   };
   const openView = (next: View) => {
     setVisited((current) => current.includes(next) ? current : [...current, next]);
@@ -68,7 +68,7 @@ export default function GlobalToolsWindow({ workId, onClose }: { workId?: string
             </TabScope>
           </div>
           {view === 'queue' && <Suspense fallback={<Loading />}><ImageQueue /></Suspense>}
-          {visited.includes('presets') && <div hidden={view !== 'presets'} inert={view !== 'presets'} style={{ display: view === 'presets' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="presets"><Suspense fallback={<Loading />}><PresetExplorer workId={workId} canOpenGenerate={() => canLeave('presets')} openGenerate={openGenerate} /></Suspense></TabScope></div>}
+          {visited.includes('presets') && <div hidden={view !== 'presets'} inert={view !== 'presets'} style={{ display: view === 'presets' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="presets"><Suspense fallback={<Loading />}><PresetExplorer workId={workId} canOpenGenerate={() => canLeave('presets')} openGenerate={openGenerate} openSingle={() => openGenerate('single')} /></Suspense></TabScope></div>}
           {visited.includes('settings') && <div hidden={view !== 'settings'} inert={view !== 'settings'} style={{ display: view === 'settings' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="settings"><Suspense fallback={<Loading />}><AppSettings request={{ section: 'image', at: 0 }} /></Suspense></TabScope></div>}
         </div>
       </div>

@@ -7,6 +7,7 @@ import { get, post } from '../../api';
 import { t } from '../../i18n';
 import type { PromptSource, SingleRun } from '../../imageTypes';
 import { takeToolHandoff } from '../../lib/toolHandoff';
+import { SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
 
@@ -44,6 +45,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   takeToolHandoff();
   localStorage.clear();
+  sessionStorage.removeItem(SINGLE_PRESET_HANDOFF);
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   rows = [];
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
@@ -78,6 +80,69 @@ beforeEach(async () => {
   await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} /></QueryClientProvider>));
 });
 afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); });
+
+it('receives a preset for another service without generating or losing the scene', async () => {
+  await edit(positive(), 'Keep this scene');
+  const settings = { model: '123456', loras: [{ id: '987654', weight: 0.37 }], steps: 31 };
+  await act(async () => {
+    qc.setQueryData(['image-presets'], [{ id: 'transferred', name: 'Transferred', service: 'pixai', family: 'pixai',
+      settings, artist: { positive: 'fixed style', negative: 'fixed negative' }, common: [] }]);
+    qc.setQueryData(['image-lib', 'common', 'synthetic'], {});
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId: 'other', presetId: 'transferred' }));
+  await act(async () => window.dispatchEvent(new Event(SINGLE_PRESET_HANDOFF)));
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).not.toBeNull();
+  sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId: 'synthetic', presetId: 'transferred' }));
+  await act(async () => window.dispatchEvent(new Event(SINGLE_PRESET_HANDOFF)));
+  expect(post).not.toHaveBeenCalled();
+  expect(positive().value).toBe('Keep this scene');
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).toBeNull();
+  await click(t('single.run'));
+  expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({
+    service: 'pixai', settings, preset_id: 'transferred', positive: 'Keep this scene',
+    prompt_sources: expect.arrayContaining([expect.objectContaining({ kind: 'style', positive: 'fixed style', negative: 'fixed negative' })]),
+  }));
+});
+
+it('applies a handoff to the next draft immediately while an existing job stays frozen', async () => {
+  await edit(positive(), 'Existing job');
+  await click(t('single.run'));
+  const before = structuredClone(rows[0].request);
+  await act(async () => { qc.setQueryData(['image-lib', 'common', 'synthetic'], {}); await new Promise(resolve => setTimeout(resolve, 0)); });
+  sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId: 'synthetic', presetId: 'soft' }));
+  await act(async () => window.dispatchEvent(new Event(SINGLE_PRESET_HANDOFF)));
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).toBeNull();
+  expect(JSON.parse(localStorage.getItem('atelierx-single-v2-synthetic')!).preset).toBe('soft');
+  expect(rows[0].request).toEqual(before);
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it('consumes a stored handoff on mount after the preset and common library are available', async () => {
+  await act(async () => root.unmount());
+  sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId: 'synthetic', presetId: 'soft' }));
+  root = createRoot(host);
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} /></QueryClientProvider>));
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).toBeNull();
+  expect(JSON.parse(localStorage.getItem('atelierx-single-v2-synthetic')!).preset).toBe('soft');
+  expect(post).not.toHaveBeenCalled();
+});
+
+it('leaves a handoff for the destination tab while another single tab is hidden', async () => {
+  const renderTabs = async (opened: boolean) => act(async () => root.render(<QueryClientProvider client={qc}>
+    <section data-tab="hidden"><ImageSingle workId="synthetic" openView={openView} active={false} /></section>
+    <section data-tab="destination"><ImageSingle workId="synthetic" openView={openView} active={opened} /></section>
+  </QueryClientProvider>));
+  await renderTabs(false);
+  sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId: 'synthetic', presetId: 'soft' }));
+  await act(async () => window.dispatchEvent(new Event(SINGLE_PRESET_HANDOFF)));
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).not.toBeNull();
+  await renderTabs(true);
+  expect(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)).toBeNull();
+  expect(host.querySelector('[data-tab="destination"]')?.textContent).toContain('soft light');
+  expect(host.querySelector('[data-tab="hidden"]')?.textContent).not.toContain('soft light');
+  expect(post).not.toHaveBeenCalled();
+});
 
 it('keeps both prompts across services and submits a real queued request', async () => {
   await edit(positive(), 'Two people beside a lake'); await edit(negative(), 'blur');
