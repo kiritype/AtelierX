@@ -968,12 +968,15 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 #### 그림체 탐색
 
-위치: `state/image/explorer/<id>.json`. `id`는 UUIDv4의 32자리 hex다. 현재 형식은 `schema_version: 2`다.
+위치: `state/image/explorer/<id>.json`. `id`는 UUIDv4의 32자리 hex다. 현재 형식은 `schema_version: 3`이다.
 탐색은 작품과 독립적이고, 앱 폴더를 옮기면 함께 이동한다.
 
 - 최상위: `id`, `name`, `service`, `family`, `created_at`, `revision`, `config`, `budget`, `used`, `candidates`, `pair`, `votes`.
 - `config`: 생성 시 확정한 이름·서비스·계열, 장면 `positive`·`negative`, 실제 `seed`, 서비스별 `settings`, `models` 후보,
-  `materials`, `rules`, `budget`. 생성 후에는 이 설정을 변경하지 않는다.
+  `materials`, `artist_format`, `rules`, `budget`. 생성 후에는 이 설정을 변경하지 않는다.
+- 모델은 이미지마다 `models`에서 하나 뽑아 실제 생성 설정에 넣는다. ComfyUI와 PixAI 생성 요청에서 모델 후보를 보내면 이
+  목록이 모델을 결정한다. 후보가 비어 있으면 기본 모델 한 개를 쓴다. ComfyUI 후보는 현재 계열에서 사용할 수 있어야 하고,
+  PixAI 후보는 지원하는 모델의 버전 ID여야 한다. PixAI는 선택한 모델의 종류에 맞는 생성 옵션을 전송한다.
 - `materials`의 행은 `{kind, name, id?, role?, mode, weight, trigger_words?}`다. `kind`는 `tag` 또는 `lora`다.
   `name`은 태그, ComfyUI LoRA 파일명, PixAI LoRA 표시 이름 중 하나다. PixAI LoRA에는 버전 `id`가 필요하다.
   생성 요청에서 `mode`를 생략하면 `candidate`로 저장한다. 화면의 새 탐색은 태그 목록과 LoRA 목록에 각각 설정한 무작위
@@ -983,14 +986,18 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   무작위 가중치는 `low + n * step <= high`인 음이 아닌 정수 `n`에서 고른다. 새 화면의 `include_high: true`는
   이 간격에 맞지 않는 상한 `high`도 같은 확률의 후보에 추가한다. 필드가 생략되면 기존 간격으로 뽑는다.
   가중치 범위는 태그 및 ComfyUI LoRA가 0~10, PixAI LoRA가 0~1이다. NovelAI에서는 태그만 쓴다.
+- `artist_format`이 `anima`인 탐색에서 역할 없이 추가한 작가 태그는 프롬프트로 보낼 때 `@` 접두사, 소문자, 밑줄 대신
+  공백을 사용한다. 이름의 괄호는 문자로 이스케이프하고 선택한 세기는 바깥 가중치 구문에 넣는다. `literal` 형식이나
+  이전 역할이 있는 재료 행은 저장된 이름을 사용한다. 태그 목록에는 입력한 이름을 보존한다.
 - `rules.artist_min`·`artist_max`와 `rules.lora_min`·`lora_max`는 각각 이미지에 포함할 태그와 LoRA의 총개수 범위다.
   각 개수에는 `always`가 포함된다. 이미지당 LoRA 최대 개수는 ComfyUI 16개, PixAI 5개다. `materials`로 생성한 탐색은
   LoRA 후보군을 이 목록에 저장한다. 생성 요청에 함께 들어온 `settings.loras`, `artists`, 이전 전역 가중치 규칙은
   재료 선택에 쓰지 않는다.
 - 형식 1을 읽을 때 `artists`를 같은 포함 방식의 태그로, `settings.loras`를 LoRA 후보로 옮긴다.
   각 행에는 이전 `rules`의 `artist_low`·`artist_high`·`artist_step` 또는 `lora_low`·`lora_high`·`lora_step`을
-  무작위 가중치로 복사한다. 이전 생성 요청도 이 방식으로 받으며 두 기존 필드를 호환용으로 유지한다. 읽기에서는 변환한
-  구성을 응답에만 보여 준다. 이후 탐색에 기록을 저장할 때 형식 2로 저장한다. 기존 후보의 실제 생성 설정과 프롬프트,
+  무작위 가중치로 복사한다. 이전 생성 요청도 이 방식으로 받으며 두 기존 필드를 호환용으로 유지한다.
+  형식 1과 2는 이후에도 동일한 레시피를 뽑도록 `artist_format: "literal"`로 읽는다. 읽기에서는 변환한 구성을
+  응답에만 보여 주며, 이후 탐색에 기록을 저장할 때 형식 3으로 저장한다. 기존 후보의 실제 생성 설정과 프롬프트,
   평가와 비교 쌍, 기존 요청 지문과 대기열 스냅샷은 변환하지 않는다.
 - `budget`은 최대 생성 시도 수(최대 200), `used`는 대기열에 접수한 시도 수다. 재시도도 증가하며 실패·취소해도 돌려주지 않는다.
   한 번의 생성은 최대 16개다. 시드 `-1`은 탐색 생성 때 한 번 실제 시드로 확정한다.
@@ -1019,6 +1026,8 @@ sidecar 형식에 같은 연결을 남긴다. 작업 종료 및 대기열 정리
 프리셋 저장은 매번 새 UUID로 기존 그림체 프리셋 형식을 사용한다. 후보의 서비스·계열·생성 설정과 재료 프롬프트를 저장하며
 시드와 탐색 장면 프롬프트는 제외한다. 선택된 ComfyUI LoRA의 트리거 단어는 재료 프롬프트에 들어간다. 선택된 PixAI LoRA의
 트리거 단어는 LoRA 설정에 보존되며 생성 요청의 `triggerWords`가 된다. 탐색의 후보에 저장한 프리셋 ID를 연결한다.
+ComfyUI 프리셋은 선택한 모델 ID를 유지하고 생성할 때 카탈로그에서 로더와 파일명을 다시 찾는다. 이전 프리셋에 들어 있는
+파생 `model_loader`·`model_filename` 필드는 프리셋을 읽고 저장할 때 제거한다.
 
 #### 인터넷 이미지 서비스 설정 (`<데이터 루트>/image/services.json`)
 

@@ -79,6 +79,20 @@
 .explorer-material-add button {
   white-space: nowrap;
 }
+.explorer-model-pool {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.explorer-model-add {
+  flex-wrap: wrap;
+}
+.explorer-model-add input {
+  flex: 0 1 190px;
+  min-width: 0;
+}
+.explorer-model-add select {
+  flex-basis: 170px;
+}
 .explorer-material-list {
   display: grid;
   max-height: 160px;

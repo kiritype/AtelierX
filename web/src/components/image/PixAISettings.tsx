@@ -29,14 +29,21 @@ export function usePixAIInfo(preview = false) {
   });
 }
 
-export default function PixAISettings({ value, onChange, preview = false, compact = false, section, showLoras = true }: ServicePanelProps & { showLoras?: boolean }) {
+export default function PixAISettings({ value, onChange, preview = false, compact = false, section, showLoras = true, modelCandidates }: ServicePanelProps & {
+  showLoras?: boolean;
+  modelCandidates?: string[];
+}) {
   const info = usePixAIInfo(preview);
   const [customModel, setCustomModel] = useState(false);
   if (!info.data) return null;
   const v = { ...info.data.defaults, ...value } as Record<string, any>;
   const set = (change: Record<string, unknown>) => onChange({ ...value, ...change });
   const model = info.data.models.find((m) => m.id === v.model);
-  const dit = model?.type === 'dit';
+  const types = modelCandidates?.length
+    ? info.data.models.filter(({ id }) => modelCandidates.includes(id)).map(({ type }) => type)
+    : [model?.type ?? 'sdxl'];
+  const dit = types.includes('dit');
+  const sdxl = types.includes('sdxl');
   const picked: Picked[] = v.loras ?? [];
   const registered = info.data.loras;
   const toggleLora = (lora: PixAILora, on: boolean) =>
@@ -96,8 +103,11 @@ export default function PixAISettings({ value, onChange, preview = false, compac
           </label>
         )}
       </div>
-      <GenerationDetails compact={compact} summary={dit ? [v.mode] : [v.sampler, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.cfg_scale}`]}>
-        {dit ? (
+      <GenerationDetails compact={compact} summary={[
+        ...(dit ? [v.mode] : []),
+        ...(sdxl ? [v.sampler, t('gen.advanced_steps', { n: v.steps }), `CFG ${v.cfg_scale}`] : []),
+      ]}>
+        {dit && (
           <label className="row" style={{ gap: 4 }}>
             <span className="muted">{t('pixai.mode')}</span>
             <select value={v.mode} onChange={(e) => set({ mode: e.target.value })}>
@@ -106,7 +116,8 @@ export default function PixAISettings({ value, onChange, preview = false, compac
               ))}
             </select>
           </label>
-        ) : (
+        )}
+        {sdxl && (
           <div className="row" style={{ flexWrap: 'wrap' }}>
             <label className="row" style={{ gap: 4 }}>
               <span className="muted">{t('nai.sampler')}</span>

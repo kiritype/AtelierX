@@ -89,7 +89,7 @@ export type ExplorerSummary = {
   revision: number;
 };
 export type ExplorerSession = ExplorerSummary & {
-  config: Omit<ExplorerConfig, 'request_id'>;
+  config: Omit<ExplorerConfig, 'request_id'> & { artist_format?: 'anima' | 'literal' };
   candidates: ExplorerCandidate[];
   pair: ExplorerPair | null;
   votes: ExplorerVote[];

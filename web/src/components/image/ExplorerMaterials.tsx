@@ -8,13 +8,14 @@ import {
 type Props = {
   pool: MaterialPool;
   service: string;
+  family: string;
   catalog?: ExplorerLora[];
   loraLimit: number;
   onChange: (patch: Partial<MaterialPool>) => void;
   openSettings?: () => void;
 };
 
-export default function ExplorerMaterials({ pool, service, catalog, loraLimit, onChange, openSettings }: Props) {
+export default function ExplorerMaterials({ pool, service, family, catalog, loraLimit, onChange, openSettings }: Props) {
   const id = useId();
   const [tagInput, setTagInput] = useState('');
   const [loraInput, setLoraInput] = useState('');
@@ -51,7 +52,8 @@ export default function ExplorerMaterials({ pool, service, catalog, loraLimit, o
             <textarea
               rows={1}
               aria-label={t('style_explorer.tag')}
-              placeholder={t('style_explorer.tags_placeholder')}
+              placeholder={t(service === 'comfyui' && family === 'anima'
+                ? 'style_explorer.anima_tags_placeholder' : 'style_explorer.tags_placeholder')}
               value={tagInput}
               onChange={(event) => setTagInput(event.target.value)}
               onKeyDown={(event) => {

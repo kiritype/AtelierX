@@ -9,35 +9,53 @@ import StyleExplorer from './StyleExplorer';
 import ExplorerCompare from './ExplorerCompare';
 import type { ExplorerSession } from '../../styleExplorerTypes';
 import {
-  effectiveRules, EXPLORER_DRAFT_KEY, freshDraft, materialPool, readDraft, settingsKey, switchContext,
+  effectiveRules, EXPLORER_DRAFT_KEY, freshDraft, materialPool, parseModelPool, readDraft, settingsKey, switchContext,
 } from './styleExplorerDraft';
 vi.mock('../../api', async (original) => ({
   ...(await original<typeof import('../../api')>()),
   get: vi.fn(),
   post: vi.fn(),
 }));
-vi.mock('./GenSettings', () => ({
-  default: () => null,
-  useCatalog: () => ({ data: {
-    connected: true,
-    models: [],
-    loras: ['anima.safetensors', 'sdxl.safetensors', 'unknown.safetensors'],
-    families: { loras: { 'anima.safetensors': 'anima', 'sdxl.safetensors': 'sdxl' } },
-  } }),
-  FAMILY_DEFAULTS: { anima: { steps: 32 }, sdxl: { steps: 28 } },
-}));
+const comfyCatalog = {
+  connected: true,
+  models: [
+    'anima/Anima Base.safetensors', 'anima/Anima, Alt.safetensors', 'checkpoint::sdxl/SDXL.safetensors',
+    'sdxl-diffusion.safetensors', 'unknown.safetensors',
+  ],
+  text_encoders: ['encoder.safetensors', 'encoder-alt.safetensors'],
+  vaes: ['vae.safetensors', 'vae-alt.safetensors'],
+  loras: ['anima.safetensors', 'sdxl.safetensors', 'unknown.safetensors'],
+  samplers: ['er_sde', 'euler_ancestral'],
+  schedulers: ['simple', 'normal'],
+  defaults: { text_encoder: 'encoder.safetensors', vae: 'vae.safetensors' },
+  families: {
+    models: {
+      'anima/Anima Base.safetensors': 'anima', 'anima/Anima, Alt.safetensors': 'anima',
+      'checkpoint::sdxl/SDXL.safetensors': 'sdxl', 'sdxl-diffusion.safetensors': 'sdxl',
+    },
+    loras: { 'anima.safetensors': 'anima', 'sdxl.safetensors': 'sdxl' },
+  },
+};
 vi.mock('./NovelAISettings', () => ({
   default: () => null,
   useNovelAIInfo: () => ({ data: { defaults: { model: 'nai' } } }),
 }));
-vi.mock('./PixAISettings', () => ({
-  default: () => null,
-  usePixAIInfo: () => ({ data: {
-    defaults: { model: 'pixai', loras: [{ id: '999999' }] },
-    loras: [{ id: '123456', name: 'Registered LoRA', weight: 0.65, trigger_words: 'default words' }],
-    max_loras: 5,
-  } }),
-}));
+const pixaiInfo = {
+  models: [
+    { id: '987650', name: 'Haruka v2', type: 'sdxl' },
+    { id: '987651', name: 'Tsubaki.2', type: 'dit' },
+  ],
+  defaults: {
+    model: '987650', loras: [{ id: '999999' }], aspect_ratio: '1:1', size: '1k',
+    mode: 'standard', sampler: 'Euler', steps: 20, cfg_scale: 5, seed: -1,
+  },
+  loras: [{ id: '123456', name: 'Registered LoRA', weight: 0.65, trigger_words: 'default words' }],
+  aspect_ratios: ['1:1'],
+  sizes: ['1k'],
+  modes: ['standard'],
+  samplers: ['Euler'],
+  max_loras: 5,
+};
 let host: HTMLDivElement, root: Root, qc: QueryClient;
 const makeSession = (): ExplorerSession => ({
   id: 's1',
@@ -62,6 +80,9 @@ beforeEach(() => {
   localStorage.clear();
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(['image-catalog'], comfyCatalog);
+  qc.setQueryDefaults(['image-service-info', 'pixai'], { staleTime: Infinity });
+  qc.setQueryData(['image-service-info', 'pixai'], pixaiInfo);
   host = document.createElement('div');
   document.body.append(host);
   root = createRoot(host);
@@ -335,6 +356,13 @@ it('preserves independent model pools, materials and counts across context switc
   expect(switchContext(restored, { service: 'novelai' }).models).toBe('nai-model');
   expect(switchContext(restored, { service: 'pixai' }).models).toBe('pixai-model');
 });
+it('reads legacy model text and handles malformed persisted candidates safely', () => {
+  expect(parseModelPool('first, second\nfirst')).toEqual(['first', 'second']);
+  expect(parseModelPool(['model, one', null, ' ', 'model, one', 42])).toEqual(['model, one']);
+  expect(parseModelPool(null)).toEqual([]);
+  expect(parseModelPool({ id: 'model' })).toEqual([]);
+});
+
 it('does not submit ComfyUI model candidates after selecting NovelAI', async () => {
   localStorage.setItem(
     'atelierx-explorer-v1-work',
@@ -370,7 +398,7 @@ it('submits two simple lists with shared ranges and registered LoRA trigger word
   localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify({ ...freshDraft(), name: 'Example', positive: 'scene' }));
   vi.mocked(post).mockResolvedValue(makeSession());
   await render({});
-  const picker = () => host.querySelector<HTMLSelectElement>('.explorer-material-add select')!;
+  const picker = () => host.querySelector<HTMLSelectElement>('.explorer-material-panels .explorer-material-add select')!;
   expect([...picker().options].map((option) => option.value)).toEqual(['', 'anima.safetensors']);
   await act(async () => button('SDXL').click());
   expect([...picker().options].map((option) => option.value)).toEqual(['', 'sdxl.safetensors']);
@@ -402,7 +430,7 @@ it('submits two simple lists with shared ranges and registered LoRA trigger word
   await act(async () => button(t('style_explorer.confirm_action')).click());
   expect(post).toHaveBeenNthCalledWith(1, '/api/image/explorer/sessions', expect.objectContaining({
     service: 'pixai',
-    settings: { model: 'pixai' },
+    settings: expect.objectContaining({ model: '987650' }),
     rules: { artist_min: 1, artist_max: 2, lora_min: 0, lora_max: 1 },
     materials: [
       { kind: 'tag', name: 'artist:a', weight: { mode: 'random', low: 0.6, high: 1.1, step: 0.1, include_high: true } },
@@ -432,5 +460,82 @@ it('allows generation after removing a saved LoRA missing from the catalog', asy
   expect(post).toHaveBeenNthCalledWith(1, '/api/image/explorer/sessions', expect.objectContaining({
     materials: [],
     rules: { artist_min: 0, artist_max: 0, lora_min: 0, lora_max: 0 },
+  }));
+});
+
+it('searches and removes catalog model candidates and preserves family-specific lists', async () => {
+  const draft = { ...freshDraft(), name: 'Example', positive: 'scene', models: 'Anima Base.safetensors\nmissing.safetensors' };
+  localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify(draft));
+  vi.mocked(post).mockResolvedValue(makeSession());
+  await render({});
+  const picker = () => host.querySelector<HTMLSelectElement>('.explorer-model-add select')!;
+  const search = () => host.querySelector<HTMLInputElement>('.explorer-model-add input')!;
+  const options = () => [...picker().options].map(({ value }) => value);
+  const remove = (name: string) => host.querySelector<HTMLButtonElement>(
+    `.explorer-model-pool button[aria-label="${t('style_explorer.remove_material', { name })}"]`,
+  )!;
+  const review = button(t('style_explorer.review_generate'));
+  expect(review.disabled).toBe(true);
+  expect(host.textContent).toContain(t('style_explorer.model_missing'));
+  expect(options()).toEqual(['', 'anima/Anima, Alt.safetensors']);
+  await act(async () => remove('missing.safetensors').click());
+  await input(search(), 'no matches');
+  expect(picker().disabled).toBe(true);
+  await input(search(), 'alt');
+  await select(picker(), 'anima/Anima, Alt.safetensors');
+  await act(async () => button(t('style_explorer.add_model')).click());
+  expect(options()).toEqual(['']);
+  await act(async () => button('SDXL').click());
+  expect(options()).toEqual(['', 'checkpoint::sdxl/SDXL.safetensors']);
+  await select(picker(), 'checkpoint::sdxl/SDXL.safetensors');
+  await act(async () => button(t('style_explorer.add_model')).click());
+  await act(async () => button('PixAI').click());
+  expect(options()).toEqual(['', '987650', '987651']);
+  await act(async () => button('ComfyUI').click());
+  expect(options()).toEqual(['']);
+  await act(async () => button('Anima').click());
+  expect(host.querySelector('.explorer-model-pool ul')?.textContent).toContain('anima/Anima Base.safetensors');
+  await act(async () => remove('anima/Anima Base.safetensors').click());
+  expect(readDraft().models).toEqual(['anima/Anima, Alt.safetensors']);
+  expect(host.querySelector('.explorer-context [data-setting="model"]')).toBeNull();
+  await select(host.querySelector<HTMLSelectElement>('.explorer-generation [data-setting="text_encoder"] select')!, 'encoder-alt.safetensors');
+  await select(host.querySelector<HTMLSelectElement>('.explorer-generation [data-setting="vae"] select')!, 'vae-alt.safetensors');
+  await act(async () => review.click());
+  await act(async () => button(t('style_explorer.confirm_action')).click());
+  expect(post).toHaveBeenNthCalledWith(1, '/api/image/explorer/sessions', expect.objectContaining({
+    service: 'comfyui',
+    family: 'anima',
+    models: ['anima/Anima, Alt.safetensors'],
+    settings: expect.objectContaining({
+      model: 'anima/Anima, Alt.safetensors', text_encoder: 'encoder-alt.safetensors', vae: 'vae-alt.safetensors',
+    }),
+  }));
+});
+
+it('uses PixAI version IDs and exposes parameters for each selected model kind', async () => {
+  localStorage.setItem(EXPLORER_DRAFT_KEY, JSON.stringify({
+    ...freshDraft(), name: 'Example', positive: 'scene', service: 'pixai',
+  }));
+  vi.mocked(post).mockResolvedValue(makeSession());
+  await render({});
+  const picker = host.querySelector<HTMLSelectElement>('.explorer-model-add select')!;
+  const search = host.querySelector<HTMLInputElement>('.explorer-model-add input')!;
+  await input(search, 'dit');
+  expect([...picker.options].map(({ value }) => value)).toEqual(['', '987651']);
+  await select(picker, '987651');
+  await act(async () => button(t('style_explorer.add_model')).click());
+  const generation = host.querySelector('.explorer-generation')!;
+  expect(generation.textContent).toContain(t('pixai.mode'));
+  expect(generation.textContent).not.toContain(t('nai.sampler'));
+  await select(picker, '987650');
+  await act(async () => button(t('style_explorer.add_model')).click());
+  expect(generation.textContent).toContain(t('pixai.mode'));
+  expect(generation.textContent).toContain(t('nai.sampler'));
+  await act(async () => button(t('style_explorer.review_generate')).click());
+  await act(async () => button(t('style_explorer.confirm_action')).click());
+  expect(post).toHaveBeenNthCalledWith(1, '/api/image/explorer/sessions', expect.objectContaining({
+    service: 'pixai',
+    models: ['987651', '987650'],
+    settings: expect.objectContaining({ model: '987651', mode: 'standard', sampler: 'Euler' }),
   }));
 });

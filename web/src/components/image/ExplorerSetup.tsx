@@ -3,15 +3,18 @@ import GenSettings, { type GenerationSettings } from './GenSettings';
 import NovelAISettings from './NovelAISettings';
 import PixAISettings from './PixAISettings';
 import ExplorerMaterials from './ExplorerMaterials';
+import ExplorerModels from './ExplorerModels';
 import { SERVICE_NAMES, type SettingsSection } from './serviceSettings';
 import type { ExplorerCapabilities } from '../../styleExplorerTypes';
-import { materialPool, parseNames, settingsKey, switchContext, type ExplorerDraft, type ExplorerLora } from './styleExplorerDraft';
+import { materialPool, settingsKey, switchContext, type ExplorerDraft, type ExplorerLora, type ExplorerModel } from './styleExplorerDraft';
 
 export default function ExplorerSetup({
   draft: d,
   setDraft,
   capabilities,
   loras,
+  models,
+  modelCatalog,
   loraLimit,
   openSettings,
 }: {
@@ -19,6 +22,8 @@ export default function ExplorerSetup({
   setDraft: (d: ExplorerDraft) => void;
   capabilities?: ExplorerCapabilities;
   loras?: ExplorerLora[];
+  models: string[];
+  modelCatalog?: ExplorerModel[];
   loraLimit: number;
   openSettings?: () => void;
 }) {
@@ -26,11 +31,12 @@ export default function ExplorerSetup({
   const key = settingsKey(d);
   const settings = d.settings[key] ?? {};
   const pool = materialPool(d);
-  const modelCount = parseNames(d.models).length;
+  const hasModelCatalog = d.service === 'comfyui' || d.service === 'pixai';
+  const modelCount = models.length;
   const update = (value: Record<string, unknown>) => set({ settings: { ...d.settings, [key]: value } });
   const providerSettings = (section: SettingsSection) => {
     if (d.service === 'novelai') return <NovelAISettings value={settings} onChange={update} section={section} />;
-    if (d.service === 'pixai') return <PixAISettings value={settings} onChange={update} section={section} showLoras={false} />;
+    if (d.service === 'pixai') return <PixAISettings value={settings} onChange={update} section={section} showLoras={false} modelCandidates={models} />;
     return (
       <GenSettings
         value={settings as GenerationSettings}
@@ -86,18 +92,28 @@ export default function ExplorerSetup({
             </button>
           </div>
         )}
-        {providerSettings('model')}
-        <details>
-          <summary>
-            {t('style_explorer.model_candidates')} · {t(modelCount === 0
-              ? 'style_explorer.model_base'
-              : modelCount === 1 ? 'style_explorer.model_one' : 'style_explorer.model_many', { count: modelCount })}
-          </summary>
-          <label className="col">
-            <span>{t('style_explorer.models')}</span>
-            <textarea rows={2} value={d.models} onChange={(event) => set({ models: event.target.value })} />
-          </label>
-        </details>
+        {(!hasModelCatalog || modelCount === 0) && providerSettings('model')}
+        {hasModelCatalog ? (
+          <ExplorerModels
+            key={key}
+            models={models}
+            catalog={modelCatalog}
+            onChange={(models) => set({ models })}
+          />
+        ) : (
+          <details>
+            <summary>
+              {t('style_explorer.model_candidates')} · {t(modelCount === 0
+                ? 'style_explorer.model_base'
+                : modelCount === 1 ? 'style_explorer.model_one' : 'style_explorer.model_many', { count: modelCount })}
+            </summary>
+            <label className="col">
+              <span>{t('style_explorer.models')}</span>
+              <textarea rows={2} value={typeof d.models === 'string' ? d.models : models.join('\n')}
+                onChange={(event) => set({ models: event.target.value })} />
+            </label>
+          </details>
+        )}
       </section>
       <div className="explorer-prompts">
         {(['positive', 'negative'] as const).map((name) => (
@@ -111,6 +127,7 @@ export default function ExplorerSetup({
         key={key}
         pool={pool}
         service={d.service}
+        family={d.family}
         catalog={loras}
         loraLimit={loraLimit}
         onChange={(change) => set({ materialPools: { ...d.materialPools, [key]: { ...pool, ...change } } })}

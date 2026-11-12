@@ -1,4 +1,4 @@
-import { FAMILY_DEFAULTS } from './GenSettings';
+import { FAMILY_DEFAULTS, type Catalog } from './GenSettings';
 import type { ExplorerArtist, ExplorerMaterial, ExplorerRules, ExplorerSelectionRules, ExplorerWeight } from '../../styleExplorerTypes';
 
 export const EXPLORER_DRAFT_KEY = 'atelierx-explorer-v3-global';
@@ -16,6 +16,9 @@ const legacyRules: ExplorerRules = {
   lora_high: 1,
   lora_step: 0.1,
 };
+
+export type ExplorerModel = { id: string; name: string; type?: 'sdxl' | 'dit' };
+export const MODEL_POOL_LIMIT = 100;
 
 export type ExplorerLora = { name: string; id?: string; trigger_words?: string };
 export type MaterialGroup<T> = {
@@ -42,8 +45,8 @@ export type ExplorerDraft = {
   seed: number;
   count: number;
   budget: number;
-  models: string;
-  modelPools: Record<string, string>;
+  models: string | string[];
+  modelPools: Record<string, string | string[]>;
   materialPools: Record<string, MaterialPool>;
   settings: Record<string, Record<string, unknown>>;
 };
@@ -73,6 +76,39 @@ export const settingsKey = (d: Pick<ExplorerDraft, 'service' | 'family'>) =>
 
 export function parseNames(text: string) {
   return [...new Set(text.split(/[\n,]/).map((name) => name.trim()).filter(Boolean))];
+}
+
+export function parseModelPool(value: unknown): string[] {
+  if (typeof value === 'string') return parseNames(value);
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && !!id.trim()))];
+}
+
+function comfyModelIdentity(id: string) {
+  const separator = id.lastIndexOf('::');
+  const prefix = separator < 0 ? '' : id.slice(0, separator);
+  const path = separator < 0 ? id : id.slice(separator + 2);
+  const filename = path.split(/[\\/]/).filter(Boolean).pop() ?? '';
+  return `${prefix}::${filename}`;
+}
+
+export function resolveComfyModels(selected: string[], catalog?: Catalog) {
+  if (!catalog?.connected || !selected.length) return selected;
+  const available = new Set(catalog.models);
+  const idsByFilename = new Map<string, string | null>();
+  for (const id of available) {
+    const identity = comfyModelIdentity(id);
+    idsByFilename.set(identity, idsByFilename.has(identity) ? null : id);
+  }
+  // Old drafts may contain filenames or paths from before a model was moved. Resolve only unique names.
+  return [...new Set(selected.map((id) => available.has(id) ? id : idsByFilename.get(comfyModelIdentity(id)) ?? id))];
+}
+
+export function comfyModelOptions(catalog: Catalog | undefined, family: string): ExplorerModel[] | undefined {
+  if (!catalog?.connected) return undefined;
+  return catalog.models
+    .filter((id) => catalog.families?.models?.[id] === family && (family !== 'sdxl' || id.startsWith('checkpoint::')))
+    .map((id) => ({ id, name: id.replace(/^checkpoint::/, '') }));
 }
 
 function newPool(rules = legacyRules): MaterialPool {

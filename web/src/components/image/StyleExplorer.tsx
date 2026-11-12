@@ -19,8 +19,9 @@ import { usePixAIInfo } from './PixAISettings';
 import ExplorerSetup from './ExplorerSetup';
 import ExplorerCompare from './ExplorerCompare';
 import {
-  effectiveRules, EXPLORER_DRAFT_KEY, findLora, loraLimit, loraWeightLimit, materialPool, parseNames,
-  readDraft, requestMaterials, settingsKey, storedDraft, validWeight, type ExplorerLora,
+  comfyModelOptions, effectiveRules, EXPLORER_DRAFT_KEY, findLora, loraLimit, loraWeightLimit, materialPool,
+  MODEL_POOL_LIMIT, parseModelPool, readDraft, requestMaterials, resolveComfyModels, settingsKey, storedDraft,
+  validWeight, type ExplorerLora,
 } from './styleExplorerDraft';
 import './StyleExplorer.css';
 const base = '/api/image/explorer';
@@ -71,6 +72,14 @@ export default function StyleExplorer({
           .filter((name) => catalog.data?.families?.loras?.[name] === draft.family)
           .map((name) => ({ name }))
         : undefined;
+  const modelCatalog = draft.service === 'pixai' ? pixai.data?.models
+    : draft.service === 'comfyui' ? comfyModelOptions(catalog.data, draft.family)
+      : undefined;
+  const selectedModels = parseModelPool(draft.models);
+  const models = draft.service === 'comfyui' ? resolveComfyModels(selectedModels, catalog.data) : selectedModels;
+  const usesModelCatalog = draft.service === 'comfyui' || draft.service === 'pixai';
+  const validModelPool = !usesModelCatalog || models.length === 0 ||
+    (models.length <= MODEL_POOL_LIMIT && !!modelCatalog && models.every((model) => modelCatalog.some(({ id }) => id === model)));
   const maxLoras = loraLimit(draft.service, pixai.data?.max_loras);
   const selection = effectiveRules(pool, maxLoras);
   const sessions = useQuery({
@@ -198,9 +207,9 @@ export default function StyleExplorer({
         positive: draft.positive,
         negative: draft.negative,
         seed: draft.seed,
-        settings,
+        settings: usesModelCatalog && models.length ? { ...settings, model: models[0] } : settings,
         materials: requestMaterials(pool, availableLoras),
-        models: parseNames(draft.models),
+        models,
         rules: selection,
         budget: draft.budget,
       };
@@ -242,6 +251,7 @@ export default function StyleExplorer({
     draft.seed >= -1 &&
     draft.seed <= (draft.service === 'pixai' ? 2 ** 31 - 1 : 2 ** 32 - 1) &&
     Number.isInteger(draft.budget) &&
+    validModelPool &&
     pool.tags.items.length + pool.loras.items.length <= 10_000 &&
     (!pool.tags.items.length || validWeight(pool.tags, 10)) &&
     (!pool.loras.items.length || (validWeight(pool.loras, loraWeightLimit(draft.service)) &&
@@ -299,6 +309,8 @@ export default function StyleExplorer({
             }}
             capabilities={capabilities.data}
             loras={availableLoras}
+            models={models}
+            modelCatalog={modelCatalog}
             loraLimit={maxLoras}
             openSettings={openSettings}
           />

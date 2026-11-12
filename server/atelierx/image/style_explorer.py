@@ -29,7 +29,8 @@ from .workflow import validate_settings
 
 MAX_BATCH = 16
 MAX_BUDGET = 200
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+READABLE_SCHEMAS = (1, 2, SCHEMA_VERSION)
 COMFY_MAX_LORAS = 16
 MAX_MATERIALS = 10000
 MATERIAL_MODES = ('always', 'candidate', 'exclude')
@@ -136,13 +137,16 @@ def legacy_materials(config):
 
 
 def upgrade(doc):
-    if doc.get('schema_version') == 1:
-        doc['config']['materials'] = legacy_materials(doc['config'])
-        doc['schema_version'] = SCHEMA_VERSION
-    elif doc.get('schema_version') != SCHEMA_VERSION:
+    version = doc.get('schema_version')
+    if version not in READABLE_SCHEMAS:
         raise AppError(
             Msg('server.explorer.schema_version', 'This exploration session uses an unsupported format.'), 409
         )
+    if version == 1:
+        doc['config']['materials'] = legacy_materials(doc['config'])
+    if version != SCHEMA_VERSION:
+        doc['config']['artist_format'] = 'literal'
+        doc['schema_version'] = SCHEMA_VERSION
     return doc
 
 
@@ -164,6 +168,17 @@ def weighted_tag(name, value, service, legacy):
         return name
     weight = f'{value:g}' if legacy else format(Decimal(str(value)).normalize(), 'f')
     return f'{weight}::{name}::' if service == 'novelai' else f'({name}:{weight})'
+
+
+def material_tag_name(row, artist_format):
+    name = row['name']
+    if artist_format != 'anima' or 'role' in row:
+        return name
+    name = re.sub(r'^(?:(?:@+|artist:)\s*)+', '', name.lower())
+    name = ' '.join(name.replace('_', ' ').split())
+    if not name:
+        invalid('Anima artist name')
+    return '@' + re.sub(r'(?<!\\)([()])', r'\\\1', name)
 
 
 def replay(doc):
@@ -327,7 +342,7 @@ class StyleExplorer:
             )
         return self.rt.services[service].validate_settings(settings)
 
-    def _materials(self, raw, service, family, settings, catalog):
+    def _materials(self, raw, service, family, settings, catalog, artist_format):
         if not isinstance(raw, list) or len(raw) > MAX_MATERIALS:
             invalid('materials')
         result = []
@@ -384,7 +399,13 @@ class StyleExplorer:
             checked = self._validate_settings(service, family, {**settings, 'loras': inputs}, catalog)
             for row, lora in zip(rows, checked['loras'], strict=True):
                 row['name'] = lora['name']
-        keys = [(row['kind'], row.get('id', row['name'])) for row in result]
+        keys = [
+            (
+                row['kind'],
+                material_tag_name(row, artist_format) if row['kind'] == 'tag' else row.get('id', row['name']),
+            )
+            for row in result
+        ]
         if len(set(keys)) != len(keys):
             invalid('duplicate materials')
         return result
@@ -456,6 +477,7 @@ class StyleExplorer:
             invalid('settings')
         raw = copy.deepcopy(raw)
         legacy = 'materials' not in body
+        artist_format = 'anima' if service == 'comfyui' and family == 'anima' and not legacy else 'literal'
         if not legacy:
             raw['loras'] = []
         elif isinstance(raw.get('loras'), list):
@@ -467,7 +489,9 @@ class StyleExplorer:
         if seed == -1:
             seed = secrets.randbelow(2**31 if service == 'pixai' else 2**32)
         raw['seed'] = seed
-        models = body.get('models') or ([raw['model']] if raw.get('model') else [])
+        models = body.get('models')
+        if models is None:
+            models = []
         if (
             not isinstance(models, list)
             or len(models) > 100
@@ -476,7 +500,7 @@ class StyleExplorer:
             invalid('models')
         if len(set(models)) != len(models):
             invalid('duplicate models')
-        if models and not raw.get('model'):
+        if models and (service != 'novelai' or not raw.get('model')):
             raw['model'] = models[0]
         catalog = self._catalog() if service == 'comfyui' else None
         checked = self._validate_settings(service, family, raw, catalog)
@@ -503,7 +527,7 @@ class StyleExplorer:
             )
         else:
             checked.pop('loras', None)
-            materials = self._materials(body['materials'], service, family, checked, catalog)
+            materials = self._materials(body['materials'], service, family, checked, catalog, artist_format)
         rules = self._rules(supplied_rules, materials, service, legacy)
         return {
             'name': text(body.get('name') or 'Style exploration', 'name', 200),
@@ -515,6 +539,7 @@ class StyleExplorer:
             'settings': checked,
             'models': models,
             'materials': materials,
+            'artist_format': artist_format,
             **compatibility,
             'rules': rules,
             'budget': integer(body.get('budget', 30), 1, MAX_BUDGET, 'budget'),
@@ -655,7 +680,10 @@ class StyleExplorer:
         ]
         loras.sort(key=lambda row: row.get('id', row['name']))
         settings = {**copy.deepcopy(config['settings']), 'model': rng.choice(config['models'])}
-        prompt_tags = [weighted_tag(row['name'], row['weight'], service, legacy) for row in tags]
+        prompt_tags = [
+            weighted_tag(material_tag_name(row, config['artist_format']), row['weight'], service, legacy)
+            for row in tags
+        ]
         if service == 'comfyui':
             settings['loras'] = [
                 {'name': row['name'], 'strength_model': row['weight'], 'strength_clip': row['weight']}
@@ -970,7 +998,7 @@ class StyleExplorer:
             )
             for path in paths:
                 doc = read_json(path)
-                if not isinstance(doc, dict) or doc.get('schema_version') not in (1, SCHEMA_VERSION):
+                if not isinstance(doc, dict) or doc.get('schema_version') not in READABLE_SCHEMAS:
                     continue
                 changed = False
                 for candidate in doc['candidates']:

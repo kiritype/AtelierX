@@ -250,7 +250,8 @@ def test_provider_requests_sample_roleless_lists_with_shared_ranges(explorer, se
     else:
         (lora,) = loras
         assert lora['weight'] in (0.34, 0.44, 0.54, 0.56)
-        positive = f'a red lighthouse, ({tag["name"]}:{tag["weight"]})'
+        prefix = '@' if family == 'anima' else ''
+        positive = f'a red lighthouse, ({prefix}{tag["name"]}:{tag["weight"]})'
         if service == 'pixai':
             assert request['prompt'] == positive
             assert request['loras'] == [{'modelId': lora['id'], 'weight': lora['weight']}]
@@ -440,7 +441,7 @@ def test_legacy_session_read_and_restart_preserve_frozen_records_and_recipe_iden
         },
     )
     migrated = json.loads(path.read_text(encoding='utf-8'))
-    assert migrated['schema_version'] == 2
+    assert migrated['schema_version'] == 3
     assert migrated['candidates'][:3] == v1['candidates']
     for key in ('pair', 'votes', '_create_request', '_create_fingerprint'):
         assert migrated[key] == v1[key]
