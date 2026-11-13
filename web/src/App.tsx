@@ -29,7 +29,9 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [workId, setWorkId] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const openTools = useCallback(() => setToolsOpen(true), []);
+  const [toolsView, setToolsView] = useState<'explorer' | 'single'>('explorer');
+  const openTools = useCallback(() => { setToolsView('explorer'); setToolsOpen(true); }, []);
+  const openSingle = useCallback(() => { setToolsView('single'); setToolsOpen(true); }, []);
   // Unlocked with a password shorter than new ones may be (#82): suggest changing it, once per unlock.
   const [suggestPassword, setSuggestPassword] = useState(false);
   const queryClient = useQueryClient();
@@ -75,7 +77,7 @@ export default function App() {
   let screen;
   if (!status.initialized) screen = <FirstRun onDone={refresh} />;
   else if (!status.unlocked) screen = <Lock wait={status.wait} onDone={refresh} />;
-  else if (!workId) screen = <WorkSelect onOpen={openWork} onOpenTools={openTools} onLock={refresh} />;
+  else if (!workId) screen = <WorkSelect onOpen={openWork} onOpenTools={openTools} onOpenSingle={openSingle} onLock={refresh} />;
   else screen = <WorkWindow key={workId} workId={workId} active={!toolsOpen} onOpenTools={openTools} onLeave={() => setWorkId(null)} onLock={refresh} />;
 
   return (
@@ -86,7 +88,7 @@ export default function App() {
         </div>
         {toolsOpen && status.unlocked && (
           <Suspense fallback={<Loading />}>
-            <GlobalToolsWindow workId={workId ?? undefined} onClose={() => setToolsOpen(false)} />
+            <GlobalToolsWindow workId={workId ?? undefined} initialView={toolsView} onClose={() => setToolsOpen(false)} />
           </Suspense>
         )}
         {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}

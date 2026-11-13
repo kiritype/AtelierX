@@ -269,7 +269,7 @@ class GenerationMixin:
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
     def enqueue_single(self, work, body):
-        """Queue one free-prompt image for a work without requiring a character design."""
+        """Queue one free-prompt image, optionally scoped to an existing work."""
         self.queue.check_room(1)
         if not isinstance(body, dict):
             raise ValueError(Msg('server.single.request', 'Choose an image service and enter a prompt.'))
@@ -387,7 +387,7 @@ class GenerationMixin:
         }
         snapshot = {
             'kind': 'single',
-            'work_id': work.id,
+            'work_id': work.id if work else None,
             'service': service.id,
             'positive': final_positive,
             'negative': final_negative,
@@ -409,7 +409,7 @@ class GenerationMixin:
                     'kind': 'single',
                     'status': 'queued',
                     'created_at': created,
-                    'work_id': work.id,
+                    'work_id': work.id if work else None,
                     'service': service.id,
                     'seed': seed,
                     'title': positive[:80],
@@ -423,7 +423,8 @@ class GenerationMixin:
     def single_runs(self, work):
         """Recent single results survive clearing the queue because the PNG sidecars are authoritative."""
         saved = {}
-        prefix = f'_single/{work.id}/'
+        work_id = work.id if work else None
+        prefix = f'_single/{work_id}/' if work_id else '_standalone/'
         for item in self.gallery.for_prefixes((prefix.rstrip('/'),)).snapshot_items():
             if not item['path'].startswith(prefix):
                 continue
@@ -431,7 +432,7 @@ class GenerationMixin:
                 record = self.gallery.metadata(item['path'])
             except ValueError:
                 continue
-            if record.get('kind') != 'single' or record.get('work_id') != work.id:
+            if record.get('kind') != 'single' or record.get('work_id') != work_id:
                 continue
             actual = self._single_actual(record)
             saved[record['job_id']] = {
@@ -445,7 +446,7 @@ class GenerationMixin:
                 'image_url': item['image_url'],
                 'path': item['path'],
             }
-        for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work.id):
+        for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work_id):
             entry = saved.get(job['id'], {})
             saved[job['id']] = {
                 **entry,
@@ -583,7 +584,12 @@ class GenerationMixin:
             folder = self.paths.output / '_explorer' / code(job['explorer_session'])
             stem = job['id']
         elif job.get('kind') == 'single':
-            folder = self.paths.output / '_single' / code(job['work_id']) / time.strftime('%Y-%m-%d')
+            scope = (
+                self.paths.output / '_single' / code(job['work_id'])
+                if job.get('work_id')
+                else self.paths.output / '_standalone'
+            )
+            folder = scope / time.strftime('%Y-%m-%d')
             stem = job['id']
         elif job.get('kind') == 'lab':
             stamp = time.localtime()
@@ -611,7 +617,9 @@ class GenerationMixin:
             index += 1
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
-            schema_version=(3 if 'prompt_sources' in metadata else 2) if job.get('kind') == 'single' else 1,
+            schema_version=(4 if not job.get('work_id') else 3 if 'prompt_sources' in metadata else 2)
+            if job.get('kind') == 'single'
+            else 1,
             created_at=now(),
             job_id=job['id'],
             prompt_id=prompt_id,

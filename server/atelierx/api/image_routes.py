@@ -9,7 +9,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library, library_share, shots
+from ..image import library, library_share, shots, single_draft
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
@@ -410,14 +410,21 @@ async def enqueue(request):
 
 async def single_enqueue(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid'])
+    work = runtime.works.get(request.path_params['wid']) if 'wid' in request.path_params else None
     return await call(runtime.enqueue_single, work, await _body(request))
 
 
 async def single_runs(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid'])
+    work = runtime.works.get(request.path_params['wid']) if 'wid' in request.path_params else None
     return await call(runtime.single_runs, work)
+
+
+async def standalone_draft(request):
+    paths = _runtime(request).paths
+    if request.method == 'PUT':
+        return await call(single_draft.save, paths, await _body(request))
+    return await call(single_draft.read, paths)
 
 
 async def queue_get(request):
@@ -803,6 +810,9 @@ def routes():
         Route('/api/works/{wid}/image/deploy', work_deploy_put, methods=['PUT']),
         Route('/api/works/{wid}/image/board/exclude', image_board_exclude, methods=['PUT']),
         Route('/api/works/{wid}/image/compose', compose_preview, methods=['POST']),
+        Route('/api/image/single', single_enqueue, methods=['POST']),
+        Route('/api/image/single/draft', standalone_draft, methods=['GET', 'PUT']),
+        Route('/api/image/single/runs', single_runs, methods=['GET']),
         Route('/api/works/{wid}/image/single', single_enqueue, methods=['POST']),
         Route('/api/works/{wid}/image/single/runs', single_runs),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),

@@ -122,6 +122,10 @@ export default function ItemEditor({
   });
   async function convertRange(text: string, range: { part: 'appearance' | 'outfit'; outfit?: string; name?: string; add?: boolean }) {
     if (!characterId) return;
+    if (imageDirty) {
+      toast({ text: t('image.design.save_before_convert'), tone: 'error' });
+      return;
+    }
     if (!text.trim()) {
       toast({ text: t('image.range.select_first'), tone: 'error' });
       return;

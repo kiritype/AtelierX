@@ -3,20 +3,23 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { get, post } from '../../api';
+import { ApiError, get, post, put } from '../../api';
 import { t } from '../../i18n';
 import type { PromptSource, SingleRun } from '../../imageTypes';
 import { takeToolHandoff } from '../../lib/toolHandoff';
 import { SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
+import GlobalToolsWindow from '../../screens/GlobalToolsWindow';
 
-vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn() }));
+vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock('./ImageLab', () => ({ sendToLab: vi.fn() }));
+vi.mock('../AppSettings', () => ({ default: () => <p>Connection settings</p> }));
 let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
 let rows: SingleRun[];
+let savedDraft: Record<string, unknown> | null;
 const openView = vi.fn();
 const catalog = { connected: true, models: ['m.safetensors'], text_encoders: ['t.safetensors'], vaes: ['v.safetensors'],
   loras: [], samplers: ['euler'], schedulers: ['normal'], defaults: { family: 'anima', model: 'm.safetensors',
@@ -48,6 +51,8 @@ beforeEach(async () => {
   sessionStorage.removeItem(SINGLE_PRESET_HANDOFF);
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   rows = [];
+  savedDraft = null;
+  vi.mocked(put).mockImplementation(async (_url, body) => { savedDraft = (body as { draft: Record<string, unknown> }).draft; return { draft: savedDraft, revision: 'saved' }; });
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   qc.setQueryData(['image-catalog'], catalog);
   qc.setQueryData(['image-services'], services);
@@ -55,6 +60,7 @@ beforeEach(async () => {
     settings: {}, artist: { positive: 'soft light', negative: '' } }]);
   qc.setQueryData(['image-single-runs', 'synthetic'], { runs: [] });
   vi.mocked(get).mockImplementation(async url => {
+    if (url === '/api/image/single/draft') return { draft: savedDraft, revision: 'initial' };
     if (url.endsWith('/single/runs')) return { runs: [...rows] };
     if (url.endsWith('/novelai/info')) return { models: [{ id: 'nai-test', name: 'Test' }], samplers: ['euler'], noise_schedules: ['karras'],
       defaults: { model: 'nai-test', width: 1024, height: 1024, seed: -1, steps: 20, scale: 5, sampler: 'euler', noise_schedule: 'karras' }, free: { pixels: 0, steps: 0 } };
@@ -71,7 +77,7 @@ beforeEach(async () => {
         actual: { positive: request.positive, negative: request.negative, settings: { ...request.settings, seed: 17 } } });
       return { job_id: id };
     }
-    if (url.endsWith('/cancel')) { rows[0].status = 'cancelled'; return { ok: true }; }
+    if (url.endsWith('/cancel')) { rows[0] = { ...rows[0], status: 'cancelled' }; return { ok: true }; }
     if (url.endsWith('/retry')) { rows.unshift({ ...rows[0], id: `job-${rows.length + 1}`, status: 'queued' }); return { job_id: rows[0].id }; }
     if (url.endsWith('/tools/gallery')) return { items: [{ id: 'tool-1' }] };
     return { ok: true };
@@ -80,6 +86,67 @@ beforeEach(async () => {
   await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} /></QueryClientProvider>));
 });
 afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); });
+
+it.each(['comfyui', 'novelai', 'pixai'] as const)('generates a standalone %s image without touching work data', async service => {
+  await edit(positive(), 'Keep work draft');
+  vi.mocked(get).mockClear();
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle key="standalone" openView={openView} /></QueryClientProvider>));
+  expect(positive().value).toBe('');
+  await edit(positive(), 'Standalone lake');
+  if (service !== 'comfyui') await click(service === 'novelai' ? 'NovelAI' : 'PixAI');
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  await click(t('single.run'));
+  expect(post).toHaveBeenCalledWith('/api/image/single', expect.objectContaining({ service, positive: 'Standalone lake' }));
+  expect(get).toHaveBeenCalledWith('/api/image/single/runs');
+  expect(vi.mocked(get).mock.calls.some(([url]) => url.includes('/works/') || url.includes('work='))).toBe(false);
+  expect(host.textContent).not.toContain(t('materials.apply_character'));
+  expect(host.textContent).not.toContain(t('single.multi'));
+  expect(host.textContent).not.toContain(t('single.send_tools'));
+  expect(host.textContent).not.toContain(t('image_menu.gallery'));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(JSON.parse(localStorage.getItem('atelierx-single-v2-synthetic')!).positive).toBe('Keep work draft');
+  expect(JSON.parse(localStorage.getItem('atelierx-single-standalone-v1')!).positive).toBe('Standalone lake');
+  localStorage.removeItem('atelierx-single-standalone-v1');
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle key="reopen" openView={openView} /></QueryClientProvider>));
+  expect(positive().value).toBe('Standalone lake');
+});
+
+it('keeps the standalone form through settings and protects leaving while a generation is active', async () => {
+  const close = vi.fn();
+  const confirm = vi.fn(() => false);
+  vi.stubGlobal('confirm', confirm);
+  try {
+    await act(async () => root.render(<QueryClientProvider client={qc}><GlobalToolsWindow initialView="single" onClose={close} /></QueryClientProvider>));
+    await edit(positive(), 'Keep through settings');
+    await click(t('window.settings'));
+    expect(positive().closest('[hidden]')).not.toBeNull();
+    await click(t('image_menu.single'));
+    expect(positive().value).toBe('Keep through settings');
+    await click(t('single.run'));
+    await click(t('tools.back'));
+    expect(confirm).toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    await click(t('common.cancel'));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+    await click(t('tools.back'));
+    expect(close).toHaveBeenCalledOnce();
+  } finally { vi.unstubAllGlobals(); }
+});
+
+it('keeps unsaved standalone input after a conflict until an explicit reload', async () => {
+  vi.mocked(put).mockRejectedValue(new ApiError(409, { key: 'server.single.draft_stale', text: 'Changed elsewhere' }));
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle key="standalone" openView={openView} /></QueryClientProvider>));
+  await edit(positive(), 'My unsaved scene');
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(t('server.single.draft_stale'));
+  expect(positive().value).toBe('My unsaved scene');
+  savedDraft = { ...JSON.parse(localStorage.getItem('atelierx-single-standalone-v1')!), positive: 'Saved elsewhere' };
+  vi.stubGlobal('confirm', vi.fn(() => true));
+  try {
+    await click(t('single.reload_draft'));
+    expect(positive().value).toBe('Saved elsewhere');
+  } finally { vi.unstubAllGlobals(); }
+});
 
 it('receives a preset for another service without generating or losing the scene', async () => {
   await edit(positive(), 'Keep this scene');

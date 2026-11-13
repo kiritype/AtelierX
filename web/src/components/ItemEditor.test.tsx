@@ -7,10 +7,12 @@ import { ApiError, get, post, put } from '../api';
 import { t } from '../i18n';
 import type { Item, WorkInfo } from '../types';
 import ItemEditor from './ItemEditor';
+import type { MenuItem } from './ui';
 
 vi.mock('../api', async (original) => ({ ...await original<typeof import('../api')>(), get: vi.fn(), post: vi.fn(), put: vi.fn() }));
-vi.mock('./LazyCodeEditor', () => ({ default: ({ value, onChange }: { value: string; onChange: (text: string) => void }) =>
-  <div><pre data-testid="body">{value}</pre><button onClick={() => onChange('New prompt that must survive')}>edit text</button></div> }));
+vi.mock('./LazyCodeEditor', () => ({ default: ({ value, onChange, menu }: { value: string; onChange: (text: string) => void; menu?: (selection: { text: string }) => MenuItem[] }) =>
+  <div><pre data-testid="body">{value}</pre><button onClick={() => onChange('New prompt that must survive')}>edit text</button>
+    {menu && <button onClick={() => menu({ text: value })[0]?.items?.[0]?.run?.()}>convert selection</button>}</div> }));
 
 let host: HTMLDivElement;
 let root: Root;
@@ -18,7 +20,7 @@ let qc: QueryClient;
 const key = ['item', 'work', 'main.md'];
 const original: Item = { path: 'main.md', name: 'main', meta: { kind: 'main', id: 'M001' }, kind: 'main', body: '', hash: 'old', meta_error: null, size: 0 };
 const saved = { ...original, body: 'New prompt that must survive', hash: 'saved' };
-const info: WorkInfo = { name: 'Test', doc: {}, presets: [], effective: { linked: [], sources: {}, values: { count: 'chars' } } };
+const info: WorkInfo = { name: 'Test', doc: { id: 'W001' }, presets: [], effective: { linked: [], sources: {}, values: { count: 'chars' } } };
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
 async function click(label: string) {
   const button = [...host.querySelectorAll('button')].find((el) => el.textContent?.trim() === label);
@@ -88,4 +90,26 @@ it('keeps the input and does not call the LLM when saving fails', async () => {
   expect(post).not.toHaveBeenCalled();
   expect(host.querySelector('[data-testid="body"]')?.textContent).toBe(saved.body);
   expect(host.querySelector('.dialog')).not.toBeNull();
+});
+
+it('keeps an image draft across inner tabs and blocks range conversion until the design is saved', async () => {
+  const character: Item = { ...original, kind: 'character', meta: { kind: 'character', id: 'C001' }, body: 'Blue eyes' };
+  const imageKey = ['design', 'work', 'C001'];
+  const image = { design: { appearance: { prompt: ['blue eyes'], negative: [] }, outfits: {} }, revision: 'r0' };
+  vi.mocked(get).mockImplementation(async url => url.endsWith('/C001') ? image : url.endsWith('/api/settings') ? { autosave: { enabled: false } } : {});
+  await act(async () => { qc.setQueryData(key, character); qc.setQueryData(imageKey, image); });
+  await settle(); await click(t('inner.image'));
+  await act(async () => {
+    const input = host.querySelector<HTMLTextAreaElement>('.image-design textarea')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'green eyes');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click(t('inner.body')); await click('convert selection');
+  expect(post).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled();
+  await click(t('inner.image'));
+  expect(host.querySelector<HTMLTextAreaElement>('.image-design textarea')!.value).toBe('green eyes');
+  vi.mocked(put).mockImplementation(async (_, body) => ({ design: (body as typeof image).design, revision: 'r1' }));
+  await click(t('common.save'));
+  await click(t('inner.body')); await click('convert selection');
+  expect(post).toHaveBeenCalledWith('/api/works/work/image/characters/C001/convert', { range: { part: 'appearance', text: 'Blue eyes' } });
 });

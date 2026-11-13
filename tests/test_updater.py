@@ -174,6 +174,8 @@ def test_the_swap_script_replaces_program_files_and_keeps_user_data(paths, tmp_p
     )
     fake = type('P', (), {'state': paths.state, 'root': root})()
     assert finish_update(fake)['state'] == 'ok'
+    assert backup.exists()  # Startup only detaches temporary files; DOM readiness starts deletion.
+    Updater(fake).cleanup.run()
     assert not backup.exists()
     assert (unrelated_backup / 'personal.txt').read_bytes() == b'personal backup'
     assert (root / '_internal.old' / 'personal.dll').read_bytes() == b'personal'

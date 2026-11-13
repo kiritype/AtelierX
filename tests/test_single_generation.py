@@ -16,18 +16,114 @@ def _png():
     return out.getvalue()
 
 
-def _setup(client):
-    wid = client.post('/api/works', json={'name': 'A blank work'}).json()['id']
+def _setup(client, standalone=False):
+    wid = None if standalone else client.post('/api/works', json={'name': 'A blank work'}).json()['id']
     runtime = client.app.state.app.image
     runtime.set_paused(True)
     runtime.comfy = FakeComfy()
     return wid, runtime
 
 
-@pytest.mark.parametrize('service', ['comfyui', 'novelai', 'pixai'])
-def test_single_generation_saves_and_restores_without_character(unlocked, monkeypatch, service):
+def test_standalone_saved_history_survives_app_restart_and_queue_clear(paths, monkeypatch):
+    from starlette.testclient import TestClient
+
+    from atelierx.api.app import build_app
+    from conftest import FAST_KDF
+
+    with TestClient(build_app(paths, kdf=FAST_KDF), base_url='http://127.0.0.1:8765') as client:
+        assert client.get('/api/image/single/runs').status_code == 401
+        assert client.post('/api/image/single', json={'positive': 'test'}).status_code == 401
+        client.post('/api/auth/setup', json={'password': 'pass1234', 'language': 'ko'})
+        _, runtime = _setup(client, True)
+        draft = {
+            'schema_version': 3,
+            'positive': 'Unfinished scene',
+            'negative': '',
+            'preset': '',
+            'service': 'comfyui',
+            'settings': {'comfyui': {'seed': 17}, 'novelai': {}, 'pixai': {}},
+            'sources': [],
+        }
+        revision = client.get('/api/image/single/draft').json()['revision']
+        assert (
+            client.put('/api/image/single/draft', json={'draft': draft, 'revision': revision}).status_code
+            == 200
+        )
+        adapter = runtime.services['comfyui']
+        monkeypatch.setattr(adapter, 'busy', lambda: False)
+        monkeypatch.setattr(adapter, 'submit', lambda job: {'id': 'fake', 'record': {}})
+        monkeypatch.setattr(adapter, 'poll', lambda job, request: {'image': _png()})
+        response = client.post(
+            '/api/image/single',
+            json={
+                'positive': 'lakeside',
+                'settings': {'seed': 42},
+                'prompt_sources': [
+                    {
+                        'kind': 'style',
+                        'id': 'deleted',
+                        'name': 'Past style',
+                        'positive': 'soft light',
+                        'negative': '',
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 200, response.text
+        job_id = response.json()['job_id']
+        job = runtime.queue.get(job_id)
+        job['status'] = 'running'
+        runtime.run_job(job)
+        assert job['status'] == 'done'
+        runtime.remove_finished(job_id)
+        before = client.get('/api/image/single/runs').json()['runs']
+        assert before[0]['actual']['positive'] == 'lakeside, soft light'
+    with TestClient(build_app(paths, kdf=FAST_KDF), base_url='http://127.0.0.1:8765') as restarted:
+        assert restarted.post('/api/auth/unlock', json={'password': 'pass1234'}).status_code == 200
+        after = restarted.get('/api/image/single/runs').json()['runs']
+        assert after == before
+        assert restarted.get('/api/works').json()['works'] == []
+        assert restarted.get(after[0]['image_url']).status_code == 200
+        assert restarted.get('/api/image/single/draft').json()['draft'] == draft
+
+
+def test_standalone_draft_rejects_stale_and_invalid_saves(unlocked):
     client = unlocked
-    wid, runtime = _setup(client)
+    url = '/api/image/single/draft'
+    revision = client.get(url).json()['revision']
+    draft = {
+        'schema_version': 3,
+        'positive': 'First window',
+        'negative': '',
+        'preset': '',
+        'service': 'comfyui',
+        'settings': {key: {} for key in ('comfyui', 'novelai', 'pixai')},
+        'sources': [],
+    }
+    saved = client.put(url, json={'draft': draft, 'revision': revision})
+    assert saved.status_code == 200
+    stale = client.put(url, json={'draft': {**draft, 'positive': 'Second window'}, 'revision': revision})
+    assert stale.status_code == 409 and stale.json()['error']['key'] == 'server.single.draft_stale'
+    for invalid in (
+        None,
+        {},
+        {**draft, 'schema_version': 99},
+        {**draft, 'settings': []},
+        {**draft, 'positive': 'x' * 30001},
+    ):
+        assert (
+            client.put(url, json={'draft': invalid, 'revision': saved.json()['revision']}).status_code == 400
+        )
+    assert client.get(url).json()['draft'] == draft
+    assert client.get('/api/works').json()['works'] == []
+
+
+@pytest.mark.parametrize('service', ['comfyui', 'novelai', 'pixai'])
+@pytest.mark.parametrize('standalone', [False, True])
+def test_single_generation_saves_and_restores_without_character(unlocked, monkeypatch, service, standalone):
+    client = unlocked
+    wid, runtime = _setup(client, standalone)
+    url = '/api/image/single' if standalone else f'/api/works/{wid}/image/single'
     adapter = runtime.services[service]
     sent = []
     monkeypatch.setattr(adapter, 'busy', lambda: False)
@@ -41,7 +137,7 @@ def test_single_generation_saves_and_restores_without_character(unlocked, monkey
         'negative': 'blur',
         'settings': {'seed': 17},
     }
-    response = client.post(f'/api/works/{wid}/image/single', json=request)
+    response = client.post(url, json=request)
     assert response.status_code == 200, response.text
     job_id = response.json()['job_id']
     job = runtime.queue.get(job_id)
@@ -52,33 +148,42 @@ def test_single_generation_saves_and_restores_without_character(unlocked, monkey
     job['status'] = 'running'
     runtime.run_job(job)
     assert job['status'] == 'done' and sent[0]['settings']['seed'] == 17
-    runs = client.get(f'/api/works/{wid}/image/single/runs').json()['runs']
+    runs = client.get(f'{url}/runs').json()['runs']
     assert runs[0]['id'] == job_id and runs[0]['status'] == 'done'
     assert runs[0]['request']['positive'] == request['positive']
-    assert runs[0]['path'].startswith(f'_single/{wid}/')
+    assert runs[0]['path'].startswith('_standalone/' if standalone else f'_single/{wid}/')
     assert client.get(runs[0]['image_url']).status_code == 200
     record = runtime.gallery.metadata(runs[0]['path'])
-    assert record['schema_version'] == 2 and record['kind'] == 'single'
+    assert record['schema_version'] == (4 if standalone else 2) and record['kind'] == 'single'
     runtime.remove_finished(job_id)
-    saved = client.get(f'/api/works/{wid}/image/single/runs').json()['runs']
+    saved = client.get(f'{url}/runs').json()['runs']
     assert saved[0]['id'] == job_id and saved[0]['request']['settings']['seed'] == 17
     assert saved[0]['actual']['positive'] == request['positive']
     assert saved[0]['actual']['negative'] == request['negative']
     assert saved[0]['actual']['settings']['seed'] == 17
     assert 'generation_preset' not in saved[0]['actual']
+    if standalone:
+        assert client.get('/api/works').json()['works'] == []
+        other = client.post('/api/works', json={'name': 'Unrelated'}).json()['id']
+        assert client.get(f'/api/works/{other}/image/single/runs').json()['runs'] == []
+    else:
+        assert client.get('/api/image/single/runs').json()['runs'] == []
 
 
-def test_single_cancel_retry_failure_and_queue_resume(unlocked, monkeypatch):
+@pytest.mark.parametrize('service', ['comfyui', 'novelai', 'pixai'])
+@pytest.mark.parametrize('standalone', [False, True])
+def test_single_cancel_retry_failure_and_queue_resume(unlocked, monkeypatch, service, standalone):
     client = unlocked
-    wid, runtime = _setup(client)
-    body = {'positive': 'a city at dusk', 'service': 'comfyui', 'settings': {'seed': 3}}
-    first = client.post(f'/api/works/{wid}/image/single', json=body).json()['job_id']
+    wid, runtime = _setup(client, standalone)
+    url = '/api/image/single' if standalone else f'/api/works/{wid}/image/single'
+    body = {'positive': 'a city at dusk', 'service': service, 'settings': {'seed': 3}}
+    first = client.post(url, json=body).json()['job_id']
     assert client.post(f'/api/image/jobs/{first}/cancel').status_code == 200
     assert runtime.queue.get(first)['status'] == 'cancelled'
     retried = client.post(f'/api/image/jobs/{first}/retry').json()['job_id']
     assert retried != first
     assert runtime.queue.get(retried)['snapshot']['request']['positive'] == body['positive']
-    adapter = runtime.services['comfyui']
+    adapter = runtime.services[service]
     monkeypatch.setattr(adapter, 'busy', lambda: False)
     monkeypatch.setattr(adapter, 'submit', lambda job: (_ for _ in ()).throw(RuntimeError('fake failure')))
     job = runtime.queue.get(retried)
@@ -88,8 +193,9 @@ def test_single_cancel_retry_failure_and_queue_resume(unlocked, monkeypatch):
     again = client.post(f'/api/image/jobs/{retried}/retry').json()['job_id']
     assert client.post('/api/image/queue/resume').json()['paused'] is False
     assert runtime.queue.get(again)['status'] == 'queued'
-    runs = client.get(f'/api/works/{wid}/image/single/runs').json()['runs']
+    runs = client.get(f'{url}/runs').json()['runs']
     assert {row['status'] for row in runs} == {'cancelled', 'failed', 'queued'}
+    assert runtime.queue.get(again)['work_id'] == wid
 
 
 def test_single_validation_rejects_empty_and_unsupported_settings(unlocked):
@@ -106,9 +212,11 @@ def test_single_validation_rejects_empty_and_unsupported_settings(unlocked):
     assert runtime.queue.queued_count() == 0
 
 
-def test_single_frozen_sources_are_ordered_saved_and_not_reexpanded(unlocked, monkeypatch):
+@pytest.mark.parametrize('standalone', [False, True])
+def test_single_frozen_sources_are_ordered_saved_and_not_reexpanded(unlocked, monkeypatch, standalone):
     client = unlocked
-    wid, runtime = _setup(client)
+    wid, runtime = _setup(client, standalone)
+    url = '/api/image/single' if standalone else f'/api/works/{wid}/image/single'
     library.save_preset(
         runtime.paths,
         'soft',
@@ -137,7 +245,7 @@ def test_single_frozen_sources_are_ordered_saved_and_not_reexpanded(unlocked, mo
         },
     ]
     response = client.post(
-        f'/api/works/{wid}/image/single',
+        url,
         json={
             'service': 'comfyui',
             'positive': 'forest # note',
@@ -178,11 +286,11 @@ def test_single_frozen_sources_are_ordered_saved_and_not_reexpanded(unlocked, mo
     runtime.run_job(job)
     assert job['status'] == 'done'
     metadata = runtime.gallery.metadata(job['image_url'].removeprefix('/api/image/files/'))
-    assert metadata['schema_version'] == 3
+    assert metadata['schema_version'] == (4 if standalone else 3)
     assert metadata['prompt_sources'] == expected
 
     # Restoring the saved run cannot depend on a deleted or modified preset.
-    again = client.get(f'/api/works/{wid}/image/single/runs').json()['runs'][0]
+    again = client.get(f'{url}/runs').json()['runs'][0]
     assert again['actual']['prompt_sources'] == expected
     assert again['actual']['positive'] == snapshot['positive']
 
@@ -216,15 +324,17 @@ def test_single_rejects_malformed_or_mismatched_frozen_sources(unlocked, sources
     assert runtime.queue.queued_count() == 0
 
 
-def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocked):
+@pytest.mark.parametrize('standalone', [False, True])
+def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocked, standalone):
     client = unlocked
-    wid, runtime = _setup(client)
-    work = runtime.works.get(wid)
+    wid, runtime = _setup(client, standalone)
+    work = runtime.works.get(wid) if wid else None
+    url = '/api/image/single' if standalone else f'/api/works/{wid}/image/single'
     library.save_item(
         runtime.paths,
         work,
         'common',
-        'work',
+        'global' if standalone else 'work',
         'sunlit',
         {'name': 'Sunlit', 'prompt': ['warm daylight # note'], 'target': 'positive'},
     )
@@ -232,7 +342,7 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
         runtime.paths,
         work,
         'common',
-        'work',
+        'global' if standalone else 'work',
         'avoid',
         {'name': 'Avoid', 'prompt': ['blurry'], 'target': 'negative'},
     )
@@ -248,7 +358,7 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
         },
     )
     first = client.post(
-        f'/api/works/{wid}/image/single',
+        url,
         json={
             'service': 'comfyui',
             'positive': 'forest',
@@ -262,14 +372,14 @@ def test_single_preset_common_and_actual_snapshot_survive_preset_changes(unlocke
     snapshot = first_job['snapshot']
     assert snapshot['positive'] == 'warm daylight, forest, gentle color'
     assert snapshot['negative'] == 'blurry, noise, darkness'
-    run = client.get(f'/api/works/{wid}/image/single/runs').json()['runs'][0]
+    run = client.get(f'{url}/runs').json()['runs'][0]
     assert run['actual']['positive'] == snapshot['positive']
     assert run['actual']['generation_preset'] == snapshot['generation_preset']
     assert run['actual']['settings']['cfg'] == 6.5
     assert 'model_loader' not in run['actual']['settings']
     (runtime.paths.data / 'image' / 'presets' / f'{resolve(runtime.paths, "presets", "soft")}.json').unlink()
     second = client.post(
-        f'/api/works/{wid}/image/single',
+        url,
         json={
             'service': 'comfyui',
             'positive': run['actual']['positive'],

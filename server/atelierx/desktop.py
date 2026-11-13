@@ -100,7 +100,7 @@ def main():
     args = parser.parse_args()
     paths = AppPaths.for_runtime(args.root)
     ready = args.ready_file or paths.state / 'desktop.json'
-    server = thread = sock = lock_file = None
+    app = server = thread = sock = lock_file = None
     try:
         configure_logging(paths.root)
         # A portable data folder must never have two servers writing to it concurrently.
@@ -138,6 +138,7 @@ def main():
         logger.info('Desktop ready at %s', url)
         updater = app.state.app.updater
         if args.headless:
+            updater.cleanup.start()
             updater.exit_app = lambda: setattr(server, 'should_exit', True)
 
             def stop(_signum, _frame):
@@ -164,7 +165,7 @@ def main():
             updater.exit_app = close_for_update
             webview.settings['ALLOW_DOWNLOADS'] = True
             webview.settings['ALLOW_FILE_URLS'] = False
-            webview.create_window(
+            window = webview.create_window(
                 'AtelierX',
                 url,
                 width=1440,
@@ -179,6 +180,7 @@ def main():
                     )
                 },
             )
+            window.events.loaded += updater.cleanup.start
             webview.start(gui='edgechromium', private_mode=True, storage_path=str(paths.state / 'webview'))
         return 0
     except Exception:
@@ -190,6 +192,8 @@ def main():
             )
         return 1
     finally:
+        if app is not None:
+            app.state.app.updater.cleanup.stop()
         if server is not None:
             server.should_exit = True
         if thread is not None:

@@ -2,6 +2,20 @@
 
 모든 데이터 형식은 이 문서에서만 정의한다. 기능 문서는 여기를 참조한다.
 
+## 업데이트 정리 기록
+
+`state/update/cleanup/<32자리 hex ID>/manifest.json`은 `schema_version: 1`,
+`state: staging|queued`, `backup_id: <32자리 hex ID>|null`, `temporary: string[]`를 담는다.
+`backup_id`는 업데이트 스크립트가 만든 `state/update/backups/<ID>`만 가리킨다.
+`temporary`는 해당 업데이트의 `new`와 `AtelierX-x.y.z-windows-x64.zip` 이름을 기록한다.
+기존 `pending.json`에는 이동 시작 전에 `cleanup_id`와 원래 `result`를 추가한다.
+
+정상 교체를 확인하면 임시 파일을 정리 기록 옆 `temporary/`로 같은 볼륨 안에서 이동하고
+`queued`로 바꾼 뒤 `pending.json`을 지운다. 다음 업데이트와 경로가 겹치지 않도록 이동을
+완료하기 전에는 새 다운로드를 막는다. 창 로드 후 백그라운드에서 삭제하고, 모두 끝나야 기록을 지운다.
+중단·실패하면 기록을 유지해 다음 실행에 재시도한다. 성공 알림을 지워도 정리 기록은 남는다.
+이전 형식의 `pending.json`·`result.json`도 읽어 새 정리 기록을 만들며 데이터 백업 ZIP은 포함하지 않는다.
+
 ## 원칙
 
 - 사람이 읽고 고칠 수 있는 파일로 저장한다: 본문은 Markdown, 구조 데이터는 JSON(UTF-8, 들여쓰기 2칸).
@@ -930,6 +944,20 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 복원·재생성은 프리셋이 바뀌거나 삭제되어도 결과의 최종 프롬프트·설정·시드를 사용한다. 캐릭터·의상·표정 필드는 없다. 기존 `schema_version: 1` 조합 및
 생성·비교 기록은 그대로 읽는다. 큐 작업은 기존 `state/image/queue.json` 형식에 `kind: "single"`과 작품·요청
 스냅샷을 더하며, 완료 작업을 큐에서 지운 뒤에도 출력 파일에서 단일 생성 이력을 다시 만든다.
+
+작품 없는 단일 생성은 `POST /api/image/single`, `GET /api/image/single/runs`를 사용한다.
+기존 작품별 API의 요청·목록 형식을 재사용하되 작품을 만들거나 임시 ID를 부여하지 않는다.
+큐 작업과 스냅샷의 `work_id`는 `null`, 출력은 `<출력 루트>/_standalone/<날짜>/<작업 ID>.png`와
+같은 이름의 JSON에 저장한다. 이 기록은 `schema_version: 4`이며 v2/v3의 필드를 유지하고
+`work_id: null`을 허용한다. `prompt_sources`는 요청에 있을 때 보존한다.
+작품별 v2/v3 기록과 저장 위치는 바꾸지 않는다. 단일 생성 목록은 자신의 출력 경로·작품 ID와
+일치하는 기록만 읽는다. 독립 생성 완료 이력도 큐 정리·재시작 후 출력 파일에서 최대 100개를 복구한다.
+독립 생성 초안은 `state/image/single-draft.json`에 기존 초안 형식(`schema_version: 3`)으로 저장한다.
+`GET/PUT /api/image/single/draft`는 `{draft, revision}`을 읽고 저장한다. 최초 draft는 null이며,
+오래된 revision의 저장은 409로 거절한다. 저장 실패 시 입력을 유지하고 명시적인 다시 불러오기를 제공한다.
+브라우저의 `atelierx-single-standalone-v1`은 보조 캐시이며 서버 기록이 우선한다.
+서버 기록이 없을 때만 캐시를 사용하므로 데스크톱 비공개 웹뷰의 저장소 초기화와 관계없이 앱 재시작 후 복원된다.
+전역 공통 문구·구도·표정·그림체만 사용하며 작품별 오버라이드를 합치지 않는다.
 
 출처를 분리한 단일 생성 기록은 `schema_version: 3`이며 위 필드를 그대로 유지하고 `prompt_sources`를 추가한다.
 `request.prompt_sources`와 단일 생성 목록 API의 `actual.prompt_sources`에도 같은 적용 당시 값을 둔다.

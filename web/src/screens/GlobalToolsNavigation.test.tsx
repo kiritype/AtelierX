@@ -40,7 +40,13 @@ it('opens global Tools from the work list before a work is selected', async () =
     return {};
   });
   const openTools = vi.fn();
-  const host = await render(<WorkSelect onOpen={vi.fn()} onOpenTools={openTools} onLock={vi.fn()} />);
+  const openSingle = vi.fn();
+  const openWork = vi.fn();
+  const host = await render(<WorkSelect onOpen={openWork} onOpenSingle={openSingle} onOpenTools={openTools} onLock={vi.fn()} />);
+  const single = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === t('works.image_only'))!;
+  await act(async () => single.click());
+  expect(openSingle).toHaveBeenCalledOnce();
+  expect(openWork).not.toHaveBeenCalled();
   const tools = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes(t('menu.tools')));
   expect(tools).toBeTruthy();
   await act(async () => tools!.click());
