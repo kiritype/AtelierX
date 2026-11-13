@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
-import { ApiError, get, post } from '../../api';
+import { useEffect, useId, useRef, useState } from 'react';
+import { ApiError, get, post, put } from '../../api';
 import { t, tm, msgText } from '../../i18n';
 import type { ImageView } from '../../types';
 import type { GalleryToolsResponse, PromptSource, SingleRun, SingleRuns } from '../../imageTypes';
@@ -9,6 +9,7 @@ import { settingsFromPreset } from '../../lib/presetSettings';
 import { SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { fits } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
+import { Loading } from '../ui';
 import type { ImageServices } from '../ImageServiceSettings';
 import GenSettings, { FAMILY_DEFAULTS, useCatalog, type GenerationSettings } from './GenSettings';
 import NovelAISettings from './NovelAISettings';
@@ -27,13 +28,14 @@ import './ImageSingle.css';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
 type Draft = { schema_version: 3; positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string; sources: PromptSource[]; legacyPreset?: boolean };
+type SavedDraft = { draft: Draft | null; revision: string };
 type Preset = StyleChoice & { service: string; family: string; settings: Record<string, unknown>; common?: string[]; artist?: { positive?: string; negative?: string } };
 type Common = { id: string; name: string; prompt?: string[]; target?: string; targets?: string[] };
-const storageKey = (work: string) => `atelierx-single-v2-${work}`;
+const storageKey = (work?: string) => work ? `atelierx-single-v2-${work}` : 'atelierx-single-standalone-v1';
 const fresh = (): Draft => ({ schema_version: 3, positive: '', negative: '', service: 'comfyui', preset: '', sources: [], settings: {
   comfyui: { family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 }, novelai: {}, pixai: {},
 } });
-function readDraft(work: string): Draft {
+function readDraft(work?: string): Draft {
   const fallback = fresh();
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey(work)) || 'null') as Draft | null;
@@ -53,12 +55,20 @@ const localTime = (value: string) => {
 };
 const HISTORY_PAGE_SIZE = 6;
 
-export default function ImageSingle({ workId, openView, active: screenActive = true }: { workId: string; openView: (view: ImageView) => void; active?: boolean }) {
+export default function ImageSingle({ workId, openView, active: screenActive = true }: { workId?: string; openView: (view: ImageView) => void; active?: boolean }) {
   const id = useId();
+  const endpoint = workId ? `/api/works/${workId}/image/single` : '/api/image/single';
   const qc = useQueryClient();
   const [draft, setDraft] = useState(() => readDraft(workId));
   const [stored, setStored] = useState('');
   const [storageFailed, setStorageFailed] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(!!workId);
+  const [draftLoadingError, setDraftLoadingError] = useState('');
+  const [draftSaveError, setDraftSaveError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const draftRevision = useRef('');
+  const saveInFlight = useRef(false);
   const [pending, setPending] = useState(false);
   const [runId, setRunId] = useState('');
   const [error, setError] = useState('');
@@ -70,8 +80,8 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const { compositions, rules } = useShotLibrary(workId);
   const [unappliedShot, setUnappliedShot] = useState<ShotChoice>(AUTO_SHOT);
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
-  const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common?work=${workId}`) });
-  const runs = useQuery<SingleRuns>({ queryKey: ['image-single-runs', workId], queryFn: () => get(`/api/works/${workId}/image/single/runs`), refetchInterval: 1500 });
+  const commons = useQuery<Record<string, Common>>({ queryKey: ['image-lib', 'common', workId], queryFn: () => get(`/api/image/library/common${workId ? `?work=${workId}` : ''}`) });
+  const runs = useQuery<SingleRuns>({ queryKey: ['image-single-runs', workId], queryFn: () => get(`${endpoint}/runs`), refetchInterval: 1500 });
   const history = (runs.data?.runs ?? []).slice(0, 100);
   const pageCount = Math.max(1, Math.ceil(history.length / HISTORY_PAGE_SIZE));
   const page = Math.min(historyPage, pageCount - 1);
@@ -79,19 +89,46 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const run = history.find(r => r.id === runId) ?? history[0];
   const busy = pending || history.some(active);
   const serialized = JSON.stringify(draft);
-  function saveDraft(): boolean {
-    try { localStorage.setItem(storageKey(workId), serialized); setStored(serialized); setStorageFailed(false); return true; }
-    catch { setStorageFailed(true); return false; }
-  }
-  useEffect(() => { saveDraft(); }, [serialized, workId]);
-  useUnsaved('single-draft', stored !== serialized || busy, async () => saveDraft() && !busy);
   useEffect(() => {
-    if (!catalog.data?.connected) return;
+    if (workId) return;
+    let cancelled = false;
+    setDraftLoaded(false); setDraftLoadingError('');
+    get<SavedDraft>('/api/image/single/draft').then(result => {
+      if (cancelled) return;
+      draftRevision.current = result.revision;
+      const saved = result.draft ?? readDraft();
+      setDraft(saved); setStored(result.draft ? JSON.stringify(saved) : '');
+      setStorageFailed(false); setDraftLoaded(true);
+    }).catch(err => { if (!cancelled) setDraftLoadingError(err instanceof ApiError ? tm(err.msg) : String(err)); });
+    return () => { cancelled = true; };
+  }, [workId, loadAttempt]);
+  async function saveDraft(): Promise<boolean> {
+    if (!draftLoaded || saveInFlight.current) return false;
+    saveInFlight.current = true; setDraftSaving(true);
+    try {
+      try { localStorage.setItem(storageKey(workId), serialized); } catch (err) { if (workId) throw err; }
+      if (!workId) {
+        const saved = await put<SavedDraft>('/api/image/single/draft', { draft, revision: draftRevision.current });
+        draftRevision.current = saved.revision;
+      }
+      setStored(serialized); setStorageFailed(false); setDraftSaveError(''); return true;
+    } catch (err) { setStorageFailed(true); setDraftSaveError(err instanceof ApiError ? tm(err.msg) : String(err)); return false; }
+    finally { saveInFlight.current = false; setDraftSaving(false); }
+  }
+  useEffect(() => {
+    if (!draftLoaded || draftSaving || storageFailed || stored === serialized) return;
+    if (workId) { void saveDraft(); return; }
+    const timer = setTimeout(() => { void saveDraft(); }, 300);
+    return () => clearTimeout(timer);
+  }, [serialized, workId, draftLoaded, draftSaving, storageFailed, stored]);
+  useUnsaved('single-draft', (draftLoaded && stored !== serialized) || busy, async () => (await saveDraft()) && !busy);
+  useEffect(() => {
+    if (!draftLoaded || !catalog.data?.connected) return;
     const defaults = catalog.data.defaults;
     setDraft(current => current.settings.comfyui.model ? current : {
       ...current, settings: { ...current.settings, comfyui: { ...defaults, ...current.settings.comfyui, model: defaults.model } },
     });
-  }, [catalog.data]);
+  }, [catalog.data, draftLoaded]);
   const update = (patch: Partial<Draft>) => setDraft(current => ({ ...current, ...patch }));
   const settings = draft.settings[draft.service];
   const setSettings = (value: Record<string, unknown>) => setDraft(current => ({ ...current, settings: { ...current.settings, [current.service]: value } }));
@@ -131,11 +168,11 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   }
   useEffect(() => {
     const receive = () => {
-      if (!screenActive || !presets.data || !commons.data) return;
+      if (!draftLoaded || !screenActive || !presets.data || !commons.data) return;
       const raw = sessionStorage.getItem(SINGLE_PRESET_HANDOFF);
       if (!raw) return;
       try {
-        const handoff = JSON.parse(raw) as { workId: string; presetId: string };
+        const handoff = JSON.parse(raw) as { workId?: string; presetId: string };
         if (handoff.workId !== workId) return;
         sessionStorage.removeItem(SINGLE_PRESET_HANDOFF);
         if (presets.data.some(preset => preset.id === handoff.presetId)) choosePreset(handoff.presetId, true);
@@ -144,7 +181,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     receive();
     window.addEventListener(SINGLE_PRESET_HANDOFF, receive);
     return () => window.removeEventListener(SINGLE_PRESET_HANDOFF, receive);
-  }, [presets.data, commons.data, workId, screenActive]);
+  }, [presets.data, commons.data, workId, screenActive, draftLoaded]);
   const fail = (err: unknown) => setError(err instanceof ApiError ? tm(err.msg) : String(err));
   const refresh = () => qc.invalidateQueries({ queryKey: ['image-single-runs', workId] });
   async function enqueue(value = draft, repeatOk = false) {
@@ -156,10 +193,10 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
         preset_id: value.preset || undefined, prompt_sources: promptSources(value.positive, value.negative, value.sources), settings: value.settings[value.service], repeat_ok: repeatOk,
       };
       let response: { job_id: string };
-      try { response = await post(`/api/works/${workId}/image/single`, request); }
+      try { response = await post(endpoint, request); }
       catch (err) {
         if (!(err instanceof ApiError && err.msg.key === 'server.image.services.repeat' && confirm(tm(err.msg)))) throw err;
-        response = await post(`/api/works/${workId}/image/single`, { ...request, repeat_ok: true });
+        response = await post(endpoint, { ...request, repeat_ok: true });
       }
       setRunId(response.job_id);
       setHistoryPage(0);
@@ -227,12 +264,14 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     current={{ service: draft.service, positive, negative, settings, sources: sourceList.filter(source => source.kind !== 'direct') }}
     restoredSources={restorePromptSources(run).sources}
     busy={busy} handoffPending={handoffPending} restore={() => restore(run)} regenerate={regenerate}
-    handoff={target => target === 'tools' ? handoffTools() : handoffLab()} />;
+    handoff={workId ? target => target === 'tools' ? handoffTools() : handoffLab() : undefined} />;
+
+  if (!draftLoaded) return draftLoadingError ? <div role="alert">{draftLoadingError} <button onClick={() => setLoadAttempt(n => n + 1)}>{t('single.reload_draft')}</button></div> : <Loading />;
 
   return <section className="single-image generation-page" aria-label={t('image_menu.single')}>
     <div className="generation-content">
-    <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t('single.subtitle')}</span></div>
-      <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>
+    <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t(workId ? 'single.subtitle' : 'single.standalone_about')}</span></div>
+      {workId && <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>}
     </header>
     <div className="single-layout">
       <div className="single-form">
@@ -255,14 +294,16 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
             frozenSource={frozenShot} onChange={chooseShot} {...size} />}
         </ShotResolution>
         <SinglePromptMaterials workId={workId} target={shotTarget} sources={draft.sources}
-          change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={() => openView('library')} />
+          change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={workId ? () => openView('library') : undefined} />
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
         <div className="section-title">{t('single.settings')}</div>
         <p className="faint small">{t('single.settings_hint')}</p>
         {draft.service === 'comfyui' && <GenSettings compact value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
         {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
         {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
-        {storageFailed ? <p role="alert" className="warn-text">{t('single.storage_failed')} <button onClick={saveDraft}>{t('common.save')}</button></p> : <p className="faint small">{t('single.local_draft')}</p>}
+        {storageFailed ? <p role="alert" className="warn-text">{workId ? t('single.storage_failed') : draftSaveError} <button onClick={saveDraft}>{t('common.save')}</button>
+          {!workId && <button onClick={() => { if (confirm(t('single.reload_draft_confirm'))) setLoadAttempt(n => n + 1); }}>{t('single.reload_draft')}</button>}
+        </p> : <p className="faint small">{t(workId ? 'single.local_draft' : stored === serialized ? 'single.portable_draft' : 'single.saving_draft')}</p>}
       </div>
       <div className="single-result">
         <div className="single-result-head"><h3>{t('single.result')}</h3><span role="status" aria-live="polite">{t(`single.state.${pending && !run ? 'queued' : run?.status ?? 'idle'}`)}</span></div>
@@ -274,10 +315,10 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
           ? <button type="button" className="single-canvas" aria-label={t('single.open_preview')} onClick={() => setPreviewOpen(true)}><img src={run.image_url} alt="" /></button>
           : <div className="single-canvas"><div className="single-empty">{t('single.empty')}</div></div>}
         {resultDetails}
-        <div className="single-result-links"><button type="button" className="ghost" onClick={() => openView('gallery')}>{t('image_menu.gallery')}</button><button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button></div>
+        <div className="single-result-links">{workId && <button type="button" className="ghost" onClick={() => openView('gallery')}>{t('image_menu.gallery')}</button>}<button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button></div>
         {history.length > 0 && <div className="single-history">
-          <h4>{t('single.history')}</h4>
-          <p className="faint small">{t('single.history_limit')} <button type="button" className="ghost" onClick={() => openView('gallery')}>{t('single.view_all')}</button></p>
+          <h4>{t(workId ? 'single.history' : 'single.standalone_history')}</h4>
+          <p className="faint small">{t('single.history_limit')} {workId && <button type="button" className="ghost" onClick={() => openView('gallery')}>{t('single.view_all')}</button>}</p>
           <div className="single-history-list">{visibleHistory.map(entry => <button key={entry.id} type="button"
             className={`single-history-row${run?.id === entry.id ? ' is-selected' : ''}`} aria-pressed={run?.id === entry.id}
             onClick={() => { setRunId(entry.id); setError(''); setPreviewOpen(false); }}>

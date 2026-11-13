@@ -26,7 +26,7 @@ export default function SingleResultDetails({ run, current, restoredSources = []
   handoffPending: boolean;
   restore: () => void;
   regenerate: (newSeed: boolean) => void;
-  handoff: (target: 'tools' | 'lab') => void;
+  handoff?: (target: 'tools' | 'lab') => void;
 }) {
   const actual = run.actual;
   const settings = actual?.settings ?? {};
@@ -98,7 +98,7 @@ export default function SingleResultDetails({ run, current, restoredSources = []
       <p className="faint small">{!actual ? t('single.result_no_settings') : busy ? t('single.result_busy')
         : !run.service ? t('single.result_no_service') : !actual.positive.trim() ? t('single.result_no_prompt') : seed === undefined ? t('single.result_no_seed') : t('single.result_seed_note')}</p>
     </div>
-    <div className="single-result-group" role="group" aria-label={t('single.result_next_group')}>
+    {handoff && <div className="single-result-group" role="group" aria-label={t('single.result_next_group')}>
       <h4>{t('single.result_next_group')}</h4>
       <div className="single-result-actions">
         <button type="button" disabled={Boolean(compareReason) || handoffPending} onClick={() => handoff('lab')}>{t('single.compare')}</button>
@@ -106,7 +106,7 @@ export default function SingleResultDetails({ run, current, restoredSources = []
       </div>
       {compareReason && <p className="faint small">{t(compareReason)}</p>}
       {!run.path && compareReason !== 'single.result_no_file' && <p className="faint small">{t('single.result_no_file')}</p>}
-    </div>
+    </div>}
     {actual && <details className="single-details"><summary tabIndex={0}>{t('single.result_settings')}</summary>
       <pre>{JSON.stringify(actual, null, 2)}</pre>
     </details>}

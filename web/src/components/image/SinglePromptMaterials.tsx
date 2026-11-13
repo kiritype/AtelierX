@@ -28,11 +28,11 @@ export function StyleThumbnails({ presets, selected, choose, disabled }: { prese
 }
 
 export default function SinglePromptMaterials({ workId, target, sources, change, positive, negative, openLibrary }: {
-  workId: string; target: string; sources: PromptSource[]; change: (update: (sources: PromptSource[]) => PromptSource[]) => void;
-  positive: string; negative: string; openLibrary: () => void;
+  workId?: string; target: string; sources: PromptSource[]; change: (update: (sources: PromptSource[]) => PromptSource[]) => void;
+  positive: string; negative: string; openLibrary?: () => void;
 }) {
-  const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`) });
-  const expressions = useQuery<Record<string, Material>>({ queryKey: ['image-lib', 'expressions', workId], queryFn: () => get(`/api/image/library/expressions?work=${workId}`) });
+  const designs = useQuery<Design[]>({ queryKey: ['image-designs', workId], queryFn: () => get(`/api/works/${workId}/image/designs`), enabled: !!workId });
+  const expressions = useQuery<Record<string, Material>>({ queryKey: ['image-lib', 'expressions', workId], queryFn: () => get(`/api/image/library/expressions${workId ? `?work=${workId}` : ''}`) });
   const [character, setCharacter] = useState('');
   const [expression, setExpression] = useState('');
   const [pending, setPending] = useState(false);
@@ -56,15 +56,15 @@ export default function SinglePromptMaterials({ workId, target, sources, change,
   };
   return <section className="prompt-materials" aria-label={t('materials.title')}>
     <h4>{t('materials.title')}</h4>
-    <p className="faint small">{t('materials.replace_note')}</p>
-    <div className="prompt-material-picker"><label>{t('materials.character')}<select value={character} onChange={event => setCharacter(event.target.value)} disabled={pending}>
+    <p className="faint small">{t(workId ? 'materials.replace_note' : 'materials.global_replace_note')}</p>
+    {workId && <div className="prompt-material-picker"><label>{t('materials.character')}<select value={character} onChange={event => setCharacter(event.target.value)} disabled={pending}>
       <option value="">{t('materials.choose')}</option>{(Array.isArray(designs.data) ? designs.data : []).filter(item => item.has_design).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-    </select></label><button type="button" disabled={!character || pending} onClick={addCharacter}>{t('materials.apply_character')}</button></div>
+    </select></label><button type="button" disabled={!character || pending} onClick={addCharacter}>{t('materials.apply_character')}</button></div>}
     <div className="prompt-material-picker"><label>{t('materials.expression')}<select value={expression} onChange={event => setExpression(event.target.value)}>
       <option value="">{t('materials.choose')}</option>{Object.values(expressions.data ?? {}).filter(item => fits(item, target)).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select></label><button type="button" disabled={!expression || pending} onClick={addExpression}>{t('materials.apply_expression')}</button></div>
     {error && <p role="alert">{error}</p>}
-    <button type="button" className="ghost" onClick={openLibrary}>{t('materials.open_library')}</button>
+    {openLibrary && <button type="button" className="ghost" onClick={openLibrary}>{t('materials.open_library')}</button>}
     <details className="prompt-source-detail"><summary>{t('materials.sources')}</summary>
       <p className="faint small">{t('materials.snapshot_note')}</p>
       {[{ kind: 'direct', id: '', name: '', positive: cleanPrompt(positive), negative: cleanPrompt(negative) } as PromptSource, ...sources].map(source => <article key={source.kind}>

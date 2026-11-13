@@ -25,10 +25,10 @@ export type ShotRules = {
 export const DEFAULT_SHOT: Shot = { framing: 'upper', direction: 'front', height: 'eye' };
 export const AUTO_SHOT: ShotChoice = { mode: 'auto' };
 
-export function useShotLibrary(workId: string) {
+export function useShotLibrary(workId?: string) {
   const compositions = useQuery({
     queryKey: ['image-lib', 'compositions', workId],
-    queryFn: () => get<Record<string, Composition>>(`/api/image/library/compositions?work=${workId}`),
+    queryFn: () => get<Record<string, Composition>>(`/api/image/library/compositions${workId ? `?work=${workId}` : ''}`),
   });
   const rules = useQuery({
     queryKey: ['image-lib-rules'],

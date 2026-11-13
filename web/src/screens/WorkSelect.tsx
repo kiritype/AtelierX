@@ -11,7 +11,7 @@ import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/H
 import { MenuButton } from '../components/MenuBar';
 import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
 
-export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (id: string) => void; onOpenTools: () => void; onLock: () => void }) {
+export default function WorkSelect({ onOpen, onOpenTools, onOpenSingle, onLock }: { onOpen: (id: string) => void; onOpenTools: () => void; onOpenSingle: () => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
@@ -82,6 +82,7 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
       </div>
       <div className="row">
         <input className="grow" placeholder={t('works.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <button onClick={onOpenSingle} title={t('single.standalone_about')}>{t('works.image_only')}</button>
         <button onClick={() => setDialog('samples')}>{t('works.samples')}</button>
         <button onClick={() => setDialog('import')} title={t('package.import_about')}>
           {t('package.import_short')}

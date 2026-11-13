@@ -7,15 +7,16 @@ import { get, patch } from './api';
 import App from './App';
 
 vi.mock('./api', async original => ({ ...await original<typeof import('./api')>(), get: vi.fn(), patch: vi.fn() }));
-vi.mock('./screens/WorkSelect', () => ({ default: ({ onOpen, onOpenTools }: { onOpen: (id: string) => void; onOpenTools: () => void }) => <>
+vi.mock('./screens/WorkSelect', () => ({ default: ({ onOpen, onOpenTools, onOpenSingle }: { onOpen: (id: string) => void; onOpenTools: () => void; onOpenSingle: () => void }) => <>
   <button onClick={onOpenTools}>Tools from works</button>
+  <button onClick={onOpenSingle}>Standalone image</button>
   <button onClick={() => onOpen('story')}>Open story</button>
 </> }));
 vi.mock('./screens/WorkWindow', () => ({ default: ({ active, onOpenTools }: { active: boolean; onOpenTools: () => void }) => {
   const [edits, setEdits] = useState(0);
   return <><button onClick={onOpenTools}>Tools from work</button><button onClick={() => setEdits(edits + 1)}>Edit {edits}</button><span data-work-active={active} /></>;
 } }));
-vi.mock('./screens/GlobalToolsWindow', () => ({ default: ({ onClose }: { onClose: () => void }) => <button onClick={onClose}>Back from Tools</button> }));
+vi.mock('./screens/GlobalToolsWindow', () => ({ default: ({ onClose, initialView }: { onClose: () => void; initialView: string }) => <button data-view={initialView} onClick={onClose}>Back from Tools</button> }));
 
 it('opens Tools from both places and preserves the mounted work editor on return', async () => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -33,7 +34,12 @@ it('opens Tools from both places and preserves the mounted work editor on return
   };
   try {
     await act(async () => root.render(<QueryClientProvider client={qc}><App /></QueryClientProvider>));
+    await click('Standalone image');
+    expect(host.querySelector('[data-view]')?.getAttribute('data-view')).toBe('single');
+    expect(patch).not.toHaveBeenCalled();
+    await click('Back from Tools');
     await click('Tools from works');
+    expect(host.querySelector('[data-view]')?.getAttribute('data-view')).toBe('explorer');
     expect(host.textContent).toContain('Back from Tools');
     await click('Back from Tools');
     await click('Open story');

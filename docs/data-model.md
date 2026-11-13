@@ -945,6 +945,20 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 생성·비교 기록은 그대로 읽는다. 큐 작업은 기존 `state/image/queue.json` 형식에 `kind: "single"`과 작품·요청
 스냅샷을 더하며, 완료 작업을 큐에서 지운 뒤에도 출력 파일에서 단일 생성 이력을 다시 만든다.
 
+작품 없는 단일 생성은 `POST /api/image/single`, `GET /api/image/single/runs`를 사용한다.
+기존 작품별 API의 요청·목록 형식을 재사용하되 작품을 만들거나 임시 ID를 부여하지 않는다.
+큐 작업과 스냅샷의 `work_id`는 `null`, 출력은 `<출력 루트>/_standalone/<날짜>/<작업 ID>.png`와
+같은 이름의 JSON에 저장한다. 이 기록은 `schema_version: 4`이며 v2/v3의 필드를 유지하고
+`work_id: null`을 허용한다. `prompt_sources`는 요청에 있을 때 보존한다.
+작품별 v2/v3 기록과 저장 위치는 바꾸지 않는다. 단일 생성 목록은 자신의 출력 경로·작품 ID와
+일치하는 기록만 읽는다. 독립 생성 완료 이력도 큐 정리·재시작 후 출력 파일에서 최대 100개를 복구한다.
+독립 생성 초안은 `state/image/single-draft.json`에 기존 초안 형식(`schema_version: 3`)으로 저장한다.
+`GET/PUT /api/image/single/draft`는 `{draft, revision}`을 읽고 저장한다. 최초 draft는 null이며,
+오래된 revision의 저장은 409로 거절한다. 저장 실패 시 입력을 유지하고 명시적인 다시 불러오기를 제공한다.
+브라우저의 `atelierx-single-standalone-v1`은 보조 캐시이며 서버 기록이 우선한다.
+서버 기록이 없을 때만 캐시를 사용하므로 데스크톱 비공개 웹뷰의 저장소 초기화와 관계없이 앱 재시작 후 복원된다.
+전역 공통 문구·구도·표정·그림체만 사용하며 작품별 오버라이드를 합치지 않는다.
+
 출처를 분리한 단일 생성 기록은 `schema_version: 3`이며 위 필드를 그대로 유지하고 `prompt_sources`를 추가한다.
 `request.prompt_sources`와 단일 생성 목록 API의 `actual.prompt_sources`에도 같은 적용 당시 값을 둔다.
 각 항목은 `{kind, id, name, positive, negative}`이고 `kind`는 `common`, `direct`, `character`, `expression`,

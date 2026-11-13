@@ -218,8 +218,7 @@ export default function PresetExplorer({ workId, openGenerate, openSingle, canOp
           {t('presets.apply_batch')}
         </button>
         {openSingle && <button
-          disabled={!storedPreset || !workId}
-          title={!workId ? t('tools.open_work_for_preset') : undefined}
+          disabled={!storedPreset}
           onClick={() => {
             if (!leave() || (canOpenGenerate && !canOpenGenerate())) return;
             sessionStorage.setItem(SINGLE_PRESET_HANDOFF, JSON.stringify({ workId, presetId: draft.id }));

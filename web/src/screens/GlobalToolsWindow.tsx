@@ -10,18 +10,20 @@ const StyleExplorer = lazy(() => import('../components/image/StyleExplorer'));
 const ImageQueue = lazy(() => import('../components/image/ImageQueue'));
 const PresetExplorer = lazy(() => import('../components/image/PresetExplorer'));
 const AppSettings = lazy(() => import('../components/AppSettings'));
+const ImageSingle = lazy(() => import('../components/image/ImageSingle'));
 
-type View = 'explorer' | 'queue' | 'presets' | 'settings';
+type View = 'single' | 'explorer' | 'queue' | 'presets' | 'settings';
 const views: { view: View; label: string }[] = [
+  { view: 'single', label: 'image_menu.single' },
   { view: 'explorer', label: 'image_menu.explorer' },
   { view: 'queue', label: 'image_menu.queue' },
   { view: 'presets', label: 'image_menu.presets' },
   { view: 'settings', label: 'window.settings' },
 ];
 
-export default function GlobalToolsWindow({ workId, onClose }: { workId?: string; onClose: () => void }) {
-  const [view, setView] = useState<View>('explorer');
-  const [visited, setVisited] = useState<View[]>(['explorer']);
+export default function GlobalToolsWindow({ workId, onClose, initialView = 'explorer' }: { workId?: string; onClose: () => void; initialView?: 'explorer' | 'single' }) {
+  const [view, setView] = useState<View>(initialView);
+  const [visited, setVisited] = useState<View[]>([initialView]);
   const [unsaved] = useState(() => new UnsavedRegistry());
   useSyncExternalStore(unsaved.subscribe, unsaved.snapshot);
 
@@ -33,6 +35,7 @@ export default function GlobalToolsWindow({ workId, onClose }: { workId?: string
     if (canLeave()) onClose();
   };
   const openGenerate = (view: 'generate' | 'single' = 'generate') => {
+    if (!workId && view === 'single') { openView('single'); return; }
     onClose();
     window.dispatchEvent(new CustomEvent('atelierx:open-image-generate', { detail: view }));
   };
@@ -51,14 +54,17 @@ export default function GlobalToolsWindow({ workId, onClose }: { workId?: string
       </div>
       <div className="col" style={{ minHeight: 0, background: 'var(--panel)' }}>
         <nav className="row image-flow" aria-label={t('menu.tools')}>
-          {views.map((entry) => (
+          {views.filter(entry => !workId || entry.view !== 'single').map((entry) => (
             <button key={entry.view} type="button" className={view === entry.view ? 'selected' : 'ghost'} aria-current={view === entry.view ? 'page' : undefined} onClick={() => openView(entry.view)}>
               {t(entry.label)}
             </button>
           ))}
         </nav>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <div hidden={view !== 'explorer'} inert={view !== 'explorer'} style={{ display: view === 'explorer' ? 'contents' : 'none' }}>
+          {!workId && visited.includes('single') && <div hidden={view !== 'single'} inert={view !== 'single'} style={{ display: view === 'single' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="single"><Suspense fallback={<Loading />}><ImageSingle active={view === 'single'} openView={target => {
+            if (target === 'queue' || target === 'presets') openView(target);
+          }} /></Suspense></TabScope></div>}
+          {visited.includes('explorer') && <div hidden={view !== 'explorer'} inert={view !== 'explorer'} style={{ display: view === 'explorer' ? 'contents' : 'none' }}>
             <TabScope registry={unsaved} tab="explorer">
               <Suspense fallback={<Loading />}>
                 <StyleExplorer workId={workId} active={view === 'explorer'} openView={(target) => {
@@ -66,7 +72,7 @@ export default function GlobalToolsWindow({ workId, onClose }: { workId?: string
                 }} openSettings={() => openView('settings')} />
               </Suspense>
             </TabScope>
-          </div>
+          </div>}
           {view === 'queue' && <Suspense fallback={<Loading />}><ImageQueue /></Suspense>}
           {visited.includes('presets') && <div hidden={view !== 'presets'} inert={view !== 'presets'} style={{ display: view === 'presets' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="presets"><Suspense fallback={<Loading />}><PresetExplorer workId={workId} canOpenGenerate={() => canLeave('presets')} openGenerate={openGenerate} openSingle={() => openGenerate('single')} /></Suspense></TabScope></div>}
           {visited.includes('settings') && <div hidden={view !== 'settings'} inert={view !== 'settings'} style={{ display: view === 'settings' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="settings"><Suspense fallback={<Loading />}><AppSettings request={{ section: 'image', at: 0 }} /></Suspense></TabScope></div>}

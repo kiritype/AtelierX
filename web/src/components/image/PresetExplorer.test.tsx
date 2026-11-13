@@ -76,7 +76,7 @@ it('keeps the saved seed when confirmation is cancelled', async () => {
   await act(async () => input().dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
   expect(put).not.toHaveBeenCalled(); expect(input().value).toBe('1234567');
 });
-it('routes single and batch application separately and requires a work', async () => {
+it('routes single and batch application separately and allows standalone single generation', async () => {
   sessionStorage.clear();
   const openSingle = vi.fn(), openGenerate = vi.fn();
   const render = async (workId?: string) => act(async () => root.render(<QueryClientProvider client={qc}>
@@ -93,7 +93,10 @@ it('routes single and batch application separately and requires a work', async (
   expect(openGenerate).toHaveBeenCalledOnce();
   expect(sessionStorage.getItem(PRESET_HANDOFF)).toBe('one');
   await render();
-  expect(apply('presets.apply_single').disabled).toBe(true);
+  expect(apply('presets.apply_single').disabled).toBe(false);
+  await act(async () => apply('presets.apply_single').click());
+  expect(openSingle).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(sessionStorage.getItem(SINGLE_PRESET_HANDOFF)!)).toEqual({ presetId: 'one' });
   expect(apply('presets.apply_batch').disabled).toBe(true);
 });
 it('shows names first with IDs to distinguish duplicates and falls back to IDs for blank names', async () => {
