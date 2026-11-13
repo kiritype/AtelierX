@@ -224,6 +224,7 @@ def build_app(paths, dev=False, kdf=None, desktop=False):
         try:
             yield
         finally:
+            state.updater.cleanup.stop()
             state.image.shutdown()
 
     app = Starlette(

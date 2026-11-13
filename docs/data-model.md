@@ -2,6 +2,20 @@
 
 모든 데이터 형식은 이 문서에서만 정의한다. 기능 문서는 여기를 참조한다.
 
+## 업데이트 정리 기록
+
+`state/update/cleanup/<32자리 hex ID>/manifest.json`은 `schema_version: 1`,
+`state: staging|queued`, `backup_id: <32자리 hex ID>|null`, `temporary: string[]`를 담는다.
+`backup_id`는 업데이트 스크립트가 만든 `state/update/backups/<ID>`만 가리킨다.
+`temporary`는 해당 업데이트의 `new`와 `AtelierX-x.y.z-windows-x64.zip` 이름을 기록한다.
+기존 `pending.json`에는 이동 시작 전에 `cleanup_id`와 원래 `result`를 추가한다.
+
+정상 교체를 확인하면 임시 파일을 정리 기록 옆 `temporary/`로 같은 볼륨 안에서 이동하고
+`queued`로 바꾼 뒤 `pending.json`을 지운다. 다음 업데이트와 경로가 겹치지 않도록 이동을
+완료하기 전에는 새 다운로드를 막는다. 창 로드 후 백그라운드에서 삭제하고, 모두 끝나야 기록을 지운다.
+중단·실패하면 기록을 유지해 다음 실행에 재시도한다. 성공 알림을 지워도 정리 기록은 남는다.
+이전 형식의 `pending.json`·`result.json`도 읽어 새 정리 기록을 만들며 데이터 백업 ZIP은 포함하지 않는다.
+
 ## 원칙
 
 - 사람이 읽고 고칠 수 있는 파일로 저장한다: 본문은 Markdown, 구조 데이터는 JSON(UTF-8, 들여쓰기 2칸).

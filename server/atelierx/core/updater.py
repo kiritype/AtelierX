@@ -4,12 +4,14 @@ data, then let a small script swap the program files after the app has closed an
 Only the packaged app updates itself. The program files are the top-level entries of the release ZIP's ``AtelierX/``
 folder (the executable, ``_internal``, the manual, notices …); the user data folders beside them (config, state, data,
 output) are never touched. Replaced entries stay in a unique update backup directory until the new version starts
-and removes that directory, so a failed swap can be rolled back without colliding with user files.
+and loads its window. Background cleanup then removes only the journaled update files; a failed swap can still
+be rolled back without colliding with user files.
 """
 
 import asyncio
 import base64
 import hashlib
+import logging
 import os
 import re
 import shutil
@@ -27,6 +29,9 @@ from .about import LATEST_URL, version_key
 from .admission import Admission
 from .fsutil import read_json, write_json
 from .i18n import AppError, Msg
+from .update_cleanup import UpdateCleanup, stage_cleanup
+
+logger = logging.getLogger(__name__)
 
 USER_DATA = ('config', 'state', 'data', 'output')
 ASSET = re.compile(r'^AtelierX-(\d+\.\d+\.\d+)-windows-x64\.zip$')
@@ -112,6 +117,7 @@ class Updater:
         self.release_url = os.environ.get('ATELIERX_UPDATE_RELEASE_URL') or LATEST_URL
         self.exit_app = None  # set by the desktop launcher: closes the window (or stops the headless server)
         self.task = None
+        self.cleanup = UpdateCleanup(paths)
 
     # --- status -----------------------------------------------------------------------------------------------------
     def packaged(self):
@@ -124,6 +130,7 @@ class Updater:
             out = dict(self.state)
         out['packaged'] = self.packaged()
         out['current'] = __version__
+        out['cleanup'] = self.cleanup.status()
         result = read_json(self.folder / 'result.json')
         if result:
             out['last_result'] = result
@@ -141,6 +148,14 @@ class Updater:
         """Begin preparing the update in the background; the screen follows ``status``."""
         if not self.packaged():
             raise AppError(Msg('server.update.not_packaged', 'Only the packaged app updates itself.'), 400)
+        if (self.folder / 'pending.json').exists():
+            raise AppError(
+                Msg(
+                    'server.update.cleanup_pending',
+                    'Restart the app to finish preparing old update files for cleanup.',
+                ),
+                409,
+            )
         busy = self.busy()
         if busy:
             raise AppError(
@@ -297,24 +312,39 @@ class Updater:
                 Msg('server.update.bad_package', 'The downloaded package is not laid out as expected.'), 502
             )
 
+    def _backup_files(self):
+        root = Path(self.paths.root)
+        for name in ('config', 'data', 'state'):
+            folder = root / name
+            for current, directories, files in os.walk(folder):
+                if name == 'state' and Path(current) == folder:
+                    directories[:] = [d for d in directories if d not in STATE_SKIPPED_IN_BACKUP]
+                for filename in files:
+                    path = Path(current) / filename
+                    if filename != 'desktop.lock' and path.is_file():
+                        yield path
+
     def _backup(self, tag):
         root = Path(self.paths.root)
         stamp = datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
         target = self.folder / f'backup-before-{tag}-{stamp}.zip'
-        with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
-            for name in ('config', 'data', 'state'):
-                folder = root / name
-                if not folder.is_dir():
-                    continue
-                for path in folder.rglob('*'):
-                    rel = path.relative_to(root)
-                    if not path.is_file() or (
-                        name == 'state' and len(rel.parts) > 1 and rel.parts[1] in STATE_SKIPPED_IN_BACKUP
-                    ):
-                        continue
-                    if path.name == 'desktop.lock':
-                        continue
-                    archive.write(path, rel.as_posix())
+        with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as archive:
+            for path in self._backup_files():
+                stored = path.suffix.lower() in {
+                    '.png',
+                    '.jpg',
+                    '.jpeg',
+                    '.webp',
+                    '.zip',
+                    '.gz',
+                    '.7z',
+                    '.mp4',
+                }
+                archive.write(
+                    path,
+                    path.relative_to(root).as_posix(),
+                    compress_type=zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED,
+                )
         return target
 
     # --- swap -------------------------------------------------------------------------------------------------------
@@ -376,19 +406,18 @@ def launch(script):
 
 
 def finish_update(paths):
-    """At start: remove what the last update replaced, and note its result for the screen."""
+    """Record the result and detach temporary entries, without recursively deleting before startup."""
     folder = Path(paths.state) / 'update'
     pending = read_json(folder / 'pending.json')
     if not pending:
         return None
-    result = read_json(folder / 'result.json') or {}
+    result = read_json(folder / 'result.json') or pending.get('result') or {}
     if result.get('state') == 'ok':
-        backup_id = result.get('backup_id')
-        if isinstance(backup_id, str) and re.fullmatch(r'[0-9a-f]{32}', backup_id):
-            shutil.rmtree(folder / 'backups' / backup_id, ignore_errors=True)
-        shutil.rmtree(folder / 'new', ignore_errors=True)
-        for archive in folder.glob('AtelierX-*.zip'):
-            archive.unlink(missing_ok=True)
+        try:
+            stage_cleanup(folder, pending, result)
+        except (OSError, ValueError, TypeError, KeyError):
+            logger.warning('Will retry staging update cleanup on next start', exc_info=True)
+            return result
     write_json(
         folder / 'result.json', {**result, 'version': pending.get('version'), 'from': pending.get('from')}
     )

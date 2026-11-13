@@ -37,6 +37,7 @@ type UpdateState = {
   backup?: string;
   error?: { key: string; text: string; values?: Record<string, unknown> };
   last_result?: { state: 'ok' | 'failed'; detail?: string; version?: string; from?: string };
+  cleanup?: { state: 'queued' | 'running' | 'failed' | 'done' };
 };
 const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
@@ -155,7 +156,7 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
   const update = useQuery<UpdateState>({
     queryKey: ['update-status'],
     queryFn: () => get('/api/update/status'),
-    refetchInterval: (q) => (PREPARING.includes((q.state.data as UpdateState | undefined)?.state ?? '') ? 700 : false),
+    refetchInterval: (q) => (PREPARING.includes(q.state.data?.state ?? '') || ['queued', 'running'].includes(q.state.data?.cleanup?.state ?? '') ? 700 : false),
   });
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const u = update.data;
@@ -192,6 +193,7 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
     <Dialog title={t('help.check_update')} onClose={onClose} closeLabel={t('common.close')} actions={actions}>
       {check.isLoading && <p className="faint">{t('help.checking')}</p>}
       {check.error && <p className="error-text">{check.error instanceof ApiError ? tm(check.error.msg) : String(check.error)}</p>}
+      {u?.cleanup && u.cleanup.state !== 'done' && <p className="faint small">{t(`update.cleanup.${u.cleanup.state}`)}</p>}
       {check.data && (
         <div className="col">
           <p>
