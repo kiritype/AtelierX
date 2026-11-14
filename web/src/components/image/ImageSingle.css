@@ -1,4 +1,4 @@
-.single-image > .generation-content { padding: 16px 20px 20px; width: 100%; max-width: 1800px; margin: 0 auto; }
+.single-image > .generation-content { padding: 16px 20px 20px; width: 100%; }
 .single-review { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; background: var(--warning-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); }
 .single-review span { color: var(--text-2); }
 .single-heading { display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin: 20px 0; }
