@@ -517,7 +517,7 @@ function ModelsTab({ base, design, models }: { base: string; design: Design; mod
               </select>
             )}
             <select value={value(m, 'model_family')} onChange={(e) => edit(m, { model_family: e.target.value })}>
-              {['anima', 'sdxl', 'shared'].map((f) => (
+              {['anima', 'sdxl', 'moss', 'shared'].map((f) => (
                 <option key={f} value={f}>
                   {t(`lora.family.${f}`)}
                 </option>

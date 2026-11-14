@@ -1,4 +1,4 @@
-.single-image > .generation-content { padding: 16px 20px 20px; width: 100%; max-width: 1800px; margin: 0 auto; }
+.single-image > .generation-content { padding: 16px 20px 20px; width: 100%; }
 .single-review { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; background: var(--warning-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); }
 .single-review span { color: var(--text-2); }
 .single-heading { display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; align-items: center; margin: 20px 0; }
@@ -6,6 +6,11 @@
 .single-heading .seg { flex-wrap: wrap; }
 .single-layout { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.45fr); gap: 24px; align-items: start; }
 .single-form, .single-result { min-width: 0; }
+.moss-single .single-layout { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+.moss-single .single-result { position: sticky; top: 0; max-height: calc(100dvh - 200px); overflow: auto; }
+.moss-single .single-canvas { height: auto; aspect-ratio: 1; }
+.moss-single .gen-model-fields { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.moss-single .gen-model-fields > .gen-field:first-child, .moss-single [data-setting="model"] { grid-column: span 2; }
 .single-service, .single-helpers, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .single-service { margin-bottom: 16px; }
 .single-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
@@ -52,6 +57,11 @@ button.single-canvas { cursor: zoom-in; }
 .single-modal-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .single-modal-path { overflow-wrap: anywhere; }
 @container generation-viewport (max-width: 740px) {
-  .single-layout { grid-template-columns: minmax(0, 1fr); }
+  .single-layout, .moss-single .single-layout { grid-template-columns: minmax(0, 1fr); }
+  .moss-single .single-result { position: static; max-height: none; }
   .single-image > .generation-content { padding: 12px; }
+}
+@media (max-width: 740px) {
+  .moss-single .single-layout { grid-template-columns: minmax(0, 1fr); }
+  .moss-single .single-result { position: static; max-height: none; }
 }

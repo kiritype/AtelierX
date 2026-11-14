@@ -31,6 +31,10 @@ export function validSources(value: unknown): value is PromptSource[] {
 export function restorePromptSources(run: SingleRun) {
   if (!run.actual) return { positive: '', negative: '', sources: [] };
   const recorded = run.actual.prompt_sources;
+  if (run.actual.moss_layout?.mode === 'layout' && run.request) return {
+    positive: run.request.positive, negative: run.request.negative,
+    sources: validSources(recorded) ? recorded.filter(source => source.kind !== 'direct').map(source => ({ ...source })) : [],
+  };
   if (!validSources(recorded)) return { positive: editablePrompt(run.actual.positive), negative: editablePrompt(run.actual.negative), sources: [] };
   const direct = recorded.find(source => source.kind === 'direct');
   return { positive: editablePrompt(direct?.positive ?? ''), negative: editablePrompt(direct?.negative ?? ''),

@@ -20,9 +20,10 @@ from pathlib import Path, PureWindowsPath
 from ..core.i18n import Msg
 from .util import atomic_json, settings_file
 
-FAMILIES = ('anima', 'sdxl')
+FAMILIES = ('anima', 'sdxl', 'moss')
 FAMILY_LABELS = {
     'anima': 'Anima',
+    'moss': 'MOSS-Image Beta',
     'sdxl': 'SDXL·IL',
     'unknown': Msg('server.models.uncategorized', 'Uncategorized'),
 }
@@ -35,6 +36,7 @@ KIND_FOLDERS = {
     'vaes': ('VAE', 'vae'),
 }
 BASE_MODEL_FAMILIES = {
+    'moss': 'moss',
     'anima': 'anima',
     'sdxl': 'sdxl',
     'illustrious': 'sdxl',
@@ -76,6 +78,10 @@ def family_from_header(header):
     if by_meta:
         return by_meta
     keys = [key for key in header if key != '__metadata__']
+    if any(key.endswith('shared_block_modulation.weight') for key in keys) and any(
+        key.endswith('layers.0.proj.ffn_up_gate.weight') for key in keys
+    ):
+        return 'moss'
     if any(
         'conditioner.embedders' in key or key.startswith(('lora_te1_', 'lora_te2_')) or 'input_blocks' in key
         for key in keys[:4000]
@@ -189,7 +195,7 @@ class ModelProfiles:
             )
         if family not in (*FAMILIES, None):
             raise ValueError(
-                Msg('server.models.the_family_must_be_anima_or', 'The family must be anima or sdxl.')
+                Msg('server.models.the_family_must_be_anima_or', 'The family must be anima, sdxl or moss.')
             )
         settings = self.settings()
         families = settings.setdefault('families', {})

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { settingsFromPreset } from './presetSettings';
 
-const DEFAULTS = { anima: { steps: 32, cfg: 5, width: 1536, height: 1536 }, sdxl: { steps: 28, cfg: 5, width: 1024, height: 1024 } };
+const DEFAULTS = { moss: { steps: 50, cfg: 3, width: 1024, height: 1024 }, anima: { steps: 32, cfg: 5, width: 1536, height: 1536 }, sdxl: { steps: 28, cfg: 5, width: 1024, height: 1024 } };
 const current = { family: 'anima' as const, model: 'anima-base.safetensors', steps: 25, cfg: 4, width: 1216, height: 1536, seed: 7, loras: [{ name: 'a' }] };
 
 describe('settings from a style preset', () => {

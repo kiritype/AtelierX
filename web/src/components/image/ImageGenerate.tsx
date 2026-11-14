@@ -10,6 +10,10 @@ import { SERVICE_NAMES, lastService, lastServiceSettings, rememberService, remem
 
 // Each internet service's settings panel (#42 NovelAI, #43 PixAI).
 const SERVICE_PANELS: Record<string, ComponentType<ServicePanelProps>> = { novelai: NovelAISettings, pixai: PixAISettings };
+import MossLayoutEditor, { MossMode } from './MossLayoutEditor';
+import { freshMoss, mossErrors } from '../../lib/mossLayout';
+import type { MossDocument } from '../../imageTypes';
+import { useUnsaved } from '../Unsaved';
 import { useToast } from '../Toasts';
 import RunLlmSelector, { type LlmOverride } from '../RunLlmSelector';
 import GenSettings, { FAMILY_DEFAULTS, type GenerationSettings } from './GenSettings';
@@ -26,6 +30,7 @@ type LibItem = { id: string; name: string; rating?: string; target?: string; def
 export type Artist = { positive: string; negative: string };
 type Preset = { id: string; name: string; service: string; family: string; tags: string[]; settings: GenerationSettings & Record<string, unknown>; common: string[]; artist: Artist };
 type Composed = {
+  moss_layout?: MossDocument;
   character_id: string;
   outfit_name: string;
   expression_name: string;
@@ -80,6 +85,19 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
   const reviewSettings = useQuery<{ enabled: boolean }>({ queryKey: ['review-settings'], queryFn: () => get('/api/image/review/settings') });
 
+  const draftKey = 'atelierx-moss-batch-v1-' + workId;
+  const [mossDraft, setMossDraft] = useState<MossDocument>(() => {
+    try { const saved = JSON.parse(localStorage.getItem(draftKey) || 'null'); return saved?.schema_version === 1 ? saved : freshMoss(); } catch { return freshMoss(); }
+  });
+  const [mossStored, setMossStored] = useState('');
+  const [mossInvalid, setMossInvalid] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const serializedMoss = JSON.stringify(mossDraft);
+  const saveMossDraft = async () => {
+    try { localStorage.setItem(draftKey, serializedMoss); setMossStored(serializedMoss); return true; } catch { return false; }
+  };
+  useEffect(() => { void saveMossDraft(); }, [serializedMoss, draftKey]);
+  useUnsaved('moss-batch-' + workId, serializedMoss !== mossStored, saveMossDraft);
   const [chars, setChars] = useState<Record<string, string[]>>({});
   const [exprs, setExprs] = useState<string[]>([]);
   const [shotChoice, setShotChoice] = useState<ShotChoice>(AUTO_SHOT);
@@ -92,6 +110,10 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const [service, setServiceState] = useState(() => lastService(workId));
   const [serviceSettings, setServiceSettings] = useState(lastServiceSettings);
   const internet = service !== 'comfyui';
+  const isMoss = !internet && settings.family === 'moss';
+  const mossDoc = { ...mossDraft, width: settings.width ?? 1024, height: settings.height ?? 1024 };
+  const mossActive = isMoss && mossDoc.mode === 'layout';
+  const layoutInvalid = mossActive && (mossInvalid || mossErrors(mossDoc, true).length > 0);
   const serviceInfo = services.data?.services.find((s) => s.id === service);
   const chooseService = (id: string) => {
     setServiceState(id);
@@ -150,13 +172,14 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
     ...shotChoiceRequest(shotChoice),
     preset_id: presetId || undefined,
     settings: internet ? (serviceSettings[service] ?? {}) : settings,
-    overrides: single ? overrides : {},
+    overrides: single && !mossActive ? overrides : {},
+    ...(isMoss ? { moss_layout: mossDoc } : {}),
   });
 
   useEffect(() => {
     previewRevision.current += 1;
     setPreview(null);
-  }, [targets, shotChoice, artist, chosenCommons, settings, presetId, service, serviceSettings]);
+  }, [targets, shotChoice, artist, chosenCommons, settings, presetId, service, serviceSettings, mossDraft]);
   const previewCurrent = !single || overrides === preview?.overrides;
 
   function applyPreset(id: string) {
@@ -168,7 +191,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
       setServiceState(preset.service);
       rememberService(workId, preset.service);
     }
-    if (preset.service === 'comfyui') setSettings((current) => settingsFromPreset(current, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS));
+    if (preset.service === 'comfyui') setSettings((current) => settingsFromPreset(current, preset.settings, preset.family as 'anima' | 'sdxl' | 'moss', FAMILY_DEFAULTS));
     else {
       const next = { ...serviceSettings, [preset.service]: { ...(serviceSettings[preset.service] ?? {}), ...preset.settings } };
       setServiceSettings(next);
@@ -204,7 +227,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
 
   return (
-    <div className="generation-page">
+    <div className={isMoss ? "generation-page moss-batch-mode" : "generation-page"}>
       <div className="generation-content">
       <div className="image-gen-top pad col">
       {handed && (
@@ -243,7 +266,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
           </div>
         ))}
         </div>
-        <div className="section-title">{t('gen.extras')}</div>
+        {!mossActive && <><div className="section-title">{t('gen.extras')}</div>
         <ShotResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings}>
           {size => <ShotPicker batch value={shotChoice} rules={rules.data} compositions={compositions.data} target={target} {...size} onChange={value => {
             setShotChoice(value);
@@ -279,6 +302,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             {showOthers ? t('gen.hide_other_targets') : t('gen.other_targets', { n: hiddenCount })}
           </button>
         )}
+        </>}
       </div>
       <div className="image-gen-run pad col">
         <div className="row">
@@ -316,7 +340,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
               {servicePresets.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
-                  {p.service === 'comfyui' ? ` · ${p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}` : ''}
+                  {p.service === 'comfyui' ? ` · ${p.family === 'moss' ? 'MOSS Beta' : p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}` : ''}
                   {p.tags.length ? ` · ${p.tags.join(', ')}` : ''}
                 </option>
               ))}
@@ -327,7 +351,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
         {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
-        {preview && (
+        {preview && !mossActive && (
           <div className="col">
             {preview.results.map((p, n) => (
               <div key={n} className="compose-card">
@@ -369,6 +393,21 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         )}
       </div>
     </div>
+        {isMoss && <div className="moss-batch-editor">
+          <MossMode mode={mossDoc.mode} onChange={mode => setMossDraft({ ...mossDoc, mode })} />
+          {mossActive ? <><MossLayoutEditor batch workId={workId} value={mossDoc} onChange={setMossDraft} onInvalid={setMossInvalid} />
+            <label className="col">{t('single.negative')}<textarea rows={2} value={artist.negative} onChange={e => setArtist({ ...artist, negative: e.target.value })} /></label>
+          </> : <button type="button" onClick={() => setMossDraft({ ...mossDoc, scene: artist.positive })}>{t('moss.import_general')}</button>}
+          {serializedMoss !== mossStored && <p className="warn-text">{t('single.storage_failed')} <button type="button" onClick={saveMossDraft}>{t('common.save')}</button></p>}
+        </div>}
+        {mossActive && preview && <section className="moss-combo-preview" aria-label={t('moss.combinations')}>
+          <div className="moss-combo-list">{preview.results.map((p, n) => <button type="button" key={n} aria-pressed={n === Math.min(previewIndex, preview.results.length - 1)} onClick={() => setPreviewIndex(n)}>{p.character_id} · {p.outfit_name} · {p.expression_name}</button>)}</div>
+          {(() => { const selected = preview.results[Math.min(previewIndex, preview.results.length - 1)]; return selected ? <div>
+            <h4>{t('moss.resolved')}</h4>{selected.moss_layout?.items.filter(i => i.binding === 'target').map(i => <pre key={i.id}>{i.resolved?.caption}</pre>)}
+            <details><summary>{t('single.final_prompt')}</summary><pre>{selected.positive}</pre><pre>− {selected.negative}</pre></details>
+          </div> : null; })()}
+          {targets.length > preview.results.length && <p>{t('gen.more', { n: targets.length - preview.results.length })}</p>}
+        </section>}
       </div>
       <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
         <label className="col" style={{ gap: 2 }}>
@@ -381,10 +420,11 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
             {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
           </span>
+          {isMoss && <span>{t("moss.active_input", { mode: t("moss.mode." + mossDoc.mode) })}</span>}
           <GenerationResolution service={service} value={internet ? serviceSettings[service] ?? {} : settings} />
         </div>
         <button
-          disabled={!targets.length || busy}
+          disabled={!targets.length || busy || layoutInvalid}
           onClick={async () => {
             const revision = ++previewRevision.current;
             const request = options();
@@ -400,7 +440,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         </button>
         <button
           className="primary"
-          disabled={!targets.length || busy || (internet && !serviceInfo?.connected)}
+          disabled={!targets.length || busy || layoutInvalid || (internet && !serviceInfo?.connected)}
           onClick={async () => {
             if (internet && !confirm(t('gen.confirm_internet', { n: targets.length * count, service: serviceInfo?.name ?? service }))) return;
             // No cap per request (#209): a large one is confirmed instead.

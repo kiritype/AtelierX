@@ -116,7 +116,18 @@ def _integer(value: Any, label: str) -> int:
     return number
 
 
-FAMILIES = ('anima', 'sdxl')
+FAMILIES = ('anima', 'sdxl', 'moss')
+MOSS_DEFAULTS = dict(
+    steps=50,
+    cfg=3.0,
+    sampler='euler',
+    scheduler='simple',
+    width=1024,
+    height=1024,
+    clip_type='moss_image',
+    shift=5.0,
+    moss_slg=True,
+)
 # SDXL checkpoints carry their own text encoder and VAE.
 SDXL_UNUSED = ('text_encoder', 'clip_type', 'text_encoder_device')
 
@@ -135,8 +146,37 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
         raise ValueError('catalog must be an object')
     family = settings.get('family') or 'anima'
     if family not in FAMILIES:
-        raise ValueError('family must be anima or sdxl')
+        raise ValueError('family must be anima, sdxl or moss')
+    if family == 'moss':
+        unknown = set(settings) - (
+            set(DEFAULTS)
+            | {
+                'family',
+                'clip_skip',
+                'shift',
+                'upscale',
+                'detailer',
+                'moss_slg',
+                'model_loader',
+                'model_filename',
+            }
+        )
+        if unknown:
+            raise ValueError(
+                Msg(
+                    'server.moss.setting',
+                    'Unsupported MOSS Beta setting: {name}.',
+                    name=', '.join(sorted(unknown)),
+                )
+            )
     result = defaults(catalog)
+    if family == 'moss':
+        result.update(MOSS_DEFAULTS)
+        # Never silently borrow Anima components when a MOSS file is missing.
+        for key, marker in (('model', 'moss'), ('text_encoder', 'qwen3.5_9b'), ('vae', 'flux2')):
+            result[key] = next(
+                (name for name in catalog.get(_CATALOG_KEYS[key], []) if marker in name.lower()), ''
+            )
     if family == 'sdxl':
         for key in SDXL_UNUSED:
             result.pop(key, None)
@@ -157,11 +197,38 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
         if not isinstance(value, str) or value not in choices:
             raise ValueError(f'{key} must be one of the available {catalog_key}')
 
+    if family == 'moss':
+        if result.get('clip_type') != 'moss_image':
+            raise ValueError(Msg('server.moss.encoder', 'MOSS requires the moss_image text encoder type.'))
+        if catalog.get('nodes', {}).get('moss') is not True:
+            raise ValueError(
+                Msg(
+                    'server.moss.nodes',
+                    'Update ComfyUI: native MOSS support and EmptyFlux2LatentImage are required.',
+                )
+            )
+        slg = result.get('moss_slg', True)
+        if not isinstance(slg, bool):
+            raise ValueError('moss_slg must be boolean')
+        if slg and catalog.get('nodes', {}).get('moss_slg') is not True:
+            raise ValueError(Msg('server.moss.slg_nodes', 'ComfyUI is missing SkipLayerGuidanceDiTSimple.'))
+        result['moss_slg'] = slg
+        if result.get('upscale') or result.get('detailer') or result.get('clip_skip'):
+            raise ValueError(
+                Msg(
+                    'server.moss.unsupported',
+                    'MOSS Beta does not support the detailer, redraw upscale or CLIP skip.',
+                )
+            )
+    elif 'moss_slg' in result:
+        raise ValueError('moss_slg is only supported by MOSS')
     device = result.get('text_encoder_device', 'default')
     entry = catalog.get('model_entries', {}).get(result['model'])
     # Resolve from the server catalog, never trust client-supplied loader/path overrides.
     result['model_loader'] = entry['loader'] if entry else 'UNETLoader'
     result['model_filename'] = entry['filename'] if entry else result['model']
+    if family == 'moss' and result['model_loader'] != 'UNETLoader':
+        raise ValueError(Msg('server.moss.loader', 'MOSS Beta requires a native diffusion model.'))
     if family == 'sdxl':
         if result['model_loader'] != 'CheckpointLoaderSimple':
             raise ValueError(
@@ -208,7 +275,11 @@ def validate_settings(settings: dict[str, Any] | None, catalog: dict[str, Any]) 
         if not isinstance(name, str) or name not in lora_choices:
             raise ValueError(f'loras[{index}].name must be an available LoRA')
         strength_model = _finite_number(item.get('strength_model', 1.0), f'loras[{index}].strength_model')
-        strength_clip = _finite_number(item.get('strength_clip', 1.0), f'loras[{index}].strength_clip')
+        strength_clip = _finite_number(
+            item.get('strength_clip', 0.0 if family == 'moss' else 1.0), f'loras[{index}].strength_clip'
+        )
+        if family == 'moss' and strength_clip != 0:
+            raise ValueError(Msg('server.moss.lora_clip', 'MOSS Beta LoRAs require CLIP strength 0.'))
         if not -10 <= strength_model <= 10 or not -10 <= strength_clip <= 10:
             raise ValueError(f'loras[{index}] strengths must be between -10 and 10')
         entry = {'name': name, 'strength_model': strength_model, 'strength_clip': strength_clip}
@@ -406,7 +477,7 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
                 'clip': clip_ref,
                 'lora_name': lora['name'],
                 'strength_model': lora.get('strength_model', 1.0),
-                'strength_clip': lora.get('strength_clip', 1.0),
+                'strength_clip': lora.get('strength_clip', 0.0 if settings.get('family') == 'moss' else 1.0),
             },
         }
         model_ref, clip_ref = [node_id, 0], [node_id, 1]
@@ -415,6 +486,19 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         graph[str(next_id)] = {
             'class_type': 'ModelSamplingAuraFlow',
             'inputs': {'model': model_ref, 'shift': settings['shift']},
+        }
+        model_ref = [str(next_id), 0]
+        next_id += 1
+    if settings.get('family') == 'moss' and settings.get('moss_slg', True):
+        graph[str(next_id)] = {
+            'class_type': 'SkipLayerGuidanceDiTSimple',
+            'inputs': {
+                'model': model_ref,
+                'double_layers': '',
+                'single_layers': '22',
+                'start_percent': 0.0,
+                'end_percent': 1.0,
+            },
         }
         model_ref = [str(next_id), 0]
         next_id += 1
@@ -430,7 +514,7 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         'inputs': {'text': negative, 'clip': clip_ref},
     }
     graph[latent_id] = {
-        'class_type': 'EmptyLatentImage',
+        'class_type': 'EmptyFlux2LatentImage' if settings.get('family') == 'moss' else 'EmptyLatentImage',
         'inputs': {'width': settings['width'], 'height': settings['height'], 'batch_size': 1},
     }
     graph[sampler_id] = {
@@ -567,6 +651,8 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
             [('LATENT', 'LATENT')],
             [settings['width'], settings['height'], 1],
         ),
+        'EmptyFlux2LatentImage': ([], [('LATENT', 'LATENT')], [settings['width'], settings['height'], 1]),
+        'SkipLayerGuidanceDiTSimple': ([('model', 'MODEL')], [('MODEL', 'MODEL')], ['', '22', 0.0, 1.0]),
         'KSampler': (
             [
                 ('model', 'MODEL'),

@@ -11,6 +11,7 @@ import { SINGLE_PRESET_HANDOFF } from '../../lib/presetHandoff';
 import { sendToLab } from './ImageLab';
 import ImageSingle from './ImageSingle';
 import GlobalToolsWindow from '../../screens/GlobalToolsWindow';
+import { freshMoss, newMossItem } from '../../lib/mossLayout';
 
 vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock('./ImageLab', () => ({ sendToLab: vi.fn() }));
@@ -86,6 +87,26 @@ beforeEach(async () => {
   await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} /></QueryClientProvider>));
 });
 afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); });
+
+it('preserves general and layout input independently and submits editable MOSS data', async () => {
+  await act(async () => qc.setQueryData(['image-catalog'], { ...catalog, nodes: { moss: true, moss_slg: true } }));
+  await edit(positive(), 'Keep general scene');
+  await click('MOSS Beta');
+  const doc = { ...freshMoss(), mode: 'layout' as const, scene: 'A cafe #1', items: [{ ...newMossItem('text'), caption: 'blue letters', text: '# OPEN' }] };
+  const draft = JSON.parse(localStorage.getItem('atelierx-single-v2-synthetic')!);
+  localStorage.setItem('atelierx-single-v2-synthetic', JSON.stringify({ ...draft, moss_layout: doc }));
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle key="moss-reopen" workId="synthetic" openView={openView} /></QueryClientProvider>));
+  expect(host.querySelector('.moss-editor')).toBeTruthy();
+  expect(positive()).toBeNull();
+  await click(t('moss.mode.general'));
+  expect(positive().value).toBe('Keep general scene');
+  await click(t('moss.mode.layout'));
+  expect((host.querySelector('.moss-editor textarea') as HTMLTextAreaElement).value).toBe('A cafe #1');
+  expect(button(t('single.run')).disabled).toBe(false);
+  await click(t('single.run'));
+  expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({ positive: 'Keep general scene',
+    moss_layout: doc, settings: expect.objectContaining({ family: 'moss', moss_slg: true }) }));
+});
 
 it.each(['comfyui', 'novelai', 'pixai'] as const)('generates a standalone %s image without touching work data', async service => {
   await edit(positive(), 'Keep work draft');

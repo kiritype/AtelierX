@@ -27,7 +27,7 @@ type Cell = {
   regenerations?: CellAttempt[];
 };
 type Run = { id: string; created_at: string; sweep?: string; source?: string; source_url?: string; rows: number; columns: number; cells: Cell[] };
-type Preset = { id: string; name: string; service: string; family: 'anima' | 'sdxl'; settings: GenerationSettings };
+type Preset = { id: string; name: string; service: string; family: 'anima' | 'sdxl' | 'moss'; settings: GenerationSettings };
 type Draft = { positive: string; negative: string; settings: GenerationSettings; source?: string | null; compareFiles?: string[] };
 type Side = { url: string; label: string; path?: string };
 
@@ -246,7 +246,7 @@ export default function ImageLab({ workId, active = true }: { workId?: string; a
               value=""
               onChange={(e) => {
                 const preset = presets.data?.find((p) => p.id === e.target.value);
-                if (preset) setDraft({ ...draft, settings: { ...settingsFromPreset(draft.settings, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS), seed: draft.settings.seed ?? -1 } });
+                if (preset) setDraft({ ...draft, settings: { ...settingsFromPreset(draft.settings, preset.settings, preset.family as 'anima' | 'sdxl' | 'moss', FAMILY_DEFAULTS), seed: draft.settings.seed ?? -1 } });
               }}
             >
               <option value="">{t('lab.load_preset')}</option>

@@ -18,7 +18,7 @@ from urllib.parse import quote
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
-from . import library
+from . import library, moss_layout
 from .comments import strip_text
 from .compose import Composer, _join
 from .prompt_sources import combine_sources, normalize_sources
@@ -140,7 +140,7 @@ class GenerationMixin:
 
     def preview(self, work, body):
         """Composed prompts for the targets without queueing (the generate screen's preview)."""
-        _, options, _ = self._settings(body)
+        settings, options, _ = self._settings(body)
         targets = body.get('targets') or []
         if not isinstance(targets, list) or not targets:
             raise ValueError(
@@ -149,7 +149,25 @@ class GenerationMixin:
         composer = Composer(self.paths, work)
         if len(targets) > 1:
             options = {**options, 'overrides': {}}
-        return [composer.compose(target, options) for target in targets[:200]]
+        return [
+            self._moss_snapshot(composer.compose(target, options), body, settings) for target in targets[:200]
+        ]
+
+    @staticmethod
+    def _moss_snapshot(snapshot, body, settings):
+        value = body.get('moss_layout')
+        if value is None:
+            return snapshot
+        if settings.get('family') != 'moss' or body.get('service', DEFAULT_SERVICE) != DEFAULT_SERVICE:
+            raise ValueError(Msg('server.moss.family', 'MOSS layouts require the MOSS model family.'))
+        parts = snapshot['parts']
+        doc, prompt = moss_layout.prepare(
+            value,
+            settings,
+            snapshot,
+            moss_layout.join(*(parts.get(k, '') for k in ('common', 'artist', 'composition'))),
+        )
+        return {**snapshot, 'moss_layout': doc, **({'positive': prompt} if prompt is not None else {})}
 
     def enqueue(self, work, body):
         targets = body.get('targets')
@@ -197,7 +215,7 @@ class GenerationMixin:
         batch_id = uuid.uuid4().hex
         prepared = []
         for target in targets:
-            snap = composer.compose(target, options)
+            snap = self._moss_snapshot(composer.compose(target, options), body, settings)
             # Local LoRAs only exist for the local image server.
             loras = (
                 self.auto_loras(work, snap['character_id'], snap['outfit_id'], settings['family'])
@@ -283,13 +301,20 @@ class GenerationMixin:
             raise ValueError(
                 Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
             )
-        positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
+        layout = body.get('moss_layout')
+        layout_active = isinstance(layout, dict) and layout.get('mode') == 'layout'
+        if not layout_active:
+            positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
         sources = (
-            normalize_sources(body['prompt_sources'], positive, negative)
+            normalize_sources(
+                body['prompt_sources'],
+                strip_text(positive).strip() if layout_active else positive,
+                strip_text(negative).strip() if layout_active else negative,
+            )
             if 'prompt_sources' in body
             else None
         )
-        if not positive and sources is None:
+        if not positive and sources is None and not layout_active:
             raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
         if not isinstance(body.get('settings', {}), dict):
             raise ValueError(Msg('server.single.settings', 'Choose valid generation settings.'))
@@ -297,10 +322,17 @@ class GenerationMixin:
         # A frozen source request already carries the chosen settings and prompt material.
         # Resolving preset_id here would silently replace a restored/deleted style.
         raw_settings, options, preset = self._settings(
-            {**body, 'preset_id': ''} if sources is not None else body
+            {**body, 'preset_id': ''} if sources is not None or layout is not None else body
         )
         if service.id == DEFAULT_SERVICE:
-            allowed = set(COMFY_DEFAULTS) | {'family', 'clip_skip', 'shift', 'upscale', 'detailer'}
+            allowed = set(COMFY_DEFAULTS) | {
+                'family',
+                'clip_skip',
+                'shift',
+                'upscale',
+                'detailer',
+                'moss_slg',
+            }
         elif service.id == 'novelai':
             from .internet.novelai import DEFAULTS as NOVELAI_DEFAULTS
 
@@ -360,6 +392,20 @@ class GenerationMixin:
         if sources is not None:
             final_positive = combine_sources(sources, 'positive')
             final_negative = combine_sources(sources, 'negative')
+        if layout is not None:
+            if service.id != DEFAULT_SERVICE or settings.get('family') != 'moss':
+                raise ValueError(Msg('server.moss.family', 'MOSS layouts require the MOSS model family.'))
+            scene_material = moss_layout.join(
+                *(s['positive'] for s in sources or [] if s['kind'] in ('common', 'style', 'composition'))
+            )
+            layout, compiled = moss_layout.prepare(layout, settings, scene_material=scene_material)
+            if compiled is not None:
+                final_positive = compiled
+                final_negative = moss_layout.join(
+                    negative,
+                    *(s['negative'] for s in sources or [] if s['kind'] != 'direct'),
+                    *(i.get('resolved', {}).get('negative', '') for i in layout['items']),
+                )
         if not final_positive.strip():
             raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
         if len(final_positive) > 30000 or len(final_negative) > 30000:
@@ -395,6 +441,9 @@ class GenerationMixin:
             'request': request,
             'run_created_at': created,
         }
+        if layout is not None:
+            request['moss_layout'] = copy.deepcopy(layout)
+            snapshot['moss_layout'] = copy.deepcopy(layout)
         if sources is not None:
             request['prompt_sources'] = copy.deepcopy(sources)
             snapshot['prompt_sources'] = copy.deepcopy(sources)
@@ -468,6 +517,7 @@ class GenerationMixin:
         settings = snapshot.get('settings') or {}
         preset = snapshot.get('generation_preset')
         return {
+            **({'moss_layout': copy.deepcopy(snapshot['moss_layout'])} if 'moss_layout' in snapshot else {}),
             'positive': snapshot.get('positive') or '',
             'negative': snapshot.get('negative') or '',
             **({'generation_preset': preset} if isinstance(preset, dict) and preset.get('name') else {}),
@@ -617,9 +667,17 @@ class GenerationMixin:
             index += 1
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
-            schema_version=(4 if not job.get('work_id') else 3 if 'prompt_sources' in metadata else 2)
+            schema_version=(
+                5
+                if 'moss_layout' in metadata
+                else 4
+                if not job.get('work_id')
+                else 3
+                if 'prompt_sources' in metadata
+                else 2
+            )
             if job.get('kind') == 'single'
-            else 1,
+            else (2 if 'moss_layout' in metadata else 1),
             created_at=now(),
             job_id=job['id'],
             prompt_id=prompt_id,

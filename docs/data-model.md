@@ -774,11 +774,12 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 | `group` | 묶음 이름(최대 40자). 라이브러리와 생성 화면에서 같은 묶음끼리 모아 보인다. 없으면 "묶음 없음". |
 | `targets` | 이 항목을 쓰는 대상 id 목록(`compose.json`의 `targets`). 여러 개 고를 수 있고, 없거나 비면 모든 대상에 쓴다. |
 
-- 생성할 때 대상은 생성 설정의 모델 계열(`anima`, `sdxl`)이나 이미지 서비스(`novelai`, `pixai`)다. 대상에 맞지 않는 공통·구도
+- 생성할 때 대상은 생성 설정의 모델 계열(`anima`, `sdxl`, `moss`)이나 이미지 서비스(`novelai`, `pixai`)다. 대상에 맞지 않는 공통·구도
   항목은 프롬프트에서 빠지고 미리보기 경고에 이름이 나온다. 표정은 빠지지 않고 경고만 한다.
 - 이전 형식의 `model_family`(`anima`·`sdxl`·`shared`)는 읽을 때 `targets`로 바꿔 본다(`anima` → `["anima"]`, `sdxl` → `["sdxl"]`,
   `shared` → 모든 대상). 항목을 저장하면 `targets`로 쓴다.
 - 목록에 없는 대상 id는 무시한다. 대상을 목록에서 지우면 그 대상만 고른 항목은 모든 대상용이 된다.
+  단, `moss_layout`이 있는 배치 템플릿은 목록과 관계없이 `moss` 전용이다. 기존 사용자 대상 목록에 새 대상을 강제로 추가하지 않는다.
 
 `compose.json`은 `items`가 아니라 조합 규칙 자체를 담는다.
 
@@ -884,6 +885,63 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 #### 생성 기록
 
+##### MOSS Beta Layout (#307)
+
+ComfyUI `settings.family: "moss"`는 네이티브 diffusion 모델, `clip_type: "moss_image"`,
+Qwen3.5 9B 인코더, Flux2 VAE와 128채널 잠재 이미지를 사용한다. 기본값은 1024², 50 steps,
+CFG 3, Euler/simple, shift 5, `moss_slg: true`다. SLG는 negative 분기의 0부터 센 22번 층을
+생략한다. `moss_slg: false`로 끌 수 있다. 가속 LoRA의 스텝·CFG·SLG는 별도로 지정한다.
+생성 뒤 재생성 업스케일·디테일러·CLIP skip은 Beta에서 거절한다. 실제 적용 파일·설정은 기존
+`settings`에 고정한다. 모델과 그림체 프리셋의 계열에 `moss`를 허용한다. 캐릭터 LoRA 등록의
+`model_family: "moss"`도 허용하며 CLIP 강도는 0으로 적용한다. 예전 Anima/SDXL `shared` 항목을
+MOSS에 자동 적용하지 않는다. 학습 계열을 추가하는 변경은 아니다.
+
+단일·일괄 요청의 선택적 `moss_layout`은 다음 편집 문서다. 기존 요청에는 필드가 없어도 된다.
+
+```json
+{
+  "schema_version": 1, "mode": "layout", "width": 1024, "height": 1024,
+  "scene": "A quiet cafe, soft daylight",
+  "items": [
+    {"id": "stable-box-id", "label": "character", "name": "주인공", "caption": "sitting",
+     "binding": "target", "rect": [0.1, 0.2, 0.3, 0.5]},
+    {"id": "sign-id", "label": "text", "name": "간판", "caption": "white lettering",
+     "text": "# OPEN", "binding": "manual", "rect": [0.5, 0.05, 0.4, 0.2]}
+  ]
+}
+```
+
+- `mode`: `general` 또는 `layout`. 비활성 입력도 보존한다. 일반 문구는 기존 positive/negative에 유지한다.
+- `width`·`height`: 256~3072의 16 배수. `rect`는 왼쪽 위 기준 정규화 `[x, y, width, height]`다.
+  캔버스 해상도·종횡비가 달라져도 상대 위치·크기를 유지하고 생성 직전 실제 설정 크기를 적용한다.
+  크기는 양수, 좌표는 유한수이고 박스 전체가 0~1 안이어야 한다. 겹침은 허용한다.
+- `items`: 최대 32개. `id`는 문서 안에서 유일한 안정적 문자열(최대 100자), `name`은 200자 이내다.
+  `label`은 character/object/text. `scene`·`caption`은 각각 10,000자, `text`는 4,000자 이내다.
+  초안·템플릿은 미완성 설명을 허용하지만 Layout 생성은 장면·최소 1개 요소·요소 설명·문자 문구를 요구한다.
+- `binding`: manual/target. target은 인물에만 허용한다. 단일 생성은 명시적으로 연결한 당시 설명을
+  `resolved: {caption, negative, character_id, outfit_id, expression_id, name}`에 복사한다.
+  일괄 생성은 각 조합의 trigger/appearance/outfit/expression으로 resolved를 채운다.
+  직접 연결하지 않은 라이브러리 항목을 이후 생성·재시도에서 다시 조회하지 않는다.
+- `summary.caption`에는 scene과 공통/그림체/구도 문구, 인물 item.caption에는 resolved.caption과
+  추가 설명을 넣는다. text는 별도 문자열이고 negative는 모델의 별도 입력이다. Layout 문구에 태그
+  주석 제거를 적용하지 않는다. 앱의 ID·연결·이름은 모델 JSON에 포함하지 않는다.
+- 모델 JSON은 `summary`, `items`, `bbox_coord_space: "abs_centralized"`, `bbox_format: "yxyx"`다.
+  bbox는 `[floor(y*H)-H/2, floor(x*W)-W/2, ceil((y+h)*H)-H/2, ceil((x+w)*W)-W/2]`이다.
+  경계 계산은 소수점 9자리로 안정화한 뒤 floor/ceil한다. 최종 프롬프트는 30,000자 이내다.
+- 생성 기록은 편집 문서와 컴파일한 실제 positive를 함께 보존한다. Layout 필드를 가진 단일 기록은
+  v5, 일괄 기록은 v2다. 단일 request 및 목록 actual에도 moss_layout을 보존한다. 이전 버전은
+  필드가 없는 일반 입력으로 읽으며 기존 기록을 다시 쓰지 않는다.
+- 구도 라이브러리 `compositions.json`은 저장 시 v3로 승격하며 항목에 moss_layout을 선택적으로 둔다.
+  v1/v2 항목은 배치 없는 태그 구도로 읽는다. 저장된 배치는 targets=[moss]이며 resolved를 제거해
+  특정 인물 대신 현재 생성 대상을 가리킨다. 기존 범위·UUID·revision 충돌 검사·공유 경로를 재사용한다.
+- 단일 초안은 v4로 선택적 moss_layout을 더한다. v3은 일반 입력으로 읽고 화면 저장 시 v4로 승격한다.
+  작품 없는 초안은 기존 서버 경로, 작품 초안은 기존 작품별 브라우저 키를 사용한다. 일괄 배치 초안은
+  `atelierx-moss-batch-v1-<작품 ID>`에 같은 편집 문서를 보존한다. 대기열은 입력을 깊은 복사해
+  고정하므로 템플릿·디자인·프리셋 수정 및 삭제가 이미 접수한 작업·재시도에 영향을 주지 않는다.
+
+좌표 계약 참고: [ComfyUI MOSSImageLayoutPrompt](https://github.com/Comfy-Org/ComfyUI/blob/master/comfy_extras/nodes_moss_image.py),
+[공식 Layout 규격](https://github.com/OpenMOSS/MOSS-Image/blob/main/skills/moss-image-prompt-enhancer/references/layout.md).
+
 위치: `<출력 루트>/<작품 ID>/<캐릭터 ID>/images/<의상>/<표정>/<번호>.json` (이미지 `<번호>.png` 옆)
 
 ```json
@@ -952,7 +1010,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 `work_id: null`을 허용한다. `prompt_sources`는 요청에 있을 때 보존한다.
 작품별 v2/v3 기록과 저장 위치는 바꾸지 않는다. 단일 생성 목록은 자신의 출력 경로·작품 ID와
 일치하는 기록만 읽는다. 독립 생성 완료 이력도 큐 정리·재시작 후 출력 파일에서 최대 100개를 복구한다.
-독립 생성 초안은 `state/image/single-draft.json`에 기존 초안 형식(`schema_version: 3`)으로 저장한다.
+독립 생성 초안은 `state/image/single-draft.json`에 저장한다. 현재 초안은 `schema_version: 4`이며 v3도 읽는다.
 `GET/PUT /api/image/single/draft`는 `{draft, revision}`을 읽고 저장한다. 최초 draft는 null이며,
 오래된 revision의 저장은 409로 거절한다. 저장 실패 시 입력을 유지하고 명시적인 다시 불러오기를 제공한다.
 브라우저의 `atelierx-single-standalone-v1`은 보조 캐시이며 서버 기록이 우선한다.

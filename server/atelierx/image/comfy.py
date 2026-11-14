@@ -105,6 +105,8 @@ class Comfy:
                 'nodes': {
                     'upscale': 'AtelierXUpscale' in info,
                     'detailer': 'AtelierXImpactDetailerPipeline' in info,
+                    'moss': 'moss_image' in values('CLIPLoader', 'type') and 'EmptyFlux2LatentImage' in info,
+                    'moss_slg': 'SkipLayerGuidanceDiTSimple' in info,
                 },
             }
             # Checkpoint and diffusion-model directories are distinct ComfyUI catalogs.

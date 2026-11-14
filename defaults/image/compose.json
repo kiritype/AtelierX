@@ -11,6 +11,7 @@
   "targets": [
     {"id": "sdxl", "name": "SDXL·IL"},
     {"id": "anima", "name": "Anima"},
+    {"id": "moss", "name": "MOSS-Image Beta"},
     {"id": "novelai", "name": "NovelAI"},
     {"id": "pixai", "name": "PixAI"}
   ],

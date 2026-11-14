@@ -58,11 +58,12 @@ MAX_TARGETS = 20
 DEFAULT_TARGETS = [
     {'id': 'sdxl', 'name': 'SDXL·IL'},
     {'id': 'anima', 'name': 'Anima'},
+    {'id': 'moss', 'name': 'MOSS-Image Beta'},
     {'id': 'novelai', 'name': 'NovelAI'},
     {'id': 'pixai', 'name': 'PixAI'},
 ]
 # Before #80 an item named one model family (or 'shared' for both).
-LEGACY_FAMILIES = ('anima', 'sdxl')
+LEGACY_FAMILIES = ('anima', 'sdxl', 'moss')
 # Deployment codes (decision 0023): any text that can be one part of a path. Same codes are allowed (the screens say so).
 MAX_CODE = 64
 BAD_CODE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -122,6 +123,8 @@ def _file(paths, work, kind, scope):
 
 def targets_of(item, known=None):
     """The targets an item is written for; empty means all. Reads the model_family of files from before #80."""
+    if item.get('moss_layout') is not None:
+        return ['moss']
     if isinstance(item.get('targets'), list):
         wanted = [t for t in item['targets'] if isinstance(t, str)]
     else:
@@ -166,6 +169,7 @@ def items(paths, work, kind):
 
 def compose_rules(paths):
     rules = read_json(paths.data / 'image' / 'compose.json', {}) or {}
+    targets = _clean_targets(rules.get('targets')) or DEFAULT_TARGETS
     return {
         # 'style' was the style fragments' place before #169; artist tags of the style preset take it.
         'order': [
@@ -175,7 +179,7 @@ def compose_rules(paths):
         ],
         'slots': rules.get('slots') or [{'id': 'full', 'name': 'full'}],
         'ratings': rules.get('ratings') or [{'id': 'general', 'name': 'general'}],
-        'targets': _clean_targets(rules.get('targets')) or DEFAULT_TARGETS,
+        'targets': targets,
     }
 
 
@@ -240,6 +244,13 @@ def clean_item(kind, item, rules):
         if item.get('composition'):
             out['composition'] = str(item['composition'])
     elif kind == 'compositions':
+        if item.get('moss_layout') is not None:
+            from .moss_layout import clean
+
+            out['moss_layout'] = clean(item['moss_layout'])
+            for box in out['moss_layout']['items']:
+                box.pop('resolved', None)
+            out['targets'] = ['moss']
         slots = {s['id'] for s in rules['slots']}
         out['suggest_slots'] = [s for s in item.get('suggest_slots') or [] if s in slots]
         # No outfit at all in this composition (#162); its visible slots are then not used.
@@ -282,7 +293,7 @@ def save_item(paths, work, kind, scope, ident, item, from_scope=None, base_revis
             paths, 'compositions', cleaned['composition'], scope, work.id if work else None
         )
     doc.setdefault('items', {})[ident] = cleaned
-    doc['schema_version'] = 2
+    doc['schema_version'] = 3 if kind == 'compositions' else 2
     atomic_json(path, doc)
     if old_path and ident in (old.get('items') or {}):
         del old['items'][ident]
@@ -316,7 +327,7 @@ def delete_item(paths, work, kind, scope, ident, base_revision=_UNCHECKED):
 
 # --- style presets (global, #169, decision 0026): service, model family, generation settings, artist tags ---------
 SERVICES = ('comfyui', 'novelai', 'pixai')
-FAMILIES = ('anima', 'sdxl')
+FAMILIES = ('anima', 'sdxl', 'moss')
 MAX_PRESET_TAGS = 20
 MAX_ARTIST = 30000
 # One preview per preset (#169): the same subject and seed for all, rated safe so the comparison is fair.
