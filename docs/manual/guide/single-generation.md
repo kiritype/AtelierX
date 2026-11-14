@@ -47,6 +47,8 @@
 
 ## MOSS-Image Beta로 배치 지정하기
 
+[![MOSS Beta 박스 편집기와 실제 정물 생성 결과](../screenshots/moss-beta-single.jpg)](../screenshots/moss-beta-single.jpg)
+
 ComfyUI의 **모델 계열 → MOSS Beta**를 고릅니다. 네이티브 MOSS diffusion 모델과
 Qwen3.5 9B 인코더·Flux2 VAE가 필요합니다. 누락 노드 안내가 나오면 ComfyUI를 갱신하세요.
 일반설정에서는 기존 프롬프트를 사용하고, **세부설정 · 배치**에서는 박스 편집기를 사용합니다.
