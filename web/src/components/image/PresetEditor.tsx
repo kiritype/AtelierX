@@ -28,7 +28,7 @@ export const presetTarget = (p: Pick<Preset, 'service' | 'family'>) =>
   p.service === 'comfyui' ? (p.family === 'sdxl' ? 'SDXL·IL' : 'Anima') : (SERVICE_NAMES[p.service] ?? p.service);
 
 // ComfyUI presets carry their family in the settings too, as the generation settings form expects.
-export const opened = (p: Preset): Preset => (p.service === 'comfyui' ? { ...p, settings: { ...p.settings, family: p.family as 'anima' | 'sdxl' } } : p);
+export const opened = (p: Preset): Preset => (p.service === 'comfyui' ? { ...p, settings: { ...p.settings, family: p.family as 'anima' | 'sdxl' | 'moss' } } : p);
 
 // What the editor changes: the preview belongs to the server (it is recorded when a preview is made).
 export const editable = (p: Preset) => {

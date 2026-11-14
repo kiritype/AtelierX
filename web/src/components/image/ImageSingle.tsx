@@ -25,14 +25,17 @@ import SinglePromptMaterials, { StyleThumbnails, tagsText, type StyleChoice } fr
 import ShotPicker from './ShotPicker';
 import { AUTO_SHOT, compositionSource, shotChoiceFromSource, useShotLibrary, type ShotChoice } from '../../lib/shots';
 import './ImageSingle.css';
+import MossLayoutEditor, { MossMode } from './MossLayoutEditor';
+import { compileMoss, freshMoss, mossErrors, mossJoin } from '../../lib/mossLayout';
+import type { MossDocument } from '../../imageTypes';
 
 type Service = 'comfyui' | 'novelai' | 'pixai';
-type Draft = { schema_version: 3; positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string; sources: PromptSource[]; legacyPreset?: boolean };
+type Draft = { schema_version: 4; moss_layout?: MossDocument; positive: string; negative: string; service: Service; settings: Record<Service, Record<string, unknown>>; preset: string; sources: PromptSource[]; legacyPreset?: boolean };
 type SavedDraft = { draft: Draft | null; revision: string };
 type Preset = StyleChoice & { service: string; family: string; settings: Record<string, unknown>; common?: string[]; artist?: { positive?: string; negative?: string } };
 type Common = { id: string; name: string; prompt?: string[]; target?: string; targets?: string[] };
 const storageKey = (work?: string) => work ? `atelierx-single-v2-${work}` : 'atelierx-single-standalone-v1';
-const fresh = (): Draft => ({ schema_version: 3, positive: '', negative: '', service: 'comfyui', preset: '', sources: [], settings: {
+const fresh = (): Draft => ({ schema_version: 4, positive: '', negative: '', service: 'comfyui', preset: '', sources: [], settings: {
   comfyui: { family: 'anima', ...FAMILY_DEFAULTS.anima, seed: -1 }, novelai: {}, pixai: {},
 } });
 function readDraft(work?: string): Draft {
@@ -40,7 +43,7 @@ function readDraft(work?: string): Draft {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey(work)) || 'null') as Draft | null;
     if (!saved || typeof saved.positive !== 'string' || typeof saved.negative !== 'string' || !['comfyui', 'novelai', 'pixai'].includes(saved.service)) return fallback;
-    return { ...fallback, positive: saved.positive, negative: saved.negative, service: saved.service,
+    return { ...fallback, moss_layout: saved.moss_layout, positive: saved.positive, negative: saved.negative, service: saved.service,
       preset: validSources(saved.sources) && typeof saved.preset === 'string' ? saved.preset : '',
       sources: validSources(saved.sources) ? saved.sources.filter(source => source.kind !== 'direct') : [],
       legacyPreset: saved.legacyPreset || (!validSources(saved.sources) && !!saved.preset),
@@ -69,6 +72,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const [draftSaving, setDraftSaving] = useState(false);
   const draftRevision = useRef('');
   const saveInFlight = useRef(false);
+  const [mossInvalid, setMossInvalid] = useState(false);
   const [pending, setPending] = useState(false);
   const [runId, setRunId] = useState('');
   const [error, setError] = useState('');
@@ -97,7 +101,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
       if (cancelled) return;
       draftRevision.current = result.revision;
       const saved = result.draft ?? readDraft();
-      setDraft(saved); setStored(result.draft ? JSON.stringify(saved) : '');
+      setDraft({ ...saved, schema_version: 4 }); setStored(result.draft ? JSON.stringify(saved) : '');
       setStorageFailed(false); setDraftLoaded(true);
     }).catch(err => { if (!cancelled) setDraftLoadingError(err instanceof ApiError ? tm(err.msg) : String(err)); });
     return () => { cancelled = true; };
@@ -125,12 +129,17 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   useEffect(() => {
     if (!draftLoaded || !catalog.data?.connected) return;
     const defaults = catalog.data.defaults;
-    setDraft(current => current.settings.comfyui.model ? current : {
+    setDraft(current => current.settings.comfyui.model || current.settings.comfyui.family === 'moss' ? current : {
       ...current, settings: { ...current.settings, comfyui: { ...defaults, ...current.settings.comfyui, model: defaults.model } },
     });
   }, [catalog.data, draftLoaded]);
   const update = (patch: Partial<Draft>) => setDraft(current => ({ ...current, ...patch }));
   const settings = draft.settings[draft.service];
+  const isMoss = draft.service === 'comfyui' && settings.family === 'moss';
+  const mossDoc: MossDocument = { ...(draft.moss_layout ?? freshMoss()), width: Number(settings.width ?? 1024), height: Number(settings.height ?? 1024) };
+  const mossActive = isMoss && mossDoc.mode === 'layout';
+  const mossSceneMaterial = mossJoin(...draft.sources.filter(s => ['common', 'style', 'composition'].includes(s.kind)).map(s => s.positive));
+  const setMoss = (moss_layout: MossDocument) => update({ moss_layout });
   const setSettings = (value: Record<string, unknown>) => setDraft(current => ({ ...current, settings: { ...current.settings, [current.service]: value } }));
   const serviceInfo = services.data?.services.find(service => service.id === draft.service);
   const ready = draft.service === 'comfyui' ? catalog.data?.connected : serviceInfo?.supported && serviceInfo.connected;
@@ -145,8 +154,8 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   }
   const appliedStyle = draft.sources.find(source => source.kind === 'style');
   const sourceList = promptSources(draft.positive, draft.negative, draft.sources);
-  const positive = combineSources(sourceList, 'positive');
-  const negative = combineSources(sourceList, 'negative');
+  const positive = mossActive ? compileMoss(mossDoc, mossSceneMaterial) : combineSources(sourceList, 'positive');
+  const negative = mossActive ? mossJoin(draft.negative, ...draft.sources.map(s => s.negative), ...mossDoc.items.map(i => i.resolved?.negative)) : combineSources(sourceList, 'negative');
   function choosePreset(ident: string, fromHandoff = false) {
     const preset = (fromHandoff ? presets.data : servicePresets)?.find(item => item.id === ident);
     const service = (preset?.service ?? draft.service) as Service;
@@ -163,7 +172,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     setDraft(current => ({ ...current, service, preset: ident, legacyPreset: false,
       sources: [...current.sources.filter(source => !['style', 'common'].includes(source.kind)), ...materials],
       settings: preset ? { ...current.settings, [service]: service === 'comfyui'
-        ? settingsFromPreset(current.settings.comfyui, preset.settings, preset.family as 'anima' | 'sdxl', FAMILY_DEFAULTS)
+        ? settingsFromPreset(current.settings.comfyui, preset.settings, preset.family as 'anima' | 'sdxl' | 'moss', FAMILY_DEFAULTS)
         : { ...(!(fromHandoff && preset.settings.model) ? current.settings[service] : {}), ...preset.settings } } : current.settings }));
   }
   useEffect(() => {
@@ -185,11 +194,14 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const fail = (err: unknown) => setError(err instanceof ApiError ? tm(err.msg) : String(err));
   const refresh = () => qc.invalidateQueries({ queryKey: ['image-single-runs', workId] });
   async function enqueue(value = draft, repeatOk = false) {
-    if (busy || !combineSources(promptSources(value.positive, value.negative, value.sources), 'positive')) return;
+    const moss = value.service === 'comfyui' && value.settings.comfyui.family === 'moss';
+    const doc = { ...(value.moss_layout ?? freshMoss()), width: Number(value.settings.comfyui.width ?? 1024), height: Number(value.settings.comfyui.height ?? 1024) };
+    if (busy || (moss && doc.mode === 'layout' ? mossErrors(doc).length > 0 : !combineSources(promptSources(value.positive, value.negative, value.sources), 'positive'))) return;
     setPending(true); setError('');
     try {
       const request = {
         positive: value.positive, negative: value.negative, service: value.service,
+        ...(moss ? { moss_layout: doc } : {}),
         preset_id: value.preset || undefined, prompt_sources: promptSources(value.positive, value.negative, value.sources), settings: value.settings[value.service], repeat_ok: repeatOk,
       };
       let response: { job_id: string };
@@ -228,14 +240,14 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     setPreviewOpen(false);
     setUnappliedShot(AUTO_SHOT);
     setDraft(current => ({ ...current, ...restorePromptSources(selected),
-      service: selected.service, preset: '', legacyPreset: false,
+      service: selected.service, preset: '', legacyPreset: false, moss_layout: selected.actual.moss_layout ?? selected.request?.moss_layout,
       settings: { ...current.settings, [selected.service]: resultSettings(selected) },
     }));
   }
   async function regenerate(newSeed: boolean) {
     if (!run?.actual || !run.service || (!newSeed && resultSeed(run) === undefined)) return;
     const value = {
-      ...draft, ...restorePromptSources(run), service: run.service, preset: '', legacyPreset: false,
+      ...draft, ...restorePromptSources(run), service: run.service, preset: '', legacyPreset: false, moss_layout: run.actual.moss_layout ?? run.request?.moss_layout,
       settings: { ...draft.settings, [run.service]: resultSettings(run, newSeed) },
     };
     await enqueue(value, true);
@@ -268,7 +280,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
 
   if (!draftLoaded) return draftLoadingError ? <div role="alert">{draftLoadingError} <button onClick={() => setLoadAttempt(n => n + 1)}>{t('single.reload_draft')}</button></div> : <Loading />;
 
-  return <section className="single-image generation-page" aria-label={t('image_menu.single')}>
+  return <section className={isMoss ? "single-image generation-page moss-single" : "single-image generation-page"} aria-label={t('image_menu.single')}>
     <div className="generation-content">
     <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t(workId ? 'single.subtitle' : 'single.standalone_about')}</span></div>
       {workId && <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>}
@@ -286,7 +298,9 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
         {draft.legacyPreset && <p className="warn-text">{t('materials.legacy_draft')}</p>}
         <StyleThumbnails presets={servicePresets} selected={appliedStyle?.id ?? ''} choose={choosePreset} disabled={commons.isPending} />
         <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
-        <label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
+        {isMoss && <><GenSettings compact section="model" value={settings as GenerationSettings} onChange={value => setSettings(value)} />
+          <MossMode mode={mossDoc.mode} onChange={mode => setMoss({ ...mossDoc, mode })} /></>}
+        {!mossActive && <><label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
         <ShotResolution service={draft.service} value={settings}>
@@ -296,9 +310,13 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
         <SinglePromptMaterials workId={workId} target={shotTarget} sources={draft.sources}
           change={modify => setDraft(current => ({ ...current, sources: modify(current.sources) }))} positive={draft.positive} negative={draft.negative} openLibrary={workId ? () => openView('library') : undefined} />
         <details className="single-details"><summary>{t('single.final_prompt')}</summary><h4>Positive</h4><pre>{positive || '—'}</pre><h4>Negative</h4><pre>{negative || '—'}</pre><p className="faint small">{t('single.final_note')}</p></details>
-        <div className="section-title">{t('single.settings')}</div>
+        {isMoss && <button type="button" onClick={() => setMoss({ ...mossDoc, scene: draft.positive })}>{t('moss.import_general')}</button>}
+        </>}
+        {mossActive && <><MossLayoutEditor value={mossDoc} onChange={setMoss} onInvalid={setMossInvalid} workId={workId} sceneMaterial={mossSceneMaterial} />
+          <label className="single-field">{t('single.negative')}<textarea rows={2} value={draft.negative} onChange={e => update({ negative: e.target.value })} /></label></>}
+        <div className="section-title">{t(isMoss ? 'moss.sampling' : 'single.settings')}</div>
         <p className="faint small">{t('single.settings_hint')}</p>
-        {draft.service === 'comfyui' && <GenSettings compact value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
+        {draft.service === 'comfyui' && <GenSettings compact section={isMoss ? "parameters" : undefined} value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
         {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
         {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
         {storageFailed ? <p role="alert" className="warn-text">{workId ? t('single.storage_failed') : draftSaveError} <button onClick={saveDraft}>{t('common.save')}</button>
@@ -335,8 +353,8 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     </div>
     <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
       <div className="generation-summary grow"><strong>{t('gen.images', { n: 1 })}</strong>
-        <GenerationResolution service={draft.service} value={settings} /></div>
-      <button type="button" className="primary" disabled={busy || !ready || !positive} onClick={() => enqueue()}>{t('single.run')}</button>
+        <GenerationResolution service={draft.service} value={settings} />{isMoss && <span>{t("moss.active_input", { mode: t("moss.mode." + mossDoc.mode) })}</span>}</div>
+      <button type="button" className="primary" disabled={busy || !ready || !positive || (mossActive && (mossInvalid || mossErrors(mossDoc).length > 0)) || (isMoss && !catalog.data?.nodes?.moss)} onClick={() => enqueue()}>{t('single.run')}</button>
       {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
     </footer>
     {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={`${t('single.result')} · ${filenameOf(run)}`} close={() => setPreviewOpen(false)}>

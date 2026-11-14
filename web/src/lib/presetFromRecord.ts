@@ -27,7 +27,7 @@ export function presetFromRecord(record: ImageRecord): PresetDraft {
   const service = record.service && record.service !== 'comfyui' ? record.service : 'comfyui';
   return {
     service,
-    family: service !== 'comfyui' ? service : rest.family === 'sdxl' ? 'sdxl' : 'anima',
+    family: service !== 'comfyui' ? service : rest.family === 'moss' ? 'moss' : rest.family === 'sdxl' ? 'sdxl' : 'anima',
     settings: { ...rest, seed: -1, ...(kept.length ? { loras: kept } : {}) },
     common: [...(record.common_ids ?? [])],
     artist: {

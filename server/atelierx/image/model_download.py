@@ -87,7 +87,7 @@ def kind_for(model_type, file_type, base_model):
         return file_kind
     kind = KIND_OF_TYPE.get(str(model_type or '').lower().replace(' ', ''), 'checkpoints')
     # Anima models load with the diffusion-model loader, not as checkpoints.
-    if kind == 'checkpoints' and 'anima' in str(base_model or '').lower():
+    if kind == 'checkpoints' and family_from_base_model(base_model) in ('anima', 'moss'):
         return 'diffusion_models'
     return kind
 

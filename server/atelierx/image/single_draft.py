@@ -24,7 +24,7 @@ def save(paths, body):
         raise ValueError(invalid)
     draft = body['draft']
     if (
-        draft.get('schema_version') != 3
+        draft.get('schema_version') not in (3, 4)
         or draft.get('service') not in SERVICES
         or any(
             not isinstance(draft.get(k), str) or len(draft[k]) > limit
@@ -39,6 +39,11 @@ def save(paths, body):
     cleaned = {
         k: draft[k] for k in ('schema_version', 'positive', 'negative', 'service', 'settings', 'preset')
     }
+    if draft.get('moss_layout') is not None:
+        from .moss_layout import clean
+
+        cleaned['moss_layout'] = clean(draft['moss_layout'])
+        cleaned['schema_version'] = 4
     cleaned['sources'] = [source for source in sources if source['kind'] != 'direct']
     if draft.get('legacyPreset'):
         cleaned['legacyPreset'] = True

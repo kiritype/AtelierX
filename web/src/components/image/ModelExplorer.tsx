@@ -201,6 +201,7 @@ export default function ModelExplorer() {
             <option value="">{t('models.family_auto')}</option>
             <option value="anima">Anima</option>
             <option value="sdxl">SDXL·IL</option>
+            <option value="moss">MOSS-Image Beta</option>
           </select>
           <span className="faint small">{chosen.family_by ? t(`models.family_by.${chosen.family_by}`) : ''}</span>
         </label>

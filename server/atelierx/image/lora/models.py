@@ -14,7 +14,7 @@ from ..util import read_json
 from . import store
 
 APPLY_TO = ('character', 'outfit')
-FAMILIES = ('anima', 'sdxl', 'shared')
+FAMILIES = ('anima', 'sdxl', 'moss', 'shared')
 ENTRY_ID = re.compile(r'^[A-Za-z0-9_-]{1,80}$')
 
 
@@ -48,7 +48,7 @@ def _check(entry):
         raise ValueError(
             Msg(
                 'server.records.model_family_must_be_anima_sdxl',
-                'model_family must be anima, sdxl or shared.',
+                'model_family must be anima, sdxl, moss or shared.',
             )
         )
     if not isinstance(entry.get('file'), str) or not entry['file'].endswith('.safetensors'):
@@ -132,7 +132,7 @@ def auto_loras(work, character_id, outfit_id, family):
     for entry in _doc(work, character_id)['models']:
         if not entry.get('enabled', True) or not entry.get('auto_apply'):
             continue
-        if entry.get('model_family', 'anima') not in (family, 'shared'):
+        if entry.get('model_family', 'anima') not in ((family,) if family == 'moss' else (family, 'shared')):
             continue
         if entry.get('apply_to') == 'outfit' and entry.get('outfit_id') != outfit_id:
             continue
@@ -141,7 +141,7 @@ def auto_loras(work, character_id, outfit_id, family):
             {
                 'name': entry['file'],
                 'strength_model': strength,
-                'strength_clip': strength,
+                'strength_clip': 0.0 if family == 'moss' else strength,
                 'auto': entry['id'],
             }
         )

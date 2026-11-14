@@ -8,11 +8,14 @@ import { byGroup, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import { afterRevisionSave, followSelection } from '../../lib/libraryDraft';
 import { displayName, nameIdHint, nameLabel } from '../../lib/nameLabels';
+import type { MossDocument } from '../../imageTypes';
+import MossLayoutEditor, { MossBadge } from './MossLayoutEditor';
 import LibraryImport from './LibraryImport';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'targets'];
 type Item = {
+  moss_layout?: MossDocument;
   id: string;
   revision?: string;
   name: string;
@@ -80,6 +83,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<(Item & { scope: 'global' | 'work' }) | null>(null);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [mossInvalid, setMossInvalid] = useState(false);
   const [filter, setFilter] = useState('');
   // Items checked for export (#154); none checked exports the whole list.
   const [checked, setChecked] = useState<string[]>([]);
@@ -122,7 +126,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   }
 
   async function save() {
-    if (!draft) return;
+    if (!draft || (draft.moss_layout && mossInvalid)) return;
     const sent = draft;
     const sentSelection = selected;
     const { id, scope, ...item } = sent;
@@ -243,6 +247,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   <span title={item.id} style={{ overflowWrap: 'anywhere' }}>{displayName(item)}</span>
                   {nameIdHint(item, allItems) && <span className="faint mono small" title={item.id}> ({nameIdHint(item, allItems)})</span>}
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
+                  {item.moss_layout && <MossBadge />}
                   {kind === 'compositions' && item.hide_outfit && <span className="chip small" title={t('lib.hide_outfit_hint')}>{t('lib.hide_outfit')}</span>}
                   {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
                 </span>
@@ -333,6 +338,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                 </label>
               </div>
             )}
+            {kind === 'compositions' && draft.moss_layout && <MossLayoutEditor key={draft.id} batch workId={workId} value={draft.moss_layout} onChange={moss_layout => setDraft({ ...draft, moss_layout })} onInvalid={setMossInvalid} />}
             {kind === 'compositions' && (
               <div className="col" style={{ gap: 2 }}>
                 <span className="muted">{t('lib.suggest_slots')}</span>
@@ -416,7 +422,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
               {conflict === draft.id && (
                 <button onClick={reloadConflict}>{t('lib.reload_conflict')}</button>
               )}
-              <button className="primary" onClick={save}>
+              <button className="primary" disabled={!!draft.moss_layout && mossInvalid} onClick={save}>
                 {t('common.save')}
               </button>
               {draft.scope && items.data?.[draft.id]?.scope === draft.scope && (

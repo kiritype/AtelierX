@@ -23,7 +23,7 @@ def test_items_keep_a_group_and_several_known_targets(unlocked):
     c = unlocked
     wid = c.post('/api/samples/single/install').json()['id']
     rules = c.get('/api/image/library/rules').json()
-    assert [t['id'] for t in rules['targets']] == ['sdxl', 'anima', 'novelai', 'pixai']
+    assert [t['id'] for t in rules['targets']] == ['sdxl', 'anima', 'moss', 'novelai', 'pixai']
 
     saved = _style(c, wid, 'film', group=' 화면 효과 ', targets=['sdxl', 'pixai', 'sdxl', 'nope'])
     assert saved[image_id(c, 'compositions', 'film', wid)]['group'] == '화면 효과'

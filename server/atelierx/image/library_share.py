@@ -266,7 +266,7 @@ def apply(paths, work, kind, doc, scope, choices, base_revisions=None):
     if dependencies:
         comp_path = library._file(paths, work, 'compositions', scope)
         comp_doc = read_json(comp_path, {}) or {'schema_version': 2, 'items': {}}
-        comp_doc['schema_version'] = 2
+        comp_doc['schema_version'] = 3
         for ident, item in dependencies.items():
             canonical = canonical_for_save(paths, 'compositions', ident, scope, work.id if work else None)
             comp_doc.setdefault('items', {}).setdefault(canonical, item)
@@ -274,7 +274,7 @@ def apply(paths, work, kind, doc, scope, choices, base_revisions=None):
     if plan:
         path = library._file(paths, work, kind, scope)
         stored = read_json(path, {}) or {'schema_version': 1, 'items': {}}
-        stored['schema_version'] = 2
+        stored['schema_version'] = 3 if kind == 'compositions' else 2
         stored.setdefault('items', {}).update(plan)
         atomic_json(path, stored)
     return {'written': list(plan), 'items': library.items(paths, work, kind)}

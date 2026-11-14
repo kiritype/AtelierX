@@ -2,9 +2,10 @@ import { GenerationDetails } from './GenerationDetails';
 import { useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '../../api';
-import { t, tm } from '../../i18n';
+import { t, tm, type ServerMsg } from '../../i18n';
 import type { SettingsSection } from './serviceSettings';
 import { COMFY_PREVIEW_CATALOG } from './singlePreviewSettings';
+import './MossLayoutEditor.css';
 
 export type Lora = { name: string; strength_model: number; strength_clip: number; enabled?: boolean };
 // After the first pass (#168): enlarge and redraw lightly, then redraw chosen parts.
@@ -17,7 +18,7 @@ const UPSCALE_DEFAULT = { scale: 1.5, steps: 12, denoise: 0.3 };
 const DETAILER_DEFAULT: Detailer = { stages: { face: 0.35, hand: 0.4 }, steps: 20 };
 const STAGE_DEFAULT: Record<Stage, number> = { face: 0.35, eye: 0.3, mouth: 0.3, hand: 0.4 };
 export type GenerationSettings = {
-  family?: 'anima' | 'sdxl';
+  family?: 'anima' | 'sdxl' | 'moss';
   model?: string;
   text_encoder?: string;
   vae?: string;
@@ -31,13 +32,15 @@ export type GenerationSettings = {
   clip_skip?: number;
   loras?: Lora[];
   shift?: number | null;
+  clip_type?: string;
+  moss_slg?: boolean;
   upscale?: Upscale | null;
   detailer?: Detailer | null;
 };
 
 export type Catalog = {
   connected: boolean;
-  error?: any;
+  error?: ServerMsg | string;
   models: string[];
   text_encoders: string[];
   vaes: string[];
@@ -46,12 +49,13 @@ export type Catalog = {
   schedulers: string[];
   defaults: GenerationSettings;
   upscale_models?: string[];
-  nodes?: { upscale?: boolean; detailer?: boolean };
+  nodes?: { upscale?: boolean; detailer?: boolean; moss?: boolean; moss_slg?: boolean };
   families?: { models?: Record<string, string | null>; loras?: Record<string, string | null> };
 };
 
 // Family defaults (anima: 32 steps, CFG 5, er_sde/simple, 1536²; SDXL·IL: 28 steps, CFG 5, euler_ancestral/normal, 1024², clip skip 2).
-export const FAMILY_DEFAULTS: Record<'anima' | 'sdxl', GenerationSettings> = {
+export const FAMILY_DEFAULTS: Record<'anima' | 'sdxl' | 'moss', GenerationSettings> = {
+  moss: { steps: 50, cfg: 3, sampler: 'euler', scheduler: 'simple', width: 1024, height: 1024, shift: 5, clip_type: 'moss_image', moss_slg: true },
   anima: { steps: 32, cfg: 5, sampler: 'er_sde', scheduler: 'simple', width: 1536, height: 1536 },
   sdxl: { steps: 28, cfg: 5, sampler: 'euler_ancestral', scheduler: 'normal', width: 1024, height: 1024, clip_skip: 2 },
 };
@@ -79,17 +83,17 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   const catalog = useCatalog(preview);
   const c = catalog.data;
   if (!c) return null;
-  if (!c.connected) return <div className="warn-text">{t('gen.not_connected')} {c.error ? tm(c.error) : ''}</div>;
+  if (!c.connected) return <div className="warn-text">{t('gen.not_connected')} {c.error ? (typeof c.error === 'string' ? c.error : tm(c.error)) : ''}</div>;
   const family = value.family ?? 'anima';
   const fam = (kind: 'models' | 'loras', name: string) => c.families?.[kind]?.[name] ?? null;
   const models = c.models.filter((m) => {
     const f = fam('models', m);
     if (family === 'sdxl') return m.startsWith('checkpoint::') && (f === 'sdxl' || f === null);
-    return f === 'anima' || f === null;
+    return !m.startsWith('checkpoint::') && (f === family || f === null);
   });
   // SDXL needs a checkpoint, so switching families picks the first model of that family.
-  const firstModel = (f: 'anima' | 'sdxl') =>
-    c.models.find((m) => (f === 'sdxl' ? m.startsWith('checkpoint::') && fam('models', m) === 'sdxl' : fam('models', m) === 'anima'));
+  const firstModel = (f: 'anima' | 'sdxl' | 'moss') =>
+    c.models.find((m) => (f === 'sdxl' ? m.startsWith('checkpoint::') && fam('models', m) === 'sdxl' : !m.startsWith('checkpoint::') && fam('models', m) === f));
   const loras = c.loras.filter((l) => (fam('loras', l) === family || fam('loras', l) === null));
   const set = (patch: GenerationSettings) => onChange({ ...value, ...patch });
   const num = (key: keyof GenerationSettings, label: string, step = 1, width = 72) => (
@@ -115,40 +119,40 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   const modelFields = (
     <>
       <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {!section && (
+        {section !== 'parameters' && (
           <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
             <span id={familyLabelId} className="muted">{t('gen.family')}</span>
             <div className="seg">
-              {(['anima', 'sdxl'] as const).map((f) => (
+              {(['anima', 'sdxl', 'moss'] as const).map((f) => (
                 <button
                   key={f}
                   className={family === f ? 'on' : ''}
                   aria-pressed={family === f}
-                  onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), seed: value.seed, loras: [] })}
+                  onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), ...(f === 'moss' ? { text_encoder: c.text_encoders.find(n => n.toLowerCase().includes('qwen3.5_9b')), vae: c.vaes.find(n => n.toLowerCase().includes('flux2-vae')) } : {}), seed: value.seed, loras: [] })}
                 >
-                  {f === 'anima' ? 'Anima' : 'SDXL·IL'}
+                  {f === 'anima' ? 'Anima' : f === 'moss' ? <>MOSS <span className="moss-beta">Beta</span></> : 'SDXL·IL'}
                 </button>
               ))}
             </div>
           </div>
         )}
         {pick('model', t('gen.model'), models, t('gen.default'))}
+        {section === 'model' && family === 'moss' && <>{num('width', t('gen.width'), 16, 84)}{num('height', t('gen.height'), 16, 84)}</>}
       </div>
     </>
   );
   const parameters = (
     <>
       <div className="row gen-core-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {num('width', t('gen.width'), 16, 84)}
-        {num('height', t('gen.height'), 16, 84)}
-        {!section && (
+        {!(family === 'moss' && section === 'parameters') && <>{num('width', t('gen.width'), 16, 84)}{num('height', t('gen.height'), 16, 84)}</>}
+        {(!section || family === 'moss') && (
           <label className="col gen-field" data-setting="seed">
             <span className="muted">{t('gen.seed')}</span>
             <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
           </label>
         )}
       </div>
-      <GenerationDetails compact={compact} summary={[
+      <GenerationDetails compact={compact} label={family === 'moss' ? t('moss.sampling') : undefined} summary={[
         value.sampler || c.defaults.sampler,
         value.scheduler || c.defaults.scheduler,
         t('gen.advanced_steps', { n: value.steps ?? c.defaults.steps ?? FAMILY_DEFAULTS[family].steps }),
@@ -157,7 +161,7 @@ export default function GenSettings({ value, onChange, preview = false, compact 
         value.detailer && t('gen.detailer'),
       ]}>
         <div className="row gen-advanced-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          {family === 'anima' && pick('text_encoder', t('gen.text_encoder'), c.text_encoders, t('gen.default'))}
+          {family !== 'sdxl' && pick('text_encoder', t('gen.text_encoder'), c.text_encoders, t('gen.default'))}
           {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}
           {pick('sampler', t('gen.sampler'), c.samplers, t('gen.default'))}
           {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'))}
@@ -194,7 +198,7 @@ export default function GenSettings({ value, onChange, preview = false, compact 
                   value={lora.strength_model}
                   title={t('gen.lora_strength')}
                   onChange={(e) =>
-                    set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, strength_model: Number(e.target.value), strength_clip: Number(e.target.value) } : x)) })
+                    set({ loras: (value.loras ?? []).map((x, i) => (i === n ? { ...x, strength_model: Number(e.target.value), strength_clip: family === 'moss' ? 0 : Number(e.target.value) } : x)) })
                   }
                 />
                 <button className="ghost" onClick={() => set({ loras: (value.loras ?? []).filter((_, i) => i !== n) })}>
@@ -204,12 +208,12 @@ export default function GenSettings({ value, onChange, preview = false, compact 
             ))}
             {loras.length > 0 && (
               <div>
-                <button onClick={() => set({ loras: [...(value.loras ?? []), { name: loras[0], strength_model: 1, strength_clip: 1 }] })}>{t('gen.add_lora')}</button>
+                <button onClick={() => set({ loras: [...(value.loras ?? []), { name: loras[0], strength_model: 1, strength_clip: family === 'moss' ? 0 : 1 }] })}>{t('gen.add_lora')}</button>
               </div>
             )}
           </div>
         )}
-        {family === 'anima' && (
+        {family !== 'sdxl' && (
           <label className="col gen-field">
             <span className="muted">{t('gen.shift')}</span>
             <div className="row">
@@ -218,14 +222,18 @@ export default function GenSettings({ value, onChange, preview = false, compact 
             </div>
           </label>
         )}
-        <UpscaleFields value={value} set={set} catalog={c} />
-        <DetailerFields value={value} set={set} catalog={c} />
+        {family === 'moss' ? <label className="row"><input type="checkbox" checked={value.moss_slg !== false} onChange={e => set({ moss_slg: e.target.checked })} />{t('moss.slg')}</label> : <>
+          <UpscaleFields value={value} set={set} catalog={c} />
+          <DetailerFields value={value} set={set} catalog={c} />
+        </>}
       </GenerationDetails>
     </>
   );
   return (
     <div className="col gen-settings">
       {section !== 'parameters' && modelFields}
+      {family === 'moss' && section !== 'parameters' && <p className="small faint">{t('moss.components')}</p>}
+      {family === 'moss' && (!c.nodes?.moss || (value.moss_slg !== false && !c.nodes?.moss_slg)) && <p className="warn-text" role="alert">{t('moss.nodes_missing')}</p>}
       {section !== 'model' && parameters}
     </div>
   );

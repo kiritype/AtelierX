@@ -2,6 +2,14 @@
 import type { ServerMsg } from './i18n';
 import type { Method } from './lib/toolMethods';
 
+export type MossResolved = { caption: string; negative: string; character_id: string; outfit_id: string; expression_id: string; name: string };
+export type MossItem = {
+  id: string; label: 'character' | 'object' | 'text'; name: string; caption: string; text?: string;
+  binding: 'manual' | 'target'; resolved?: MossResolved; rect: [number, number, number, number];
+};
+export type MossDocument = { schema_version: 1; mode: 'general' | 'layout'; width: number; height: number; scene: string; items: MossItem[] };
+export type MossTemplate = { id: string; name: string; scope: 'global' | 'work'; revision: string; moss_layout?: MossDocument; prompt?: string[]; negative?: string[]; targets?: string[] };
+
 // A ComfyUI tool: usable, or why not (ComfyUI not reachable, or nodes missing). Check `available` before the rest.
 type Unavailable = { available: false; reason?: 'offline' | 'nodes'; error?: ServerMsg | string };
 type Available<T> = T & { available: true; reason?: undefined; error?: undefined };
@@ -76,6 +84,7 @@ export type PromptSource = {
   negative: string;
 };
 export type SingleRequest = {
+  moss_layout?: MossDocument;
   positive: string;
   negative: string;
   service: SingleService;
@@ -91,6 +100,7 @@ export type SingleRun = {
   seed: number;
   request: SingleRequest | null;
   actual: {
+    moss_layout?: MossDocument;
     positive: string;
     negative: string;
     settings: Record<string, unknown>;
