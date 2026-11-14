@@ -70,6 +70,40 @@ it('groups a pointer drag into one undo and supports keyboard resize', async () 
   await act(async () => box.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight', shiftKey: true })));
   expect(latest.items[0].rect[2]).toBeCloseTo(.3 + 1 / 1024);
 });
+it.each(['pointerup', 'pointercancel', 'lostpointercapture', 'unmount'])('holds surrounding scroll only during a drag and releases on %s', async ending => {
+  Object.defineProperties(host, {
+    scrollHeight: { value: 2000 }, clientHeight: { value: 400 },
+    scrollWidth: { value: 800 }, clientWidth: { value: 400 },
+  });
+  host.scrollTop = 260; host.scrollLeft = 30;
+  const canvas = host.querySelector('.moss-canvas') as HTMLDivElement;
+  canvas.getBoundingClientRect = () => ({ x: 0, y: -200, left: 0, top: -200, right: 400, bottom: 200, width: 400, height: 400, toJSON: () => ({}) });
+  canvas.setPointerCapture = vi.fn();
+  const box = host.querySelector('.moss-box') as HTMLButtonElement;
+  const pointer = async (el: HTMLElement, type: string, pointerId = 1) => act(async () => {
+    el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId, button: 0, clientX: type === 'pointermove' ? 120 : 40, clientY: 80 }));
+  });
+  const scroll = (top: number, left: number) => {
+    host.scrollTop = top; host.scrollLeft = left; host.dispatchEvent(new Event('scroll'));
+  };
+  await pointer(box, 'pointerdown');
+  await pointer(canvas, 'pointermove');
+  scroll(500, 80);
+  expect([host.scrollTop, host.scrollLeft]).toEqual([260, 30]);
+  expect(latest.items[0].rect[0]).toBeCloseTo(.3);
+  // A second pointer must not replace or release the active gesture's scroll hold.
+  await pointer(box, 'pointerdown', 2);
+  await pointer(canvas, 'pointerup', 2);
+  scroll(600, 90);
+  expect([host.scrollTop, host.scrollLeft]).toEqual([260, 30]);
+  if (ending === 'unmount') await act(async () => root.render(null));
+  else {
+    await pointer(canvas, ending);
+    expect(latest.items[0].rect[0]).toBeCloseTo(ending === 'pointerup' ? .3 : .1);
+  }
+  scroll(500, 80);
+  expect([host.scrollTop, host.scrollLeft]).toEqual([500, 80]);
+});
 it('keeps relative boxes when changing aspect ratio and saves reusable templates without specific people', async () => {
   await act(async () => change({ ...latest, width: 1536, height: 768 }));
   expect(latest.items[0].rect).toEqual([.1, .2, .3, .5]);

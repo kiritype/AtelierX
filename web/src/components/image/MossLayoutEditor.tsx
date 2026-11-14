@@ -8,10 +8,32 @@ import MossTargetPicker from './MossTargetPicker';
 import './MossLayoutEditor.css';
 
 type Props = { value: MossDocument; onChange: (value: MossDocument) => void; onInvalid: (invalid: boolean) => void; workId?: string; batch?: boolean; sceneMaterial?: string };
-type Gesture = { before: MossDocument; id: string; x: number; y: number; bounds: DOMRect; kind: 'move' | 'resize' | 'draw'; pointer: number };
+type Gesture = { before: MossDocument; id: string; x: number; y: number; bounds: DOMRect; kind: 'move' | 'resize' | 'draw'; pointer: number; releaseScroll: () => void };
 const copy = (doc: MossDocument) => structuredClone(doc);
 const clamp = (n: number, low: number, high: number) => Math.min(high, Math.max(low, n));
 const labels = ['character', 'object', 'text'] as const;
+
+// A partly clipped canvas can trigger browser autoscroll during pointer capture.
+// Keep the coordinate frame fixed for this gesture, without changing its layout.
+function holdAncestorScroll(canvas: HTMLElement) {
+  const positions: { element: HTMLElement; top: number; left: number }[] = [];
+  for (let element = canvas.parentElement; element; element = element.parentElement) {
+    if (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth) {
+      positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
+    }
+  }
+  const restore = () => {
+    for (const { element, top, left } of positions) {
+      if (element.scrollTop !== top) element.scrollTop = top;
+      if (element.scrollLeft !== left) element.scrollLeft = left;
+    }
+  };
+  for (const { element } of positions) element.addEventListener('scroll', restore);
+  return () => {
+    restore();
+    for (const { element } of positions) element.removeEventListener('scroll', restore);
+  };
+}
 
 export function MossBadge() { return <span className="moss-beta">Beta</span>; }
 export function MossMode({ mode, onChange }: { mode: MossDocument['mode']; onChange: (mode: MossDocument['mode']) => void }) {
@@ -32,6 +54,7 @@ export default function MossLayoutEditor({ value, onChange, onInvalid, workId, b
   const [message, setMessage] = useState('');
   const canvas = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
+  useEffect(() => () => { gesture.current?.releaseScroll(); gesture.current = null; }, []);
   const latest = useRef(value); latest.current = value;
   const selectedItem = value.items.find(i => i.id === selected);
   const errors = mossErrors(value, batch);
@@ -53,11 +76,11 @@ export default function MossLayoutEditor({ value, onChange, onInvalid, workId, b
   }
   function remove() { commit({ ...value, items: value.items.filter(i => i.id !== selected) }); setSelected(''); }
   function begin(e: PointerEvent<HTMLElement>, item: MossItem | null, kind: Gesture['kind']) {
-    if (e.button !== 0 || !canvas.current || (kind === 'draw' && e.target !== e.currentTarget) || (!item && value.items.length >= 32)) return;
+    if (gesture.current || e.button !== 0 || !canvas.current || (kind === 'draw' && e.target !== e.currentTarget) || (!item && value.items.length >= 32)) return;
     e.preventDefault(); e.stopPropagation();
     const added = item ?? newMossItem('object');
     const bounds = canvas.current.getBoundingClientRect();
-    gesture.current = { before: copy(value), id: added.id, x: e.clientX, y: e.clientY, bounds, kind, pointer: e.pointerId };
+    gesture.current = { before: copy(value), id: added.id, x: e.clientX, y: e.clientY, bounds, kind, pointer: e.pointerId, releaseScroll: holdAncestorScroll(canvas.current) };
     setSelected(added.id); setNumbers({});
     if (!item) onChange({ ...value, items: [...value.items, { ...added, rect: [clamp((e.clientX - bounds.left) / bounds.width, 0, .999), clamp((e.clientY - bounds.top) / bounds.height, 0, .999), .001, .001] }] });
     canvas.current.setPointerCapture(e.pointerId);
@@ -77,9 +100,10 @@ export default function MossLayoutEditor({ value, onChange, onInvalid, workId, b
     }
     onChange({ ...latest.current, items: latest.current.items.map(i => i.id === g.id ? { ...i, rect } : i) });
   }
-  function end(cancel = false) {
-    const g = gesture.current; if (!g) return;
+  function end(e: PointerEvent<HTMLDivElement>, cancel = false) {
+    const g = gesture.current; if (!g || g.pointer !== e.pointerId) return;
     gesture.current = null;
+    g.releaseScroll();
     if (cancel) { onChange(g.before); return; }
     const item = latest.current.items.find(i => i.id === g.id);
     if (!item || !validRect(item.rect) || (g.kind === 'draw' && (item.rect[2] * value.width < 2 || item.rect[3] * value.height < 2))) onChange(g.before);
@@ -108,7 +132,7 @@ export default function MossLayoutEditor({ value, onChange, onInvalid, workId, b
       const item = newMossItem(label); setSelected(item.id); commit({ ...value, items: [...value.items, item] });
     }}>{t(`moss.add.${label}`)}</button>)}<button type="button" disabled={!past.length} onClick={undo}>{t('moss.undo')}</button><button type="button" disabled={!future.length} onClick={redo}>{t('moss.redo')}</button></div>
     <div className="moss-workspace"><div className="moss-canvas-column">
-      <div className="moss-canvas" ref={canvas} role="group" aria-label={t('moss.canvas')} style={{ aspectRatio: `${value.width}/${value.height}` }} onPointerDown={e => begin(e, null, 'draw')} onPointerMove={move} onPointerUp={() => end()} onPointerCancel={() => end(true)}>
+      <div className="moss-canvas" ref={canvas} role="group" aria-label={t('moss.canvas')} style={{ aspectRatio: `${value.width}/${value.height}` }} onPointerDown={e => begin(e, null, 'draw')} onPointerMove={move} onPointerUp={e => end(e)} onPointerCancel={e => end(e, true)} onLostPointerCapture={e => end(e, true)}>
         {value.items.map((item, n) => <button key={item.id} type="button" aria-pressed={selected === item.id} aria-label={`${n + 1}. ${item.name || t(`moss.kind.${item.label}`)}`}
           className={`moss-box moss-${item.label}${selected === item.id ? ' selected' : ''}`} style={{ left: `${item.rect[0] * 100}%`, top: `${item.rect[1] * 100}%`, width: `${item.rect[2] * 100}%`, height: `${item.rect[3] * 100}%` } as CSSProperties}
           onClick={() => setSelected(item.id)} onPointerDown={e => begin(e, item, 'move')} onKeyDown={e => {
