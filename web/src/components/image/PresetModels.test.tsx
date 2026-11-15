@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { post } from '../../api';
 import { t } from '../../i18n';
-import { PresetModelsContent } from './PresetModels';
+import { PresetModelBadge, PresetModelsContent } from './PresetModels';
 import type { PresetModelCheck } from '../../imageTypes';
 
 vi.mock('../../api', () => ({ post: vi.fn(), get: vi.fn(), ApiError: class extends Error {} }));
@@ -40,4 +40,14 @@ it('select-all excludes files unavailable for automatic download', async () => {
   await act(async () => { button('preset_models.check').click(); await vi.advanceTimersByTimeAsync(1); });
   await act(async () => button('preset_models.select_all').click());
   expect([...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map(i => i.checked)).toEqual([true, false]);
+});
+it('updates preset status after the download dialog has unmounted', async () => {
+  vi.mocked(post).mockResolvedValue({ ...reply, items: reply.items.map(i => ({ ...i, status: 'running', downloadable: false })) });
+  await act(async () => { button('preset_models.check').click(); await vi.advanceTimersByTimeAsync(1); });
+  await act(async () => root.render(<QueryClientProvider client={qc}><PresetModelBadge id="one" /></QueryClientProvider>));
+  expect(host.textContent).toContain(t('preset_models.state.running'));
+  vi.mocked(post).mockResolvedValue({ ...reply, items: reply.items.map(i => ({ ...i, status: 'ready', downloadable: false })) });
+  await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+  expect(host.textContent).toContain(t('preset_models.state.ready'));
+  expect(host.textContent).not.toContain(t('preset_models.state.running'));
 });
