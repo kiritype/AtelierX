@@ -52,7 +52,7 @@ def _resources(preset, index):
                 or resource['kind'] == 'model'
                 and kind in ('models', 'checkpoints', 'diffusion_models')
             )
-            and entry.get('name') == resource['name']
+            and PureWindowsPath(entry.get('name', '')) == PureWindowsPath(resource['name'])
         ]
         if len(candidates) == 1:
             for key in ('sha256', 'model_id', 'version_id', 'file_id', 'size'):
