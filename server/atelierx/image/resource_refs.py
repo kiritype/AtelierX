@@ -39,6 +39,12 @@ def references(preset):
         if not safe_name(name):
             continue
         resource = {'slot': slot, 'kind': kind, 'name': name}
+        if kind == 'model':
+            resource['model_type'] = (
+                'checkpoint'
+                if str(settings.get('model', '')).startswith('checkpoint::')
+                else 'diffusion_model'
+            )
         old = next(
             (
                 r
