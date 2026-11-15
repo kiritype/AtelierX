@@ -1744,3 +1744,27 @@ history/
 - 앱보다 오래된 버전이면 변환을 제안한다. 변환 전에 작품마다 `before_bulk` 스냅샷을 만들고, 데이터 루트 단위 변환이면
   백업 폴더를 만든다.
 - 앱보다 새 버전이면 해당 작품·파일을 읽기 전용으로 연다(새 앱이 만든 데이터를 옛 앱이 망가뜨리지 않게).
+
+
+### 공식 기본 콘텐츠 배포와 가져오기 (#328)
+
+- 배포원: `defaults/content-source.json`의 `{schema_version: 1, catalog_url: ""}`. 운영자가 정한 공개 HTTPS
+  카탈로그 URL을 넣는다. 사용자 앱의 `config/image/content-source.json`에 같은 필드를 두면 우선한다. 비어 있으면 준비 중이다.
+- 카탈로그: `{kind: "atelierx-default-content", schema_version: 1, packs: [...]}`. 팩은 최대 20개이며 각각
+  `id`(영문·숫자·`_`·`-`), `kind`(`presets` 또는 `expressions`), `version`(콘텐츠 버전 문자열), `min_app_version`(세 자리 앱 버전),
+  `title`, `description`, `author`, `license`, `url`, `size`(바이트), `sha256`(64자리)를 갖는다.
+  팩 URL과 모든 리디렉션은 설정된 카탈로그와 같은 HTTPS 출처여야 한다. 인증 정보는 보내지 않는다.
+- 카탈로그는 1 MiB, 각 전송 파일은 64 MiB까지 읽는다. 크기·SHA256·형식·최소 앱 버전을 확인한 뒤 미리보기만 만든다.
+  그림체는 공유 ZIP schema 1~3, 감정 프롬프트는 `atelierx-prompt-library`의 expressions schema 1을 읽는다.
+  연결된 공통 프롬프트/구도는 팩 안에 있어야 하며, 프리셋의 모델 참조는 schema 4로 보존한다.
+- 적용 이력은 `data/image/content-imports.json`: `{schema_version: 1, packs: {<팩 ID>: {kind, version, items: {
+  <종류:배포 항목 ID>: {target: <로컬 UUID>, source_hash, installed_hash}}}}}`. 배포본 원본과 설치 당시 내용의 해시를
+  분리해 새 배포본과 사용자 수정을 구분한다. SHA256이 같은 모델의 로컬 경로 재연결은 사용자 수정으로 보지 않는다.
+  사본 추가는 이력의 target을 새 UUID로 연결하고 이전 사용자 항목을 보존한다.
+- `/api/image/content/status`, `/catalog`는 GET, `/preview`와 `/import`는 POST다. 조회/미리보기는 데이터를 쓰지 않는다.
+  미리보기 토큰은 30분 유효하며 항목별 `new`, `same`, `update`, `modified`, 전/후 내용, 의존 항목을 돌려준다.
+  적용은 `{token, choices: {<종류:배포 항목 ID>: add|replace|copy|skip}}`이며 전역에만 쓴다.
+- 선택한 본 항목이 참조하는 의존 항목만 적용한다. 새 항목은 기본 포함, 기존 의존 항목은 기본 유지다. 사본으로 가져온
+  의존 항목은 선택한 본 항목의 참조만 새 UUID로 바꾼다. 동일 내용은 건너뛰고 명시적으로 선택한 교체만 덮어쓴다.
+- 적용 직전 현재 내용과 이력의 리비전을 비교한다. 다른 창의 변경은 409로 거절하고, 쓰기 실패는 대상 파일·미리보기·이력을
+  FileCheckpoint로 복원한다. 완료 후 모델 다운로드 실패나 창 닫기는 가져온 콘텐츠를 되돌리지 않는다.

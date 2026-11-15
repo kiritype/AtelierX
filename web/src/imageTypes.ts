@@ -148,3 +148,11 @@ export type PresetModelCheck = {
     job?: { id: string; status: string; size: number; received: number; error?: ServerMsg | string } | null;
   }[];
 };
+
+export type ContentPack = { id: string; kind: 'presets' | 'expressions'; title: string; description: string;
+  version: string; min_app_version: string; compatible: boolean; author: string; license: string };
+export type ContentStatus = { configured: boolean; installed: { id: string; kind: string; version: string; items: string[] }[] };
+export type ContentPreview = { token: string; pack: ContentPack; items: { key: string; id: string; kind: string;
+  name: string; group: string; service?: string; family?: string; state: 'new' | 'same' | 'modified' | 'update';
+  before: Record<string, unknown> | null; after: Record<string, unknown>; dependencies: string[]; preview_url: string | null;
+}[] };

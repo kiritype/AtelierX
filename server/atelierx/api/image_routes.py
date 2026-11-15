@@ -721,6 +721,39 @@ async def designs(request):
     return await call(_designs, runtime.works.get(request.path_params['wid']))
 
 
+async def content_status(request):
+    return await call(_runtime(request).default_content.status)
+
+
+async def content_catalog(request):
+    return await call(_runtime(request).default_content.catalog)
+
+
+async def content_preview(request):
+    return await call(_runtime(request).default_content.preview, (await _body(request)).get('id'))
+
+
+async def content_apply(request):
+    data = await _body(request)
+    return await call(_runtime(request).default_content.apply, data.get('token'), data.get('choices'))
+
+
+async def content_preview_image(request):
+    try:
+        raw = await run_in_threadpool(
+            _runtime(request).default_content.preview_image,
+            request.path_params['token'],
+            request.path_params['ident'],
+        )
+    except ValueError:
+        raw = None
+    return (
+        Response(raw, media_type='image/webp', headers={'Cache-Control': 'private, no-store'})
+        if raw
+        else Response(status_code=404)
+    )
+
+
 async def preset_resources(request):
     manager = _runtime(request).preset_models
     data = await _body(request)
@@ -739,6 +772,11 @@ async def preset_resources(request):
 def routes():
     p = '/api/image'
     return [
+        Route(f'{p}/content/status', content_status),
+        Route(f'{p}/content/catalog', content_catalog),
+        Route(f'{p}/content/preview', content_preview, methods=['POST']),
+        Route(f'{p}/content/import', content_apply, methods=['POST']),
+        Route(f'{p}/content/preview/{{token}}/{{ident}}.webp', content_preview_image),
         Route(f'{p}/inspect', inspect_external_image, methods=['POST']),
         Route(f'{p}/connection', connection_get),
         Route(f'{p}/connection', connection_put, methods=['PUT']),

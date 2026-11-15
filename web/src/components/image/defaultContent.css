@@ -1,0 +1,7 @@
+.content-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 12px; }
+.content-list { display: flex; flex-direction: column; gap: 14px; max-height: 52vh; overflow: auto; margin-top: 12px; }
+.content-item { display: flex; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; align-items: flex-start; }
+.content-thumb { width: 90px; height: 90px; object-fit: cover; border-radius: 6px; }
+.content-diff { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; margin-top: 8px; }
+.content-diff pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; padding: 8px; }
+@media (max-width: 540px) { .content-thumb { width: 60px; height: 60px; } .content-item { padding: 8px; gap: 8px; } }
