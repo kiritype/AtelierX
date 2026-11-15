@@ -104,7 +104,7 @@ class DefaultContent:
         self.receipts = self.paths.data / 'image' / 'content-imports.json'
 
     def source(self):
-        # Empty until the operator publishes the R2 objects and connects their public HTTPS catalog.
+        # A local source setting can override the published catalog bundled with the app.
         default = read_json(self.paths.defaults / 'content-source.json', {}) or {}
         config = read_json(self.paths.config / 'image' / 'content-source.json', {}) or {}
         value = config.get('catalog_url', default.get('catalog_url', ''))

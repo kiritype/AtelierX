@@ -1,7 +1,16 @@
 # 기본 콘텐츠 배포 준비
 
 앱 릴리스와 별도로 공개 HTTPS 저장소(R2 등)에 기본 그림체 ZIP, 감정 프롬프트 JSON, 카탈로그를 게시한다.
-운영자가 정한 배포 주소를 연결하기 전까지 앱은 준비 중 안내를 표시한다. 계정·버킷 생성이나 업로드를 자동 실행하지 않는다.
+앱에 포함된 기본 배포원을 사용하며, 로컬 설정으로 다른 배포원을 지정할 수 있다. 계정·버킷 생성이나 업로드를 자동 실행하지 않는다.
+
+## 현재 배포원
+
+기본 카탈로그는 [cftm.net/atelierx/default-content/catalog.json](https://cftm.net/atelierx/default-content/catalog.json)이다.
+R2의 `atelierx/default-content/` 전용 경로에 게시하며, 팩과 해당 버전의 카탈로그는
+`atelierx/default-content/<콘텐츠 버전>/` 아래에 보관한다. 프리셋 ZIP에는 연결된 WebP 미리보기도 포함한다.
+
+버전별 파일은 장기 캐시를 허용한다. 고정 카탈로그는 `Cache-Control: no-cache, must-revalidate`로 게시하고,
+새 버전 파일의 공개 다운로드와 해시를 확인한 뒤 마지막에 갱신한다. 기존 버전 파일은 덮어쓰지 않는다.
 
 ## 파일 생성
 
