@@ -721,6 +721,21 @@ async def designs(request):
     return await call(_designs, runtime.works.get(request.path_params['wid']))
 
 
+async def preset_resources(request):
+    manager = _runtime(request).preset_models
+    data = await _body(request)
+    action = request.path_params['action']
+    if action == 'check':
+        return await call(manager.check, data.get('ids'))
+    if action == 'status':
+        return await call(manager.status, data.get('token'))
+    if action == 'download':
+        return await call(manager.download, data.get('token'), data.get('selected'))
+    if action == 'link':
+        return await call(manager.link, data.get('token'), data.get('id'), data.get('kind'), data.get('name'))
+    raise AppError(Msg('server.image.unknown_action', 'Unknown action.'), 404)
+
+
 def routes():
     p = '/api/image'
     return [
@@ -769,6 +784,7 @@ def routes():
         Route(f'{p}/library/{{kind}}/{{ident}}', library_delete, methods=['DELETE']),
         Route(f'{p}/presets', presets_get),
         # Sharing (#169) before the per-preset routes, so "export" and "import" are not read as ids.
+        Route(f'{p}/presets/resources/{{action}}', preset_resources, methods=['POST']),
         Route(f'{p}/presets/export', presets_export),
         Route(f'{p}/presets/import/preview', presets_import_preview, methods=['POST']),
         Route(f'{p}/presets/import', presets_import, methods=['POST']),

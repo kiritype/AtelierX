@@ -1,3 +1,5 @@
+import PresetModelsButton from './PresetModels';
+import { reconnectSettings } from '../../lib/reconnectSettings';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ApiError, get, post, put } from '../../api';
@@ -296,6 +298,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select></label>
         {draft.legacyPreset && <p className="warn-text">{t('materials.legacy_draft')}</p>}
+        {draft.service === 'comfyui' && appliedStyle?.id && <PresetModelsButton ids={[appliedStyle.id]} onResolved={(before, after) => setDraft(current => ({ ...current, settings: { ...current.settings, comfyui: reconnectSettings(current.settings.comfyui, before.find(p => p.id === appliedStyle.id), after.find(p => p.id === appliedStyle.id)) } }))} />}
         <StyleThumbnails presets={servicePresets} selected={appliedStyle?.id ?? ''} choose={choosePreset} disabled={commons.isPending} />
         <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
         {isMoss && <><GenSettings compact section="model" value={settings as GenerationSettings} onChange={value => setSettings(value)} />
