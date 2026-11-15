@@ -47,11 +47,7 @@ def _resources(preset, index):
             entry
             for kind, entries in (index or {}).items()
             for entry in entries
-            if (
-                kind == KINDS.get(resource['kind'], ('',))[0]
-                or resource['kind'] == 'model'
-                and kind in ('models', 'checkpoints', 'diffusion_models')
-            )
+            if (kind == KINDS.get(resource.get('model_type', resource['kind']), ('',))[0])
             and PureWindowsPath(entry.get('name', '')) == PureWindowsPath(resource['name'])
         ]
         if len(candidates) == 1:

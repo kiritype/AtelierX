@@ -886,7 +886,8 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 - schema 4의 `resources`는 현재 `settings`의 파일 필드에 대응하는 목록이다. `slot`은 `model`, `text_encoder`, `vae`,
   `loras.<인덱스>.name`, `upscale.model`이고 `kind`, `name`은 필수다. 선택 필드는 `sha256`(64자리),
-  `model_id`, `version_id`, `file_id`, `size`(바이트), `civitai`(공식 모델 페이지)다. 계열은 프리셋의 `family`를 따른다.
+  `model_id`, `version_id`, `file_id`, `size`(바이트), `civitai`(공식 모델 페이지)다. 모델의 `model_type`은
+  설정의 `checkpoint::` 유무에서 파생한 `checkpoint` 또는 `diffusion_model`이며 서로 바꾸어 판별하지 않는다. 계열은 프리셋의 `family`를 따른다.
   절대 경로·다운로드 인증 정보는 보존하지 않는다. 파일 설정이 바뀌면 이전 파일의 출처는 해제한다.
 - 이전 schema 1~3 프리셋은 설정에서 의존 목록을 만들며, 공유 ZIP schema 1~2의 manifest resources도 보존한다.
   새 ZIP은 프리셋 본문과 manifest에 출처를 보존하고 연결된 `common/<id>.json`을 포함한다.

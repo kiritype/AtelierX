@@ -25,7 +25,7 @@ def local_server(url):
 
 
 def matches(kind, ref):
-    return kind in ('checkpoint', 'diffusion_model') if ref['kind'] == 'model' else kind == ref['kind']
+    return kind == ref.get('model_type', 'diffusion_model') if ref['kind'] == 'model' else kind == ref['kind']
 
 
 class PresetModels:
@@ -166,7 +166,7 @@ class PresetModels:
                 for ref in references(doc):
                     key = revisions.of(
                         [
-                            ref['kind'],
+                            ref.get('model_type', ref['kind']),
                             ref.get('sha256') or [ref.get('version_id'), ref.get('file_id'), ref['name']],
                             doc['family'],
                         ]
@@ -241,7 +241,16 @@ class PresetModels:
                         row['status'] = 'ready'
                     else:
                         row['status'] = 'missing' if ref.get('sha256') else 'unverified'
-                job = next((j for j in jobs if ref.get('sha256') and j.get('sha256') == ref['sha256']), None)
+                job = next(
+                    (
+                        j
+                        for j in jobs
+                        if ref.get('sha256')
+                        and j.get('sha256') == ref['sha256']
+                        and any(matches(k, ref) and v[0] == j['kind'] for k, v in KINDS.items())
+                    ),
+                    None,
+                )
                 status = row['status'] if available else 'unknown'
                 if status != 'ready' and job and job['status'] != 'done':
                     status = job['status']
@@ -321,7 +330,9 @@ class PresetModels:
             for plan in plans:
                 digest = plan['file']['sha256'].lower()
                 if any(
-                    j.get('sha256') == digest and j['status'] in ('queued', 'running', 'paused', 'failed')
+                    j.get('sha256') == digest
+                    and j['kind'] == plan['file']['kind']
+                    and j['status'] in ('queued', 'running', 'paused', 'failed')
                     for j in self.rt.model_downloads.public()['jobs']
                 ):
                     continue

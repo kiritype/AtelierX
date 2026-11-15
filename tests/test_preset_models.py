@@ -180,3 +180,41 @@ def test_resource_identity_survives_zip_and_discards_stale_bindings(unlocked, pa
     doc['settings']['loras'][0]['name'] = 'other.safetensors'
     assert 'sha256' not in references(doc)[0]
     assert not safe_name('../outside') and not safe_name('C:\\outside') and not safe_name('\\\\server\\x')
+
+
+def test_same_filename_in_another_loader_folder_does_not_satisfy_a_model(
+    unlocked, paths, tmp_path, monkeypatch
+):
+    import pytest
+
+    from atelierx.image.resource_refs import references
+
+    rt, folder, catalog, _ids = setup(unlocked, paths, tmp_path, monkeypatch)
+    checkpoints = tmp_path / 'checkpoints'
+    checkpoints.mkdir()
+    (folder / 'shared.safetensors').write_bytes(b'wrong model')
+    good = checkpoints / 'shared.safetensors'
+    good.write_bytes(BODY)
+    monkeypatch.setattr(
+        rt.installs,
+        'model_folders',
+        lambda: {'diffusion_models': [str(folder)], 'checkpoints': [str(checkpoints)]},
+    )
+    catalog['model_entries'] = {
+        'shared.safetensors': {'filename': 'shared.safetensors', 'loader': 'UNETLoader'},
+        'checkpoint::shared.safetensors': {
+            'filename': 'shared.safetensors',
+            'loader': 'CheckpointLoaderSimple',
+        },
+    }
+    rt.model_library.remember(good, SHA, {})
+    doc = {
+        'service': 'comfyui',
+        'settings': {'model': 'shared.safetensors'},
+        'resources': [{'kind': 'model', 'name': 'shared.safetensors', 'sha256': SHA}],
+    }
+    assert references(doc)[0]['model_type'] == 'diffusion_model'
+    with pytest.raises(ValueError):
+        rt.preset_models.validate(doc, doc['settings'], catalog)
+    doc['settings']['model'] = 'checkpoint::shared.safetensors'
+    rt.preset_models.validate(doc, doc['settings'], catalog)
