@@ -1,3 +1,4 @@
+import DefaultContent from './image/DefaultContent';
 import DownloadsSection from './image/DownloadsSection';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -35,6 +36,7 @@ const message = (value: any) => (value && typeof value === 'object' ? tm(value) 
 export default function ImageSettings() {
   return (
     <div className="col" style={{ maxWidth: 820, gap: 16 }}>
+      <DefaultContent />
       <ConnectionSection />
       <ImageServiceSettings />
       <ModelsSection />

@@ -8,6 +8,7 @@ from ..core.lifecycle import CANCELLING, QUEUED, RUNNING, UNFINISHED
 from . import board, comfy_locate, preset_share
 from .comfy import Comfy
 from .control import ComfyControl
+from .default_content import DefaultContent
 from .deploy.targets import DeployTargets
 from .deploy.upload import DeployUploads
 from .gallery import Gallery
@@ -89,6 +90,7 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.trash = OutputTrash(paths, self.gallery, self.tools)
         self.trainer = LoraTrainer(self)
         self.installs = Installs(self)
+        self.default_content = DefaultContent(self)
         self.preset_models = PresetModels(self)
         self.model_downloads.on_complete = self.preset_models.reconcile
         self.load_queue()
