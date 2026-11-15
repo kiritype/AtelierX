@@ -56,24 +56,22 @@ export function PresetModelsContent({ ids, onChanged }: { ids: string[]; onChang
     <p className="faint small">{t('preset_models.about')}</p>
     <div className="row"><button disabled={busy || !ids.length} onClick={() => run('check', { ids })}>{t(busy ? 'preset_models.checking' : 'preset_models.check')}</button>
       {check.data && <button disabled={busy} onClick={() => setSelected(items.filter(i => i.downloadable).map(i => i.id))}>{t('preset_models.select_all')}</button>}
+      {check.data && <button className="ghost small" onClick={() => setShowKey(!showKey)}>{t('image_settings.civitai_key')}</button>}
     </div>
     {(error || check.error) && <p role="alert" className="error">{error || errorText(check.error)}</p>}
     {check.data && !check.data.connected && <p role="status" className="warn-text">{t('preset_models.offline')}</p>}
     {check.data?.connected && !check.data.local && <p className="warn-text">{t('preset_models.remote')}</p>}
     {check.data && !check.data.has_key && <p className="faint small">{t('preset_models.key_hint')}</p>}
-    {check.data && <button onClick={() => setShowKey(!showKey)}>{t('image_settings.civitai_key')}</button>}
     {showKey && <DownloadsSection />}
     {check.data && !items.length && <p>{t('preset_models.none')}</p>}
     <div className="col" style={{ gap: 10, maxHeight: '48vh', overflow: 'auto' }}>
-      {items.map(item => <div className="gen-patch col" style={{ gap: 5 }} key={item.id}>
+      {items.map(item => <div className="preset-model-item col" style={{ gap: 5 }} key={item.id}>
         <label className="row"><input type="checkbox" aria-label={item.name} disabled={busy || !item.downloadable} checked={selected.includes(item.id) && item.downloadable}
           onChange={e => setSelected(old => e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))} />
           <strong style={{ overflowWrap: 'anywhere' }}>{item.name}</strong><span className="chip small">{t(`preset_models.state.${item.status}`)}</span></label>
-        <span className="small faint">{t(`presets.share.kind.${item.kind}`)} · {size(item.size)}{item.version ? ` · ${item.version}` : ''}</span>
+        <span className="small faint">{t(`presets.share.kind.${item.kind}`)} · {size(item.size)}{item.version ? ` · ${item.version}` : ''}{item.civitai && <> · <a href={item.civitai} target="_blank" rel="noreferrer">Civitai</a></>}</span>
         <span className="small">{t('preset_models.used_by', { names: item.presets.map(p => p.name).join(', ') })}</span>
-        {item.civitai && <a href={item.civitai} target="_blank" rel="noreferrer">{t('preset_models.source')}</a>}
-        {item.license && <details className="small"><summary>{t('preset_models.license')}</summary><pre>{JSON.stringify(item.license, null, 2)}</pre></details>}
-        {item.destination && <span className="small faint">{t('preset_models.destination', { path: item.destination })}</span>}
+        {(item.license || item.destination) && <details className="small"><summary>{t('preset_models.license')}</summary>{item.destination && <p>{t('preset_models.destination', { path: item.destination })}</p>}{item.license && <pre>{JSON.stringify(item.license, null, 2)}</pre>}</details>}
         {(item.error || item.job?.error) && <p className="warn-text small">{msgText(item.job?.error || item.error)}</p>}
         {item.job && ['queued', 'running', 'paused', 'failed'].includes(item.status) && <div className="row small">
           <progress aria-label={t('preset_models.progress')} max={item.job.size || 1} value={item.job.received} />

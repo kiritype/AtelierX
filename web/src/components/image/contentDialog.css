@@ -1,0 +1,9 @@
+.dialog.content-dialog { min-width: 0; width: min(820px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; }
+.content-dialog p, .content-dialog h3 { margin: 0; }
+.content-dialog label.row { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; text-align: left; }
+.content-dialog .row { flex-wrap: wrap; }
+.content-dialog .row > strong { min-width: 0; overflow-wrap: anywhere; }
+.content-dialog .actions { position: sticky; bottom: 0; background: var(--panel); padding-top: 8px; }
+@media (max-width: 540px) { .dialog.content-dialog { padding: 14px; } }
+
+.preset-model-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
