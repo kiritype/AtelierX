@@ -1,5 +1,5 @@
 import DownloadsSection from './DownloadsSection';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, get, post } from '../../api';
 import { msgText, t, tm } from '../../i18n';
@@ -8,9 +8,37 @@ import Dialog from './ContentDialog';
 import type { Preset } from './PresetEditor';
 
 const size = (n?: number | null) => n == null ? t('preset_models.unknown_size') : n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(1)} MB`;
-type ModelState = { state: string; missing: number; downloading: number };
+type ModelState = { state: string; missing: number; downloading: number; token: string };
 const stateLabel = (value?: ModelState) => value ? [t(`preset_models.state.${value.state}`), ...(value.missing ? [t('preset_models.missing_count', { n: value.missing })] : [])].join(' · ') : t('preset_models.state.unknown');
 const errorText = (e: unknown) => e instanceof ApiError ? tm(e.msg) : String(e);
+
+function summarize(items: PresetModelCheck['items'], token: string): ModelState {
+  return { token,
+    state: items.some(i => i.status === 'unknown') ? 'unknown' : items.some(i => ['running', 'queued'].includes(i.status)) ? 'running'
+      : items.every(i => i.status === 'ready') ? 'ready' : 'missing',
+    missing: items.filter(i => !['ready', 'unknown', 'queued', 'running'].includes(i.status)).length,
+    downloading: items.filter(i => ['queued', 'running'].includes(i.status)).length };
+}
+
+function useModelState(ids: string[]) {
+  const stored = useQueries({ queries: ids.map(id => ({ queryKey: ['preset-model-state', id], queryFn: skipToken })) });
+  const states = stored.map(q => q.data as ModelState | undefined);
+  const tokens = [...new Set(states.flatMap(s => s?.token ? [s.token] : []))];
+  const checks = useQueries({ queries: tokens.map(token => ({ queryKey: ['preset-model-check', token],
+    queryFn: () => post<PresetModelCheck>('/api/image/presets/resources/status', { token }),
+    refetchInterval: (q: { state: { data?: PresetModelCheck } }) => q.state.data?.items.some(i => ['queued', 'running'].includes(i.status)) ? 2000 : false as const })) });
+  if (!states.some(Boolean)) return undefined;
+  const current = ids.map((id, index) => {
+    const check = checks[tokens.indexOf(states[index]?.token ?? '')];
+    if (check?.error || !states[index]) return { state: 'unknown', missing: 0, downloading: 0 };
+    return check?.data ? summarize(check.data.items.filter(i => i.presets.some(p => p.id === id)), check.data.token) : states[index]!;
+  });
+  const items = [...new Map(checks.flatMap(q => q.data?.items ?? []).filter(i => i.presets.some(p => ids.includes(p.id))).map(i => [i.id, i])).values()];
+  const totals = summarize(items, '');
+  return { token: '', state: current.some(s => s.state === 'unknown') ? 'unknown' : current.some(s => s.downloading) ? 'running'
+    : current.every(s => s.state === 'ready') ? 'ready' : 'missing',
+    missing: totals.missing, downloading: totals.downloading };
+}
 
 // Also embedded as the last step of the default-content dialog, without nesting dialogs.
 export function PresetModelsContent({ ids, onChanged }: { ids: string[]; onChanged?: () => void }) {
@@ -35,9 +63,7 @@ export function PresetModelsContent({ ids, onChanged }: { ids: string[]; onChang
     if (!check.data) return;
     for (const id of ids) {
       const used = check.data.items.filter(i => i.presets.some(p => p.id === id));
-      const state = used.some(i => i.status === 'unknown') ? 'unknown' : used.some(i => ['running', 'queued'].includes(i.status)) ? 'running'
-        : used.every(i => i.status === 'ready') ? 'ready' : 'missing';
-      qc.setQueryData(['preset-model-state', id], { state, missing: used.filter(i => !['ready', 'unknown', 'queued', 'running'].includes(i.status)).length, downloading: used.filter(i => ['queued', 'running'].includes(i.status)).length });
+      qc.setQueryData(['preset-model-state', id], summarize(used, check.data.token));
     }
   }, [check.data, ids, qc]);
   async function run(action: string, body: object) {
@@ -95,7 +121,9 @@ export default function PresetModelsButton({ ids, disabled, onResolved }: { ids:
   const [open, setOpen] = useState(false);
   const baseline = useRef<Preset[]>([]);
   const [error, setError] = useState('');
-  const state = useQuery<ModelState>({ queryKey: ['preset-model-state', ids.join(',')], enabled: false });
+  const state = useModelState(ids);
+  const refreshLatest = useRef<() => Promise<void>>(undefined);
+  useEffect(() => { if (state?.state === 'ready' && baseline.current.length) void refreshLatest.current?.(); }, [state?.state]);
   async function refresh() {
     try {
       const after = await get<Preset[]>('/api/image/presets');
@@ -104,9 +132,10 @@ export default function PresetModelsButton({ ids, disabled, onResolved }: { ids:
       baseline.current = after;
     } catch (e) { setError(errorText(e)); }
   }
+  refreshLatest.current = refresh;
   return <><button disabled={disabled || !ids.length} onClick={async () => {
     try { baseline.current = await get<Preset[]>('/api/image/presets'); setOpen(true); } catch (e) { setError(errorText(e)); }
-  }}>{t('preset_models.title')}{state.data ? ` · ${stateLabel(state.data)}` : ''}</button>
+  }}>{t('preset_models.title')}{state ? ` · ${stateLabel(state)}` : ''}</button>
     {error && <span role="alert">{error}</span>}
     {open && <Dialog title={t('preset_models.title')} closeLabel={t('preset_models.later')} onClose={() => { setOpen(false); void refresh(); }}>
       <PresetModelsContent ids={ids} onChanged={refresh} />
@@ -115,6 +144,6 @@ export default function PresetModelsButton({ ids, disabled, onResolved }: { ids:
 }
 
 export function PresetModelBadge({ id }: { id: string }) {
-  const state = useQuery<ModelState>({ queryKey: ['preset-model-state', id], enabled: false });
-  return <span className="chip small faint">{stateLabel(state.data)}</span>;
+  const state = useModelState([id]);
+  return <span className="chip small faint">{stateLabel(state)}</span>;
 }
