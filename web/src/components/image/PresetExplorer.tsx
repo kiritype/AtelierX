@@ -8,6 +8,7 @@ import Explorer, { type Facet } from '../explorer/Explorer';
 import { useToast } from '../Toasts';
 import { useUnsaved } from '../Unsaved';
 import PresetEditor, { blankPreset, editable, opened, presetTarget, type Preset } from './PresetEditor';
+import PresetModelsButton, { PresetModelBadge } from './PresetModels';
 import PresetImport, { readPackage, type ImportLook } from './PresetImport';
 
 // Image menu → Style presets (#169): every preset with its one preview, filtered by service, model family, tags, model
@@ -133,6 +134,7 @@ export default function PresetExplorer({ workId, openGenerate, openSingle, canOp
         {idHint(p) && <span className="faint mono small ellipsis" title={p.id}>{idHint(p)}</span>}
         <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
           <span className="chip small">{presetTarget(p)}</span>
+          {p.service === 'comfyui' && <PresetModelBadge id={p.id} />}
           {p.tags.map((tag) => (
             <span key={tag} className="chip small faint">
               {tag}
@@ -190,6 +192,7 @@ export default function PresetExplorer({ workId, openGenerate, openSingle, canOp
       </div>
       {storedPreset?.preview_url && <img className="preset-detail-img" src={storedPreset.preview_url} alt="" />}
       {storedPreset?.preview && <p className="faint small">{t('presets.preview_actual_seed', { seed: storedPreset.preview.seed })}</p>}
+      {storedPreset?.service === 'comfyui' && <PresetModelsButton ids={[storedPreset.id]} disabled={dirty} onResolved={(_before, after) => { const fresh = after.find(p => p.id === storedPreset.id); if (fresh) setDraft(opened(fresh)); }} />}
       <PresetEditor workId={workId} draft={draft} onChange={setDraft} />
       <div className="row" style={{ flexWrap: 'wrap' }}>
         <button className="primary" disabled={!dirty} onClick={() => save(draft)}>
@@ -279,6 +282,7 @@ export default function PresetExplorer({ workId, openGenerate, openSingle, canOp
           >
             {checked.length ? t('presets.share.export_checked', { n: checked.length }) : t('presets.share.export_all')}
           </a>
+          <PresetModelsButton ids={(checked.length ? checked : all).filter(p => p.service === 'comfyui').map(p => p.id)} disabled={dirty} />
           <button onClick={() => packageInput.current?.click()}>{t('presets.share.import')}</button>
           <input
             ref={packageInput}

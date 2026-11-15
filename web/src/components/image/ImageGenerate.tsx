@@ -1,3 +1,5 @@
+import PresetModelsButton from './PresetModels';
+import { reconnectSettings } from '../../lib/reconnectSettings';
 import { useQuery } from '@tanstack/react-query';
 import { type ComponentType, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, get, post } from '../../api';
@@ -347,6 +349,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
             </select>
           </label>
         </div>
+        {!internet && presetId && <PresetModelsButton ids={[presetId]} onResolved={(before, after) => setSettings(current => reconnectSettings(current, before.find(p => p.id === presetId), after.find(p => p.id === presetId)))} />}
         {!internet && <GenSettings compact value={settings} onChange={setSettings} />}
         {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
         {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}

@@ -831,7 +831,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "name": "먹선 Anima",
   "service": "comfyui",
   "family": "anima",
@@ -856,7 +856,7 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
   랜덤 모드에서는 실행 시 실제 시드를 뽑아 `preview.seed`와 생성 기록에 저장한다. 한 번의 UI 일괄 생성은 요청의 선택적 `seed`(비음수 32비트 정수)를 공유하며 고정 모드는 저장값을 우선한다.
   `hash`에는 실제 난수 대신 설정값 `-1`을 사용해 완료된 랜덤 미리보기가 즉시 오래됨이 되지 않게 한다. 기존 필드 구조와 고정 시드 해시는 유지한다. 프롬프트는 공통 + artist 태그 + `1girl, solo, safe`,
   negative에 노출 제외 태그가 붙는다.
-- 공유 꾸러미(ZIP): `atelierx-presets.json`(`{kind: "atelierx-style-presets", schema_version: 1, app_version, presets: [{id, name,
+- 공유 꾸러미(ZIP): `atelierx-presets.json`(`{kind: "atelierx-style-presets", schema_version: 3, app_version, common: [id], presets: [{id, name,
   service, family, preview, resources: [{kind: model·text_encoder·vae·lora·upscale_model, name, sha256?, civitai?}]}]}`),
   `presets/<id>.json`, `presets/<id>.webp`(있으면). 모델·LoRA 파일은 넣지 않는다. 가져오기는 먼저 읽어 보여 주고(30분 동안 유효한
   토큰), 프리셋마다 넣기·덮어쓰기·다른 id·건너뛰기를 고른 뒤 쓴다. 미리보기는 그 기록(`preview`)과 함께 옮긴다.
@@ -882,6 +882,20 @@ LLM 결과처럼 사람이 확인하기 전의 임시 항목을 보관한다. �
 
 - 데이터셋과 학습 기록은 사람이 고른 선택과 수정한 캡션이라 다시 만들 수 없으므로 작품 폴더에 두고 스냅샷으로 지킨다.
 - 생성 기록과 검수 결과는 이미지에 대한 기록이라 이미지와 함께 출력 루트에 둔다.
+
+
+- schema 4의 `resources`는 현재 `settings`의 파일 필드에 대응하는 목록이다. `slot`은 `model`, `text_encoder`, `vae`,
+  `loras.<인덱스>.name`, `upscale.model`이고 `kind`, `name`은 필수다. 선택 필드는 `sha256`(64자리),
+  `model_id`, `version_id`, `file_id`, `size`(바이트), `civitai`(공식 모델 페이지)다. 계열은 프리셋의 `family`를 따른다.
+  절대 경로·다운로드 인증 정보는 보존하지 않는다. 파일 설정이 바뀌면 이전 파일의 출처는 해제한다.
+- 이전 schema 1~3 프리셋은 설정에서 의존 목록을 만들며, 공유 ZIP schema 1~2의 manifest resources도 보존한다.
+  새 ZIP은 프리셋 본문과 manifest에 출처를 보존하고 연결된 `common/<id>.json`을 포함한다.
+- `/api/image/presets/resources/{check,status,download,link}`는 인증된 POST다. 검사 결과는 30분 유효한 서버 토큰으로
+  식별하며, 다운로드 요청은 그 토큰의 파일 ID 목록만 받는다. 실제 URL·파일 정보는 Civitai에서 확인한 서버 계획을 쓴다.
+  이름만 같은 파일은 자동 연결하지 않는다. SHA256을 실제 확인한 로컬 파일은 상대 경로로 다시 연결하고, 출처 미상 파일은
+  사용자가 카탈로그 파일을 지정해야 한다. 생성 직전에는 알려진 해시의 파일이 검증됐는지도 확인한다.
+- 다운로드 상태·부분 파일·재시작 복구는 기존 `state/model-downloads.json`을 재사용한다. 전송 완료와 서버 인식 완료는
+  구분하며, 다운로드 완료 시와 확인 화면에서 인식된 파일을 연결한다. 그동안 달라진 프리셋 파일 선택은 덮어쓰지 않는다.
 
 #### 생성 기록
 

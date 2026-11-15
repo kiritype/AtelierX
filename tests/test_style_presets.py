@@ -19,7 +19,8 @@ def test_presets_from_before_read_as_comfyui_presets_without_artist_tags():
         {'name': 'old', 'family': 'sdxl', 'settings': {'steps': 28}, 'common': ['quality']}, 'old'
     )
     assert doc == {
-        'schema_version': 3,
+        'schema_version': 4,
+        'resources': [],
         'name': 'old',
         'service': 'comfyui',
         'family': 'sdxl',
@@ -88,7 +89,7 @@ def test_style_fragments_fold_into_presets_once(paths):
     assert presets['w002_anima']['artist'] == {'positive': '(@topu:2.4), @kyokucho', 'negative': '@bad'}
     assert presets['w002_anima']['settings'] == {'steps': 32}
     stored = json.loads((image / 'presets' / 'w002_anima.json').read_text(encoding='utf-8'))
-    assert 'styles' not in stored and stored['schema_version'] == 3
+    assert 'styles' not in stored and stored['schema_version'] == 4
     # Styles no preset used become presets of their own, for the service or family they were written for.
     assert (presets['my02']['name'], presets['my02']['service'], presets['my02']['tags']) == (
         '수채 느낌',

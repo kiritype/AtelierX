@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -333,6 +334,8 @@ class ModelDownloads:
             self.thread = threading.Thread(target=self._worker, name='model-downloads', daemon=True)
             self.thread.start()
 
+    on_complete = None
+
     def _worker(self):
         while True:
             with self.lock:
@@ -345,6 +348,13 @@ class ModelDownloads:
                 self._fetch(job)
                 with self.lock:
                     job['status'], job['finished_at'] = 'done', now()
+                if self.on_complete:
+                    try:
+                        self.on_complete()
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            'Could not reconnect preset models after download'
+                        )
             except _Cancelled:
                 with self.lock:
                     job['status'] = 'cancelled'

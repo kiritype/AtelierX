@@ -364,8 +364,11 @@ def preset_doc(preset, ident):
         settings = {
             key: value for key, value in settings.items() if key not in ('model_loader', 'model_filename')
         }
+    from .resource_refs import references
+
     return {
-        'schema_version': 3,
+        'schema_version': 4,
+        'resources': references(preset),
         'name': str(preset.get('name') or ident)[:200],
         'service': service,
         'family': family,

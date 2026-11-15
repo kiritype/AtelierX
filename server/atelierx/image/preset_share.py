@@ -37,35 +37,31 @@ PENDING_SECONDS = 1800
 
 def _resources(preset, index):
     """The files a preset needs: ``[{kind, name, sha256?, civitai?}]``."""
-    s = preset.get('settings') or {}
-    wanted = []
-    if s.get('model'):
-        wanted.append(('model', str(s['model']).removeprefix('checkpoint::')))
-    for key, kind in (('text_encoder', 'text_encoder'), ('vae', 'vae')):
-        if s.get(key):
-            wanted.append((kind, s[key]))
-    for lora in s.get('loras') or []:
-        if lora.get('enabled') is not False and lora.get('name'):
-            wanted.append(('lora', lora['name']))
-    if isinstance(s.get('upscale'), dict) and s['upscale'].get('model'):
-        wanted.append(('upscale_model', s['upscale']['model']))
-    known = {}
-    for entries in (index or {}).values():
-        for entry in entries:
-            known.setdefault(PureWindowsPath(entry['name']).name.lower(), entry)
-    out = []
-    for kind, name in wanted:
-        entry = {'kind': kind, 'name': name}
-        info = known.get(PureWindowsPath(name).name.lower())
-        if info:
-            if info.get('sha256'):
-                entry['sha256'] = info['sha256']
-            if info.get('model_id'):
-                entry['civitai'] = (
-                    f'https://civitai.com/models/{info["model_id"]}?modelVersionId={info.get("version_id", "")}'
-                )
-        out.append(entry)
-    return out
+    from .model_info import KINDS
+    from .resource_refs import references
+
+    resources = references(preset)
+    for resource in resources:
+        # Preserve exact paths and reject ambiguous sidecar matches across model kinds.
+        candidates = [
+            entry
+            for kind, entries in (index or {}).items()
+            for entry in entries
+            if (
+                kind == KINDS.get(resource['kind'], ('',))[0]
+                or resource['kind'] == 'model'
+                and kind in ('models', 'checkpoints', 'diffusion_models')
+            )
+            and entry.get('name') == resource['name']
+        ]
+        if len(candidates) == 1:
+            for key in ('sha256', 'model_id', 'version_id', 'file_id', 'size'):
+                if candidates[0].get(key):
+                    value = candidates[0][key]
+                    if key != 'sha256' and str(value).isdigit():
+                        value = int(value)
+                    resource.setdefault(key, value)
+    return references({**preset, 'resources': resources})
 
 
 def export(paths, ids, index=None):
@@ -81,6 +77,7 @@ def export(paths, ids, index=None):
         for preset in chosen:
             ident = preset['id']
             doc = library.preset_doc(preset, ident)
+            doc['resources'] = _resources(doc, index)
             archive.writestr(f'presets/{ident}.json', json.dumps(doc, ensure_ascii=False, indent=2))
             preview = library.preview_file(paths, ident)
             has_preview = bool(doc.get('preview')) and preview.is_file()
@@ -116,7 +113,7 @@ def export(paths, ids, index=None):
             json.dumps(
                 {
                     'kind': KIND,
-                    'schema_version': 2,
+                    'schema_version': 3,
                     'app_version': __version__,
                     'presets': listing,
                     'common': list(commons),
@@ -231,6 +228,7 @@ class PresetImports:
                 preview = _read(archive, f'presets/{ident}.webp', MAX_PREVIEW, budget)
             except KeyError:
                 pass
+            doc['resources'] = doc.get('resources') or entry.get('resources') or []
             docs[ident] = (library.preset_doc(doc, ident), preview, doc.get('preview'))
             missing = []
             if catalog.get('connected') and docs[ident][0]['service'] == 'comfyui':

@@ -24,6 +24,7 @@ from .lora.trainer import LoraTrainer
 from .model_download import ModelDownloads
 from .model_info import ModelLibrary
 from .models import FAMILY_LABELS, ModelProfiles
+from .preset_models import PresetModels
 from .preset_share import PresetImports
 from .review_rounds import ReviewRounds
 from .reviews import ReviewStore
@@ -88,6 +89,8 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
         self.trash = OutputTrash(paths, self.gallery, self.tools)
         self.trainer = LoraTrainer(self)
         self.installs = Installs(self)
+        self.preset_models = PresetModels(self)
+        self.model_downloads.on_complete = self.preset_models.reconcile
         self.load_queue()
         self._resume_sent_jobs()
         self.rounds = ReviewRounds(self)
@@ -166,7 +169,11 @@ class ImageRuntime(LabMixin, TaggerMixin, PostprocessMixin, GenerationMixin):
 
         stamp, index = self._file_index
         if index is None or time.monotonic() - stamp > 60:
-            index = gen_info.file_index(self.installs.model_folders())
+            folders = self.installs.model_folders()
+            index = gen_info.file_index(folders)
+            for kind, entries in self.model_library.portable_index(folders).items():
+                own = {e['name']: e for e in entries}
+                index[kind] = [e for e in index.get(kind, []) if e['name'] not in own] + list(own.values())
             self._file_index = (time.monotonic(), index)
         return index
 

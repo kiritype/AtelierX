@@ -195,6 +195,34 @@ class ModelLibrary:
         store = self._store()
         return [self.describe(kind, name, store) for kind, name, _ in _entries(catalog)]
 
+    def portable_index(self, folders):
+        """Verified app lookup/download records, without exporting local paths or credentials."""
+        result = {}
+        store = self._store()
+        for filename in store['files']:
+            path = Path(filename)
+            if not path.is_file():
+                continue
+            digest = self._known_hash(store, path)
+            if not digest:
+                continue
+            info = store['info'].get(digest) or {}
+            for kind, roots in (folders or {}).items():
+                for root in roots:
+                    try:
+                        relative = path.resolve().relative_to(Path(root).resolve())
+                    except ValueError:
+                        continue
+                    result.setdefault(kind, []).append(
+                        {
+                            'name': str(PureWindowsPath(relative)),
+                            'sha256': digest,
+                            'size': path.stat().st_size,
+                            **{k: info[k] for k in ('model_id', 'version_id', 'file_id') if info.get(k)},
+                        }
+                    )
+        return result
+
     def locate_for_family(self, family_kind, name):
         """``locate`` by the family kinds of ModelProfiles (checkpoints, loras …)."""
         kind = next((k for k, v in KINDS.items() if v[2] == family_kind), None)

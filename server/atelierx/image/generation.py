@@ -192,6 +192,7 @@ class GenerationMixin:
             catalog = self.comfy.catalog()
             if not catalog['connected']:
                 raise ValueError(catalog['error'])
+            self.preset_models.validate(preset, raw_settings, catalog)
             settings = validate_settings(raw_settings, catalog)
         else:
             catalog = None
@@ -355,6 +356,7 @@ class GenerationMixin:
             catalog = self.comfy.catalog()
             if not catalog['connected']:
                 raise ValueError(catalog['error'])
+            self.preset_models.validate(preset, raw_settings, catalog)
             settings = validate_settings(raw_settings, catalog)
         else:
             settings = service.validate_settings(raw_settings)

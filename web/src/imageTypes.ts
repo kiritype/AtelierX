@@ -137,3 +137,14 @@ export type DeployPlan = { target: string; target_name: string; public_url: stri
 export type DeployResult = { source: string; path: string; url: string; ok: boolean; overwrote: boolean; status: string; error?: ServerMsg | string; log_error?: ServerMsg | string };
 export type DeployRun = { id: string; status: string; total: number; done: number; results: DeployResult[]; current: { source: string; path: string; status: string } | null };
 export type DeployHistory = { records: (DeployResult & { at: string; target_name: string })[] };
+
+// Explicit preset dependency checks (#329); selections begin empty.
+export type PresetModelCheck = {
+  token: string; connected: boolean; local: boolean; has_key: boolean; errors?: (ServerMsg | string)[];
+  items: { id: string; kind: string; name: string; size: number | null; sha256?: string;
+    status: string; downloadable: boolean; presets: { id: string; name: string }[];
+    civitai: string | null; version: string | null; destination?: string; license: Record<string, unknown> | null;
+    error?: ServerMsg | string; candidates: { kind: string; name: string }[];
+    job?: { id: string; status: string; size: number; received: number; error?: ServerMsg | string } | null;
+  }[];
+};
