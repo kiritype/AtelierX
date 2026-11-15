@@ -233,6 +233,7 @@ def test_corrupt_hash_and_newer_app_requirement_never_change_existing_content(un
 
 
 def test_disconnected_source_is_explicit_and_external_pack_urls_are_rejected(unlocked, paths, monkeypatch):
+    atomic_json(paths.config / 'image' / 'content-source.json', {'catalog_url': ''})
     assert unlocked.get('/api/image/content/status').json()['configured'] is False
     assert unlocked.get('/api/image/content/catalog').json()['error']['key'] == 'server.content.unconfigured'
     manager, pack, _ = setup(unlocked, paths, monkeypatch)
