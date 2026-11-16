@@ -102,6 +102,31 @@ def _prompt(paths, work, expression='smile'):
     )
 
 
+@pytest.mark.parametrize('force', [False, True])
+def test_imported_content_keeps_newer_schemas_and_references_on_restart(paths, force):
+    fixture(paths)
+    ids = migrate(paths)
+    preset_path = paths.data / 'image' / 'presets' / f'{ids["presets"]["soft"]}.json'
+    preset = json.loads(preset_path.read_bytes())
+    preset['schema_version'] = 4
+    preset['resources'] = [{'kind': 'model', 'name': 'fixture.safetensors', 'sha256': 'a' * 64}]
+    _write(preset_path, preset)
+    composition_path = paths.data / 'image' / 'compositions.json'
+    compositions = json.loads(composition_path.read_bytes())
+    compositions['schema_version'] = 3
+    _write(composition_path, compositions)
+    preview_path = preset_path.with_suffix('.webp')
+    preview = preview_path.read_bytes()
+
+    assert migrate(paths, force=force) == ids
+    assert json.loads(preset_path.read_bytes()) == preset
+    assert json.loads(composition_path.read_bytes()) == compositions
+    assert preview_path.read_bytes() == preview
+    before_restart = {p: p.read_bytes() for p in (preset_path, composition_path, preview_path)}
+    assert migrate(paths) == ids
+    assert {p: p.read_bytes() for p in before_restart} == before_restart
+
+
 def test_synthetic_legacy_fixture_has_distinct_overrides_and_prompts(paths):
     first, second = fixture(paths)
     assert library.items(paths, first, 'expressions')['smile']['overrides']

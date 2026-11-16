@@ -339,11 +339,15 @@ def _plan(paths, works, current):
             if kind == 'expressions' and isinstance(entry.get('composition'), str):
                 entry['composition'] = lookup('compositions', entry['composition'], wid)
             renamed[new] = entry
-        changes[path] = _bytes({**doc, 'schema_version': 2, 'items': renamed})
+        changes[path] = _bytes({**doc, 'schema_version': _uuid_schema(doc, 2), 'items': renamed})
 
     for path, doc in preset_docs:
         new = preset_map.get(path.stem, path.stem)
-        revised = {**doc, 'schema_version': 3, 'common': [preset_ref(one) for one in doc.get('common') or []]}
+        revised = {
+            **doc,
+            'schema_version': _uuid_schema(doc, 3),
+            'common': [preset_ref(one) for one in doc.get('common') or []],
+        }
         preview = doc.get('preview')
         if isinstance(preview, dict) and isinstance(preview.get('hash'), str):
             from .settings import get as settings_get
@@ -439,6 +443,12 @@ def _plan(paths, works, current):
     return changes, planned_map
 
 
+def _uuid_schema(doc, minimum):
+    """UUID conversion sets a minimum schema; newer content formats keep their version."""
+    version = doc.get('schema_version')
+    return version if type(version) is int and version >= minimum else minimum
+
+
 def _active_canonical(paths, works):
     """Cheap startup check for restored defaults or externally copied library files."""
     for kind in library.KINDS:
@@ -450,7 +460,7 @@ def _active_canonical(paths, works):
                 doc = _read(path)
                 if (
                     not isinstance(doc, dict)
-                    or doc.get('schema_version') != 2
+                    or doc.get('schema_version') != _uuid_schema(doc, 2)
                     or not isinstance(doc.get('items'), dict)
                 ):
                     return False
@@ -461,7 +471,7 @@ def _active_canonical(paths, works):
         if not _uuid(path.stem):
             return False
         doc = _read(path)
-        if not isinstance(doc, dict) or doc.get('schema_version') != 3:
+        if not isinstance(doc, dict) or doc.get('schema_version') != _uuid_schema(doc, 3):
             return False
     return True
 
