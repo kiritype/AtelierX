@@ -3,7 +3,7 @@
     {
       "text": "목적별 시작과 따라 하기",
       "folder": "tutorial",
-      "pages": ["choose-path", "first-run", "create-work", "connect-llm", "image-setup", "write-with-agent", "character-images", "post-processing", "refine-with-llm", "test-and-export"]
+      "pages": ["choose-path", "comfyui-first-image", "first-run", "create-work", "connect-llm", "image-setup", "write-with-agent", "character-images", "post-processing", "refine-with-llm", "test-and-export"]
     },
     {
       "text": "작품과 원고 관리",
