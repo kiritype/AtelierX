@@ -8,11 +8,9 @@
 .single-form, .single-result { min-width: 0; }
 .single-workspace { display: grid; gap: 24px; min-width: 0; }
 .single-settings { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
-.single-image .generation-service-bar { align-items: center; padding: 12px 0; margin-bottom: 20px; }
-.single-image .generation-service-bar > .warn-text { flex-basis: 100%; margin: 0; }
+.single-image .generation-service-bar { margin-bottom: 20px; }
 .moss-single .single-canvas { height: auto; aspect-ratio: 1; }
-.single-service, .single-helpers, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.single-service { gap: 0; }
+.single-helpers, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .single-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
 .single-field textarea { width: 100%; resize: vertical; min-height: 84px; line-height: 1.6; }
 .single-details { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }

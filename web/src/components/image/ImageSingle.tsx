@@ -288,11 +288,10 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
       {workId && <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>}
     </header>
     <div className="generation-service-bar">
-      <span className="muted">{t('gen.service')}</span>
-        <div className="single-service service-switch" role="group" aria-label={t('gen.service')}>
-          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
-        </div>
-        {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
+      <div className="generation-service-tabs" role="group" aria-label={t('gen.service')}>
+        {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
+      </div>
+      {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
     </div>
     <div className="single-layout">
       <div className="single-form single-settings">

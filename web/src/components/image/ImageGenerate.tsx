@@ -248,27 +248,24 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
       )}
         {!handed && <CharacterOutfitTable characters={designs.data ?? []} value={chars} onChange={setChars} openItem={openItem} />}
       </div>
-      <div className="generation-service-bar pad col">
-        <div className="row">
-          <span className="muted">{t('gen.service')}</span>
-          <div className="service-switch" role="radiogroup" aria-label={t('gen.service')}>
-            <button role="radio" aria-checked={!internet} className={internet ? '' : 'on'} onClick={() => chooseService('comfyui')}>
-              {SERVICE_NAMES.comfyui}
+      <div className="generation-service-bar">
+        <div className="generation-service-tabs" role="radiogroup" aria-label={t('gen.service')}>
+          <button role="radio" aria-checked={!internet} className={internet ? '' : 'on'} onClick={() => chooseService('comfyui')}>
+            {SERVICE_NAMES.comfyui}
+          </button>
+          {(services.data?.services ?? []).map((s) => (
+            <button
+              key={s.id}
+              role="radio"
+              aria-checked={service === s.id}
+              className={service === s.id ? 'on' : ''}
+              disabled={!s.supported}
+              title={!s.supported ? t('image_services.not_supported') : s.connected ? undefined : t('gen.service_needs_key')}
+              onClick={() => chooseService(s.id)}
+            >
+              {s.name}
             </button>
-            {(services.data?.services ?? []).map((s) => (
-              <button
-                key={s.id}
-                role="radio"
-                aria-checked={service === s.id}
-                className={service === s.id ? 'on' : ''}
-                disabled={!s.supported}
-                title={!s.supported ? t('image_services.not_supported') : s.connected ? undefined : t('gen.service_needs_key')}
-                onClick={() => chooseService(s.id)}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
         {internet && serviceInfo && !serviceInfo.connected && (
           <div className="warn-text row">
