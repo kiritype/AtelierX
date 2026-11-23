@@ -287,12 +287,15 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     <header className="single-heading"><div><h2>{t('image_menu.single')}</h2><span className="faint">{t(workId ? 'single.subtitle' : 'single.standalone_about')}</span></div>
       {workId && <div className="seg" aria-label={t('single.mode')}><button type="button" className="on" aria-pressed="true">{t('single.general')}</button><button type="button" disabled>{t('single.multi')}</button></div>}
     </header>
-    <div className="single-layout">
-      <div className="single-form">
-        <div className="single-service" role="group" aria-label={t('gen.service')}>
-          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'selected' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
+    <div className="generation-service-bar">
+      <span className="muted">{t('gen.service')}</span>
+        <div className="single-service service-switch" role="group" aria-label={t('gen.service')}>
+          {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
         </div>
         {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
+    </div>
+    <div className="single-layout">
+      <div className="single-form single-settings">
         <label className="single-field"><span>{t('single.preset')}</span><select value={appliedStyle ? '__snapshot__' : ''} onChange={e => { if (e.target.value !== '__snapshot__') choosePreset(e.target.value); }} disabled={commons.isPending}>
           {appliedStyle && <option value="__snapshot__" disabled>{t('materials.applied_style', { name: appliedStyle.name })}</option>}
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
@@ -301,8 +304,15 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
         {draft.service === 'comfyui' && appliedStyle?.id && <PresetModelsButton ids={[appliedStyle.id]} onResolved={(before, after) => setDraft(current => ({ ...current, settings: { ...current.settings, comfyui: reconnectSettings(current.settings.comfyui, before.find(p => p.id === appliedStyle.id), after.find(p => p.id === appliedStyle.id)) } }))} />}
         <StyleThumbnails presets={servicePresets} selected={appliedStyle?.id ?? ''} choose={choosePreset} disabled={commons.isPending} />
         <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
-        {isMoss && <><GenSettings compact section="model" value={settings as GenerationSettings} onChange={value => setSettings(value)} />
-          <MossMode mode={mossDoc.mode} onChange={mode => setMoss({ ...mossDoc, mode })} /></>}
+        <div className="section-title">{t('single.settings')}</div>
+        <p className="faint small">{t('single.settings_hint')}</p>
+        {draft.service === 'comfyui' && <GenSettings compact value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
+        {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
+        {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
+      </div>
+      <div className="single-workspace">
+      <div className="single-form single-prompts">
+        {isMoss && <MossMode mode={mossDoc.mode} onChange={mode => setMoss({ ...mossDoc, mode })} />}
         {!mossActive && <><label className="single-field" htmlFor={`${id}-positive`}><span>{t('single.positive')}</span><textarea id={`${id}-positive`} rows={6} value={draft.positive} placeholder={t('single.positive_hint')} onChange={e => update({ positive: e.target.value })} /></label>
         <label className="single-field" htmlFor={`${id}-negative`}><span>{t('single.negative')}</span><textarea id={`${id}-negative`} rows={3} value={draft.negative} placeholder={t('single.negative_hint')} onChange={e => update({ negative: e.target.value })} /></label>
         <div className="single-helpers"><button type="button" onClick={() => update({ positive: [draft.positive, 'a quiet lakeside, distant mountains, morning light'].filter(Boolean).join(', ') })}>{t('single.add_sample')}</button><span className="faint small">{t('single.sample_hint')}</span></div>
@@ -317,11 +327,6 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
         </>}
         {mossActive && <><MossLayoutEditor value={mossDoc} onChange={setMoss} onInvalid={setMossInvalid} workId={workId} sceneMaterial={mossSceneMaterial} />
           <label className="single-field">{t('single.negative')}<textarea rows={2} value={draft.negative} onChange={e => update({ negative: e.target.value })} /></label></>}
-        <div className="section-title">{t(isMoss ? 'moss.sampling' : 'single.settings')}</div>
-        <p className="faint small">{t('single.settings_hint')}</p>
-        {draft.service === 'comfyui' && <GenSettings compact section={isMoss ? "parameters" : undefined} value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
-        {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
-        {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
         {storageFailed ? <p role="alert" className="warn-text">{workId ? t('single.storage_failed') : draftSaveError} <button onClick={saveDraft}>{t('common.save')}</button>
           {!workId && <button onClick={() => { if (confirm(t('single.reload_draft_confirm'))) setLoadAttempt(n => n + 1); }}>{t('single.reload_draft')}</button>}
         </p> : <p className="faint small">{t(workId ? 'single.local_draft' : stored === serialized ? 'single.portable_draft' : 'single.saving_draft')}</p>}
@@ -351,6 +356,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
             <span>{t('single.history_page', { current: page + 1, total: pageCount })}</span>
             <button type="button" disabled={page + 1 >= pageCount} onClick={() => setHistoryPage(page + 1)}>{t('single.next_page')}</button></div>}
         </div>}
+      </div>
       </div>
     </div>
     </div>

@@ -460,6 +460,9 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .generation-page { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .generation-content { flex: 1; min-height: 0; overflow: auto; }
 .image-gen-top { border-bottom: 1px solid var(--border); }
+.generation-service-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.generation-service-bar > .row { flex-wrap: wrap; }
+.generation-service-bar .service-switch { flex-wrap: wrap; }
 .image-gen { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
 .image-gen-bar { flex: none; flex-wrap: wrap; gap: 8px 16px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--panel); }
 .generation-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; flex-basis: 200px; }
@@ -468,11 +471,19 @@ table.plain td, table.plain th { border-bottom: 1px solid var(--border); padding
 .generation-details > summary { cursor: pointer; padding: 4px 0; }
 .generation-details-summary { margin-inline-start: 8px; overflow-wrap: anywhere; }
 .generation-details-content { gap: 10px; padding-top: 8px; }
-.image-gen-pick { border-right: 1px solid var(--border); }
+.image-gen-run { border-right: 1px solid var(--border); }
 .image-gen-pick, .image-gen-run { min-width: 0; }
+.image-gen-run .row { flex-wrap: wrap; }
+.image-gen-run select, .image-gen-run input { max-width: 100%; }
+.image-gen-run .gen-model-fields, .image-gen-run .gen-core-fields, .image-gen-run .gen-advanced-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.image-gen-run .gen-model-fields > .gen-field:first-child, .image-gen-run [data-setting="model"], .image-gen-run [data-setting="seed"] { grid-column: 1 / -1; }
+.image-gen-run .gen-field { min-width: 0; }
+.image-gen-run .gen-field select, .image-gen-run .gen-field input { width: 100% !important; }
+.image-gen-preview:has(.compose-card) { border-top: 1px solid var(--border); }
+.image-gen-preview:not(:has(.compose-card)) { display: none; }
 @container generation-viewport (max-width: 740px) {
   .image-gen { grid-template-columns: minmax(0, 1fr); }
-  .image-gen-pick { border-right: 0; border-bottom: 1px solid var(--border); }
+  .image-gen-run { border-right: 0; border-bottom: 1px solid var(--border); }
   .gen-table-wrap > .row { flex-wrap: wrap; }
   .image-gen-run select { max-width: 100%; }
 }

@@ -684,6 +684,8 @@
   "gen.default": "Default",
   "gen.enqueue": "Queue",
   "gen.expressions": "Expressions",
+  "gen.expressions_target_hint": "Only expressions for the selected service and model family are shown and generated.",
+  "gen.handed_expressions_excluded": "Excluded {n} combinations whose expressions are unavailable for the current service and model family.",
   "gen.extras": "Composition, background, artist tags, common",
   "gen.family": "Model family",
   "gen.height": "Height",
