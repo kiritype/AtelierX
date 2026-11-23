@@ -468,13 +468,13 @@ it('replaces and clears a restored shot without changing direct input', async ()
     expect(input?.type).toBe('radio');
     await act(async () => input!.click());
   };
-  expect(host.querySelector('.single-form')?.textContent).toContain(source.positive);
+  expect(host.querySelector('.single-prompts')?.textContent).toContain(source.positive);
   await choose('shot.framing.full');
-  expect(host.querySelector('.single-form')?.textContent).not.toContain(source.positive);
-  expect(host.querySelector('.single-form')?.textContent).toContain('full body, from side, from above');
+  expect(host.querySelector('.single-prompts')?.textContent).not.toContain(source.positive);
+  expect(host.querySelector('.single-prompts')?.textContent).toContain('full body, from side, from above');
   expect(positive().value).toBe('by a window');
   await choose('shot.mode.auto');
-  expect(host.querySelector('.single-form')?.textContent).not.toContain('full body, from side, from above');
+  expect(host.querySelector('.single-prompts')?.textContent).not.toContain('full body, from side, from above');
   expect(positive().value).toBe('by a window');
   expect(negative().value).toBe('blur');
 });

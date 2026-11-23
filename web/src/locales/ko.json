@@ -751,6 +751,8 @@
   "gen.default": "기본값",
   "gen.enqueue": "대기열에 넣기",
   "gen.expressions": "표정",
+  "gen.expressions_target_hint": "선택한 서비스·모델 계열에 맞는 표정만 표시하고 생성합니다.",
+  "gen.handed_expressions_excluded": "현재 서비스·모델 계열에서 사용할 수 없는 표정의 조합 {n}개를 제외했습니다.",
   "gen.extras": "구도·배경·artist 태그·공통",
   "gen.family": "모델 계열",
   "gen.height": "높이",

@@ -154,16 +154,20 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   }, [characterId, outfitId, designs.data, scopeLoaded]);
 
   const target = internet ? service : settings.family;
+  const availableExpressions = useMemo(() => Object.values(expressions.data ?? {}).filter((e) => fits(e, target)), [expressions.data, target]);
+  const availableExpressionIds = useMemo(() => new Set(availableExpressions.map((e) => e.id)), [availableExpressions]);
+  // Keep each service's selections, but only count and submit expressions supported by the current target.
+  const chosenExpressions = useMemo(() => exprs.filter((id) => availableExpressionIds.has(id)), [exprs, availableExpressionIds]);
   // Common prompts on by default, of those written for this target (#80): switching service changes the defaults.
   const commonDefault = useMemo(() => Object.values(commons.data ?? {}).filter((c) => c.default !== false && fits(c, target)).map((c) => c.id), [commons.data, target]);
   const chosenCommons = commonIds ?? commonDefault;
   const targets = useMemo(
     () =>
-      handed ??
+      handed?.filter((item) => availableExpressionIds.has(item.expression_id)) ??
       Object.entries(chars).flatMap(([character_id, outfits]) =>
-        outfits.flatMap((outfit_id) => exprs.map((expression_id) => ({ character_id, outfit_id, expression_id }))),
+        outfits.flatMap((outfit_id) => chosenExpressions.map((expression_id) => ({ character_id, outfit_id, expression_id }))),
       ),
-    [chars, exprs, handed],
+    [chars, chosenExpressions, handed, availableExpressionIds],
   );
   const single = targets.length === 1;
   const options = () => ({
@@ -226,7 +230,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
   const notApplied = (item: Fragment) => (fits(item, target) ? null : <span className="warn-text small"> ({t('gen.not_applied')})</span>);
   const commonView = visibleFor(Object.values(commons.data ?? {}), target, chosenCommons, showOthers);
   const hiddenCount = commonView.hidden;
-  const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: Object.values(expressions.data ?? {}).filter((e) => e.rating === r.id) }));
+  const byRating = (rules.data?.ratings ?? []).map((r) => ({ ...r, items: availableExpressions.filter((e) => e.rating === r.id) })).filter((group) => group.items.length > 0);
 
   return (
     <div className={isMoss ? "generation-page moss-batch-mode" : "generation-page"}>
@@ -234,19 +238,70 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
       <div className="image-gen-top pad col">
       {handed && (
         <div className="col handed-targets">
-          <div className="section-title">{t('gen.handed', { n: handed.length })}</div>
+          <div className="section-title">{t('gen.handed', { n: targets.length })}</div>
           <div className="mono small faint" style={{ maxHeight: 160, overflow: 'auto', whiteSpace: 'pre-line' }}>
-            {handed.map((x) => `${x.character_id} · ${x.outfit_id} · ${x.expression_id}`).join('\n')}
+            {targets.map((x) => `${x.character_id} · ${x.outfit_id} · ${x.expression_id}`).join('\n')}
           </div>
+          {expressions.data && handed.length > targets.length && <div className="faint small">{t('gen.handed_expressions_excluded', { n: handed.length - targets.length })}</div>}
           <button onClick={() => setHanded(null)}>{t('gen.handed_clear')}</button>
         </div>
       )}
         {!handed && <CharacterOutfitTable characters={designs.data ?? []} value={chars} onChange={setChars} openItem={openItem} />}
       </div>
+      <div className="generation-service-bar">
+        <div className="generation-service-tabs" role="radiogroup" aria-label={t('gen.service')}>
+          <button role="radio" aria-checked={!internet} className={internet ? '' : 'on'} onClick={() => chooseService('comfyui')}>
+            {SERVICE_NAMES.comfyui}
+          </button>
+          {(services.data?.services ?? []).map((s) => (
+            <button
+              key={s.id}
+              role="radio"
+              aria-checked={service === s.id}
+              className={service === s.id ? 'on' : ''}
+              disabled={!s.supported}
+              title={!s.supported ? t('image_services.not_supported') : s.connected ? undefined : t('gen.service_needs_key')}
+              onClick={() => chooseService(s.id)}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+        {internet && serviceInfo && !serviceInfo.connected && (
+          <div className="warn-text row">
+            {t('gen.service_needs_key')}
+            {openSettings && <button className="ghost small" onClick={openSettings}>{t('gen.open_settings')}</button>}
+          </div>
+        )}
+      </div>
     <div className="image-gen">
+      <div className="image-gen-run pad col">
+        <div className="section-title">{t('single.settings')}</div>
+        <div className="row">
+          <label className="col" style={{ gap: 2 }}>
+            <span className="muted">{t('gen.preset')}</span>
+            <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
+              <option value="">{t('gen.no_preset')}</option>
+              {servicePresets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.service === 'comfyui' ? ` · ${p.family === 'moss' ? 'MOSS Beta' : p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}` : ''}
+                  {p.tags.length ? ` · ${p.tags.join(', ')}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {!internet && presetId && <PresetModelsButton ids={[presetId]} onResolved={(before, after) => setSettings(current => reconnectSettings(current, before.find(p => p.id === presetId), after.find(p => p.id === presetId)))} />}
+        {!internet && <GenSettings compact value={settings} onChange={setSettings} />}
+        {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
+        {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
+        {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
+      </div>
       <div className="image-gen-pick pad col">
         <div className="col" hidden={!!handed}>
         <div className="section-title">{t('gen.expressions')}</div>
+        <p className="faint small">{t('gen.expressions_target_hint')}</p>
         {byRating.map((group) => (
           <div key={group.id} className="col" style={{ gap: 2 }}>
             <label className="row faint" style={{ gap: 4 }}>
@@ -306,54 +361,8 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         )}
         </>}
       </div>
-      <div className="image-gen-run pad col">
-        <div className="row">
-          <span className="muted">{t('gen.service')}</span>
-          <div className="service-switch" role="radiogroup" aria-label={t('gen.service')}>
-            <button role="radio" aria-checked={!internet} className={internet ? '' : 'on'} onClick={() => chooseService('comfyui')}>
-              {SERVICE_NAMES.comfyui}
-            </button>
-            {(services.data?.services ?? []).map((s) => (
-              <button
-                key={s.id}
-                role="radio"
-                aria-checked={service === s.id}
-                className={service === s.id ? 'on' : ''}
-                disabled={!s.supported}
-                title={!s.supported ? t('image_services.not_supported') : s.connected ? undefined : t('gen.service_needs_key')}
-                onClick={() => chooseService(s.id)}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-        </div>
-        {internet && serviceInfo && !serviceInfo.connected && (
-          <div className="warn-text row">
-            {t('gen.service_needs_key')}
-            {openSettings && <button className="ghost small" onClick={openSettings}>{t('gen.open_settings')}</button>}
-          </div>
-        )}
-        <div className="row">
-          <label className="col" style={{ gap: 2 }}>
-            <span className="muted">{t('gen.preset')}</span>
-            <select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
-              <option value="">{t('gen.no_preset')}</option>
-              {servicePresets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.service === 'comfyui' ? ` · ${p.family === 'moss' ? 'MOSS Beta' : p.family === 'sdxl' ? 'SDXL·IL' : 'Anima'}` : ''}
-                  {p.tags.length ? ` · ${p.tags.join(', ')}` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {!internet && presetId && <PresetModelsButton ids={[presetId]} onResolved={(before, after) => setSettings(current => reconnectSettings(current, before.find(p => p.id === presetId), after.find(p => p.id === presetId)))} />}
-        {!internet && <GenSettings compact value={settings} onChange={setSettings} />}
-        {internet && (ServicePanel ? <ServicePanel compact value={serviceSettings[service] ?? {}} onChange={changeServiceSettings} /> : <p className="faint">{t('gen.service_no_settings')}</p>)}
-        {internet && <p className="faint small">{t('gen.service_no_lora')}</p>}
-        {reviewSettings.data?.enabled && <RunLlmSelector task="image_review" value={reviewLlm} onChange={setReviewLlm} />}
+    </div>
+      <div className="image-gen-preview pad">
         {preview && !mossActive && (
           <div className="col">
             {preview.results.map((p, n) => (
@@ -395,7 +404,6 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
           </div>
         )}
       </div>
-    </div>
         {isMoss && <div className="moss-batch-editor">
           <MossMode mode={mossDoc.mode} onChange={mode => setMossDraft({ ...mossDoc, mode })} />
           {mossActive ? <><MossLayoutEditor batch workId={workId} value={mossDoc} onChange={setMossDraft} onInvalid={setMossInvalid} />
@@ -419,7 +427,7 @@ export default function ImageGenerate({ workId, openQueue, openItem, openSetting
         </label>
         <div className="generation-summary grow">
           <span>
-            {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: exprs.length })}{' '}
+            {t('gen.bar_summary', { chars: Object.keys(chars).length, outfits: Object.values(chars).reduce((n, l) => n + l.length, 0), exprs: chosenExpressions.length })}{' '}
             <strong>{t('gen.bar_total', { targets: targets.length.toLocaleString(), count, n: (targets.length * count).toLocaleString() })}</strong>
             {internet && services.data && (services.data.max_images_per_run ? ` · ${t('gen.limit', { limit: services.data.max_images_per_run })}` : ` · ${t('gen.no_limit')}`)}
           </span>
