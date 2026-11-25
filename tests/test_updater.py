@@ -93,7 +93,7 @@ def test_an_update_is_prepared_only_when_it_checks_out(paths, monkeypatch):
 
     bad = _updater(paths, package, sha='0' * 64)
     with pytest.raises(AppError) as caught:
-        asyncio.run(bad.prepare())
+        asyncio.run(bad.prepare(backup=False))
     assert caught.value.msg.key == 'server.update.mismatch'
 
     same = _updater(paths, package, tag=f'v{updater_module.__version__}')
@@ -105,6 +105,66 @@ def test_an_update_is_prepared_only_when_it_checks_out(paths, monkeypatch):
     with pytest.raises(AppError) as caught:
         asyncio.run(escaping.prepare())
     assert caught.value.msg.key == 'server.update.bad_package'
+
+
+@pytest.mark.parametrize('backup', [True, False])
+def test_update_preparation_respects_the_selected_backup(paths, monkeypatch, backup):
+    _seed_user_data(paths)
+    up = _updater(paths, _package())
+    monkeypatch.setattr(up, 'packaged', lambda: True)
+    prior = up.folder / 'backup-before-v8.8.8.zip'
+    prior.parent.mkdir(parents=True)
+    prior.write_bytes(b'previous backup')
+    phases = []
+    set_phase = up._set
+
+    def trace(**values):
+        phases.append(values['state'])
+        set_phase(**values)
+
+    monkeypatch.setattr(up, '_set', trace)
+    if not backup:
+        monkeypatch.setattr(up, '_backup', lambda _: pytest.fail('backup must be skipped'))
+
+    async def scenario():
+        up.start(backup=backup)
+        await up.task
+
+    asyncio.run(scenario())
+    assert 'verifying' in phases and 'extracting' in phases
+    assert ('backing_up' in phases) is backup
+    status = up.status()
+    assert status['state'] == 'ready' and status['version'] == 'v9.9.9'
+    assert (up.folder / 'new/AtelierX/AtelierX.exe').read_bytes() == b'new exe'
+    assert prior.read_bytes() == b'previous backup'
+    if backup:
+        with zipfile.ZipFile(up.folder / status['backup']) as archive:
+            assert archive.read('data/works/w/메인.md').decode('utf-8') == '본문'
+    else:
+        assert 'backup' not in status
+        assert set(up.folder.glob('backup-before-*.zip')) == {prior}
+
+
+def test_selected_backup_failure_keeps_the_update_from_being_ready(paths, monkeypatch):
+    up = _updater(paths, _package())
+    monkeypatch.setattr(up, 'packaged', lambda: True)
+
+    def fail(_):
+        raise OSError('disk full')
+
+    monkeypatch.setattr(up, '_backup', fail)
+
+    async def scenario():
+        up.start(backup=True)
+        await up.task
+
+    asyncio.run(scenario())
+    status = up.status()
+    assert status['state'] == 'failed'
+    assert status['error']['key'] == 'server.update.failed' and 'backup' not in status
+    with pytest.raises(AppError) as caught:
+        up.apply()
+    assert caught.value.msg.key == 'server.update.not_ready'
 
 
 def test_only_the_packaged_app_starts_an_update_and_never_over_running_work(paths, monkeypatch):
@@ -124,6 +184,42 @@ def test_the_status_api_answers_in_development(unlocked):
     status = unlocked.get('/api/update/status').json()
     assert status['packaged'] is False and status['state'] == 'idle'
     assert unlocked.post('/api/update/start').status_code == 400
+
+
+@pytest.mark.parametrize(
+    ('content', 'expected'),
+    [
+        ('', True),
+        ('{}', True),
+        ('{"backup":true}', True),
+        ('{"backup":false}', False),
+        ('{"backup":0}', None),
+        ('{"backup":"false"}', None),
+        ('{"backup":null}', None),
+        ('[]', None),
+        ('null', None),
+        ('true', None),
+        ('{"backup":', None),
+    ],
+)
+def test_update_start_validates_and_forwards_backup_choice(unlocked, monkeypatch, content, expected):
+    up = unlocked.app.state.app.updater
+    choices = []
+
+    def start(*, backup=True):
+        choices.append(backup)
+        return {'state': 'checking'}
+
+    monkeypatch.setattr(up, 'start', start)
+    response = unlocked.post(
+        '/api/update/start', content=content, headers={'Content-Type': 'application/json'}
+    )
+    if expected is None:
+        assert response.status_code == 400
+        assert not choices
+    else:
+        assert response.status_code == 200
+        assert choices == [expected] and choices[0] is expected
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='the swap script is PowerShell on Windows')

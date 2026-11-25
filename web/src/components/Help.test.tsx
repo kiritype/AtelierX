@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useStartupUpdateCheck } from './Help';
+import { t } from '../i18n';
+import { useHelp, useStartupUpdateCheck } from './Help';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -152,5 +154,111 @@ describe('startup update notice', () => {
     expect(host.querySelector('.update')).not.toBeNull();
     expect(post).toHaveBeenCalledWith('/api/update/notice/begin');
     expect(toast).toHaveBeenCalledTimes(1);
+  });
+});
+
+function UpdateDialogHarness() {
+  const help = useHelp();
+  return <main>
+    <button type="button" onClick={help.openUpdate}>{t('help.check_update')}</button>
+    {help.element}
+  </main>;
+}
+
+describe('update backup choice', () => {
+  const current = '8.8.0';
+  const latest = '8.8.1';
+  const backupName = 'backup-example.zip';
+  let host: HTMLDivElement;
+  let root: Root;
+  let client: QueryClient;
+  let packaged: boolean;
+  let state: 'idle' | 'ready';
+  let backup: string | undefined;
+
+  const checkbox = () => host.querySelector<HTMLInputElement>('.dialog input[type="checkbox"]');
+  const action = (key: string) => Array.from(host.querySelectorAll<HTMLButtonElement>('.dialog button'))
+    .find(button => button.textContent === t(key));
+  const click = async (element: HTMLElement) => act(async () => {
+    element.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+  const open = async () => {
+    await click(host.querySelector('main > button')!);
+    await vi.waitFor(() => expect(action(packaged ? 'update.start' : 'help.open_release')).toBeDefined());
+  };
+
+  beforeEach(async () => {
+    packaged = true;
+    state = 'idle';
+    backup = undefined;
+    get.mockReset();
+    post.mockReset();
+    toast.mockReset();
+    get.mockImplementation(async (url: string) => {
+      if (url === '/api/about') return null;
+      if (url === '/api/update-check') return { current, latest, newer: true, notes: '', url: '/release' };
+      if (url === '/api/update/status') return { state, packaged, current, version: latest, ...(backup ? { backup } : {}) };
+      throw new Error('Unexpected update query ' + url);
+    });
+    post.mockImplementation(async (url: string, body?: { backup: boolean }) => {
+      if (url === '/api/update/start') {
+        state = 'ready';
+        backup = body?.backup ? backupName : undefined;
+      }
+      return { ok: true };
+    });
+    host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => root.render(<QueryClientProvider client={client}><UpdateDialogHarness /></QueryClientProvider>));
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    client.clear();
+    host.remove();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each([false, true])('sends the explicit backup choice %s and displays the matching ready message', async backupSelected => {
+    await open();
+    expect(checkbox()?.checked).toBe(false);
+    expect(host.textContent).toContain(t('update.backup_note'));
+    if (backupSelected) await click(checkbox()!);
+    await click(action('update.start')!);
+
+    await vi.waitFor(() => expect(action('update.restart')).toBeDefined());
+    expect(post).toHaveBeenCalledWith('/api/update/start', { backup: backupSelected });
+    expect(checkbox()).toBeNull();
+
+    const ready = backupSelected
+      ? t('update.ready', { version: latest, backup: backupName })
+      : t('update.ready_without_backup', { version: latest });
+    expect(host.textContent).toContain(ready);
+    if (!backupSelected) expect(host.textContent).not.toContain('state/update/');
+
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    await click(action('update.restart')!);
+    expect(post).toHaveBeenCalledWith('/api/update/apply');
+  });
+
+  it('defaults to unchecked each time the update dialog opens', async () => {
+    await open();
+    await click(checkbox()!);
+    expect(checkbox()?.checked).toBe(true);
+    await click(action('common.close')!);
+    await open();
+    expect(checkbox()?.checked).toBe(false);
+  });
+
+  it('leaves the release link in unpackaged builds without a backup choice', async () => {
+    packaged = false;
+    await open();
+    expect(checkbox()).toBeNull();
+    expect(action('update.start')).toBeUndefined();
+    expect(post).not.toHaveBeenCalled();
   });
 });
