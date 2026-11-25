@@ -283,6 +283,31 @@ it('cancels, retries, restores and regenerates the saved request', async () => {
   expect(positive().value).toBe('Keep this draft');
 });
 
+it('preserves the entire draft on a current service re-click and clears style materials when switching services', async () => {
+  qc.setQueryData(['image-lib', 'common', 'synthetic'], { glow: { prompt: ['warm daylight'], target: 'positive' } });
+  qc.setQueryData(['image-presets'], [{ id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima',
+    common: ['glow'], settings: { steps: 23 }, artist: { positive: 'soft light', negative: 'hard shadows' } }]);
+  await edit(positive(), 'forest');
+  await edit(negative(), 'blur');
+  await act(async () => {
+    const select = host.querySelector<HTMLSelectElement>('.single-field select')!;
+    select.value = 'soft';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const storedDraft = () => localStorage.getItem('atelierx-single-v2-synthetic')!;
+  const before = storedDraft();
+  expect(JSON.parse(before)).toMatchObject({ preset: 'soft', positive: 'forest', negative: 'blur',
+    sources: [{ kind: 'common', positive: 'warm daylight' }, { kind: 'style', positive: 'soft light' }],
+    settings: { comfyui: { steps: 23 } } });
+
+  await click('ComfyUI');
+  expect(storedDraft()).toBe(before);
+
+  await click('NovelAI');
+  expect(JSON.parse(storedDraft())).toMatchObject({ service: 'novelai', preset: '', sources: [], positive: 'forest', negative: 'blur',
+    settings: { comfyui: { steps: 23 } } });
+});
+
 it('previews preset common tags and compares the saved final prompt', async () => {
   qc.setQueryData(['image-lib', 'common', 'synthetic'], { glow: { prompt: ['warm daylight # note'], target: 'positive' } });
   qc.setQueryData(['image-presets'], [{ id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima',

@@ -165,7 +165,7 @@ function UpdateDialogHarness() {
   </main>;
 }
 
-describe('update backup choice', () => {
+describe('update dialog', () => {
   const current = '8.8.0';
   const latest = '8.8.1';
   const backupName = 'backup-example.zip';
@@ -173,7 +173,8 @@ describe('update backup choice', () => {
   let root: Root;
   let client: QueryClient;
   let packaged: boolean;
-  let state: 'idle' | 'ready';
+  let state: 'idle' | 'ready' | 'downloading';
+  let progress: { received?: number; total?: number };
   let backup: string | undefined;
 
   const checkbox = () => host.querySelector<HTMLInputElement>('.dialog input[type="checkbox"]');
@@ -191,6 +192,7 @@ describe('update backup choice', () => {
   beforeEach(async () => {
     packaged = true;
     state = 'idle';
+    progress = {};
     backup = undefined;
     get.mockReset();
     post.mockReset();
@@ -198,7 +200,7 @@ describe('update backup choice', () => {
     get.mockImplementation(async (url: string) => {
       if (url === '/api/about') return null;
       if (url === '/api/update-check') return { current, latest, newer: true, notes: '', url: '/release' };
-      if (url === '/api/update/status') return { state, packaged, current, version: latest, ...(backup ? { backup } : {}) };
+      if (url === '/api/update/status') return { state, packaged, current, version: latest, ...progress, ...(backup ? { backup } : {}) };
       throw new Error('Unexpected update query ' + url);
     });
     post.mockImplementation(async (url: string, body?: { backup: boolean }) => {
@@ -260,5 +262,15 @@ describe('update backup choice', () => {
     expect(checkbox()).toBeNull();
     expect(action('update.start')).toBeUndefined();
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [77_000_000, '62% · 48 / 77 MB'],
+    [0, '48 MB'],
+  ])('shows download progress when the total is %s bytes', async (total, size) => {
+    state = 'downloading';
+    progress = { received: 48_000_000, total };
+    await open();
+    expect(host.textContent).toContain(`${t('update.state.downloading')} ${size}`);
   });
 });

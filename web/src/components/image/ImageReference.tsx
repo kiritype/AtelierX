@@ -70,7 +70,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const [pendingAsset, setPendingAsset] = useState(false);
   const [pendingJob, setPendingJob] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<'reference' | 'result' | null>(null);
   const [includeReference, setIncludeReference] = useState(false);
   const [exporting, setExporting] = useState(false);
   const catalogQuery = useCatalog();
@@ -166,7 +166,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
       if (result) {
         setSelectedRunId(result.job_id);
         setIncludeReference(false);
-        setPreviewOpen(false);
+        setPreview(null);
       }
       await runs.refetch();
     } catch (err) {
@@ -224,6 +224,8 @@ export default function ImageReference({ workId, openView, openSettings, active 
     }
   }
 
+  const previewImage = preview === 'reference' ? draft.reference
+    : preview === 'result' && run?.image_url ? { url: run.image_url, name: filename(run) } : null;
   const resultReference = run ? usedReference(run) : undefined;
   const resultDetails = run?.status === 'done' && <>
     {resultReference && <dl className="single-result-summary reference-record">
@@ -297,7 +299,13 @@ export default function ImageReference({ workId, openView, openSettings, active 
         <div className="single-workspace">
           <form className="single-form single-prompts" onSubmit={enqueue}>
             <div className="reference-card">
-              {draft.reference && <img src={draft.reference.url} alt={draft.reference.name} />}
+              {draft.reference && <button type="button" className="reference-preview" aria-haspopup="dialog"
+                aria-label={t('reference.open_preview', { name: draft.reference.name })} onClick={event => {
+                  event.currentTarget.focus();
+                  setPreview('reference');
+                }}>
+                <img src={draft.reference.url} alt="" />
+              </button>}
               <div className="col">
                 <h3>{t('reference.image')}</h3>
                 {draft.reference ? <strong>{draft.reference.name}</strong> : <span className="faint">{t('reference.choose_hint')}</span>}
@@ -348,7 +356,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
             </div>
             {runs.error && <p className="warn-text" role="alert">{errorText(runs.error)}</p>}
             {run?.error && <p className="warn-text" role="alert">{msgText(run.error)}</p>}
-            {run?.image_url ? <button type="button" className="single-canvas" aria-label={t('single.open_preview')} onClick={() => setPreviewOpen(true)}>
+            {run?.image_url ? <button type="button" className="single-canvas" aria-label={t('single.open_preview')} onClick={() => setPreview('result')}>
               <img src={run.image_url} alt={t('single.result')} />
             </button> : <p className="faint">{t('reference.result_hint')}</p>}
             {run && working(run) && <button type="button" disabled={!!pendingJob || run.status === 'cancelling'}
@@ -366,7 +374,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
               <div className="single-history-list">
                 {history.slice(0, 12).map(item => <button key={item.id} type="button" className={'single-history-row' + (item.id === run?.id ? ' is-selected' : '')}
                   aria-pressed={item.id === run?.id} onClick={() => {
-                    setSelectedRunId(item.id); setIncludeReference(false); setPreviewOpen(false);
+                    setSelectedRunId(item.id); setIncludeReference(false); setPreview(null);
                   }}>
                   {item.image_url ? <img className="single-history-thumb" src={item.image_url} alt="" loading="lazy" /> : <span className="single-history-thumb" />}
                   <span className="single-history-content">
@@ -379,9 +387,11 @@ export default function ImageReference({ workId, openView, openSettings, active 
           </section>
         </div>
       </div>
-      {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={filename(run)} close={() => setPreviewOpen(false)}>
-        <div className="row"><strong className="grow">{filename(run)}</strong>
-          <button type="button" className="ghost" aria-label={t('common.close')} onClick={() => setPreviewOpen(false)}>×</button>
+      {previewImage && <GalleryDetailFrame imageUrl={previewImage.url}
+        label={preview === 'reference' ? t('reference.preview_title', { name: previewImage.name }) : previewImage.name}
+        close={() => setPreview(null)}>
+        <div className="row"><strong className="grow">{previewImage.name}</strong>
+          <button type="button" className="ghost" aria-label={t('common.close')} onClick={() => setPreview(null)}>×</button>
         </div>
       </GalleryDetailFrame>}
     </div>

@@ -804,6 +804,10 @@ function Detail({
           {record && (
             <>
               <div className="section-title">{t('gallery.prompts')}</div>
+              <div className="row wrap">
+                <button type="button" className="ghost small" onClick={() => copy(record.positive ?? '')}>{t('gallery.copy_positive')}</button>
+                <button type="button" className="ghost small" onClick={() => copy(record.negative ?? '')}>{t('gallery.copy_negative')}</button>
+              </div>
               <div className="prompt-box mono small" onClick={() => copy(record.positive ?? '')} title={t('gallery.click_copy')}>
                 {record.positive}
               </div>
