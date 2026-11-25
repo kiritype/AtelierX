@@ -10,6 +10,7 @@ import json
 from urllib.parse import quote, urlencode
 
 from ..core.i18n import Msg
+from . import reference
 from .workflow import build_workflow
 
 
@@ -87,17 +88,24 @@ class ComfyService(GenerationService):
             'server.worker.waited_30_minutes_for_other_comfyui', 'Waited 30 minutes for other ComfyUI work.'
         )
 
-    def graph(self, job):
+    def graph(self, job, *, reference_input=None):
         kind = job.get('kind')
         if kind == 'tag':
             return self.rt.tag_graph(job)
         if kind == 'post':
             return self.rt.post_graph(job)
         snap = job['snapshot']
-        return build_workflow(snap['settings'], snap['positive'], snap['negative'], job['seed'])
+        return build_workflow(
+            snap['settings'], snap['positive'], snap['negative'], job['seed'], reference=reference_input
+        )
 
     def submit(self, job):
-        graph = self.graph(job)
+        entry = (job.get('snapshot') or {}).get('reference')
+        if entry is not None:
+            work = self.rt.works.get(job['work_id'])
+            graph = self.graph(job, reference_input=reference.upload(self.comfy, work, entry))
+        else:
+            graph = self.graph(job)
         response = self.comfy.request('/prompt', {'prompt': graph, 'client_id': 'atelierx-' + job['id']})
         if response.get('node_errors') or not response.get('prompt_id'):
             raise RuntimeError(

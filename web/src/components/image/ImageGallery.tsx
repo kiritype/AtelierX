@@ -102,13 +102,13 @@ const OPEN_ROUNDS = ['waiting_generation', 'pending_review', 'reviewing'];
 const REASONS = ['hands', 'face', 'outfit', 'composition', 'other'];
 
 // Image menu → Gallery: browse by work / character / outfit, review (pass adopts), regenerate, export adopted images.
-type GalleryProps = { workId: string; openLab: () => void; openTools: () => void; characterId?: string; outfitId?: string };
+type GalleryProps = { workId: string; openLab: () => void; openTools: () => void; openReference?: (path: string) => void; characterId?: string; outfitId?: string };
 
 export default function ImageGallery(props: GalleryProps) {
   return <GalleryContents key={props.workId} {...props} />;
 }
 
-function GalleryContents({ workId, openLab, openTools, characterId, outfitId }: GalleryProps) {
+function GalleryContents({ workId, openLab, openTools, openReference, characterId, outfitId }: GalleryProps) {
   const qc = useQueryClient();
   const toast = useToast();
   const [fullLibrary, setFullLibrary] = useState(false);
@@ -381,6 +381,8 @@ function GalleryContents({ workId, openLab, openTools, characterId, outfitId }: 
 
   const results = list.data?.page === page ? list.data.results : [];
   const chosen = [...selected];
+  const isWorkImage = (path: string) => path.startsWith(workId + '/') || path.startsWith('_single/' + workId + '/');
+  const referencePath = chosen.length === 1 && isWorkImage(chosen[0]) ? chosen[0] : undefined;
   const toggle = (path: string, on: boolean) => {
     const next = new Set(selected);
     if (on) next.add(path);
@@ -535,6 +537,9 @@ function GalleryContents({ workId, openLab, openTools, characterId, outfitId }: 
               <button onClick={() => review(chosen, 'fail')}>{t('gallery.fail')}</button>
               <button onClick={() => review(chosen, 'unreviewed')}>{t('gallery.unreview')}</button>
               <button onClick={() => regenerate(chosen.slice(0, 200))}>{t('gallery.regenerate')}</button>
+              {openReference && referencePath && (
+                <button type="button" onClick={() => openReference(referencePath)}>{t('reference.use_selected')}</button>
+              )}
               <button
                 onClick={async () => {
                   try {
@@ -626,6 +631,7 @@ function GalleryContents({ workId, openLab, openTools, characterId, outfitId }: 
           regenerate={regenerate}
           openLab={openLab}
           openTools={() => { closeDetail(); openTools(); }}
+          openReference={openReference && isWorkImage(active.item.path) ? path => { closeDetail(); openReference(path); } : undefined}
           remove={(paths) => remove(paths).then((done) => done && closeDetail())}
         />
       )}
@@ -648,6 +654,7 @@ function Detail({
   regenerate,
   openLab,
   openTools,
+  openReference,
   remove,
 }: {
   item: GalleryItem;
@@ -661,6 +668,7 @@ function Detail({
   regenerate: (paths: string[]) => void;
   openLab: () => void;
   openTools: () => void;
+  openReference?: (path: string) => void;
   remove: (paths: string[]) => void;
 }) {
   const toast = useToast();
@@ -730,6 +738,8 @@ function Detail({
               </button>
             ))}
             <GalleryToolSend key={item.path} path={item.path} record={record} openTools={openTools} shortcut disabled={detail.isPending} />
+            {openReference &&
+              <button type="button" onClick={() => openReference(item.path)}>{t('reference.from_gallery')}</button>}
             {record && (
               <button
                 onClick={() => {

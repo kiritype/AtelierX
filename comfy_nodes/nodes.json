@@ -40,6 +40,16 @@
       "license": "AGPL-3.0",
       "features": ["detailer", "detect"],
       "note": "Installs ultralytics (AGPL-3.0), which censor detection and the person mask also use."
+    },
+    {
+      "id": "anima-ref-adapter",
+      "folder": "ComfyUI-Anima-Ref-Adapter",
+      "repo": "https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter",
+      "version": "0.2.0",
+      "commit": "f02d54dd34593b4d4ce27b38de2a996049aeac58",
+      "license": "Apache-2.0",
+      "features": ["reference"],
+      "optional": true
     }
   ],
   "tested_packages": {"ultralytics": "8.4.150", "rembg": "2.0.85", "onnxruntime": "1.30.0"},
@@ -48,6 +58,7 @@
     "alpha": "Background removal (isnet-anime)",
     "detect": "Censor area detection and person mask",
     "upscale": "Upscale with a model",
-    "detailer": "Detailer (face, eyes, mouth, hands)"
+    "detailer": "Detailer (face, eyes, mouth, hands)",
+    "reference": "Reference Image (BETA) for Anima"
   }
 }

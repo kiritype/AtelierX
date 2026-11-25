@@ -23,7 +23,7 @@
     {
       "text": "이미지 생성과 그림체",
       "folder": "guide",
-      "pages": ["generation", "single-generation", "batch-generation", "composition", "style-presets", "style-explorer", "gallery-export"]
+      "pages": ["generation", "single-generation", "reference-generation", "batch-generation", "composition", "style-presets", "style-explorer", "gallery-export"]
     },
     {
       "text": "후처리·배포·학습",

@@ -325,7 +325,7 @@ export default function WorkWindow({ workId, active: windowActive = true, onOpen
   });
 
   const current = tabs.find((tab) => tabKey(tab) === active) ?? null;
-  const generatingImage = current?.type === 'image' && (current.view === 'single' || current.view === 'generate');
+  const generatingImage = current?.type === 'image' && (current.view === 'single' || current.view === 'reference' || current.view === 'generate');
   const focusingImage = generatingImage && imageFocus;
   const currentStatus = active ? status[active] : undefined;
   const effective = info.data?.effective;

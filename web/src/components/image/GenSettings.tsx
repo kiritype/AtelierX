@@ -71,26 +71,30 @@ export function useCatalog(preview = false) {
 
 const base = (name: string) => name.replace(/^checkpoint::/, '').split(/[\\/]/).pop();
 
-export default function GenSettings({ value, onChange, preview = false, compact = false, section, showLoras = true }: {
+export function modelsForFamily(catalog: Catalog, family: NonNullable<GenerationSettings['family']>) {
+  return catalog.models.filter(model => {
+    const known = catalog.families?.models?.[model] ?? null;
+    return model.startsWith('checkpoint::') === (family === 'sdxl') && (known === family || known === null);
+  });
+}
+
+export default function GenSettings({ value, onChange, preview = false, compact = false, section, showLoras = true, onlyFamily }: {
   value: GenerationSettings;
   onChange: (value: GenerationSettings) => void;
   preview?: boolean;
   compact?: boolean;
   section?: SettingsSection;
   showLoras?: boolean;
+  onlyFamily?: NonNullable<GenerationSettings['family']>;
 }) {
   const familyLabelId = useId();
   const catalog = useCatalog(preview);
   const c = catalog.data;
   if (!c) return null;
   if (!c.connected) return <div className="warn-text">{t('gen.not_connected')} {c.error ? (typeof c.error === 'string' ? c.error : tm(c.error)) : ''}</div>;
-  const family = value.family ?? 'anima';
+  const family = onlyFamily ?? value.family ?? 'anima';
   const fam = (kind: 'models' | 'loras', name: string) => c.families?.[kind]?.[name] ?? null;
-  const models = c.models.filter((m) => {
-    const f = fam('models', m);
-    if (family === 'sdxl') return m.startsWith('checkpoint::') && (f === 'sdxl' || f === null);
-    return !m.startsWith('checkpoint::') && (f === family || f === null);
-  });
+  const models = modelsForFamily(c, family);
   // SDXL needs a checkpoint, so switching families picks the first model of that family.
   const firstModel = (f: 'anima' | 'sdxl' | 'moss') =>
     c.models.find((m) => (f === 'sdxl' ? m.startsWith('checkpoint::') && fam('models', m) === 'sdxl' : !m.startsWith('checkpoint::') && fam('models', m) === f));
@@ -128,9 +132,11 @@ export default function GenSettings({ value, onChange, preview = false, compact 
                   key={f}
                   className={family === f ? 'on' : ''}
                   aria-pressed={family === f}
+                  disabled={onlyFamily !== undefined && f !== onlyFamily}
                   onClick={() => onChange({ family: f, ...FAMILY_DEFAULTS[f], ...(preview ? { sampler: COMFY_PREVIEW_CATALOG.samplers[0], scheduler: COMFY_PREVIEW_CATALOG.schedulers[0] } : {}), model: firstModel(f), ...(f === 'moss' ? { text_encoder: c.text_encoders.find(n => n.toLowerCase().includes('qwen3.5_9b')), vae: c.vaes.find(n => n.toLowerCase().includes('flux2-vae')) } : {}), seed: value.seed, loras: [] })}
                 >
-                  {f === 'anima' ? 'Anima' : f === 'moss' ? <>MOSS <span className="moss-beta">Beta</span></> : 'SDXL·IL'}
+                  {f === 'anima' ? 'Anima' : f === 'moss' ? (onlyFamily ? 'MOSS' : <>MOSS <span className="moss-beta">Beta</span></>) : 'SDXL·IL'}
+                  {onlyFamily && f !== onlyFamily && <> · {t('reference.coming')}</>}
                 </button>
               ))}
             </div>

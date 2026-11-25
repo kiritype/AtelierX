@@ -20,6 +20,26 @@ def make_installs(tmp_path):
     return Installs(runtime)
 
 
+def test_reference_weight_download_requires_selection(tmp_path, monkeypatch):
+    (tmp_path / 'loras').mkdir()
+    installs = make_installs(tmp_path)
+    group = next(
+        row
+        for row in installs_module.read_json(ROOT / 'defaults' / 'image' / 'downloads.json')['groups']
+        if row['id'] == 'anima_ref_adapter'
+    )
+    installs.manifest = lambda: {'groups': [group]}
+    installs.model_folders = lambda: {'loras': [str(tmp_path / 'loras')]}
+    downloaded = []
+    monkeypatch.setattr(installs, '_download', lambda *args: downloaded.append(args))
+    monkeypatch.setattr(installs, '_say', lambda _message: None)
+    installs._install_models({})
+    assert not downloaded
+    installs._install_models({'items': ['anima_ref_adapter']})
+    item = group['items'][0]
+    assert downloaded == [(item['url'], tmp_path / 'loras' / item['file'], item['size'], item['sha256'])]
+
+
 def test_tool_validation_skips_broken_path_entry_and_caches(tmp_path, monkeypatch):
     installs = make_installs(tmp_path)
     installs.run = {'log': []}

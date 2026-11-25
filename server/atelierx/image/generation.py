@@ -18,7 +18,7 @@ from urllib.parse import quote
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
-from . import library, moss_layout
+from . import library, moss_layout, reference
 from .comments import strip_text
 from .compose import Composer, _join
 from .prompt_sources import combine_sources, normalize_sources
@@ -287,7 +287,33 @@ class GenerationMixin:
         self.queue.add(prepared, before_save=mark)
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
-    def enqueue_single(self, work, body):
+    def enqueue_reference(self, work, body):
+        if not isinstance(body, dict) or body.get('service', DEFAULT_SERVICE) != DEFAULT_SERVICE:
+            raise ValueError(
+                Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
+            )
+        entry = reference.prepare(work, body.get('reference'))
+        return self.enqueue_single(work, body, reference_entry=entry)
+
+    def regenerate_reference(self, work, body):
+        if not isinstance(body, dict):
+            raise ValueError(
+                Msg('server.reference.result', 'Choose a reference generation result from this work.')
+            )
+        relative = body.get('path')
+        _, record = reference.result_record(work, self.gallery, relative)
+        reference.prepare(work, record['reference'])
+        reference.require_ready(self.comfy)
+        source = self.rounds.source_job(relative)
+        job = self.rounds.fresh_job(source)
+        if body.get('same_seed') is True:
+            job['seed'] = source['snapshot']['settings']['seed']
+            job['snapshot']['settings']['seed'] = job['seed']
+        job['snapshot']['run_created_at'] = job['created_at']
+        self.queue.add([job])
+        return {'job_id': job['id']}
+
+    def enqueue_single(self, work, body, *, reference_entry=None):
         """Queue one free-prompt image, optionally scoped to an existing work."""
         self.queue.check_room(1)
         if not isinstance(body, dict):
@@ -325,6 +351,12 @@ class GenerationMixin:
         raw_settings, options, preset = self._settings(
             {**body, 'preset_id': ''} if sources is not None or layout is not None else body
         )
+        if reference_entry is not None:
+            if raw_settings.get('family') != 'anima' or layout is not None:
+                raise ValueError(
+                    Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
+                )
+            reference.require_ready(self.comfy)
         if service.id == DEFAULT_SERVICE:
             allowed = set(COMFY_DEFAULTS) | {
                 'family',
@@ -353,11 +385,17 @@ class GenerationMixin:
                 )
             )
         if service.id == DEFAULT_SERVICE:
-            catalog = self.comfy.catalog()
+            catalog = self.catalog() if reference_entry is not None else self.comfy.catalog()
             if not catalog['connected']:
                 raise ValueError(catalog['error'])
             self.preset_models.validate(preset, raw_settings, catalog)
             settings = validate_settings(raw_settings, catalog)
+            if reference_entry is not None:
+                known_family = (catalog.get('families', {}).get('models') or {}).get(settings['model'])
+                if settings['model_loader'] != 'UNETLoader' or known_family not in (None, 'anima'):
+                    raise ValueError(
+                        Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
+                    )
         else:
             settings = service.validate_settings(raw_settings)
         commons = library.items(self.paths, work, 'common')
@@ -451,6 +489,8 @@ class GenerationMixin:
             snapshot['prompt_sources'] = copy.deepcopy(sources)
         if common_ids:
             snapshot['common_ids'] = list(common_ids)
+        if reference_entry is not None:
+            snapshot['reference'] = reference_entry
         if preset:
             snapshot['generation_preset'] = {'id': preset['id'], 'name': preset.get('name', preset['id'])}
         self.queue.add(
@@ -471,7 +511,7 @@ class GenerationMixin:
         )
         return {'job_id': job_id}
 
-    def single_runs(self, work):
+    def single_runs(self, work, reference_only=False):
         """Recent single results survive clearing the queue because the PNG sidecars are authoritative."""
         saved = {}
         work_id = work.id if work else None
@@ -485,6 +525,8 @@ class GenerationMixin:
                 continue
             if record.get('kind') != 'single' or record.get('work_id') != work_id:
                 continue
+            if ('reference' in record) != reference_only:
+                continue
             actual = self._single_actual(record)
             saved[record['job_id']] = {
                 'id': record['job_id'],
@@ -496,8 +538,12 @@ class GenerationMixin:
                 'actual': actual,
                 'image_url': item['image_url'],
                 'path': item['path'],
+                **({'reference': reference.public(work_id, record['reference'])} if reference_only else {}),
             }
         for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work_id):
+            snapshot = job.get('snapshot') or {}
+            if ('reference' in snapshot) != reference_only:
+                continue
             entry = saved.get(job['id'], {})
             saved[job['id']] = {
                 **entry,
@@ -506,11 +552,12 @@ class GenerationMixin:
                 'created_at': job['created_at'],
                 'service': job['service'],
                 'seed': job['seed'],
-                'request': (job.get('snapshot') or {}).get('request'),
-                'actual': self._single_actual(job.get('snapshot') or {}),
+                'request': snapshot.get('request'),
+                'actual': self._single_actual(snapshot),
                 'image_url': job.get('image_url') or entry.get('image_url'),
                 'path': entry.get('path'),
                 'error': message_of(job['error']) if job.get('error') else None,
+                **({'reference': reference.public(work_id, snapshot['reference'])} if reference_only else {}),
             }
         return {'runs': sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)[:100]}
 
@@ -670,7 +717,9 @@ class GenerationMixin:
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
             schema_version=(
-                5
+                6
+                if 'reference' in metadata
+                else 5
                 if 'moss_layout' in metadata
                 else 4
                 if not job.get('work_id')
@@ -693,10 +742,18 @@ class GenerationMixin:
             info.add_text('prompt', json.dumps(graph, ensure_ascii=False))
             try:
                 editor = build_ui_workflow(
-                    metadata['settings'], metadata['positive'], metadata['negative'], job['seed']
+                    metadata['settings'],
+                    metadata['positive'],
+                    metadata['negative'],
+                    job['seed'],
+                    **({'graph': graph} if 'reference' in metadata else {}),
                 )
                 info.add_text('workflow', json.dumps(editor, ensure_ascii=False))
-            except (KeyError, ValueError):
+            except (KeyError, ValueError) as error:
+                if 'reference' in metadata:
+                    raise RuntimeError(
+                        Msg('server.reference.workflow', 'Could not save the editable reference workflow.')
+                    ) from error
                 log.warning('No editor workflow for job %s; the API prompt is still saved.', job['id'])
         else:
             # An internet service's own PNG text (its generation settings) stays with the image.

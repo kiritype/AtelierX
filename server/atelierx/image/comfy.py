@@ -8,6 +8,9 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from ..core.i18n import Msg, message_of
 
+REFERENCE_NODE = 'AnimaRefAdapter'
+REFERENCE_WEIGHT = 'anima_ref_adapter_v2_r64.safetensors'
+
 
 class Comfy:
     def __init__(self, url):
@@ -78,6 +81,25 @@ class Comfy:
             raise RuntimeError(
                 Msg('server.comfy.cannot_connect_to_comfyui', 'Cannot connect to ComfyUI.')
             ) from e
+
+    def reference_status(self):
+        """Check that the Anima v2 node is loaded and its exact weight is installed."""
+        try:
+            info = self.request(f'/object_info/{REFERENCE_NODE}')
+        except (RuntimeError, ValueError):
+            info = {}
+        try:
+            loras = self.request('/models/loras')
+        except (RuntimeError, ValueError):
+            loras = []
+        node_ready = isinstance(info, dict) and isinstance(info.get(REFERENCE_NODE), dict)
+        # The node's combo lists downloadable weights even when their files are missing.
+        weights_ready = isinstance(loras, list) and REFERENCE_WEIGHT in loras
+        return {
+            'ready': node_ready and weights_ready,
+            'node_ready': node_ready,
+            'weights_ready': weights_ready,
+        }
 
     def catalog(self):
         try:

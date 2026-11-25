@@ -23,7 +23,8 @@ def make_app(tmp_path):
 def test_plan_and_pack_copy(tmp_path):
     app, comfy = make_app(tmp_path)
     plan = node_install.plan(app, comfy)
-    assert {s['action'] for s in plan['steps']} == {'install'} and plan['pack']['action'] == 'install'
+    assert all(s['action'] == 'install' for s in plan['steps'] if not s['node'].get('optional'))
+    assert plan['pack']['action'] == 'install'
     assert node_install.plan(app, comfy, ['tagger'])['pack']['action'] == 'skip'
 
     # Someone else's folder with the pack's name is never overwritten.
@@ -37,6 +38,20 @@ def test_plan_and_pack_copy(tmp_path):
     assert (copied / '__init__.py').is_file() and done['pack']['action'] == 'ok'
     (app / 'comfy_nodes' / 'atelierx_nodes' / '__init__.py').write_text('NODES = 2\n', encoding='utf-8')
     assert node_install.plan(app, comfy)['pack']['action'] == 'update'
+
+
+def test_reference_adapter_is_explicitly_selected(tmp_path):
+    app, comfy = make_app(tmp_path)
+    for features, show_optional, action in (
+        (None, False, 'skip'),
+        (None, True, 'install'),
+        (['reference'], False, 'install'),
+    ):
+        result = node_install.plan(app, comfy, features, show_optional=show_optional)
+        ref = next(step for step in result['steps'] if step['id'] == 'anima-ref-adapter')
+        assert ref['action'] == action
+    assert result['pack']['action'] == 'skip'
+    assert all(step['action'] == 'skip' for step in result['steps'] if step != ref)
 
 
 def test_manifest_lists_licenses():
@@ -73,7 +88,7 @@ def test_status_reads_checkouts_without_a_git_program(tmp_path, monkeypatch):
         raise AssertionError('git must not be needed to look at checkouts')
 
     monkeypatch.setattr(node_install.subprocess, 'run', no_git)
-    plan = node_install.plan(app, comfy)
+    plan = node_install.plan(app, comfy, show_optional=True)
     assert {s['action'] for s in plan['steps']} == {'ok'}
 
 
