@@ -50,13 +50,25 @@ AtelierX에 들어 있지 않습니다. 필요한 것만 따로 설치하거나 
 
 ## 외부 구성 요소
 
-이미지 기능은 아래를 따로 받아 씁니다. 앱은 설정 → 설치에서 원래 배포처로부터 정해진 판을 받을 뿐 함께 배포하지 않습니다.
-판·라이선스·받는 곳 전체 목록은 설명서의 [외부 구성 요소](https://atelierx.cftm.net/guide/external.html)에 있습니다.
+로컬 이미지 기능은 [ComfyUI](https://github.com/comfyanonymous/ComfyUI)에 연결해 사용합니다. 필요한 확장 노드와 모델은 앱의 **설정 → 설치**에서 받을 수 있습니다.
+버전과 설치 위치는 [외부 구성 요소 안내](https://atelierx.cftm.net/guide/external.html)를 참고하세요.
 
-- 이미지 생성 서버: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
-- 확장 노드: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),
-  [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials), [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack),
-  [Impact Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack)
+### ComfyUI 외부 커스텀 노드
+
+| 노드 | 용도 | 라이선스 |
+|---|---|---|
+| [ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger) | 이미지 태깅 | [MIT](https://github.com/pythongosssss/ComfyUI-WD14-Tagger/blob/9e0a6e700299182fc05c58b62e7ad9f72182a78b/LICENSE) |
+| [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | 배경 제거 | [MIT](https://github.com/cubiq/ComfyUI_essentials/blob/9d9f4bedfc9f0321c19faf71855e228c93bd0dc9/LICENSE) |
+| [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | 디테일러 | [GPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Pack/blob/429d0159ad429e64d2b3916e6e7be9c22d025c3c/LICENSE.txt) |
+| [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | 영역 감지 및 디테일러 | [AGPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Subpack/blob/50c7b71a6a224734cc9b21963c6d1926816a97f1/LICENSE.txt) |
+| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Anima 참조 이미지 생성 BETA | [Apache-2.0](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/LICENSE) |
+
+Anima Ref Adapter 노드와 예제 워크플로는 수동 설치용 ZIP(`AtelierX-<버전>-anima-ref-adapter.zip`)으로도 제공합니다. [릴리스 다운로드](https://github.com/kiritype/AtelierX/releases)
+
+v2 가중치는 **설정 → 설치 → 모델 → 참조 이미지 BETA (Anima)**에서 별도로 받습니다. [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md)
+
+### 모델과 도구
+
 - 모델: [Anima](https://huggingface.co/circlestone-labs/Anima)(비상업 라이선스), [adetailer](https://huggingface.co/Bingsu/adetailer),
   [Segment Anything](https://github.com/facebookresearch/segment-anything), [2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4)·[UltraSharp](https://huggingface.co/Kim2091/UltraSharp)(비상업)
 - LoRA 학습: [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools)
@@ -92,3 +104,5 @@ AtelierX에 들어 있지 않습니다. 필요한 것만 따로 설치하거나 
 ## 라이선스
 
 [MIT](LICENSE)
+
+[서드파티 라이선스 및 출처](THIRD_PARTY_NOTICES.md)
