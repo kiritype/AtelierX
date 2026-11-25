@@ -66,7 +66,17 @@ async def update_status(request):
 
 
 async def update_start(request):
-    return ok(st(request).updater.start())
+    value = await body(request)
+    backup = value.get('backup', True) if isinstance(value, dict) else None
+    if not isinstance(backup, bool):
+        raise AppError(
+            Msg(
+                'server.update.invalid_backup',
+                'Choose whether to back up settings and works before updating.',
+            ),
+            400,
+        )
+    return ok(st(request).updater.start(backup=backup))
 
 
 async def update_apply(request):

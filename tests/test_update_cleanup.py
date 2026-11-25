@@ -122,13 +122,24 @@ def test_backup_prunes_excluded_trees_and_restores_every_included_byte(paths, mo
     import zipfile
 
     folder, _ = seed(paths)
-    for name in (
+    included = (
         'config/a.json',
         'data/work.md',
         'data/image.PNG',
+        'data/works/w/state/deploy/webp/attachment.webp',
         'state/jobs.json',
+        'state/deploy/history/index.json',
+        'state/deploy/webp-old/kept.webp',
+        'state/image/queue.json',
+        'state/image/thumbnails-old/kept.webp',
+    )
+    for name in (
+        *included,
         'state/desktop.lock',
         'state/logs/a.log',
+        'state/deploy/webp/cache/deployment.webp',
+        'state/image/thumbnails/cache/gallery.webp',
+        'output/generated.png',
     ):
         path = paths.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -142,14 +153,17 @@ def test_backup_prunes_excluded_trees_and_restores_every_included_byte(paths, mo
 
     monkeypatch.setattr(os, 'scandir', observe)
     archive = Updater(paths)._backup('v9.9.9')
-    assert folder not in walked and paths.state / 'logs' not in walked
-    with zipfile.ZipFile(archive) as source:
-        assert set(source.namelist()) == {
-            'config/a.json',
-            'data/work.md',
-            'data/image.PNG',
-            'state/jobs.json',
+    assert set(walked).isdisjoint(
+        {
+            folder,
+            paths.state / 'logs',
+            paths.state / 'deploy' / 'webp',
+            paths.state / 'image' / 'thumbnails',
+            paths.output,
         }
+    )
+    with zipfile.ZipFile(archive) as source:
+        assert set(source.namelist()) == set(included)
         for name in source.namelist():
             assert (
                 hashlib.sha256(source.read(name)).digest()

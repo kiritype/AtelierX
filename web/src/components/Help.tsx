@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { ApiError, get, post } from '../api';
 import { t, tm } from '../i18n';
 import {
@@ -152,6 +152,9 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
 
 function UpdateDialog({ onClose }: { onClose: () => void }) {
   const toast = useToast();
+  const backupNote = useId();
+  const [backup, setBackup] = useState(false);
+  const [starting, setStarting] = useState(false);
   const check = useQuery<Update>({ queryKey: ['update-check'], queryFn: () => get('/api/update-check'), retry: false, staleTime: 0, gcTime: 0 });
   const update = useQuery<UpdateState>({
     queryKey: ['update-status'],
@@ -161,11 +164,15 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
   const fail = (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
   const u = update.data;
   async function start() {
+    setStarting(true);
     try {
-      await post('/api/update/start');
-      update.refetch();
+      await post('/api/update/start', { backup });
+      setBackup(false);
+      await update.refetch();
     } catch (err) {
       fail(err);
+    } finally {
+      setStarting(false);
     }
   }
   async function restart() {
@@ -178,11 +185,12 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
     }
   }
   const canUpdate = !!check.data?.newer && !!u?.packaged;
+  const canStart = canUpdate && (u?.state === 'idle' || u?.state === 'failed');
   const actions = !check.data?.newer ? undefined : canUpdate ? (
     u?.state === 'ready' ? (
       <button className="primary" onClick={restart}>{t('update.restart')}</button>
     ) : (
-      <button className="primary" disabled={PREPARING.includes(u?.state ?? '') || u?.state === 'restarting'} onClick={start}>
+      <button className="primary" disabled={!canStart || starting} onClick={start}>
         {t('update.start')}
       </button>
     )
@@ -208,14 +216,28 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
             </>
           )}
           {check.data.newer && !u?.packaged && <p className="faint small">{t('help.update_how')}</p>}
-          {check.data.newer && u?.packaged && u.state === 'idle' && <p className="faint small">{t('update.about')}</p>}
+          {canStart && (
+            <>
+              <p className="faint small">{t('update.about')}</p>
+              <label className="row" style={{ flexDirection: 'row' }}>
+                <input type="checkbox" checked={backup} disabled={starting} aria-describedby={backupNote}
+                  onChange={event => setBackup(event.target.checked)} />
+                {t('update.backup')}
+              </label>
+              <p id={backupNote} className="faint small">{t('update.backup_note')}</p>
+            </>
+          )}
           {u && PREPARING.includes(u.state) && (
             <p className="faint">
               {t(`update.state.${u.state}`)}
               {u.state === 'downloading' && u.total ? ` ${Math.floor(((u.received ?? 0) / u.total) * 100)}%` : ''}
             </p>
           )}
-          {u?.state === 'ready' && <p>{t('update.ready', { version: u.version ?? '', backup: u.backup ?? '' })}</p>}
+          {u?.state === 'ready' && (
+            <p>{u.backup
+              ? t('update.ready', { version: u.version ?? '', backup: u.backup })
+              : t('update.ready_without_backup', { version: u.version ?? '' })}</p>
+          )}
           {u?.state === 'restarting' && <p>{t('update.restarting')}</p>}
           {u?.state === 'failed' && u.error && <p className="error-text">{tm(u.error)}</p>}
         </div>

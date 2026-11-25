@@ -1,5 +1,6 @@
-"""In-app update (#48): download the latest release, check it against its published SHA256, keep a backup of the user
-data, then let a small script swap the program files after the app has closed and start the new version.
+"""Prepare an in-app update (#48) by checking the release SHA256 and optionally backing up user data.
+
+A script swaps the program files after the app closes and starts the new version.
 
 Only the packaged app updates itself. The program files are the top-level entries of the release ZIP's ``AtelierX/``
 folder (the executable, ``_internal``, the manual, notices …); the user data folders beside them (config, state, data,
@@ -35,7 +36,6 @@ logger = logging.getLogger(__name__)
 
 USER_DATA = ('config', 'state', 'data', 'output')
 ASSET = re.compile(r'^AtelierX-(\d+\.\d+\.\d+)-windows-x64\.zip$')
-STATE_SKIPPED_IN_BACKUP = ('update', 'packages', 'webview', 'logs')
 TIMEOUT = httpx.Timeout(connect=10, read=120, write=30, pool=10)
 
 SCRIPT = r"""param([string]$Params, [switch]$NoStart)
@@ -144,7 +144,7 @@ class Updater:
         (self.folder / 'result.json').unlink(missing_ok=True)
 
     # --- download and check -----------------------------------------------------------------------------------------
-    def start(self):
+    def start(self, *, backup=True):
         """Begin preparing the update in the background; the screen follows ``status``."""
         if not self.packaged():
             raise AppError(Msg('server.update.not_packaged', 'Only the packaged app updates itself.'), 400)
@@ -176,12 +176,12 @@ class Updater:
             ):
                 raise AppError(Msg('server.update.running', 'The update is already being prepared.'), 409)
             self.state = {'state': 'checking'}
-        self.task = asyncio.get_running_loop().create_task(self._prepare_safely())
+        self.task = asyncio.get_running_loop().create_task(self._prepare_safely(backup=backup))
         return self.status()
 
-    async def _prepare_safely(self):
+    async def _prepare_safely(self, *, backup):
         try:
-            await self.prepare()
+            await self.prepare(backup=backup)
         except AppError as error:
             self._set(state='failed', error=error.msg.as_dict())
         except Exception as error:  # noqa: BLE001 - reported on the screen, the app keeps running
@@ -192,7 +192,7 @@ class Updater:
                 ).as_dict(),
             )
 
-    async def prepare(self):
+    async def prepare(self, *, backup=True):
         async with httpx.AsyncClient(
             timeout=TIMEOUT, follow_redirects=True, transport=self.transport
         ) as client:
@@ -249,9 +249,12 @@ class Updater:
             )
         self._set(state='extracting', version=tag)
         await asyncio.to_thread(self._extract, target)
-        self._set(state='backing_up', version=tag)
-        backup = await asyncio.to_thread(self._backup, tag)
-        self._set(state='ready', version=tag, backup=backup.name)
+        ready = {'state': 'ready', 'version': tag}
+        if backup:
+            self._set(state='backing_up', version=tag)
+            archive = await asyncio.to_thread(self._backup, tag)
+            ready['backup'] = archive.name
+        self._set(**ready)
 
     async def _release(self, client):
         response = await self._get(client, self.release_url, json=True)
@@ -314,13 +317,19 @@ class Updater:
 
     def _backup_files(self):
         root = Path(self.paths.root)
+        state = root / 'state'
+        skipped = {
+            state: {'update', 'packages', 'webview', 'logs'},
+            state / 'deploy': {'webp'},
+            state / 'image': {'thumbnails'},
+        }
         for name in ('config', 'data', 'state'):
-            folder = root / name
-            for current, directories, files in os.walk(folder):
-                if name == 'state' and Path(current) == folder:
-                    directories[:] = [d for d in directories if d not in STATE_SKIPPED_IN_BACKUP]
+            for current, directories, files in os.walk(root / name):
+                folder = Path(current)
+                if ignored := skipped.get(folder):
+                    directories[:] = [d for d in directories if d not in ignored]
                 for filename in files:
-                    path = Path(current) / filename
+                    path = folder / filename
                     if filename != 'desktop.lock' and path.is_file():
                         yield path
 
