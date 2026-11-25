@@ -12,7 +12,7 @@ import ImageReference from './ImageReference';
 vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn() }));
 
 const endpoint = '/api/works/example/image/reference';
-const reference = { id: 'asset', name: 'source.png', url: '/api/image/ref.png', sha256: '5'.repeat(64) };
+const reference = { id: 'asset', name: 'source.png', url: endpoint + '/assets/asset', sha256: '5'.repeat(64) };
 const model = 'silvermoonmix.safetensors';
 const catalog = {
   connected: true, models: [model], text_encoders: [], vaes: [], loras: [], samplers: ['euler'], schedulers: ['simple'],
@@ -114,6 +114,38 @@ it('imports the gallery reference and queues the chosen Anima preset without ena
     reference: { id: reference.id, guidance: 4.5 },
   }));
   await vi.waitFor(() => expect(host.querySelector('.single-result-head')?.textContent).toContain(t('single.state.queued')));
+});
+
+it.each(['file', 'gallery'])('previews a %s reference and returns to the existing draft on Escape', async source => {
+  if (source === 'gallery') sendReferenceHandoff('example', 'chosen/source.png');
+  await render();
+  if (source === 'file') {
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [new File(['image'], reference.name, { type: 'image/png' })] });
+    await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })); });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledWith(endpoint + '/assets', {
+      filename: reference.name, data_url: 'data:image/png;base64,aW1hZ2U=',
+    }));
+  }
+
+  await vi.waitFor(() => expect(host.querySelector('.reference-card button[aria-haspopup="dialog"]')).not.toBeNull());
+  const thumbnail = host.querySelector<HTMLButtonElement>('.reference-card button[aria-haspopup="dialog"]')!;
+  expect(thumbnail.getAttribute('aria-label')).toBe(t('reference.open_preview', { name: reference.name }));
+  const scene = host.querySelector<HTMLTextAreaElement>('textarea[id$="-scene"]')!;
+  await changeText(scene, 'standing by the sea');
+  await act(async () => thumbnail.click());
+  const dialog = host.querySelector('[role="dialog"]');
+  expect(dialog?.getAttribute('aria-label')).toBe(t('reference.preview_title', { name: reference.name }));
+  expect(dialog?.querySelector('img')?.getAttribute('src')).toBe(reference.url);
+  expect(document.activeElement).toBe(dialog);
+
+  await act(async () => { dialog?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(thumbnail);
+  expect(host.querySelector('textarea[id$="-scene"]')).toBe(scene);
+  expect(scene.value).toBe('standing by the sea');
+  expect(openView).not.toHaveBeenCalled();
+  expect(post).toHaveBeenCalledTimes(1);
 });
 
 it('takes an incomplete ComfyUI setup to installation settings', async () => {

@@ -41,6 +41,17 @@ type UpdateState = {
 };
 const PREPARING = ['checking', 'downloading', 'verifying', 'extracting', 'backing_up'];
 
+const DOWNLOAD_UNITS = [[1_000_000_000, 'GB'], [1_000_000, 'MB'], [1000, 'KB']] as const;
+
+function downloadProgress(received = 0, total = 0) {
+  const largest = Math.max(received, total);
+  const [divisor, unit] = DOWNLOAD_UNITS.find(([bytes]) => largest >= bytes) ?? [1, 'B'];
+  const format = (bytes: number) => (bytes / divisor).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  if (!total) return `${format(received)} ${unit}`;
+  const percent = Math.min(100, Math.floor((received / total) * 100));
+  return `${percent}% · ${format(received)} / ${format(total)} ${unit}`;
+}
+
 const open = (url: string) => window.open(url, '_blank', 'noopener,noreferrer');
 export function useHelp() {
   const [dialog, setDialog] = useState<HelpDialog>(null);
@@ -230,7 +241,7 @@ function UpdateDialog({ onClose }: { onClose: () => void }) {
           {u && PREPARING.includes(u.state) && (
             <p className="faint">
               {t(`update.state.${u.state}`)}
-              {u.state === 'downloading' && u.total ? ` ${Math.floor(((u.received ?? 0) / u.total) * 100)}%` : ''}
+              {u.state === 'downloading' && ` ${downloadProgress(u.received, u.total)}`}
             </p>
           )}
           {u?.state === 'ready' && (

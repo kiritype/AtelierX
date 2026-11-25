@@ -8,12 +8,15 @@ import { t } from '../../i18n';
 import ImageGallery, { type GalleryItem } from './ImageGallery';
 
 vi.mock('../../api', async (original) => ({ ...await original<typeof import('../../api')>(), get: vi.fn() }));
-vi.mock('../Toasts', () => ({ useToast: () => vi.fn() }));
+const toast = vi.hoisted(() => vi.fn());
+vi.mock('../Toasts', () => ({ useToast: () => toast }));
 
 let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
 
+const positivePrompt = (path: string) => `  prompt ${path}\nforest, (mist:1.2) `;
+const negativePrompt = '  blur, (noise:0.7)\ntext  ';
 const items = ['a', 'b', 'c', 'd'].map((name): GalleryItem => ({
   path: `${name}.png`, filename: `${name}.png`, folder: '', kind: 'image',
   image_url: `/image/${name}`, thumbnail_url: `/thumb/${name}`, has_record: true,
@@ -44,7 +47,7 @@ beforeEach(() => {
     if (url.startsWith('/api/image/gallery/detail?')) {
       const path = new URL(url, 'http://localhost').searchParams.get('path')!;
       const item = items.find(value => value.path === path)!;
-      return { ...item, record: { positive: `prompt ${path}`, seed: items.indexOf(item), settings: { model: path,
+      return { ...item, record: { positive: positivePrompt(path), negative: negativePrompt, seed: items.indexOf(item), settings: { model: path,
         loras: [{ name: 'style', strength_model: 0.37, strength_clip: 0 }, { name: 'zero', strength_model: 0, strength_clip: 0.8 },
           { name: 'legacy', model_strength: 0.6 }, { name: 'pixai', weight: 0.5 }] } }, history: [], adopted_path: null };
     }
@@ -55,7 +58,7 @@ beforeEach(() => {
   });
 });
 
-afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); vi.clearAllMocks(); });
+afterEach(async () => { await act(async () => root.unmount()); qc.clear(); host.remove(); vi.clearAllMocks(); vi.restoreAllMocks(); });
 
 it('keeps one record and preset control through real modal navigation, expansion and reopening', async () => {
   await act(async () => root.render(<QueryClientProvider client={qc}>
@@ -75,7 +78,7 @@ it('keeps one record and preset control through real modal navigation, expansion
     await click(byText(t('gallery.open_record')));
     const record = host.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('gallery.record_json')}"]`)!;
     expect(record.readOnly).toBe(true);
-    expect(JSON.parse(record.value).positive).toBe(`prompt ${name}.png`);
+    expect(JSON.parse(record.value).positive).toBe(positivePrompt(name + '.png'));
     record.focus(); record.select();
     await act(async () => record.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
     expect(host.querySelector('.gallery-detail .mono')?.textContent).toContain(`${name}.png`);
@@ -94,4 +97,26 @@ it('keeps one record and preset control through real modal navigation, expansion
   await click(host.querySelector<HTMLButtonElement>('.gallery-open')!);
   expect([...host.querySelectorAll('.gallery-detail button')].filter(button => button.textContent === t('gallery.open_record'))).toHaveLength(1);
   expect(host.querySelector(`textarea[aria-label="${t('gallery.record_json')}"]`)).toBeNull();
+});
+
+it('copies each exact prompt from its own keyboard-focusable button', async () => {
+  const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+  await act(async () => root.render(<QueryClientProvider client={qc}>
+    <ImageGallery workId="w0" openLab={() => {}} openTools={() => {}} />
+  </QueryClientProvider>));
+  await flush();
+  await click(host.querySelector<HTMLButtonElement>('.gallery-open')!);
+
+  for (const [label, value] of [['gallery.copy_positive', positivePrompt('a.png')], ['gallery.copy_negative', negativePrompt]]) {
+    const button = byText(t(label));
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.tabIndex).toBe(0);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    await click(button);
+    expect(writeText).toHaveBeenLastCalledWith(value);
+  }
+  expect(writeText).toHaveBeenCalledTimes(2);
+  expect(toast).toHaveBeenCalledTimes(2);
+  expect(toast).toHaveBeenLastCalledWith({ text: t('gallery.copied') });
 });

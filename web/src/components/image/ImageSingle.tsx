@@ -136,6 +136,12 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     });
   }, [catalog.data, draftLoaded]);
   const update = (patch: Partial<Draft>) => setDraft(current => ({ ...current, ...patch }));
+  function selectService(service: Service) {
+    setDraft(current => current.service === service ? current : {
+      ...current, service, preset: '',
+      sources: current.sources.filter(source => !['style', 'common'].includes(source.kind)),
+    });
+  }
   const settings = draft.settings[draft.service];
   const isMoss = draft.service === 'comfyui' && settings.family === 'moss';
   const mossDoc: MossDocument = { ...(draft.moss_layout ?? freshMoss()), width: Number(settings.width ?? 1024), height: Number(settings.height ?? 1024) };
@@ -289,7 +295,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     </header>
     <div className="generation-service-bar">
       <div className="generation-service-tabs" role="group" aria-label={t('gen.service')}>
-        {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => update({ service, preset: '', sources: draft.sources.filter(source => !['style', 'common'].includes(source.kind)) })}>{SERVICE_NAMES[service]}</button>)}
+        {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => selectService(service)}>{SERVICE_NAMES[service]}</button>)}
       </div>
       {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
     </div>
