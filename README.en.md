@@ -56,14 +56,25 @@ and not bundled; install only what you need yourself or from the app's **Setting
 
 ## External components
 
-The image features use the following, downloaded separately. The app fetches pinned versions from their own sources
-in Settings → Install and does not redistribute them. Versions, licenses and sources are listed in the manual's
-[external components](https://atelierx.cftm.net/guide/external.html) page (Korean).
+The local image features connect to [ComfyUI](https://github.com/comfyanonymous/ComfyUI). Open **Settings → Install** to download the custom nodes and models you need.
+See the [external components guide](https://atelierx.cftm.net/guide/external.html) (Korean) for versions and installation paths.
 
-- Image server: [ComfyUI](https://github.com/comfyanonymous/ComfyUI)
-- Custom nodes: [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger),
-  [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials), [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack),
-  [Impact Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack)
+### Third-party ComfyUI custom nodes
+
+| Node | Used for | License |
+|---|---|---|
+| [ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger) | Image tagging | [MIT](https://github.com/pythongosssss/ComfyUI-WD14-Tagger/blob/9e0a6e700299182fc05c58b62e7ad9f72182a78b/LICENSE) |
+| [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | Background removal | [MIT](https://github.com/cubiq/ComfyUI_essentials/blob/9d9f4bedfc9f0321c19faf71855e228c93bd0dc9/LICENSE) |
+| [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | Detailer | [GPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Pack/blob/429d0159ad429e64d2b3916e6e7be9c22d025c3c/LICENSE.txt) |
+| [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | Detection and detailer | [AGPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Subpack/blob/50c7b71a6a224734cc9b21963c6d1926816a97f1/LICENSE.txt) |
+| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Reference image generation BETA for Anima | [Apache-2.0](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/LICENSE) |
+
+The Anima Ref Adapter node and example workflow are also available as a ZIP for manual installation (`AtelierX-<version>-anima-ref-adapter.zip`). [Release downloads](https://github.com/kiritype/AtelierX/releases)
+
+Download the v2 weights separately under **Settings → Install → Models → Reference Image BETA (Anima)**. [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md)
+
+### Models and tools
+
 - Models: [Anima](https://huggingface.co/circlestone-labs/Anima) (non-commercial license), [adetailer](https://huggingface.co/Bingsu/adetailer),
   [Segment Anything](https://github.com/facebookresearch/segment-anything), [2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4) and [UltraSharp](https://huggingface.co/Kim2091/UltraSharp) (non-commercial)
 - LoRA training: [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools)
@@ -100,3 +111,5 @@ Development setup, checks, code rules, branches and releases, and manual builds:
 ## License
 
 [MIT](LICENSE)
+
+[Third-party licenses and attribution](THIRD_PARTY_NOTICES.md)
