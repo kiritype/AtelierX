@@ -39,6 +39,7 @@ features:
 | 처음 설치하고 샘플 열기 | [첫 실행](tutorial/first-run.md) → [작품 만들기](tutorial/create-work.md) | 작품 목록에서 샘플을 열고 파일을 편집할 수 있음 |
 | 원고를 쓰고 AI와 다듬기 | [LLM 연결](tutorial/connect-llm.md) → [에이전트로 쓰기](tutorial/write-with-agent.md) → [테스트·내보내기](tutorial/test-and-export.md) | 채택한 원고로 대화하고 내보낸 파일을 확인 |
 | 이미지 한 장 만들기 | [서비스 준비](guide/image-setup.md) → [단일 이미지 생성](guide/single-generation.md) | 결과 이미지와 실제 생성 설정 확인 |
+| 기준 이미지로 다른 장면 만들기 | [참조 이미지로 생성 BETA](guide/reference-generation.md) | 기준 이미지와 생성 결과 확인 |
 | 마음에 드는 그림체 찾기 | [그림체 탐색](guide/style-explorer.md) → [프리셋 저장·적용](guide/style-presets.md) → [단일 생성](guide/single-generation.md) | 저장한 그림체를 다른 장면에 다시 사용 |
 | 캐릭터의 의상·표정 이미지 만들기 | [캐릭터 이미지 설계](guide/character-images.md) → [일괄 생성](guide/batch-generation.md) → [갤러리·채택](guide/gallery-export.md) | 필요한 조합의 채택 이미지를 내보냄 |
 | 이미지 다듬기·배포하기 | [이미지 도구](guide/image-tools.md) → [R2 업로드](guide/deployment.md) | 원본을 보존한 결과 또는 배포 URL 확인 |

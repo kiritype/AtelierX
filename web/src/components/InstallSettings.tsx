@@ -18,7 +18,7 @@ type Status = {
   nodes: null | {
     comfy: string;
     python: string | null;
-    steps: { id: string; action: string; node: { folder: string; version: string; license: string } }[];
+    steps: { id: string; action: string; node: { folder: string; version: string; license: string; features: string[]; optional?: boolean } }[];
     pack: { folder: string; action: string; license: string };
     broken_links: string[];
     legacy_packs: string[];
@@ -117,9 +117,9 @@ export default function InstallSettings() {
   if (!s) return <div className="faint">{t('install.checking')}</div>;
   const lang = getLanguage();
   const copy = readiness[lang === 'ko' ? 'ko' : 'en'];
-  const nodesTodo = s.nodes ? s.nodes.steps.filter((x) => ['install', 'repair'].includes(x.action)).length + (['install', 'update'].includes(s.nodes.pack.action) ? 1 : 0) : 0;
+  const nodesTodo = s.nodes ? s.nodes.steps.filter((x) => !x.node.optional && ['install', 'repair'].includes(x.action)).length + (['install', 'update'].includes(s.nodes.pack.action) ? 1 : 0) : 0;
   const nodesNeedReview = !!s.nodes && (
-    s.nodes.steps.some((x) => ['blocked', 'differs'].includes(x.action))
+    s.nodes.steps.some((x) => !x.node.optional && ['blocked', 'differs'].includes(x.action))
     || ['blocked', 'missing_source'].includes(s.nodes.pack.action)
     || s.nodes.broken_links.length > 0
   );
@@ -166,7 +166,7 @@ export default function InstallSettings() {
         ) : (
           <>
             <span className="faint small mono">{s.nodes.comfy}</span>
-            {s.nodes.steps.map((step) => (
+            {s.nodes.steps.filter((step) => !step.node.optional).map((step) => (
               <span key={step.id} className="small">
                 <Mark ok={step.action === 'ok'} label={`${step.node.folder} ${step.node.version} (${step.node.license}) · ${t(`install.action.${step.action}`)}`} />
               </span>
@@ -174,6 +174,16 @@ export default function InstallSettings() {
             <span className="small">
               <Mark ok={s.nodes.pack.action === 'ok'} label={`${s.nodes.pack.folder} (${s.nodes.pack.license}) · ${t(`install.action.${s.nodes.pack.action}`)}`} />
             </span>
+            {s.nodes.steps.filter((step) => step.node.optional).map((step) => (
+              <div key={step.id} className="row small">
+                <Mark ok={step.action === 'ok'} label={`${step.node.folder} ${step.node.version} (${step.node.license}) · ${t(`install.action.${step.action}`)}`} />
+                {['install', 'repair'].includes(step.action) && (
+                  <button disabled={running} onClick={() => act('nodes', { features: step.node.features })}>
+                    {t('install.install_node', { name: step.node.folder })}
+                  </button>
+                )}
+              </div>
+            ))}
             {s.nodes.broken_links.length > 0 && <span className="warn-text small">{t('install.broken_links', { names: s.nodes.broken_links.join(', ') })}</span>}
             {s.nodes.legacy_packs.length > 0 && <span className="warn-text small">{t('install.legacy_packs', { names: s.nodes.legacy_packs.join(', ') })}</span>}
           </>

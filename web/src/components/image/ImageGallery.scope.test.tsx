@@ -19,6 +19,12 @@ const pause = async () => { await act(async () => { await new Promise(resolve =>
 const settle = async () => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); }); };
 const click = async (element: HTMLElement) => { await act(async () => element.click()); await pause(); };
 const gallery = (workId: string) => <ImageGallery workId={workId} openLab={() => {}} openTools={() => {}} />;
+const image = (path: string, workId: string, folder = '') => ({
+  path, filename: path.split('/').at(-1), folder, kind: 'image', image_url: '/image', thumbnail_url: '/thumb',
+  has_record: false, work_id: workId, character_id: '', outfit_id: '', expression_id: '', outfit_name: '',
+  expression_name: '', rating: '', model_family: '', postprocessed: false, created_at: '', sha256: '',
+  human_status: 'unreviewed', note: '', auto_status: 'pending', auto_reason: '', adopted: false,
+});
 
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -34,10 +40,7 @@ beforeEach(() => {
       const query = new URL(url, 'http://localhost').searchParams;
       const work = query.get('library_work') ?? 'global';
       const folder = query.get('folder');
-      return { results: [{ path: folder ?? `${work}/image.png`, filename: `${work}.png`, folder: folder ?? '',
-        kind: 'image', image_url: '/image', thumbnail_url: '/thumb', has_record: false, work_id: work,
-        character_id: '', outfit_id: '', expression_id: '', outfit_name: '', expression_name: '', rating: '', model_family: '',
-        postprocessed: false, created_at: '', sha256: '', human_status: 'unreviewed', note: '', auto_status: 'pending', auto_reason: '', adopted: false }],
+      return { results: [image(folder ?? `${work}/image.png`, work, folder ?? '')],
         total: 1, page: Number(query.get('page') ?? 1), pages: 1, snapshot: `${work}-snapshot`, newer: 0 };
     }
     if (url === '/api/image/review/rounds') return { rounds: [], enabled: false };
@@ -100,4 +103,42 @@ it('does not show the previous work when the active work changes', async () => {
   expect(host.querySelector('.gallery-cell')?.getAttribute('data-gallery-path')).toContain('w1/');
   expect(host.querySelector('.gallery-cell')?.getAttribute('data-gallery-path')).not.toContain('w0/');
   expect(vi.mocked(get).mock.calls.some(([url]) => String(url).startsWith('/api/image/gallery?') && String(url).includes('library_work=w1'))).toBe(true);
+});
+
+it('can use exactly one checked image from the current work as a reference', async () => {
+  const getFixture = vi.mocked(get).getMockImplementation()!;
+  const first = image('w0/first.png', 'w0');
+  const second = image('w0/second.png', 'w0');
+  const other = image('w1/other.png', 'w1');
+  vi.mocked(get).mockImplementation(async url => {
+    if (!url.startsWith('/api/image/gallery?')) return getFixture(url);
+    const scoped = new URL(url, 'http://localhost').searchParams.has('library_work');
+    const results = scoped ? [first, second] : [first, other];
+    return { results, total: results.length, page: 1, pages: 1, snapshot: scoped ? 'work' : 'global', newer: 0 };
+  });
+  const openReference = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={qc}>
+    <ImageGallery workId="w0" openLab={() => {}} openTools={() => {}} openReference={openReference} />
+  </QueryClientProvider>));
+  await settle();
+  const action = () => [...host.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent === t('reference.use_selected'));
+  const check = (path: string) => click(host.querySelector<HTMLInputElement>(`input.gallery-check[aria-label="${path}"]`)!);
+
+  expect(action()).toBeUndefined();
+  await check(first.path);
+  expect(action()).toBeDefined();
+  await check(second.path);
+  expect(action()).toBeUndefined();
+  await check(second.path);
+  await click(action()!);
+  expect(openReference).toHaveBeenCalledExactlyOnceWith(first.path);
+
+  await click([...host.querySelectorAll<HTMLButtonElement>('.gallery-tree .tree-link')]
+    .find(button => button.textContent === t('gallery.load_full_library'))!);
+  await settle();
+  await check(other.path);
+  expect(host.querySelector<HTMLInputElement>(`input.gallery-check[aria-label="${other.path}"]`)?.checked).toBe(true);
+  expect(action()).toBeUndefined();
+  expect(openReference).toHaveBeenCalledTimes(1);
 });

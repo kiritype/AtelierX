@@ -9,7 +9,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library, library_share, shots, single_draft
+from ..image import library, library_share, reference, shots, single_draft
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
@@ -41,8 +41,15 @@ async def inspect_external_image(request):
         raise
 
 
-async def _body(request):
-    raw = await request.body()
+async def _body(request, max_bytes=None):
+    if max_bytes is None:
+        raw = await request.body()
+    else:
+        raw = bytearray()
+        async for chunk in request.stream():
+            if len(raw) + len(chunk) > max_bytes:
+                raise AppError(Msg('server.image.inspect_too_large', 'The image must be 32 MB or less.'), 413)
+            raw.extend(chunk)
     try:
         return json.loads(raw) if raw else {}
     except ValueError as exc:  # not JSON, or not UTF-8: the request's fault, not a server error
@@ -418,6 +425,66 @@ async def single_runs(request):
     runtime = _runtime(request)
     work = runtime.works.get(request.path_params['wid']) if 'wid' in request.path_params else None
     return await call(runtime.single_runs, work)
+
+
+async def reference_status(request):
+    return await call(_runtime(request).comfy.reference_status)
+
+
+async def reference_assets(request):
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    return await call(reference.store, work, runtime.gallery, await _body(request, reference.MAX_BODY_BYTES))
+
+
+async def reference_asset(request):
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    try:
+        _, target = await run_in_threadpool(reference.data, work, request.path_params['ident'])
+    except ValueError as error:
+        raise AppError(_as_msg(error), 404) from error
+    return FileResponse(target, headers={'Cache-Control': 'private, max-age=86400'})
+
+
+async def reference_runs(request):
+    runtime = _runtime(request)
+    return await call(runtime.single_runs, runtime.works.get(request.path_params['wid']), True)
+
+
+async def reference_enqueue(request):
+    runtime = _runtime(request)
+    return await call(
+        runtime.enqueue_reference, runtime.works.get(request.path_params['wid']), await _body(request)
+    )
+
+
+async def reference_regenerate(request):
+    runtime = _runtime(request)
+    return await call(
+        runtime.regenerate_reference, runtime.works.get(request.path_params['wid']), await _body(request)
+    )
+
+
+async def reference_export(request):
+    runtime = _runtime(request)
+    work = runtime.works.get(request.path_params['wid'])
+    try:
+        target, name = await run_in_threadpool(
+            reference.export_zip,
+            work,
+            runtime.gallery,
+            request.query_params.get('path', ''),
+            request.query_params.get('include_reference') == 'true',
+        )
+    except ValueError as error:
+        raise AppError(_as_msg(error), 400) from error
+    return FileResponse(
+        target,
+        media_type='application/zip',
+        filename=name,
+        background=BackgroundTask(target.unlink, missing_ok=True),
+    )
 
 
 async def standalone_draft(request):
@@ -869,5 +936,12 @@ def routes():
         Route('/api/image/single/runs', single_runs, methods=['GET']),
         Route('/api/works/{wid}/image/single', single_enqueue, methods=['POST']),
         Route('/api/works/{wid}/image/single/runs', single_runs),
+        Route(f'{p}/reference/status', reference_status),
+        Route('/api/works/{wid}/image/reference/assets', reference_assets, methods=['POST']),
+        Route('/api/works/{wid}/image/reference/assets/{ident}', reference_asset),
+        Route('/api/works/{wid}/image/reference/runs', reference_runs),
+        Route('/api/works/{wid}/image/reference/queue', reference_enqueue, methods=['POST']),
+        Route('/api/works/{wid}/image/reference/regenerate', reference_regenerate, methods=['POST']),
+        Route('/api/works/{wid}/image/reference/export', reference_export),
         Route('/api/works/{wid}/image/jobs', enqueue, methods=['POST']),
     ]

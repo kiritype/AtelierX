@@ -47,8 +47,8 @@ the Apache License 2.0; see anima_lora's own NOTICE when you install it.
 
 ## Used at run time, installed separately
 
-AtelierX does not bundle the image generation server, its custom nodes, the LoRA trainer or any model files. The image tools
-talk to ComfyUI over HTTP. `tools/install_comfy_nodes.py` clones the nodes below from their own repositories,
+ComfyUI, third-party custom nodes, the LoRA trainer and model files are installed separately from the Windows app ZIP.
+The image tools talk to ComfyUI over HTTP. `tools/install_comfy_nodes.py` clones the nodes below from their own repositories,
 at the tested commits listed in `comfy_nodes/nodes.json`, into the user's ComfyUI; each keeps its own license.
 
 | Project | License | Used for |
@@ -58,10 +58,16 @@ at the tested commits listed in `comfy_nodes/nodes.json`, into the user's ComfyU
 | [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | MIT | Background removal (rembg) |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | GPL-3.0 | Detailer pipeline |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | AGPL-3.0 | Detectors; installs [ultralytics](https://github.com/ultralytics/ultralytics) (AGPL-3.0) |
+| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Apache-2.0 | Optional Anima Reference Image BETA; by ElectronGirl and the ArcAnima project contributors |
 | [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools) | MIT (with Apache-2.0 parts) | LoRA training; installed with `tools/install_trainer.py` into its own Python environment |
 
 The app's own node pack (`comfy_nodes/atelierx_nodes`) is MIT like the rest of AtelierX. It runs inside
 ComfyUI and calls the packs above there; it does not include their code.
+
+The separate `AtelierX-<version>-anima-ref-adapter.zip` release asset provides the unmodified runtime
+files and basic workflow from [the pinned ArcAnima commit](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/tree/f02d54dd34593b4d4ce27b38de2a996049aeac58).
+The archive includes the upstream Apache-2.0 license and a credits file. The [v2 weights](https://huggingface.co/ElectronGirl/anima-ref-adapter)
+are installed separately under the CircleStone Non-Commercial License.
 
 Licenses above reflect the metadata published by each project at the time this file was prepared; check the project pages
 for their current terms.

@@ -2,6 +2,7 @@ import ImageBoard from '../components/image/ImageBoard';
 import ImageGallery from '../components/image/ImageGallery';
 import ImageGenerate from '../components/image/ImageGenerate';
 import ImageSingle from '../components/image/ImageSingle';
+import ImageReference from '../components/image/ImageReference';
 import ImageLab from '../components/image/ImageLab';
 import ImageLora from '../components/image/ImageLora';
 import ImageLibrary from '../components/image/ImageLibrary';
@@ -13,6 +14,7 @@ import ModelsScreen from '../components/image/ModelsScreen';
 import { t } from '../i18n';
 import type { ImageView } from '../types';
 import { imageFlow } from '../lib/imageNavigation';
+import { sendReferenceHandoff } from '../lib/referenceHandoff';
 
 // Image module screens (decision 0018). Views not ported yet say what is coming.
 export default function ImageScreen({
@@ -42,13 +44,17 @@ export default function ImageScreen({
 }) {
   const content = () => {
   if (view === 'single') return <ImageSingle workId={workId} openView={openView} active={active} />;
+  if (view === 'reference') return <ImageReference workId={workId} openView={openView} openSettings={openSettings} active={active} />;
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'models') return <ModelsScreen openSettings={openSettings} />;
   if (view === 'presets') return <PresetExplorer workId={workId} openGenerate={() => openView('generate')} openSingle={() => openView('single')} />;
   if (view === 'board') return <ImageBoard workId={workId} openGenerate={() => openImage('generate')} openGallery={(c, o) => openImage('gallery', c, o)} />;
   if (view === 'generate') return <ImageGenerate workId={workId} characterId={characterId} outfitId={outfitId} openQueue={() => openView('queue')} openItem={openItem} openSettings={openSettings} />;
   if (view === 'queue') return <ImageQueue />;
-  if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} />;
+  if (view === 'gallery') return <ImageGallery workId={workId} characterId={characterId} outfitId={outfitId} openLab={() => openView('lab')} openTools={() => openView('tools')} openReference={path => {
+    sendReferenceHandoff(workId, path);
+    openImage('reference');
+  }} />;
   if (view === 'lab') return <ImageLab workId={workId} active={active} />;
   if (view === 'tools') return <ImageTools active={active} openLab={() => openView('lab')} openSettings={openSettings} />;
   if (view === 'info') return <ImageInfoViewer active={active} />;
@@ -61,11 +67,11 @@ export default function ImageScreen({
     </div>
   );
   };
-  const canFocus = view === 'single' || view === 'generate';
+  const canFocus = view === 'single' || view === 'reference' || view === 'generate';
   return <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
     <nav className={`row image-flow${canFocus && focused ? ' image-flow-focused' : ''}`} aria-label={t('flow.navigation')}>
       {characterId && <strong>{characterId}{outfitId ? ` · ${outfitId}` : ''}</strong>}
-      {imageFlow.map((step) => <button key={step} type="button" className={view === step ? 'selected' : 'ghost'} aria-current={view === step ? 'page' : undefined} onClick={() => openView(step)}>{t(`image_menu.${step}`)}</button>)}
+      {imageFlow.map((step) => <button key={step} type="button" className={view === step ? 'selected' : 'ghost'} aria-current={view === step ? 'page' : undefined} onClick={() => step === 'reference' ? openImage(step) : openView(step)}>{t(`image_menu.${step}`)}</button>)}
       {canFocus && toggleFocus && <button type="button" className="ghost image-focus-toggle" aria-pressed={focused} onClick={toggleFocus}>{t('gen.focus')}</button>}
     </nav>
     <div className={`image-screen-content${canFocus ? ' generation-viewport' : ''}`}>{content()}</div>

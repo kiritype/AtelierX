@@ -1,0 +1,17 @@
+.reference-image .generation-service-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.reference-image .generation-service-tabs small { margin-left: 4px; color: var(--text-2); }
+.reference-image .single-heading p { margin-bottom: 0; }
+.reference-status { justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.reference-status .row, .reference-card .row { flex-wrap: wrap; }
+.reference-card {
+  display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; padding: 14px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2);
+}
+.reference-card img { width: 110px; height: 110px; border-radius: var(--radius); object-fit: contain; background: var(--bg); }
+.reference-card .col { min-width: 0; gap: 8px; overflow-wrap: anywhere; }
+.reference-card h3 { margin: 0; }
+.reference-guidance, .reference-actions { margin-top: 12px; }
+.reference-guidance input { width: 85px; }
+.reference-record dd { overflow-wrap: anywhere; }
+.reference-record { margin-top: 14px; }
+@media (max-width: 550px) { .reference-card { flex-direction: column; } }

@@ -153,7 +153,7 @@ def pack_hash(pack):
     return digest.hexdigest()[:16]
 
 
-def plan(app_dir, comfy, features=None, git='git'):
+def plan(app_dir, comfy, features=None, git='git', *, show_optional=False):
     """What would happen for each node: install, ok, differs (another version, left alone), blocked, skip."""
     data = manifest(app_dir)
     custom = Path(comfy) / 'custom_nodes'
@@ -173,7 +173,9 @@ def plan(app_dir, comfy, features=None, git='git'):
                     installed[norm_repo(info['repo'])] = info
     steps = []
     for node in data['nodes']:
-        wanted = not features or set(node['features']) & set(features)
+        wanted = (
+            set(node['features']) & set(features) if features else show_optional or not node.get('optional')
+        )
         have = installed.get(norm_repo(node['repo']))
         target = custom / node['folder']
         record = read_record(target) if target.is_dir() else None

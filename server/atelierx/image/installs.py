@@ -317,7 +317,9 @@ class Installs:
             if cached and cached[0] > time.monotonic() and cached[1] == str(comfy):
                 plan = cached[2]
             else:
-                plan = node_install.plan(self.paths.defaults.parent, comfy, git=self.git() or 'git')
+                plan = node_install.plan(
+                    self.paths.defaults.parent, comfy, git=self.git() or 'git', show_optional=True
+                )
                 self._nodes_cache = (time.monotonic() + NODES_CHECK_TTL, str(comfy), plan)
             nodes = {**plan, 'python': str(python) if python else None}
         with self.lock:
@@ -486,6 +488,8 @@ class Installs:
         wanted = set(body.get('items') or [])
         models = self._models()
         for group in models['groups']:
+            if group.get('optional') and not wanted:
+                continue
             for item in group['items']:
                 if (
                     item.get('manual')

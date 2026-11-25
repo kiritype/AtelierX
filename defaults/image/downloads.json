@@ -61,6 +61,18 @@
          "url": "https://huggingface.co/Kim2091/UltraSharp/resolve/main/4x-UltraSharp.safetensors",
          "size": 66864028, "sha256": "36a340b5509b699d2c06cb445ddc1d3d39199ac734d889ed6d7915f60e05bcbc"}
       ]
+    },
+    {
+      "id": "anima_ref_adapter",
+      "name": {"ko": "참조 이미지 BETA (Anima)", "en": "Reference Image BETA (Anima)"},
+      "about": {"ko": "ComfyUI의 Anima 참조 이미지에 쓰는 v2 어댑터 가중치입니다. 확장 노드와 가중치는 각각 설치합니다.", "en": "The v2 adapter weights for reference images with Anima in ComfyUI. Install the node and weights separately."},
+      "license": {"name": "CircleStone Non-Commercial License", "url": "https://huggingface.co/ElectronGirl/anima-ref-adapter"},
+      "optional": true,
+      "items": [
+        {"id": "anima_ref_adapter_v2", "file": "anima_ref_adapter_v2_r64.safetensors", "folder": "loras",
+         "url": "https://huggingface.co/ElectronGirl/anima-ref-adapter/resolve/b729afd0c3307f27438df42697ccafaecf051d26/anima_ref_adapter_v2_r64.safetensors",
+         "size": 183605032, "sha256": "71dda6079e18d354e16e3347bc49a9b710afd9495c378efbb833d30cac9cb81b"}
+      ]
     }
   ]
 }

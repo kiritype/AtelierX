@@ -7,6 +7,7 @@ from pathlib import PureWindowsPath
 from typing import Any
 
 from ..core.i18n import Msg
+from .comfy import REFERENCE_NODE, REFERENCE_WEIGHT
 
 DEFAULTS: dict[str, Any] = {
     'model': 'anima_aestheticV11.safetensors',
@@ -405,7 +406,14 @@ def detailer_node(image, refs, enabled, *, seed, steps, cfg, sampler, scheduler,
     }
 
 
-def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed: int) -> dict[str, Any]:
+def build_workflow(
+    settings: dict[str, Any],
+    positive: str,
+    negative: str,
+    seed: int,
+    *,
+    reference: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build a deterministic, plain ComfyUI API prompt graph."""
     if not isinstance(settings, dict):
         raise ValueError('settings must be an object')
@@ -502,6 +510,34 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
         }
         model_ref = [str(next_id), 0]
         next_id += 1
+    first_model_ref = model_ref
+    if reference is not None:
+        if (settings.get('family') or 'anima') != 'anima':
+            raise ValueError('Anima reference requires an Anima model')
+        image = reference.get('image') if isinstance(reference, dict) else None
+        if not isinstance(image, str) or not image.strip():
+            raise ValueError('Anima reference requires an uploaded image')
+        guidance = _finite_number(reference.get('guidance'), 'reference guidance')
+        if not 0 <= guidance <= 20:
+            raise ValueError('reference guidance must be between 0 and 20')
+        load_id, adapter_id = str(next_id), str(next_id + 1)
+        graph[load_id] = {'class_type': 'LoadImage', 'inputs': {'image': image}}
+        graph[adapter_id] = {
+            'class_type': REFERENCE_NODE,
+            'inputs': {
+                'model': model_ref,
+                'vae': vae_ref,
+                'image': [load_id, 0],
+                'lora_name': REFERENCE_WEIGHT,
+                'ref_guidance': guidance,
+                'correction': 'apg',
+                'strength': 1.0,
+                'ref_end': 1.0,
+                'ref_megapixels': 1.0,
+            },
+        }
+        first_model_ref = [adapter_id, 0]
+        next_id += 2
     positive_id, negative_id, latent_id, sampler_id, decode_id, _preview_id = (
         str(next_id + n) for n in range(6)
     )
@@ -520,7 +556,7 @@ def build_workflow(settings: dict[str, Any], positive: str, negative: str, seed:
     graph[sampler_id] = {
         'class_type': 'KSampler',
         'inputs': {
-            'model': model_ref,
+            'model': first_model_ref,
             'positive': [positive_id, 0],
             'negative': [negative_id, 0],
             'latent_image': [latent_id, 0],
@@ -607,9 +643,11 @@ def pipeline_stages(settings):
     return stages
 
 
-def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, seed: int) -> dict[str, Any]:
-    """Build a standard ComfyUI workflow-editor export for the same generation graph."""
-    prompt = build_workflow(settings, positive, negative, seed)
+def build_ui_workflow(
+    settings: dict[str, Any], positive: str, negative: str, seed: int, *, graph: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Build a ComfyUI workflow-editor export from the executed graph when available."""
+    prompt = build_workflow(settings, positive, negative, seed) if graph is None else graph
     numeric_ids = [int(key) for key in prompt if key.isdigit()]
     output_id = max(numeric_ids, default=0) + 1
     api_to_ui = {key: (output_id if key == 'output' else int(key)) for key in prompt}
@@ -617,42 +655,36 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
     links: list[list[Any]] = []
     link_id = 1
 
-    # Socket definitions and widget order follow the built-in ComfyUI node schemas.
-    specs: dict[str, tuple[list[tuple[str, str]], list[tuple[str, str]], list[Any]]] = {
+    # Socket definitions and widget order follow the ComfyUI node schemas.
+    specs: dict[str, tuple[list[tuple[str, str]], list[tuple[str, str]], list[str]]] = {
         'CheckpointLoaderSimple': (
             [],
             [('MODEL', 'MODEL'), ('CLIP', 'CLIP'), ('VAE', 'VAE')],
-            [settings.get('model_filename', settings['model'])],
+            ['ckpt_name'],
         ),
-        'UNETLoader': ([], [('MODEL', 'MODEL')], [settings['model'], 'default']),
-        'CLIPLoader': (
-            [],
-            [('CLIP', 'CLIP')],
-            [
-                settings.get('text_encoder', ''),
-                settings.get('clip_type', 'stable_diffusion'),
-                settings.get('text_encoder_device', 'default'),
-            ],
-        ),
-        'VAELoader': ([], [('VAE', 'VAE')], [settings.get('vae', '')]),
-        'CLIPSetLastLayer': (
-            [('clip', 'CLIP')],
-            [('CLIP', 'CLIP')],
-            [-int(settings.get('clip_skip', 2))],
-        ),
+        'UNETLoader': ([], [('MODEL', 'MODEL')], ['unet_name', 'weight_dtype']),
+        'CLIPLoader': ([], [('CLIP', 'CLIP')], ['clip_name', 'type', 'device']),
+        'VAELoader': ([], [('VAE', 'VAE')], ['vae_name']),
+        'CLIPSetLastLayer': ([('clip', 'CLIP')], [('CLIP', 'CLIP')], ['stop_at_clip_layer']),
         'LoraLoader': (
             [('model', 'MODEL'), ('clip', 'CLIP')],
             [('MODEL', 'MODEL'), ('CLIP', 'CLIP')],
-            [],
+            ['lora_name', 'strength_model', 'strength_clip'],
         ),
-        'CLIPTextEncode': ([('clip', 'CLIP')], [('CONDITIONING', 'CONDITIONING')], []),
-        'EmptyLatentImage': (
-            [],
-            [('LATENT', 'LATENT')],
-            [settings['width'], settings['height'], 1],
+        'CLIPTextEncode': ([('clip', 'CLIP')], [('CONDITIONING', 'CONDITIONING')], ['text']),
+        'EmptyLatentImage': ([], [('LATENT', 'LATENT')], ['width', 'height', 'batch_size']),
+        'EmptyFlux2LatentImage': ([], [('LATENT', 'LATENT')], ['width', 'height', 'batch_size']),
+        'SkipLayerGuidanceDiTSimple': (
+            [('model', 'MODEL')],
+            [('MODEL', 'MODEL')],
+            ['double_layers', 'single_layers', 'start_percent', 'end_percent'],
         ),
-        'EmptyFlux2LatentImage': ([], [('LATENT', 'LATENT')], [settings['width'], settings['height'], 1]),
-        'SkipLayerGuidanceDiTSimple': ([('model', 'MODEL')], [('MODEL', 'MODEL')], ['', '22', 0.0, 1.0]),
+        'LoadImage': ([], [('IMAGE', 'IMAGE'), ('MASK', 'MASK')], ['image']),
+        REFERENCE_NODE: (
+            [('model', 'MODEL'), ('vae', 'VAE'), ('image', 'IMAGE')],
+            [('MODEL', 'MODEL')],
+            ['lora_name', 'ref_guidance', 'correction', 'strength', 'ref_end', 'ref_megapixels'],
+        ),
         'KSampler': (
             [
                 ('model', 'MODEL'),
@@ -661,20 +693,12 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
                 ('latent_image', 'LATENT'),
             ],
             [('LATENT', 'LATENT')],
-            [
-                seed,
-                'fixed',
-                settings['steps'],
-                settings['cfg'],
-                settings['sampler'],
-                settings['scheduler'],
-                1.0,
-            ],
+            ['seed', 'steps', 'cfg', 'sampler_name', 'scheduler', 'denoise'],
         ),
         'VAEDecode': ([('samples', 'LATENT'), ('vae', 'VAE')], [('IMAGE', 'IMAGE')], []),
         'PreviewImage': ([('images', 'IMAGE')], [], []),
         # The steps after generation (#168).
-        'ModelSamplingAuraFlow': ([('model', 'MODEL')], [('MODEL', 'MODEL')], []),
+        'ModelSamplingAuraFlow': ([('model', 'MODEL')], [('MODEL', 'MODEL')], ['shift']),
         'AtelierXUpscale': ([('image', 'IMAGE')], [('IMAGE', 'IMAGE')], []),
         'VAEEncode': ([('pixels', 'IMAGE'), ('vae', 'VAE')], [('LATENT', 'LATENT')], []),
         'AtelierXImpactDetailerPipeline': (
@@ -697,6 +721,8 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
         'CLIPSetLastLayer': (40, 300),
         'VAELoader': (40, 500),
         'LoraLoader': (340, 200),
+        'LoadImage': (40, 710),
+        REFERENCE_NODE: (1040, 70),
         'EmptyLatentImage': (650, 760),
         'KSampler': (1040, 370),
         'VAEDecode': (1390, 370),
@@ -711,28 +737,16 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
     for key, api_node in prompt.items():
         node_id = api_to_ui[key]
         node_type = api_node['class_type']
-        input_defs, output_defs, widget_values = specs[node_type]
+        input_defs, output_defs, widget_keys = specs[node_type]
         values = api_node['inputs']
-        if node_type == 'CLIPTextEncode':
-            widget_values = [values['text']]
-        elif node_type == 'KSampler':
-            widget_values = [
-                values['seed'],
-                'fixed',
-                values['steps'],
-                values['cfg'],
-                values['sampler_name'],
-                values['scheduler'],
-                values['denoise'],
-            ]
-        elif node_type == 'ModelSamplingAuraFlow':
-            widget_values = [values['shift']]
+        widget_values = [values[name] for name in widget_keys]
+        if node_type == 'KSampler':
+            widget_values.insert(1, 'fixed')
+        elif node_type == 'LoadImage':
+            widget_values.append('image')  # The upload widget in ComfyUI's editor.
         elif node_type in ('AtelierXUpscale', 'AtelierXImpactDetailerPipeline'):
             # Widget values in the order the node lists its settings.
             widget_values = [v for v in values.values() if not (isinstance(v, list) and len(v) == 2)]
-        elif node_type == 'LoraLoader':
-            values = api_node['inputs']
-            widget_values = [values['lora_name'], values['strength_model'], values['strength_clip']]
         if node_type == 'CLIPTextEncode':
             x, y = prompt_node_positions[prompt_node_index]
             prompt_node_index += 1
@@ -763,6 +777,8 @@ def build_ui_workflow(settings: dict[str, Any], positive: str, negative: str, se
             'pos': [x, y],
             'size': {
                 'CLIPTextEncode': [340, 280],
+                'LoadImage': [280, 360],
+                REFERENCE_NODE: [320, 220],
                 'KSampler': [280, 280],
                 'PreviewImage': [420, 420],
             }.get(node_type, [280, 100]),

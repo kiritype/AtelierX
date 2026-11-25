@@ -92,6 +92,10 @@ export type SingleRequest = {
   preset_id: string;
   prompt_sources?: PromptSource[];
 };
+export type ReferenceAsset = { id: string; name: string; url: string; sha256: string };
+export type ReferenceSnapshot = ReferenceAsset & { guidance: number };
+export type ReferenceStatus = { ready: boolean; node_ready: boolean; weights_ready: boolean };
+
 export type SingleRun = {
   id: string;
   status: 'queued' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled' | 'interrupted';
@@ -99,12 +103,14 @@ export type SingleRun = {
   service: SingleService;
   seed: number;
   request: SingleRequest | null;
+  reference?: ReferenceSnapshot;
   actual: {
     moss_layout?: MossDocument;
     positive: string;
     negative: string;
     settings: Record<string, unknown>;
     generation_preset?: { id?: string; name: string };
+    reference?: ReferenceSnapshot;
     prompt_sources?: PromptSource[];
   };
   image_url?: string | null;

@@ -24,7 +24,12 @@ ComfyUI, 외부 확장 노드, 모델과 LoRA 학습 도구는 필요할 때 원
 | [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | 1.1.0 (`9d9f4be`) | MIT | 배경 제거 |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | 8.28.3 (`429d015`) | GPL-3.0 | 디테일러 |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | 1.3.5 (`50c7b71`) | AGPL-3.0 | 디테일러, 감지 |
+| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | 0.2.0 (`f02d54d`) | Apache-2.0 | 참조 이미지 BETA의 Anima 어댑터. 별도 설치 버튼을 사용합니다 |
 | `atelierx_nodes` | 앱과 같은 판 | MIT | 배경·감지·업스케일·디테일러 보조. 앱에 들어 있는 노드 묶음을 복사합니다 |
+
+수동으로는 [릴리스 페이지](https://github.com/kiritype/AtelierX/releases)의 `AtelierX-<버전>-anima-ref-adapter.zip`을 받습니다.
+옆의 `.sha256`으로 ZIP을 확인하고, 안의 `ComfyUI-Anima-Ref-Adapter` 폴더를 ComfyUI의 `custom_nodes`에 넣은 뒤 ComfyUI를 다시 시작합니다.
+이 ZIP에는 원본 노드, 예제 워크플로, 라이선스, 출처가 들어 있습니다. 어댑터 가중치는 아래 모델 항목으로 받고, 예제의 **Load Image**에는 사용할 참조 이미지를 고릅니다.
 
 ## 모델
 
@@ -33,6 +38,7 @@ ComfyUI, 외부 확장 노드, 모델과 LoRA 학습 도구는 필요할 때 원
 | 묶음 | 파일 | 라이선스 |
 |---|---|---|
 | LoRA 학습용 Anima 기본 모델 | `anima-base-v1.0.safetensors`, `qwen_3_06b_base.safetensors`, `qwen_image_vae.safetensors` ([Anima](https://huggingface.co/circlestone-labs/Anima)) | CircleStone Labs Non-Commercial License (+ NVIDIA Open Model License) |
+| 참조 이미지 BETA (Anima) | `anima_ref_adapter_v2_r64.safetensors` ([Anima Reference Adapter](https://huggingface.co/ElectronGirl/anima-ref-adapter)) | CircleStone Non-Commercial License |
 | 감지 모델 | `face_yolov8m.pt`, `hand_yolov8s.pt`, `person_yolov8m-seg.pt`, `person_yolov8n-seg.pt` ([adetailer](https://huggingface.co/Bingsu/adetailer)), `sam_vit_b_01ec64.pth` ([Segment Anything](https://github.com/facebookresearch/segment-anything)) | Apache-2.0 |
 | 감지 모델(직접 받기) | `PitEyeDetailer-v2-seg.pt`, `ntd11_anime_nsfw_segm_v5-variant1.pt` (Civitai에서 검색해 `ultralytics/segm`에 넣기) | 각 모델 페이지의 조건 |
 | 업스케일 모델 | `2x-AnimeSharpV4_Fast_RCAN_PU.safetensors`, `2x-AnimeSharpV4_RCAN.safetensors` ([2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4)), `4x-UltraSharp.safetensors` ([UltraSharp](https://huggingface.co/Kim2091/UltraSharp)) | CC BY-NC-SA 4.0 (비상업) |

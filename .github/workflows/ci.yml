@@ -113,14 +113,36 @@ jobs:
           notes/packaging/build-venv/Scripts/python.exe -m pip install -r packaging/requirements-windows.txt -e .
       - name: Build package, licenses and manual
         run: notes/packaging/build-venv/Scripts/python.exe tools/build_windows.py --output dist/staging
+      - name: Check out the reference adapter source
+        uses: actions/checkout@v7
+        with:
+          repository: ArcAnima/ComfyUI-Anima-Ref-Adapter
+          ref: f02d54dd34593b4d4ce27b38de2a996049aeac58
+          persist-credentials: false
+          path: notes/packaging/anima-ref-adapter
+      - name: Build the standalone reference adapter ZIP
+        run: python tools/release_assets.py build-adapter --source notes/packaging/anima-ref-adapter --output dist/staging
       - name: Packaged API smoke test
         run: python tools/smoke_package.py dist/staging/AtelierX/AtelierX.exe
+      - name: Verify both packages and SHA256 files
+        run: |
+          $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          python tools/release_assets.py verify dist/staging --version $version --commit $env:GITHUB_SHA |
+            Set-Content -Encoding utf8 "$env:RUNNER_TEMP/atelierx-release-checksums.md"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v7
         with:
           name: atelierx-windows-staging
           path: |
-            dist/staging/*.zip
-            dist/staging/*.sha256
+            dist/staging/AtelierX-*-windows-x64.zip
+            dist/staging/AtelierX-*-windows-x64.zip.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: atelierx-anima-ref-adapter
+          path: |
+            dist/staging/AtelierX-*-anima-ref-adapter.zip
+            dist/staging/AtelierX-*-anima-ref-adapter.zip.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@v7
         with:
@@ -143,11 +165,12 @@ jobs:
             exit 0
           }
           $tag = "v$version-rc.$($tags.Count + 1)"
-          $sum = (Get-Content dist/staging/*.zip.sha256).Split(' ')[0]
+          $checksums = Get-Content -Raw "$env:RUNNER_TEMP/atelierx-release-checksums.md"
           $notes = @(
             "Release candidate for verification, built from $env:GITHUB_SHA on staging.",
             '',
-            "SHA256 of the ZIP: $sum",
+            "Package SHA256 values:",
+            $checksums.TrimEnd(),
             '',
             "After it is checked, this commit is fast-forwarded to main and these same files are published as v$version."
           ) -join "`n"

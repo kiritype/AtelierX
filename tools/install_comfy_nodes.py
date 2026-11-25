@@ -3,6 +3,7 @@
     uv run python tools/install_comfy_nodes.py                    # show the plan for the found ComfyUI
     uv run python tools/install_comfy_nodes.py --yes              # carry it out
     uv run python tools/install_comfy_nodes.py --only tagger,alpha --yes
+    uv run python tools/install_comfy_nodes.py --only reference --yes
     uv run python tools/install_comfy_nodes.py --comfy D:\\ComfyUI --python D:\\python_embeded\\python.exe
 
 The node list and pinned commits are in comfy_nodes/nodes.json. Nothing third-party is shipped with the app:
