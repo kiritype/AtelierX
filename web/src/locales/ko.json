@@ -1730,6 +1730,7 @@
   "server.about.update_unreachable": "업데이트를 확인하려고 GitHub에 연결하지 못했습니다.",
   "server.about.update_failed": "업데이트 확인에 실패했습니다(HTTP {status}).",
   "menu.help": "도움말",
+  "menu.bar": "작품 메뉴 막대",
   "help.manual": "사용 설명서(웹)",
   "help.manual_offline": "사용 설명서(이 PC)",
   "help.shortcuts": "단축키",

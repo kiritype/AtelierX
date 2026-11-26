@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { ApiError, del, get, patch, post, put } from '../api';
 import { setLanguage, t, tm } from '../i18n';
 import type { GeneralSettings, ThemePreference } from '../types';
@@ -43,15 +43,15 @@ export default function AppSettings({ request }: { request?: { section: string; 
     about: <About />,
   };
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', height: '100%' }}>
-      <div style={{ borderRight: '1px solid var(--border)', paddingTop: 8 }}>
+    <div className="settings-shell">
+      <nav className="settings-nav" aria-label={t('works.app_settings')}>
         {SECTIONS.map((key) => (
-          <div key={key} className={`tree-row${section === key ? ' sel' : ''}`} onClick={() => selectSection(key)}>
+          <button type="button" key={key} aria-current={section === key ? 'true' : undefined} onClick={() => selectSection(key)}>
             {t(`settings.${key}`)}
-          </div>
+          </button>
         ))}
-      </div>
-      <div className="pad" style={{ overflow: 'auto' }}>
+      </nav>
+      <div className="pad settings-content">
         {SECTIONS.filter((key) => visited.has(key)).map((key) => (
           <div key={key} hidden={section !== key}>
             {panes[key]}
@@ -68,6 +68,7 @@ function useFail() {
 }
 
 function General() {
+  const updateHelpId = useId();
   const qc = useQueryClient();
   const fail = useFail();
   const [savingTheme, setSavingTheme] = useState(false);
@@ -84,9 +85,9 @@ function General() {
     }
   };
   return (
-    <div className="col" style={{ maxWidth: 520 }}>
-      <label className="col" style={{ gap: 2 }}>
-        <span className="muted">{t('settings.language')}</span>
+    <div className="col settings-general">
+      <label className="control-field">
+        <span className="control-label">{t('settings.language')}</span>
         <select
           value={s.language}
           onChange={(e) => {
@@ -98,8 +99,8 @@ function General() {
           <option value="en">English</option>
         </select>
       </label>
-      <label className="col" style={{ gap: 2 }}>
-        <span className="muted">{t('settings.theme')}</span>
+      <label className="control-field">
+        <span className="control-label">{t('settings.theme')}</span>
         <select
           value={s.theme}
           disabled={savingTheme}
@@ -118,12 +119,15 @@ function General() {
         <input type="checkbox" checked={s.autosave.enabled} onChange={(e) => update({ autosave: { enabled: e.target.checked } })} />
         {t('settings.autosave')}
       </label>
-      <label className="row" title={t('settings.update_check_note')}>
-        <input type="checkbox" checked={!!s.update_check_on_start} onChange={(e) => update({ update_check_on_start: e.target.checked })} />
-        {t('settings.update_check_on_start')}
-      </label>
-      <label className="col" style={{ gap: 2 }}>
-        <span className="muted">{t('settings.default_preset')}</span>
+      <div className="control-field">
+        <label className="row">
+          <input type="checkbox" aria-describedby={updateHelpId} checked={!!s.update_check_on_start} onChange={(e) => update({ update_check_on_start: e.target.checked })} />
+          {t('settings.update_check_on_start')}
+        </label>
+        <small id={updateHelpId} className="control-help control-toggle-help">{t('settings.update_check_note')}</small>
+      </div>
+      <label className="control-field">
+        <span className="control-label">{t('settings.default_preset')}</span>
         <select value={s.default_platform_preset ?? ''} onChange={(e) => update({ default_platform_preset: e.target.value || null })}>
           <option value="">{t('settings.none')}</option>
           {(presets.data ?? [])
@@ -135,8 +139,8 @@ function General() {
             ))}
         </select>
       </label>
-      <label className="col" style={{ gap: 2 }}>
-        <span className="muted">{t('settings.snapshot_interval')}</span>
+      <label className="control-field">
+        <span className="control-label">{t('settings.snapshot_interval')}</span>
         <input type="number" value={s.snapshot_interval_minutes} onChange={(e) => update({ snapshot_interval_minutes: Number(e.target.value) })} />
       </label>
     </div>
