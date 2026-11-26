@@ -65,7 +65,7 @@ AtelierX에 들어 있지 않습니다. 필요한 것만 따로 설치하거나 
 
 Anima Ref Adapter 노드와 예제 워크플로는 수동 설치용 ZIP(`AtelierX-<버전>-anima-ref-adapter.zip`)으로도 제공합니다. [릴리스 다운로드](https://github.com/kiritype/AtelierX/releases)
 
-v2 가중치는 **설정 → 설치 → 모델 → 참조 이미지 BETA (Anima)**에서 별도로 받습니다. [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md)
+**설정 → 설치 → 모델**에서 **참조 이미지 BETA (Anima)**의 Anima Ref Adapter v2 가중치 또는 **참조 이미지 BETA (SnapRef v2a)**의 SnapRef 가중치를 받습니다. 두 어댑터는 같은 확장 노드를 사용합니다. [Anima Ref Adapter 이용 조건](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md) · [SnapRef v2a 이용 조건](https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md)
 
 ### 모델과 도구
 

@@ -93,11 +93,31 @@ export type SingleRequest = {
   prompt_sources?: PromptSource[];
 };
 export type ReferenceAsset = { id: string; name: string; url: string; sha256: string };
+export type AnimaReferenceEngine = 'anima_v2' | 'snapref';
+export type SnapRefMode = 'cs' | 'char';
+export type ReferenceSlot = 'a' | 'b';
+export type ReferencePosition = 'center' | 'left' | 'right';
+export type ReferenceSubject = ReferenceAsset & {
+  slot: ReferenceSlot;
+  position: ReferencePosition;
+  description?: string;
+};
 export type ReferenceSnapshot = ReferenceAsset & (
   | { engine?: 'anima'; guidance: number }
   | { engine: 'mossref' }
-);
+) | {
+  engine: AnimaReferenceEngine;
+  subjects: ReferenceSubject[];
+  scene: string;
+  scene_prompt?: string;
+  guidance?: number;
+  snapref_mode?: SnapRefMode;
+};
 export type ReferenceStatus = { ready: boolean; node_ready: boolean; weights_ready: boolean };
+export type AnimaReferenceStatus = ReferenceStatus & {
+  adapters?: Record<AnimaReferenceEngine, ReferenceStatus>;
+  stitch_ready?: boolean;
+};
 export type MossReferenceStatus = {
   ready: boolean;
   node_ready: boolean;

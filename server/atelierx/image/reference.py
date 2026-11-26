@@ -15,13 +15,11 @@ from urllib.parse import quote
 from PIL import Image
 
 from ..core.i18n import Msg
-from . import moss_reference
-from .comfy import REFERENCE_NODE, REFERENCE_WEIGHT
+from . import anima_reference, moss_reference
+from .comments import strip_text
 from .tools.inspect import MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS
 from .util import atomic_json, code, read_json, replace_file
 
-NODE_COMMIT = 'f02d54dd34593b4d4ce27b38de2a996049aeac58'
-WEIGHTS_SHA256 = '71dda6079e18d354e16e3347bc49a9b710afd9495c378efbb833d30cac9cb81b'
 INPUT_PREFIX = 'atelierx-reference-'
 FORMATS = {'PNG': '.png', 'JPEG': '.jpg', 'WEBP': '.webp'}
 MAX_BODY_BYTES = 4 * ((MAX_IMAGE_BYTES + 2) // 3) + 4096
@@ -104,6 +102,8 @@ def data(work, ident):
 
 
 def public(work_id, entry):
+    if anima_reference.is_entry(entry):
+        return {**entry, 'subjects': [public(work_id, subject) for subject in entry['subjects']]}
     ident = entry['id']
     return {**entry, 'url': f'/api/works/{quote(work_id, safe="")}/image/reference/assets/{ident}'}
 
@@ -165,9 +165,105 @@ def is_moss(entry):
     return entry.get('engine') == moss_reference.ENGINE
 
 
+def _guidance(parameters):
+    value = parameters.get('guidance', anima_reference.DEFAULT_GUIDANCE)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 20:
+        raise ValueError(Msg('server.reference.guidance', 'Choose reference guidance from 0 to 20.'))
+    return float(value)
+
+
+def _invalid_subjects():
+    return ValueError(
+        Msg(
+            'server.reference.subjects',
+            'Choose one centered person or two people with different left and right positions.',
+        )
+    )
+
+
+def _anima_subjects(work, subjects):
+    if not isinstance(subjects, list) or len(subjects) not in (1, 2):
+        raise _invalid_subjects()
+    chosen = []
+    for subject in subjects:
+        if not isinstance(subject, dict) or set(subject) - {'slot', 'id', 'position', 'description'}:
+            raise _invalid_subjects()
+        slot = subject.get('slot')
+        position = subject.get('position')
+        description = subject.get('description', '')
+        if (
+            slot not in ('a', 'b')
+            or position not in ('center', 'left', 'right')
+            or not isinstance(description, str)
+        ):
+            raise _invalid_subjects()
+        asset, _ = data(work, subject.get('id'))
+        chosen.append(
+            {**asset, 'slot': slot, 'position': position, 'description': strip_text(description).strip()}
+        )
+    positions, slots = ({'center'}, {'a'}) if len(chosen) == 1 else ({'left', 'right'}, {'a', 'b'})
+    if {subject['position'] for subject in chosen} != positions or {
+        subject['slot'] for subject in chosen
+    } != slots:
+        raise _invalid_subjects()
+    return chosen
+
+
+def _image_size(path):
+    try:
+        with Image.open(path, formats=list(FORMATS)) as image:
+            width, height = image.size
+            return (height, width) if image.getexif().get(274) in (5, 6, 7, 8) else (width, height)
+    except (OSError, SyntaxError, ValueError, Image.DecompressionBombError) as error:
+        raise _missing_image() from error
+
+
+def _anima_files(work, subjects):
+    files = [data(work, subject['id']) for subject in sorted(subjects, key=lambda item: item['position'])]
+    if len(files) == 2:
+        left_width, left_height = _image_size(files[0][1])
+        right_width, right_height = _image_size(files[1][1])
+        stitched_width = int(left_height * (right_width / right_height))
+        if stitched_width < 1 or left_height * (left_width + stitched_width) > MAX_IMAGE_PIXELS:
+            raise ValueError(
+                Msg(
+                    'server.reference.stitch_size',
+                    'These two reference sizes cannot be stitched safely. Choose images with closer dimensions.',
+                )
+            )
+    return files
+
+
+def _anima_parameters(parameters):
+    engine = parameters['engine']
+    if engine == anima_reference.SNAPREF:
+        mode = parameters.get('snapref_mode', 'cs')
+        if mode not in ('cs', 'char'):
+            raise ValueError(Msg('server.reference.snapref_mode', 'Choose a supported SnapRef mode.'))
+        return {'snapref_mode': mode, 'ref_weight': 1.0, 'snapref_guidance': False}
+    return {'guidance': _guidance(parameters)}
+
+
+def _prepare_anima(work, parameters):
+    engine = parameters['engine']
+    option = 'snapref_mode' if engine == anima_reference.SNAPREF else 'guidance'
+    if set(parameters) - {'engine', 'subjects', option}:
+        raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
+    subjects = _anima_subjects(work, parameters.get('subjects'))
+    _anima_files(work, subjects)
+    return {
+        'engine': engine,
+        'subjects': subjects,
+        **anima_reference.provenance(engine),
+        **_anima_parameters(parameters),
+    }
+
+
 def prepare(work, parameters):
     if not isinstance(parameters, dict):
         raise _invalid_image()
+    if anima_reference.is_entry(parameters):
+        return _prepare_anima(work, parameters)
     if is_moss(parameters):
         if set(parameters) != {'id', 'engine'}:
             raise ValueError(
@@ -182,17 +278,12 @@ def prepare(work, parameters):
         }
     if 'engine' in parameters:
         raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
-    guidance = parameters.get('guidance', 4.5)
-    if isinstance(guidance, bool) or not isinstance(guidance, (int, float)) or not 0 <= guidance <= 20:
-        raise ValueError(Msg('server.reference.guidance', 'Choose reference guidance from 0 to 20.'))
+    guidance = _guidance(parameters)
     asset, _ = data(work, parameters.get('id'))
     return {
         **asset,
-        'guidance': float(guidance),
-        'node': REFERENCE_NODE,
-        'expected_node_commit': NODE_COMMIT,
-        'weights': REFERENCE_WEIGHT,
-        'expected_weights_sha256': WEIGHTS_SHA256,
+        'guidance': guidance,
+        **anima_reference.provenance(anima_reference.ANIMA_V2),
     }
 
 
@@ -204,15 +295,33 @@ def check_moss_record(entry):
             )
 
 
-def upload(comfy, work, entry):
-    if is_moss(entry):
-        check_moss_record(entry)
-    else:
-        require_ready(comfy)
-    asset, path = data(work, entry['id'])
+def check_anima_record(work, entry):
+    fields = {**anima_reference.provenance(entry['engine']), **_anima_parameters(entry)}
+    if any(entry.get(key) != value for key, value in fields.items()):
+        raise ValueError(
+            Msg(
+                'server.reference.anima_revision',
+                'This run needs a different version of the Anima reference adapter.',
+            )
+        )
+    subjects = _anima_subjects(
+        work,
+        [
+            {key: subject[key] for key in ('id', 'slot', 'position', 'description')}
+            for subject in entry['subjects']
+        ],
+    )
+    return _anima_files(work, subjects)
+
+
+def _checked_bytes(asset, path):
     raw = _image_bytes(path)
-    if _hash(raw) != asset['sha256'] or len(raw) > MAX_IMAGE_BYTES:
+    if len(raw) > MAX_IMAGE_BYTES or _hash(raw) != asset['sha256']:
         raise _missing_image()
+    return raw
+
+
+def _upload_image(comfy, path, raw):
     name = INPUT_PREFIX + path.name
     # LoadImage only lists files at the root of ComfyUI input in the editor.
     result = comfy.upload(name, raw, subfolder='')
@@ -220,6 +329,26 @@ def upload(comfy, work, entry):
         raise RuntimeError(
             Msg('server.reference.upload', 'ComfyUI did not keep the uploaded reference image.')
         )
+    return name
+
+
+def upload(comfy, work, entry):
+    if anima_reference.is_entry(entry):
+        files = check_anima_record(work, entry)
+        anima_reference.require_ready(comfy, entry)
+        originals = {path: _checked_bytes(asset, path) for asset, path in files}
+        uploaded = {path: _upload_image(comfy, path, raw) for path, raw in originals.items()}
+        return {
+            'engine': entry['engine'],
+            'images': [uploaded[path] for _, path in files],
+            **_anima_parameters(entry),
+        }
+    if is_moss(entry):
+        check_moss_record(entry)
+    else:
+        require_ready(comfy)
+    asset, path = data(work, entry['id'])
+    name = _upload_image(comfy, path, _checked_bytes(asset, path))
     return (
         {
             'image': name,
@@ -261,12 +390,13 @@ def export_zip(work, gallery, relative, include_reference):
         raise ValueError(
             Msg('server.reference.workflow', 'The editable reference workflow is unavailable.')
         ) from error
-    asset_path = None
+    originals = {}
     if include_reference:
-        asset, asset_path = data(work, record['reference']['id'])
-        raw = _image_bytes(asset_path)
-        if len(raw) > MAX_IMAGE_BYTES or _hash(raw) != asset['sha256']:
-            raise _missing_image()
+        entry = record['reference']
+        subjects = entry['subjects'] if anima_reference.is_entry(entry) else [entry]
+        for ident in dict.fromkeys(subject['id'] for subject in subjects):
+            asset, asset_path = data(work, ident)
+            originals[f'input/{INPUT_PREFIX}{asset_path.name}'] = _checked_bytes(asset, asset_path)
     with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as file:
         destination = Path(file.name)
     try:
@@ -282,10 +412,8 @@ def export_zip(work, gallery, relative, include_reference):
                     indent=2,
                 ),
             )
-            if asset_path:
-                archive.writestr(
-                    f'input/{INPUT_PREFIX}{asset_path.name}', raw, compress_type=zipfile.ZIP_STORED
-                )
+            for name, raw in originals.items():
+                archive.writestr(name, raw, compress_type=zipfile.ZIP_STORED)
     except BaseException:
         destination.unlink(missing_ok=True)
         raise

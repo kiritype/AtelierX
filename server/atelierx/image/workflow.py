@@ -7,7 +7,7 @@ from pathlib import PureWindowsPath
 from typing import Any
 
 from ..core.i18n import Msg
-from . import moss_reference
+from . import anima_reference, moss_reference
 from .comfy import REFERENCE_NODE, REFERENCE_WEIGHT
 
 DEFAULTS: dict[str, Any] = {
@@ -513,17 +513,41 @@ def build_workflow(
         next_id += 1
     first_model_ref = model_ref
     moss_ref = isinstance(reference, dict) and reference.get('engine') == moss_reference.ENGINE
+    snapref = isinstance(reference, dict) and reference.get('engine') == anima_reference.SNAPREF
     if reference is not None:
         ref_family = 'moss' if moss_ref else 'anima'
         if (settings.get('family') or 'anima') != ref_family:
             raise ValueError('Reference engine does not match the model family')
-        image = reference.get('image') if isinstance(reference, dict) else None
-        if not isinstance(image, str) or not image.strip():
+        if anima_reference.is_entry(reference):
+            images = reference.get('images')
+        else:
+            images = [reference.get('image')] if isinstance(reference, dict) else []
+        if (
+            not isinstance(images, list)
+            or len(images) not in (1, 2)
+            or any(not isinstance(image, str) or not image.strip() for image in images)
+        ):
             raise ValueError('Reference generation requires an uploaded image')
-        load_id, adapter_id = str(next_id), str(next_id + 1)
-        graph[load_id] = {'class_type': 'LoadImage', 'inputs': {'image': image}}
+        load_id = str(next_id)
+        graph[load_id] = {'class_type': 'LoadImage', 'inputs': {'image': images[0]}}
+        next_id += 1
+        image_ref = [load_id, 0]
+        if len(images) == 2:
+            right_id, stitch_id = str(next_id), str(next_id + 1)
+            graph[right_id] = {'class_type': 'LoadImage', 'inputs': {'image': images[1]}}
+            graph[stitch_id] = {
+                'class_type': anima_reference.STITCH,
+                'inputs': {'image1': image_ref, 'image2': [right_id, 0], **anima_reference.STITCH_SETTINGS},
+            }
+            image_ref = [stitch_id, 0]
+            next_id += 2
+        adapter_id = str(next_id)
         if not moss_ref:
-            guidance = _finite_number(reference.get('guidance'), 'reference guidance')
+            guidance = (
+                anima_reference.DEFAULT_GUIDANCE
+                if snapref
+                else _finite_number(reference.get('guidance'), 'reference guidance')
+            )
             if not 0 <= guidance <= 20:
                 raise ValueError('reference guidance must be between 0 and 20')
             graph[adapter_id] = {
@@ -531,8 +555,10 @@ def build_workflow(
                 'inputs': {
                     'model': model_ref,
                     'vae': vae_ref,
-                    'image': [load_id, 0],
-                    'lora_name': REFERENCE_WEIGHT,
+                    'image': image_ref,
+                    'lora_name': anima_reference.ADAPTERS[anima_reference.SNAPREF]
+                    if snapref
+                    else REFERENCE_WEIGHT,
                     'ref_guidance': guidance,
                     'correction': 'apg',
                     'strength': 1.0,
@@ -540,8 +566,16 @@ def build_workflow(
                     'ref_megapixels': 1.0,
                 },
             }
+            if snapref:
+                graph[adapter_id]['inputs'].update(
+                    clip=clip_ref,
+                    snapref_mode=reference['snapref_mode'],
+                    ref_caption='',
+                    snapref_guidance=reference['snapref_guidance'],
+                    ref_weight=reference['ref_weight'],
+                )
         first_model_ref = [adapter_id, 0]
-        next_id += 2
+        next_id += 1
     positive_id, negative_id, latent_id, sampler_id, decode_id, _preview_id = (
         str(next_id + n) for n in range(6)
     )
@@ -715,6 +749,11 @@ def build_ui_workflow(
             ['double_layers', 'single_layers', 'start_percent', 'end_percent'],
         ),
         'LoadImage': ([], [('IMAGE', 'IMAGE'), ('MASK', 'MASK')], ['image']),
+        anima_reference.STITCH: (
+            [('image1', 'IMAGE'), ('image2', 'IMAGE')],
+            [('IMAGE', 'IMAGE')],
+            ['direction', 'match_image_size', 'spacing_width', 'spacing_color'],
+        ),
         REFERENCE_NODE: (
             [('model', 'MODEL'), ('vae', 'VAE'), ('image', 'IMAGE')],
             [('MODEL', 'MODEL')],
@@ -790,6 +829,7 @@ def build_ui_workflow(
         'VAELoader': (40, 500),
         'LoraLoader': (340, 200),
         'LoadImage': (40, 710),
+        anima_reference.STITCH: (340, 820),
         REFERENCE_NODE: (1040, 70),
         moss_reference.EDIT_NODE: (480, 430),
         moss_reference.NODE: (1040, 15),
@@ -803,12 +843,20 @@ def build_ui_workflow(
     # Nodes after the first pass go to the right of it, in order, and the preview after them.
     seen: set[str] = set()
     extra = 0
+    snapref = any(
+        node['class_type'] == REFERENCE_NODE and 'snapref_mode' in node['inputs'] for node in prompt.values()
+    )
+    if snapref:
+        positions.update(KSampler=(1040, 530), VAEDecode=(1390, 530), PreviewImage=(1650, 530))
 
     for key, api_node in prompt.items():
         node_id = api_to_ui[key]
         node_type = api_node['class_type']
         input_defs, output_defs, widget_keys = specs[node_type]
         values = api_node['inputs']
+        if node_type == REFERENCE_NODE and 'snapref_mode' in values:
+            input_defs = [*input_defs, ('clip', 'CLIP')]
+            widget_keys = [*widget_keys, 'snapref_mode', 'ref_caption', 'snapref_guidance', 'ref_weight']
         widget_values = [values[name] for name in widget_keys]
         if node_type == 'KSampler':
             widget_values.insert(1, 'fixed')
@@ -822,6 +870,8 @@ def build_ui_workflow(
             prompt_node_index += 1
         elif node_type == 'ModelSamplingAuraFlow':
             x, y = 340, 40
+        elif node_type == 'LoadImage' and node_type in seen:
+            x, y = 40, 1100
         elif node_type == 'PreviewImage' and extra:
             x, y = 1650 + 300 * extra, 370
         elif node_type not in positions or (node_type in ('KSampler', 'VAEDecode') and node_type in seen):
@@ -848,7 +898,7 @@ def build_ui_workflow(
             'size': {
                 'CLIPTextEncode': [340, 280],
                 'LoadImage': [280, 360],
-                REFERENCE_NODE: [320, 220],
+                REFERENCE_NODE: [380, 430] if snapref else [320, 220],
                 moss_reference.EDIT_NODE: [440, 300],
                 moss_reference.NODE: [440, 340],
                 'KSampler': [280, 280],

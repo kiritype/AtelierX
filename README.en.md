@@ -71,7 +71,7 @@ See the [external components guide](https://atelierx.cftm.net/guide/external.htm
 
 The Anima Ref Adapter node and example workflow are also available as a ZIP for manual installation (`AtelierX-<version>-anima-ref-adapter.zip`). [Release downloads](https://github.com/kiritype/AtelierX/releases)
 
-Download the v2 weights separately under **Settings → Install → Models → Reference Image BETA (Anima)**. [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md)
+Under **Settings → Install → Models**, choose **Reference Image BETA (Anima)** for Anima Ref Adapter v2 weights or **Reference Image BETA (SnapRef v2a)** for SnapRef weights. Both adapters use the same extension node. [Anima Ref Adapter license](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md) · [SnapRef v2a license](https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md)
 
 ### Models and tools
 

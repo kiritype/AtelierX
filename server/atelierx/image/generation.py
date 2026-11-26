@@ -18,7 +18,7 @@ from urllib.parse import quote
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
-from . import library, moss_layout, moss_reference, reference
+from . import anima_reference, library, moss_layout, moss_reference, reference
 from .comments import strip_text
 from .compose import Composer, _join
 from .prompt_sources import combine_sources, normalize_sources
@@ -291,6 +291,8 @@ class GenerationMixin:
         if family == 'moss':
             return moss_reference.status(self.comfy, self.comfy.catalog())
         if family == 'anima':
+            return anima_reference.status(self.comfy)
+        if family is None:
             return self.comfy.reference_status()
         raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
 
@@ -316,6 +318,9 @@ class GenerationMixin:
             reference.check_moss_record(entry)
             readiness = self.reference_status('moss')
             moss_reference.require_ready(readiness)
+        elif anima_reference.is_entry(entry):
+            reference.check_anima_record(work, entry)
+            anima_reference.require_ready(self.comfy, entry)
         else:
             reference.prepare(work, entry)
             reference.require_ready(self.comfy)
@@ -369,6 +374,7 @@ class GenerationMixin:
             {**body, 'preset_id': ''} if sources is not None or layout is not None else body
         )
         moss_ref = reference_entry is not None and reference.is_moss(reference_entry)
+        anima_ref = anima_reference.is_entry(reference_entry)
         if moss_ref:
             if raw_settings.get('family') != 'moss' or layout is not None:
                 raise ValueError(
@@ -384,7 +390,10 @@ class GenerationMixin:
                 raise ValueError(
                     Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
                 )
-            reference.require_ready(self.comfy)
+            if anima_ref:
+                anima_reference.require_ready(self.comfy, reference_entry)
+            else:
+                reference.require_ready(self.comfy)
         if service.id == DEFAULT_SERVICE:
             allowed = set(COMFY_DEFAULTS) | {
                 'family',
@@ -483,6 +492,11 @@ class GenerationMixin:
                 )
         if not final_positive.strip():
             raise ValueError(Msg('server.single.positive', 'Enter a positive prompt.'))
+        if anima_ref:
+            reference_entry = {**reference_entry, 'scene': positive}
+            if final_positive != positive:
+                reference_entry['scene_prompt'] = final_positive
+            final_positive = anima_reference.scene_with_subjects(final_positive, reference_entry['subjects'])
         if len(final_positive) > 30000 or len(final_negative) > 30000:
             raise ValueError(
                 Msg('server.single.prompt_length', 'Prompts must be text of at most 30,000 characters.')
@@ -752,7 +766,9 @@ class GenerationMixin:
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
             schema_version=(
-                7
+                8
+                if anima_reference.is_entry(metadata.get('reference'))
+                else 7
                 if reference.is_moss(metadata.get('reference') or {})
                 else 6
                 if 'reference' in metadata

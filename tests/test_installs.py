@@ -20,24 +20,28 @@ def make_installs(tmp_path):
     return Installs(runtime)
 
 
-def test_reference_weight_download_requires_selection(tmp_path, monkeypatch):
+def test_reference_weight_downloads_require_separate_selection(tmp_path, monkeypatch):
     (tmp_path / 'loras').mkdir()
     installs = make_installs(tmp_path)
-    group = next(
-        row
+    groups = {
+        row['id']: row
         for row in installs_module.read_json(ROOT / 'defaults' / 'image' / 'downloads.json')['groups']
-        if row['id'] == 'anima_ref_adapter'
-    )
-    installs.manifest = lambda: {'groups': [group]}
+        if row['id'] in {'anima_ref_adapter', 'snapref_v2a'}
+    }
+    assert set(groups) == {'anima_ref_adapter', 'snapref_v2a'}
+    assert groups['snapref_v2a']['items'][0]['file'] == 'snapref_v2a.safetensors'
+    installs.manifest = lambda: {'groups': list(groups.values())}
     installs.model_folders = lambda: {'loras': [str(tmp_path / 'loras')]}
     downloaded = []
     monkeypatch.setattr(installs, '_download', lambda *args: downloaded.append(args))
     monkeypatch.setattr(installs, '_say', lambda _message: None)
     installs._install_models({})
     assert not downloaded
-    installs._install_models({'items': ['anima_ref_adapter']})
-    item = group['items'][0]
-    assert downloaded == [(item['url'], tmp_path / 'loras' / item['file'], item['size'], item['sha256'])]
+    for group_id, group in groups.items():
+        installs._install_models({'items': [group_id]})
+        (item,) = group['items']
+        assert downloaded == [(item['url'], tmp_path / 'loras' / item['file'], item['size'], item['sha256'])]
+        downloaded.clear()
 
 
 def test_tool_validation_skips_broken_path_entry_and_caches(tmp_path, monkeypatch):

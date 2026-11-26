@@ -66,8 +66,9 @@ ComfyUI and calls the packs above there; it does not include their code.
 
 The separate `AtelierX-<version>-anima-ref-adapter.zip` release asset provides the unmodified runtime
 files and basic workflow from [the pinned ArcAnima commit](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/tree/f02d54dd34593b4d4ce27b38de2a996049aeac58).
-The archive includes the upstream Apache-2.0 license and a credits file. The [v2 weights](https://huggingface.co/ElectronGirl/anima-ref-adapter)
-are installed separately under the CircleStone Non-Commercial License.
+The archive includes the upstream Apache-2.0 license and a credits file. The [Anima Ref Adapter v2 weights](https://huggingface.co/ElectronGirl/anima-ref-adapter)
+and [SnapRef v2a weights](https://huggingface.co/0ppxnhximxr/snapref-v2a/tree/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2)
+are separate optional downloads under the CircleStone Labs Non-Commercial License v1.2.
 
 Licenses above reflect the metadata published by each project at the time this file was prepared; check the project pages
 for their current terms.

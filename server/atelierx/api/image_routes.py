@@ -428,7 +428,7 @@ async def single_runs(request):
 
 
 async def reference_status(request):
-    return await call(_runtime(request).reference_status, request.query_params.get('family', 'anima'))
+    return await call(_runtime(request).reference_status, request.query_params.get('family'))
 
 
 async def reference_assets(request):

@@ -73,6 +73,18 @@
          "url": "https://huggingface.co/ElectronGirl/anima-ref-adapter/resolve/b729afd0c3307f27438df42697ccafaecf051d26/anima_ref_adapter_v2_r64.safetensors",
          "size": 183605032, "sha256": "71dda6079e18d354e16e3347bc49a9b710afd9495c378efbb833d30cac9cb81b"}
       ]
+    },
+    {
+      "id": "snapref_v2a",
+      "name": {"ko": "참조 이미지 BETA (SnapRef v2a)", "en": "Reference Image BETA (SnapRef v2a)"},
+      "about": {"ko": "Anima 참조 생성에서 SnapRef v2a를 선택할 때 쓰는 BF16 가중치입니다. Anima Ref Adapter 확장 노드와 함께 사용합니다.", "en": "BF16 weights for SnapRef v2a reference generation with Anima. Use with the Anima Ref Adapter node."},
+      "license": {"name": "CircleStone Labs Non-Commercial License v1.2", "url": "https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md"},
+      "optional": true,
+      "items": [
+        {"id": "snapref_v2a_bf16", "file": "snapref_v2a.safetensors", "folder": "loras",
+         "url": "https://huggingface.co/0ppxnhximxr/snapref-v2a/resolve/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/snapref_v2a.safetensors",
+         "size": 381821960, "sha256": "8a22fc28d060447544eda283b36efe2dcdbad7422cbc0b8d42828d55a8a61ab4"}
+      ]
     }
   ]
 }
