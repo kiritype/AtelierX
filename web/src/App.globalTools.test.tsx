@@ -5,11 +5,13 @@ import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { get, patch } from './api';
 import App from './App';
+import type { GlobalToolsView } from './lib/imageNavigation';
 
 vi.mock('./api', async original => ({ ...await original<typeof import('./api')>(), get: vi.fn(), patch: vi.fn() }));
-vi.mock('./screens/WorkSelect', () => ({ default: ({ onOpen, onOpenTools, onOpenSingle }: { onOpen: (id: string) => void; onOpenTools: () => void; onOpenSingle: () => void }) => <>
-  <button onClick={onOpenTools}>Tools from works</button>
-  <button onClick={onOpenSingle}>Standalone image</button>
+vi.mock('./screens/WorkSelect', () => ({ default: ({ onOpen, onOpenTools }: { onOpen: (id: string) => void; onOpenTools: (view: GlobalToolsView) => void }) => <>
+  <button onClick={() => onOpenTools('explorer')}>Tools from works</button>
+  <button onClick={() => onOpenTools('single')}>Standalone image</button>
+  <button onClick={() => onOpenTools('settings')}>App Settings</button>
   <button onClick={() => onOpen('story')}>Open story</button>
 </> }));
 vi.mock('./screens/WorkWindow', () => ({ default: ({ active, onOpenTools }: { active: boolean; onOpenTools: () => void }) => {
@@ -36,6 +38,10 @@ it('opens Tools from both places and preserves the mounted work editor on return
     await act(async () => root.render(<QueryClientProvider client={qc}><App /></QueryClientProvider>));
     await click('Standalone image');
     expect(host.querySelector('[data-view]')?.getAttribute('data-view')).toBe('single');
+    expect(patch).not.toHaveBeenCalled();
+    await click('Back from Tools');
+    await click('App Settings');
+    expect(host.querySelector('[data-view]')?.getAttribute('data-view')).toBe('settings');
     expect(patch).not.toHaveBeenCalled();
     await click('Back from Tools');
     await click('Tools from works');
