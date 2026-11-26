@@ -130,6 +130,7 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
             >
               ⋯
             </button>
+            {work.cover_url && <CoverThumbnail key={work.cover_url} src={work.cover_url} />}
             <strong>{work.name}</strong>
             <span className="faint">
               {work.id} · {t(`scale.${work.scale}`)}
@@ -192,6 +193,11 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
       {help.element}
     </div>
   );
+}
+
+function CoverThumbnail({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? null : <img className="work-card-cover" src={src} alt="" loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function NameDialog({

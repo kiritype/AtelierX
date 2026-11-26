@@ -24,7 +24,11 @@ export type WorkCard = {
   items: number;
   size: number;
   updated_at: string;
+  cover_url?: string | null;
 };
+
+export type WorkCover = { id: string; name: string; url: string };
+export type WorkCovers = { items: WorkCover[]; primary_id: string | null; revision: string };
 
 // GET /api/works: the cards and the ID the next new work would get.
 export type WorkList = { works: WorkCard[]; suggest_id: string };

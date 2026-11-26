@@ -9,7 +9,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-from . import frontmatter
+from . import frontmatter, work_covers
 from .fsutil import atomic_write_text, read_json, sha256_text, write_json
 from .i18n import AppError, Msg
 
@@ -586,6 +586,7 @@ class WorkStore:
             'items': len(index),
             'size': sum(i['size'] for i in used),
             'updated_at': doc.get('updated_at'),
+            'cover_url': work_covers.primary_url(work, doc['id']),
         }
 
     def suggest_id(self):
@@ -676,7 +677,8 @@ class WorkStore:
 
     def delete(self, work_id):
         work = self.get(work_id)
-        bundle = self.paths.data_trash / f'{stamp()}-{work.id}'
+        work_id = work.id
+        bundle = self.paths.data_trash / f'{stamp()}-{work_id}'
         size = sum(f.stat().st_size for f in work.folder.rglob('*') if f.is_file())
         bundle.mkdir(parents=True)
         shutil.move(str(work.folder), str(bundle / 'files' / work.name))
@@ -687,7 +689,7 @@ class WorkStore:
                 'kind': 'work',
                 'deleted_at': now_iso(),
                 'paths': [f'works/{work.name}/'],
-                'ids': [work.id],
+                'ids': [work_id],
                 'size': size,
             },
         )
