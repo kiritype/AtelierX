@@ -7,6 +7,7 @@ from pathlib import PureWindowsPath
 from typing import Any
 
 from ..core.i18n import Msg
+from . import moss_reference
 from .comfy import REFERENCE_NODE, REFERENCE_WEIGHT
 
 DEFAULTS: dict[str, Any] = {
@@ -511,40 +512,74 @@ def build_workflow(
         model_ref = [str(next_id), 0]
         next_id += 1
     first_model_ref = model_ref
+    moss_ref = isinstance(reference, dict) and reference.get('engine') == moss_reference.ENGINE
     if reference is not None:
-        if (settings.get('family') or 'anima') != 'anima':
-            raise ValueError('Anima reference requires an Anima model')
+        ref_family = 'moss' if moss_ref else 'anima'
+        if (settings.get('family') or 'anima') != ref_family:
+            raise ValueError('Reference engine does not match the model family')
         image = reference.get('image') if isinstance(reference, dict) else None
         if not isinstance(image, str) or not image.strip():
-            raise ValueError('Anima reference requires an uploaded image')
-        guidance = _finite_number(reference.get('guidance'), 'reference guidance')
-        if not 0 <= guidance <= 20:
-            raise ValueError('reference guidance must be between 0 and 20')
+            raise ValueError('Reference generation requires an uploaded image')
         load_id, adapter_id = str(next_id), str(next_id + 1)
         graph[load_id] = {'class_type': 'LoadImage', 'inputs': {'image': image}}
-        graph[adapter_id] = {
-            'class_type': REFERENCE_NODE,
-            'inputs': {
-                'model': model_ref,
-                'vae': vae_ref,
-                'image': [load_id, 0],
-                'lora_name': REFERENCE_WEIGHT,
-                'ref_guidance': guidance,
-                'correction': 'apg',
-                'strength': 1.0,
-                'ref_end': 1.0,
-                'ref_megapixels': 1.0,
-            },
-        }
+        if not moss_ref:
+            guidance = _finite_number(reference.get('guidance'), 'reference guidance')
+            if not 0 <= guidance <= 20:
+                raise ValueError('reference guidance must be between 0 and 20')
+            graph[adapter_id] = {
+                'class_type': REFERENCE_NODE,
+                'inputs': {
+                    'model': model_ref,
+                    'vae': vae_ref,
+                    'image': [load_id, 0],
+                    'lora_name': REFERENCE_WEIGHT,
+                    'ref_guidance': guidance,
+                    'correction': 'apg',
+                    'strength': 1.0,
+                    'ref_end': 1.0,
+                    'ref_megapixels': 1.0,
+                },
+            }
         first_model_ref = [adapter_id, 0]
         next_id += 2
     positive_id, negative_id, latent_id, sampler_id, decode_id, _preview_id = (
         str(next_id + n) for n in range(6)
     )
-    graph[positive_id] = {
-        'class_type': 'CLIPTextEncode',
-        'inputs': {'text': positive, 'clip': clip_ref},
-    }
+    if moss_ref:
+        graph[positive_id] = {
+            'class_type': moss_reference.EDIT_NODE,
+            'inputs': {
+                'clip': clip_ref,
+                'prompt': positive,
+                moss_reference.EDIT_IMAGE: [load_id, 0],
+                'edit_format': reference['edit_format'],
+                'image_strength': reference['image_strength'],
+            },
+        }
+        graph[adapter_id] = {
+            'class_type': moss_reference.NODE,
+            'inputs': {
+                'model': model_ref,
+                'vae': vae_ref,
+                'reference_image': [load_id, 0],
+                'positive': [positive_id, 0],
+                'adapter': moss_reference.WEIGHT,
+                'role': reference['role'],
+                'cfg_reference': reference['cfg_reference'],
+                'ref_edge': reference['ref_edge'],
+                'role_2': 'auto',
+                'role_3': 'auto',
+                'foundation_dir': moss_reference.FOUNDATION,
+                'custom_adapter_path': '',
+                'ref_attn_bias': reference['ref_attn_bias'],
+                'target_strength': reference['target_strength'],
+            },
+        }
+    else:
+        graph[positive_id] = {
+            'class_type': 'CLIPTextEncode',
+            'inputs': {'text': positive, 'clip': clip_ref},
+        }
     graph[negative_id] = {
         'class_type': 'CLIPTextEncode',
         'inputs': {'text': negative, 'clip': clip_ref},
@@ -685,6 +720,39 @@ def build_ui_workflow(
             [('MODEL', 'MODEL')],
             ['lora_name', 'ref_guidance', 'correction', 'strength', 'ref_end', 'ref_megapixels'],
         ),
+        moss_reference.EDIT_NODE: (
+            [
+                ('clip', 'CLIP'),
+                (moss_reference.EDIT_IMAGE, 'IMAGE'),
+                ('images.image_1', 'IMAGE'),
+                ('vae', 'VAE'),
+            ],
+            [('CONDITIONING', 'CONDITIONING')],
+            ['prompt', 'edit_format', 'image_strength'],
+        ),
+        moss_reference.NODE: (
+            [
+                ('model', 'MODEL'),
+                ('vae', 'VAE'),
+                ('reference_image', 'IMAGE'),
+                ('reference_image_2', 'IMAGE'),
+                ('reference_image_3', 'IMAGE'),
+                ('positive', 'CONDITIONING'),
+            ],
+            [('MODEL', 'MODEL')],
+            [
+                'adapter',
+                'role',
+                'cfg_reference',
+                'ref_edge',
+                'role_2',
+                'role_3',
+                'foundation_dir',
+                'custom_adapter_path',
+                'ref_attn_bias',
+                'target_strength',
+            ],
+        ),
         'KSampler': (
             [
                 ('model', 'MODEL'),
@@ -723,6 +791,8 @@ def build_ui_workflow(
         'LoraLoader': (340, 200),
         'LoadImage': (40, 710),
         REFERENCE_NODE: (1040, 70),
+        moss_reference.EDIT_NODE: (480, 430),
+        moss_reference.NODE: (1040, 15),
         'EmptyLatentImage': (650, 760),
         'KSampler': (1040, 370),
         'VAEDecode': (1390, 370),
@@ -779,6 +849,8 @@ def build_ui_workflow(
                 'CLIPTextEncode': [340, 280],
                 'LoadImage': [280, 360],
                 REFERENCE_NODE: [320, 220],
+                moss_reference.EDIT_NODE: [440, 300],
+                moss_reference.NODE: [440, 340],
                 'KSampler': [280, 280],
                 'PreviewImage': [420, 420],
             }.get(node_type, [280, 100]),
@@ -790,6 +862,8 @@ def build_ui_workflow(
             'properties': {'Node name for S&R': node_type},
             'widgets_values': widget_values,
         }
+        if node_type == moss_reference.EDIT_NODE:
+            node['widgets_values_named'] = {name: values[name] for name in widget_keys}
         for slot, (name, socket_type) in enumerate(input_defs):
             api_value = api_node['inputs'].get(name)
             input_link = None
@@ -800,7 +874,10 @@ def build_ui_workflow(
                 input_link = link_id
                 # Output link bookkeeping is applied after all node objects exist.
                 link_id += 1
-            node['inputs'].append({'name': name, 'type': socket_type, 'link': input_link})
+            socket = {'name': name, 'type': socket_type, 'link': input_link}
+            if node_type == moss_reference.EDIT_NODE and name in ('images.image_1', 'vae'):
+                socket['shape'] = 7  # Optional connector, as used by the upstream editor workflow.
+            node['inputs'].append(socket)
         for slot, (name, socket_type) in enumerate(output_defs):
             node['outputs'].append({'name': name, 'type': socket_type, 'links': [], 'slot_index': slot})
         nodes.append(node)

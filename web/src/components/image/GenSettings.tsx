@@ -78,7 +78,9 @@ export function modelsForFamily(catalog: Catalog, family: NonNullable<Generation
   });
 }
 
-export default function GenSettings({ value, onChange, preview = false, compact = false, section, showLoras = true, onlyFamily }: {
+export default function GenSettings({
+  value, onChange, preview = false, compact = false, section, showLoras = true, onlyFamily, showFamily = true, mossReference,
+}: {
   value: GenerationSettings;
   onChange: (value: GenerationSettings) => void;
   preview?: boolean;
@@ -86,6 +88,8 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   section?: SettingsSection;
   showLoras?: boolean;
   onlyFamily?: NonNullable<GenerationSettings['family']>;
+  showFamily?: boolean;
+  mossReference?: Pick<Catalog, 'models' | 'text_encoders' | 'vaes'>;
 }) {
   const familyLabelId = useId();
   const catalog = useCatalog(preview);
@@ -94,7 +98,7 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   if (!c.connected) return <div className="warn-text">{t('gen.not_connected')} {c.error ? (typeof c.error === 'string' ? c.error : tm(c.error)) : ''}</div>;
   const family = onlyFamily ?? value.family ?? 'anima';
   const fam = (kind: 'models' | 'loras', name: string) => c.families?.[kind]?.[name] ?? null;
-  const models = modelsForFamily(c, family);
+  const models = mossReference?.models ?? modelsForFamily(c, family);
   // SDXL needs a checkpoint, so switching families picks the first model of that family.
   const firstModel = (f: 'anima' | 'sdxl' | 'moss') =>
     c.models.find((m) => (f === 'sdxl' ? m.startsWith('checkpoint::') && fam('models', m) === 'sdxl' : !m.startsWith('checkpoint::') && fam('models', m) === f));
@@ -123,7 +127,7 @@ export default function GenSettings({ value, onChange, preview = false, compact 
   const modelFields = (
     <>
       <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {section !== 'parameters' && (
+        {showFamily && section !== 'parameters' && (
           <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
             <span id={familyLabelId} className="muted">{t('gen.family')}</span>
             <div className="seg">
@@ -167,15 +171,15 @@ export default function GenSettings({ value, onChange, preview = false, compact 
         value.detailer && t('gen.detailer'),
       ]}>
         <div className="row gen-advanced-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          {family !== 'sdxl' && pick('text_encoder', t('gen.text_encoder'), c.text_encoders, t('gen.default'))}
-          {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}
+          {family !== 'sdxl' && pick('text_encoder', t('gen.text_encoder'), mossReference?.text_encoders ?? c.text_encoders, t('gen.default'))}
+          {pick('vae', family === 'sdxl' ? t('gen.vae_override') : t('gen.vae'), mossReference?.vaes ?? c.vaes, family === 'sdxl' ? t('gen.builtin') : t('gen.default'))}
           {pick('sampler', t('gen.sampler'), c.samplers, t('gen.default'))}
           {pick('scheduler', t('gen.scheduler'), c.schedulers, t('gen.default'))}
           {num('steps', t('gen.steps'))}
           {num('cfg', 'CFG', 0.5)}
           {family === 'sdxl' && num('clip_skip', 'clip skip')}
         </div>
-        {showLoras && (
+        {showLoras && !mossReference && (
           <div className="col" style={{ gap: 4 }}>
             <span className="muted">{t('gen.loras')}</span>
             {(value.loras ?? []).map((lora, n) => (
@@ -228,7 +232,7 @@ export default function GenSettings({ value, onChange, preview = false, compact 
             </div>
           </label>
         )}
-        {family === 'moss' ? <label className="row"><input type="checkbox" checked={value.moss_slg !== false} onChange={e => set({ moss_slg: e.target.checked })} />{t('moss.slg')}</label> : <>
+        {family === 'moss' ? !mossReference && <label className="row"><input type="checkbox" checked={value.moss_slg !== false} onChange={e => set({ moss_slg: e.target.checked })} />{t('moss.slg')}</label> : <>
           <UpscaleFields value={value} set={set} catalog={c} />
           <DetailerFields value={value} set={set} catalog={c} />
         </>}

@@ -31,6 +31,8 @@ ComfyUI, 외부 확장 노드, 모델과 LoRA 학습 도구는 필요할 때 원
 옆의 `.sha256`으로 ZIP을 확인하고, 안의 `ComfyUI-Anima-Ref-Adapter` 폴더를 ComfyUI의 `custom_nodes`에 넣은 뒤 ComfyUI를 다시 시작합니다.
 이 ZIP에는 원본 노드, 예제 워크플로, 라이선스, 출처가 들어 있습니다. 어댑터 가중치는 아래 모델 항목으로 받고, 예제의 **Load Image**에는 사용할 참조 이미지를 고릅니다.
 
+[MossRef v2.0.0](https://github.com/Neon3579/MossRef/releases/tag/v2.0.0)은 참조 이미지 BETA의 MOSS 어댑터입니다. 노드와 워크플로는 Apache-2.0입니다. [별도 설치 방법](reference-generation.md)
+
 ## 모델
 
 설정 → 설치 → **모델**이 공개된 SHA256을 확인하며 받아 ComfyUI의 모델 폴더에 넣습니다. 계정이 필요한 곳의 모델은 받는 곳 링크와 넣을 폴더만 안내합니다.
@@ -39,6 +41,7 @@ ComfyUI, 외부 확장 노드, 모델과 LoRA 학습 도구는 필요할 때 원
 |---|---|---|
 | LoRA 학습용 Anima 기본 모델 | `anima-base-v1.0.safetensors`, `qwen_3_06b_base.safetensors`, `qwen_image_vae.safetensors` ([Anima](https://huggingface.co/circlestone-labs/Anima)) | CircleStone Labs Non-Commercial License (+ NVIDIA Open Model License) |
 | 참조 이미지 BETA (Anima) | `anima_ref_adapter_v2_r64.safetensors` ([Anima Reference Adapter](https://huggingface.co/ElectronGirl/anima-ref-adapter)) | CircleStone Non-Commercial License |
+| 참조 이미지 BETA (MOSS) | `anime_textref_v2_bf16.safetensors` ([MossRef](https://github.com/Neon3579/MossRef/releases/tag/v2.0.0)), [Moss-Image-Edit](https://huggingface.co/chinoll/Moss-Image-Edit/tree/3be9c40037e1b89b17aa85ff6f8ee805872aa558) | 어댑터 CC BY-NC 4.0, Moss-Image-Edit는 해당 배포처 참고 |
 | 감지 모델 | `face_yolov8m.pt`, `hand_yolov8s.pt`, `person_yolov8m-seg.pt`, `person_yolov8n-seg.pt` ([adetailer](https://huggingface.co/Bingsu/adetailer)), `sam_vit_b_01ec64.pth` ([Segment Anything](https://github.com/facebookresearch/segment-anything)) | Apache-2.0 |
 | 감지 모델(직접 받기) | `PitEyeDetailer-v2-seg.pt`, `ntd11_anime_nsfw_segm_v5-variant1.pt` (Civitai에서 검색해 `ultralytics/segm`에 넣기) | 각 모델 페이지의 조건 |
 | 업스케일 모델 | `2x-AnimeSharpV4_Fast_RCAN_PU.safetensors`, `2x-AnimeSharpV4_RCAN.safetensors` ([2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4)), `4x-UltraSharp.safetensors` ([UltraSharp](https://huggingface.co/Kim2091/UltraSharp)) | CC BY-NC-SA 4.0 (비상업) |

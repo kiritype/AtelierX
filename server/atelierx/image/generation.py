@@ -18,7 +18,7 @@ from urllib.parse import quote
 from PIL import Image, PngImagePlugin
 
 from ..core.i18n import AppError, Msg, message_of
-from . import library, moss_layout, reference
+from . import library, moss_layout, moss_reference, reference
 from .comments import strip_text
 from .compose import Composer, _join
 from .prompt_sources import combine_sources, normalize_sources
@@ -287,6 +287,13 @@ class GenerationMixin:
         self.queue.add(prepared, before_save=mark)
         return {'ok': True, 'batch_id': batch_id, 'count': len(prepared)}
 
+    def reference_status(self, family):
+        if family == 'moss':
+            return moss_reference.status(self.comfy, self.comfy.catalog())
+        if family == 'anima':
+            return self.comfy.reference_status()
+        raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
+
     def enqueue_reference(self, work, body):
         if not isinstance(body, dict) or body.get('service', DEFAULT_SERVICE) != DEFAULT_SERVICE:
             raise ValueError(
@@ -302,9 +309,19 @@ class GenerationMixin:
             )
         relative = body.get('path')
         _, record = reference.result_record(work, self.gallery, relative)
-        reference.prepare(work, record['reference'])
-        reference.require_ready(self.comfy)
+        entry = record['reference']
+        moss_ref = reference.is_moss(entry)
+        if moss_ref:
+            reference.data(work, entry.get('id'))
+            reference.check_moss_record(entry)
+            readiness = self.reference_status('moss')
+            moss_reference.require_ready(readiness)
+        else:
+            reference.prepare(work, entry)
+            reference.require_ready(self.comfy)
         source = self.rounds.source_job(relative)
+        if moss_ref:
+            moss_reference.validate_settings(source['snapshot']['settings'], readiness)
         job = self.rounds.fresh_job(source)
         if body.get('same_seed') is True:
             job['seed'] = source['snapshot']['settings']['seed']
@@ -351,7 +368,18 @@ class GenerationMixin:
         raw_settings, options, preset = self._settings(
             {**body, 'preset_id': ''} if sources is not None or layout is not None else body
         )
-        if reference_entry is not None:
+        moss_ref = reference_entry is not None and reference.is_moss(reference_entry)
+        if moss_ref:
+            if raw_settings.get('family') != 'moss' or layout is not None:
+                raise ValueError(
+                    Msg(
+                        'server.reference.moss_only',
+                        'MossRef requires ComfyUI and MOSS-Image-SFT without Layout.',
+                    )
+                )
+            for key, value in moss_reference.DEFAULTS.items():
+                raw_settings.setdefault(key, value)
+        elif reference_entry is not None:
             if raw_settings.get('family') != 'anima' or layout is not None:
                 raise ValueError(
                     Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
@@ -389,8 +417,15 @@ class GenerationMixin:
             if not catalog['connected']:
                 raise ValueError(catalog['error'])
             self.preset_models.validate(preset, raw_settings, catalog)
+            if moss_ref:
+                readiness = moss_reference.status(self.comfy, catalog)
+                moss_reference.require_ready(readiness)
+                for key, group in moss_reference.SETTING_GROUPS.items():
+                    raw_settings.setdefault(key, readiness[group][0])
             settings = validate_settings(raw_settings, catalog)
-            if reference_entry is not None:
+            if moss_ref:
+                moss_reference.validate_settings(settings, readiness)
+            elif reference_entry is not None:
                 known_family = (catalog.get('families', {}).get('models') or {}).get(settings['model'])
                 if settings['model_loader'] != 'UNETLoader' or known_family not in (None, 'anima'):
                     raise ValueError(
@@ -717,7 +752,9 @@ class GenerationMixin:
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
             schema_version=(
-                6
+                7
+                if reference.is_moss(metadata.get('reference') or {})
+                else 6
                 if 'reference' in metadata
                 else 5
                 if 'moss_layout' in metadata
