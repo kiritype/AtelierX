@@ -205,6 +205,8 @@ it('keeps the legacy Anima draft and queues one MOSS reference with supported se
   expect([...select.options].map(option => option.value)).toEqual(['', 'moss']);
   expect(host.textContent).not.toContain(t('reference.guidance'));
   expect(host.textContent).not.toContain(t('moss.slg'));
+  expect(host.textContent).not.toContain(t('moss.components'));
+  expect(host.textContent).not.toContain(t('moss.nodes_missing'));
   expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-scene"]')?.value).toBe('standing by the sea');
 
   await changeSelect(select, 'moss');

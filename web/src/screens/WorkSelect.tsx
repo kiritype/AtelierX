@@ -84,8 +84,8 @@ export default function WorkSelect({ help, onOpen, onOpenTools, onBack, onLock }
           <Icon name="lock" /> {t('common.lock')}
         </button>
       </div>
-      <div className="row">
-        <input className="grow" placeholder={t('works.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="row wrap work-actions">
+        <input placeholder={t('works.search')} aria-label={t('works.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
         <button onClick={() => onOpenTools('single')} title={t('single.standalone_about')}>{t('works.image_only')}</button>
         <button onClick={() => setDialog('samples')}>{t('works.samples')}</button>
         <button onClick={() => setDialog('import')} title={t('package.import_about')}>

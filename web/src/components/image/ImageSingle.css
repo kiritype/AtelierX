@@ -11,7 +11,7 @@
 .single-image .generation-service-bar { margin-bottom: 20px; }
 .moss-single .single-canvas { height: auto; aspect-ratio: 1; }
 .single-helpers, .single-result-links { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.single-field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
+.single-field { display: flex; flex-direction: column; gap: var(--field-gap); margin-bottom: 16px; }
 .single-field textarea { width: 100%; resize: vertical; min-height: 84px; line-height: 1.6; }
 .single-details { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
 .single-details summary { cursor: pointer; padding: 4px 0; }
@@ -29,7 +29,6 @@
 .single-form .gen-stage > .row > .gen-field { flex: 1 1 100px; }
 .single-form .gen-stage > .row > .gen-field select { width: 100%; }
 .single-form .gen-stage { padding-top: 12px; }
-.single-form .gen-field { gap: 5px; }
 .single-result { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .single-result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .single-result-head h3 { margin: 0; }

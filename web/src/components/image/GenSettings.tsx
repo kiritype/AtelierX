@@ -106,13 +106,13 @@ export default function GenSettings({
   const set = (patch: GenerationSettings) => onChange({ ...value, ...patch });
   const num = (key: keyof GenerationSettings, label: string, step = 1, width = 72) => (
     <label className="col gen-field" data-setting={key}>
-      <span className="muted">{label}</span>
+      <span className="control-label">{label}</span>
       <input type="number" step={step} style={{ width }} value={(value[key] as number | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value === '' ? undefined : Number(e.target.value) })} />
     </label>
   );
   const pick = (key: keyof GenerationSettings, label: string, options: string[], allowEmpty?: string) => (
     <label className="col gen-field" data-setting={key}>
-      <span className="muted">{label}</span>
+      <span className="control-label">{label}</span>
       <select value={(value[key] as string | undefined) ?? ''} onChange={(e) => set({ [key]: e.target.value || undefined })}>
         {allowEmpty !== undefined && <option value="">{allowEmpty}</option>}
         {options.map((o) => (
@@ -129,7 +129,7 @@ export default function GenSettings({
       <div className="row gen-model-fields" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
         {showFamily && section !== 'parameters' && (
           <div className="col gen-field" role="group" aria-labelledby={familyLabelId}>
-            <span id={familyLabelId} className="muted">{t('gen.family')}</span>
+            <span id={familyLabelId} className="control-label">{t('gen.family')}</span>
             <div className="seg">
               {(['anima', 'sdxl', 'moss'] as const).map((f) => (
                 <button
@@ -157,7 +157,7 @@ export default function GenSettings({
         {!(family === 'moss' && section === 'parameters') && <>{num('width', t('gen.width'), 16, 84)}{num('height', t('gen.height'), 16, 84)}</>}
         {(!section || family === 'moss') && (
           <label className="col gen-field" data-setting="seed">
-            <span className="muted">{t('gen.seed')}</span>
+            <span className="control-label">{t('gen.seed')}</span>
             <input type="number" style={{ width: 140 }} value={value.seed ?? -1} onChange={(e) => set({ seed: Number(e.target.value) })} title={t('gen.seed_hint')} />
           </label>
         )}
@@ -225,7 +225,7 @@ export default function GenSettings({
         )}
         {family !== 'sdxl' && (
           <label className="col gen-field">
-            <span className="muted">{t('gen.shift')}</span>
+            <span className="control-label">{t('gen.shift')}</span>
             <div className="row">
               <input type="number" step={0.5} min={0.5} max={20} style={{ width: 72 }} value={value.shift ?? ''} onChange={(e) => set({ shift: e.target.value === '' ? null : Number(e.target.value) })} />
               <span className="faint small">{t('gen.shift_hint')}</span>
@@ -242,8 +242,8 @@ export default function GenSettings({
   return (
     <div className="col gen-settings">
       {section !== 'parameters' && modelFields}
-      {family === 'moss' && section !== 'parameters' && <p className="small faint">{t('moss.components')}</p>}
-      {family === 'moss' && (!c.nodes?.moss || (value.moss_slg !== false && !c.nodes?.moss_slg)) && <p className="warn-text" role="alert">{t('moss.nodes_missing')}</p>}
+      {family === 'moss' && !mossReference && section !== 'parameters' && <p className="small faint">{t('moss.components')}</p>}
+      {family === 'moss' && !mossReference && (!c.nodes?.moss || (value.moss_slg !== false && !c.nodes?.moss_slg)) && <p className="warn-text" role="alert">{t('moss.nodes_missing')}</p>}
       {section !== 'model' && parameters}
     </div>
   );
@@ -267,7 +267,7 @@ function UpscaleFields({ value, set, catalog }: { value: GenerationSettings; set
         <>
           <div className="row" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label className="col gen-field">
-              <span className="muted">{t('gen.upscale_model')}</span>
+              <span className="control-label">{t('gen.upscale_model')}</span>
               <select value={up.model ?? ''} onChange={(e) => change({ model: e.target.value })}>
                 {models.map((m) => (
                   <option key={m} value={m}>
@@ -341,7 +341,7 @@ function DetailerFields({ value, set, catalog }: { value: GenerationSettings; se
 function Num({ label, value, step = 1, placeholder, onChange }: { label: string; value?: number; step?: number; placeholder?: string; onChange: (value: number | undefined) => void }) {
   return (
     <label className="col gen-field">
-      <span className="muted">{label}</span>
+      <span className="control-label">{label}</span>
       <input type="number" step={step} style={{ width: 72 }} placeholder={placeholder} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} />
     </label>
   );

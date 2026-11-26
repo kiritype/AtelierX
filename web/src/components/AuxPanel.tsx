@@ -37,13 +37,13 @@ export default function AuxPanel({
     <>
       <div className="aux-tabs">
         {(['check', 'review', 'agent'] as AuxTab[]).map((key) => (
-          <button key={key} className={tab === key ? 'on' : ''} onClick={() => setTab(key)}>
+          <button type="button" key={key} className={tab === key ? 'on' : ''} aria-pressed={tab === key} title={t(`aux.${key}`)} onClick={() => setTab(key)}>
             {t(`aux.${key}`)}
             {key === 'review' && pendingDrafts > 0 && <span className="badge" style={{ marginLeft: 4 }}>{pendingDrafts}</span>}
           </button>
         ))}
         <span className="grow" />
-        <button onClick={() => setTab(null)}>×</button>
+        <button type="button" className="aux-close" aria-label={t('common.close')} onClick={() => setTab(null)}>×</button>
       </div>
       <div className="aux-body">
         {tab === 'check' && <Checks workId={workId} activePath={activePath} openItem={openItem} />}
