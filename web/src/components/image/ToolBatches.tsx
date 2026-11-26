@@ -66,7 +66,7 @@ export default function ToolBatches({ active, fail }: { active: boolean; fail: (
         {(details.data?.items ?? []).map((item) => {
           const filename = item.display_name?.trim() || item.target.id;
           return <div key={item.ordinal} className="row" style={{ minWidth: 0 }}>
-            {item.thumbnail_url && <img src={item.thumbnail_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover' }} />}
+            {item.thumbnail_url && <img className="image-thumbnail" src={item.thumbnail_url} alt="" style={{ width: 32 }} />}
             <span title={item.target.id} style={{ overflowWrap: 'anywhere' }}>{filename}</span>
             <span className="faint mono small">{filename !== item.target.id ? item.target.id : ''}</span>
             <span>· {t(`bulk.state.${item.status}`)} {item.result?.error ? msgText(item.result.error) : ''}</span>

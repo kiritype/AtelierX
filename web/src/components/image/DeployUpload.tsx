@@ -274,7 +274,7 @@ export function DeployUpload({ scope, close, fail }: { scope: Scope; close: () =
                 <tbody>
                   {plan.rows.map((row) => (
                     <tr key={row.source}>
-                      <td>{row.thumbnail_url && <img src={row.thumbnail_url} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />}</td>
+                      <td>{row.thumbnail_url && <img className="image-thumbnail" src={row.thumbnail_url} alt="" style={{ width: 40, borderRadius: 4 }} />}</td>
                       <td className="small">
                         <span title={`${work} · ${row.character_id} · ${row.outfit_id}`}>{names.workName(work ?? '')} · {names.characterName(work ?? '', row.character_id)} · {names.outfitName(work ?? '', row.character_id, row.outfit_id)}</span>
                         {row.outfit_code ? <span className="faint mono"> ({row.outfit_code})</span> : <span className="warn-text"> ({t('deploy.no_code_short')})</span>} · {row.expression_name || row.expression_id}
