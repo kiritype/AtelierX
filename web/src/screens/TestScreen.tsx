@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { get, post, put } from '../api';
 import { applyEvent, postStream, streamErrorText, useStreamOwner } from '../lib/stream';
 import { TestSetsDialog, type TestSet } from '../components/TestSets';
@@ -32,12 +32,20 @@ type Turn = {
   error?: string;
   stopped?: boolean;
 };
+type Preview =
+  | { status: 'loading' }
+  | { status: 'ready'; context: Context }
+  | { status: 'error'; message: string };
+
 function flatten(entries: TreeEntry[]): TreeEntry[] {
   return entries.flatMap((e) => (e.type === 'folder' ? flatten(e.children ?? []) : [e]));
 }
 
+function chatInput(message: string, turns: Turn[], persona: TestSet['persona']) {
+  return { message, history: turns.map(({ role, text }) => ({ role, text })), persona };
+}
 
-export default function TestScreen({ workId, openItem }: { workId: string; openItem: (path: string) => void }) {
+export default function TestScreen({ workId, active, openItem }: { workId: string; active: boolean; openItem: (path: string) => void }) {
   const info = useQuery<WorkInfo>({ queryKey: ['work', workId], queryFn: () => get(`/api/works/${workId}`) });
   const tree = useQuery<TreeEntry[]>({ queryKey: ['tree', workId], queryFn: () => get(`/api/works/${workId}/tree`) });
   const starts = flatten(tree.data ?? []).filter((e) => e.kind === 'start' && e.enabled !== false);
@@ -62,12 +70,40 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const [selected, setSelected] = useState<number | null>(null);
   const [rawShown, setRawShown] = useState<Set<number>>(new Set());
   const log = useRef<HTMLDivElement>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const previewRevision = useRef(0);
 
   const started = turns.some((turn) => turn.role === 'user');
   const userName = persona?.name || '사용자';
   const startText = startEntry && startItem.data ? startItem.data.body.trim().replaceAll('{{user}}', userName) : null;
   // Before the first message the start situation is the bot's first turn; it follows the slide.
   const shown: Turn[] = started ? turns : startText ? [{ role: 'assistant', text: startText, start: true }] : [];
+  const openingReady = started || (tree.isSuccess && (!startEntry || startItem.isSuccess));
+  const canPreview = active && !busy && !!input.trim() && openingReady;
+  const chatPersona = persona ? { name: persona.name, description: persona.description } : null;
+
+  // The test screen remains mounted under the editor. Clear the preview before painting new input or returning to it.
+  useLayoutEffect(() => {
+    setPreview(null);
+    return () => { previewRevision.current += 1; };
+  }, [active, workId, input, turns, startEntry?.path, startText, persona, busy, tree.dataUpdatedAt, info.dataUpdatedAt]);
+
+  function closePreview() {
+    previewRevision.current += 1;
+    setPreview(null);
+  }
+
+  async function previewInput() {
+    if (!canPreview || preview?.status === 'loading') return;
+    const revision = ++previewRevision.current;
+    setPreview({ status: 'loading' });
+    try {
+      const result = await post<Context>(`/api/works/${workId}/chat/preview`, chatInput(input.trim(), shown, chatPersona));
+      if (revision === previewRevision.current) setPreview({ status: 'ready', context: result });
+    } catch (err) {
+      if (revision === previewRevision.current) setPreview({ status: 'error', message: streamErrorText(err) });
+    }
+  }
 
   const lastWithContext = [...shown.keys()].reverse().find((n) => shown[n].context);
   const focus = selected !== null && shown[selected]?.context ? selected : lastWithContext;
@@ -78,13 +114,12 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const componentNames = components.map((c) => c.name);
   const rules = info.data?.effective.values.jsx ?? {};
 
-  async function sendOne(message: string, history: Turn[], who: TestSet['persona'] = persona ? { name: persona.name, description: persona.description } : null) {
-    const plain = history.map(({ role, text }) => ({ role, text }));
+  async function sendOne(message: string, history: Turn[], who: TestSet['persona'] = chatPersona) {
     let reply: Turn = { role: 'assistant', text: '' };
     setTurns([...history, { role: 'user', text: message }, reply]);
     const controller = owner.begin();
     try {
-      await postStream(`/api/works/${workId}/chat/send`, { llm, history: plain, message, persona: who }, controller.signal, (event) => {
+      await postStream(`/api/works/${workId}/chat/send`, { ...chatInput(message, history, who), llm }, controller.signal, (event) => {
         reply = applyEvent(reply, event);
         setTurns([...history, { role: 'user', text: message }, reply]);
         log.current?.scrollTo(0, log.current.scrollHeight);
@@ -182,7 +217,8 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
   const focusText = focus !== undefined ? shown[focus].text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]+`/g, ' ') : '';
   const called = new Set(splitReply(focusText, componentNames, rules.response).flatMap((s) => ('component' in s ? [s.component] : [])));
   const notes = focus !== undefined ? replyNotes(shown[focus].text, componentNames, rules.response) : { fenced: [], unreadable: [] };
-  const picked = new Map(context?.picked.map((p) => [p.path, p]) ?? []);
+  const loaded = preview ? (preview.status === 'ready' ? preview.context : undefined) : context;
+  const picked = new Map(loaded?.picked.map((p) => [p.path, p]) ?? []);
 
   return (
     <div className="test-screen">
@@ -240,7 +276,11 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
               <div
                 key={n}
                 className={`msg ${turn.role === 'user' ? 'user' : 'bot'}${n === focus ? ' focus' : ''}`}
-                onClick={() => turn.context && setSelected(n)}
+                onClick={() => {
+                  if (!turn.context) return;
+                  closePreview();
+                  setSelected(n);
+                }}
               >
                 {turn.start && <div className="faint" style={{ fontSize: 11 }}>{t('test.start')}</div>}
                 {turn.role === 'assistant' && !turn.text && turn.thinking !== undefined && (
@@ -272,7 +312,7 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
               </div>
             ))}
           </div>
-          <div className="row">
+          <div className="row wrap">
             <textarea
               className="grow"
               rows={2}
@@ -286,6 +326,9 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
                 }
               }}
             />
+            <button type="button" onClick={previewInput} disabled={!canPreview || preview?.status === 'loading'}>
+              {t('test.preview')}
+            </button>
             {busy ? (
               <button onClick={owner.stop}>{t('test.stop')}</button>
             ) : (
@@ -296,15 +339,20 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
           </div>
         </div>
         <div className="test-side">
-          <div className="section-title">{t('test.loaded')}</div>
-          {!context && <div className="faint">{t('test.loaded_empty')}</div>}
-          {context && (
+          <div className="section-title row">
+            <span className="grow">{t(preview ? 'test.preview_title' : 'test.loaded')}</span>
+            {preview && <button type="button" className="ghost small" onClick={closePreview}>{t('common.close')}</button>}
+          </div>
+          {preview?.status === 'loading' && <p className="faint" role="status">{t('test.preview_loading')}</p>}
+          {preview?.status === 'error' && <p className="error-text" role="alert">{preview.message}</p>}
+          {!preview && !loaded && <div className="faint">{t('test.loaded_empty')}</div>}
+          {loaded && (
             <>
               <div className="load-row on">
                 ● <span className="grow">{t('kind.main')}</span>
-                {context.main ? (
-                  <a href="#" onClick={(e) => (e.preventDefault(), openItem(context.main!))}>
-                    {context.main}
+                {loaded.main ? (
+                  <a href="#" onClick={(e) => (e.preventDefault(), openItem(loaded.main!))}>
+                    {loaded.main}
                   </a>
                 ) : (
                   <span className="error-text">{t('test.no_main')}</span>
@@ -312,9 +360,9 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
                 <span className="faint">{t('test.always')}</span>
               </div>
               <div className="section-title">{t('kind.lorebook')}</div>
-              {context.lorebook.map((item) => {
+              {loaded.lorebook.map((item) => {
                 const hit = picked.get(item.path);
-                const skip = context.skipped.find((s) => s.path === item.path);
+                const skip = loaded.skipped.find((s) => s.path === item.path);
                 return (
                   <div key={item.path} className={`load-row${hit ? ' on' : ''}`}>
                     {hit ? '●' : '○'}{' '}
@@ -333,34 +381,38 @@ export default function TestScreen({ workId, openItem }: { workId: string; openI
                   </div>
                 );
               })}
-              {context.lorebook.length === 0 && <div className="faint">{t('chat.no_lore')}</div>}
-              <div className="section-title">JSX</div>
-              {context.components.map((c) => (
-                <div key={c.path} className={`load-row${called.has(c.name) ? ' on' : ''}`}>
-                  {called.has(c.name) ? '◆' : '◇'}{' '}
-                  <a href="#" className="grow" onClick={(e) => (e.preventDefault(), openItem(c.path))}>
-                    {c.name}
-                  </a>
-                  <span className={called.has(c.name) ? 'faint' : notes.fenced.includes(c.name) || notes.unreadable.includes(c.name) ? 'warn-text' : 'faint'}>
-                    {called.has(c.name)
-                      ? t('test.called')
-                      : notes.fenced.includes(c.name)
-                        ? t('test.called_in_code')
-                        : notes.unreadable.includes(c.name)
-                          ? t('test.called_unreadable')
-                          : t('test.not_called')}
-                  </span>
-                </div>
-              ))}
-              {context.components.length === 0 && <div className="faint">{t('test.no_jsx')}</div>}
+              {loaded.lorebook.length === 0 && <div className="faint">{t('chat.no_lore')}</div>}
+              {!preview && (
+                <>
+                  <div className="section-title">JSX</div>
+                  {loaded.components.map((c) => (
+                    <div key={c.path} className={`load-row${called.has(c.name) ? ' on' : ''}`}>
+                      {called.has(c.name) ? '◆' : '◇'}{' '}
+                      <a href="#" className="grow" onClick={(e) => (e.preventDefault(), openItem(c.path))}>
+                        {c.name}
+                      </a>
+                      <span className={called.has(c.name) ? 'faint' : notes.fenced.includes(c.name) || notes.unreadable.includes(c.name) ? 'warn-text' : 'faint'}>
+                        {called.has(c.name)
+                          ? t('test.called')
+                          : notes.fenced.includes(c.name)
+                            ? t('test.called_in_code')
+                            : notes.unreadable.includes(c.name)
+                              ? t('test.called_unreadable')
+                              : t('test.not_called')}
+                      </span>
+                    </div>
+                  ))}
+                  {loaded.components.length === 0 && <div className="faint">{t('test.no_jsx')}</div>}
+                </>
+              )}
               <div className="faint" style={{ marginTop: 8 }}>
-                {t('test.size', { size: context.system_size, n: context.picked.length })}
+                {t(preview ? 'test.preview_size' : 'test.size', { size: loaded.system_size, n: loaded.picked.length })}
               </div>
               <p className="faint">{t('test.platform_note')}</p>
               <details>
                 <summary>{t('chat.raw')}</summary>
                 <pre className="mono" style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
-                  {context.system}
+                  {loaded.system}
                 </pre>
               </details>
             </>

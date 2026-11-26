@@ -1,5 +1,7 @@
 """Personas: one list for the whole app, and the {{user}} section the test chat sends."""
 
+import json
+
 
 def test_the_list_is_saved_for_the_whole_app_with_a_revision_check(unlocked):
     c = unlocked
@@ -50,3 +52,31 @@ def test_the_persona_is_a_user_section_with_reserved_names_replaced(unlocked):
         json={'history': [], 'message': '안녕', 'persona': {'name': '', 'description': '말수가 적다.'}},
     ).json()
     assert '## 사용자 설정\n말수가 적다.' in nameless['system']
+
+
+def test_preview_matches_the_sent_context_without_running_the_model(unlocked, monkeypatch):
+    c = unlocked
+    wid = c.post('/api/samples/ensemble/install').json()['id']
+    llm = c.app.state.app.llm
+    payload = {
+        'history': [{'role': 'assistant', 'text': '농구부 훈련이 끝났습니다.'}],
+        'message': '언제 모이나요?',
+        'persona': {'name': '소연', 'description': '새로 전학 왔다.'},
+    }
+
+    def unexpected_model_request(*args, **kwargs):
+        raise AssertionError('Preview must assemble the context locally without touching the model.')
+
+    with monkeypatch.context() as blocked:
+        blocked.setattr(llm, 'require_consent', unexpected_model_request)
+        blocked.setattr(llm, 'stream', unexpected_model_request)
+        preview = c.post(f'/api/works/{wid}/chat/preview', json=payload)
+    assert preview.status_code == 200
+    assert 'L002' in {item['id'] for item in preview.json()['picked']}
+    assert c.get(f'/api/works/{wid}/tests/runs').json() == []
+
+    sent = c.post(f'/api/works/{wid}/chat/send', json=payload)
+    assert sent.status_code == 200
+    event, data = sent.text.split('\n\n', 1)[0].splitlines()
+    assert event == 'event: context'
+    assert json.loads(data.removeprefix('data: ')) == preview.json()
