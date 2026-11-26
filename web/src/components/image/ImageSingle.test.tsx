@@ -63,6 +63,7 @@ beforeEach(async () => {
   vi.mocked(get).mockImplementation(async url => {
     if (url === '/api/image/catalog') return catalog;
     if (url === '/api/image/services') return services;
+    if (url === '/api/image/queue?paused_only=true') return { paused: false };
     if (url === '/api/image/single/draft') return { draft: savedDraft, revision: 'initial' };
     if (url.endsWith('/single/runs')) return { runs: [...rows] };
     if (url.endsWith('/novelai/info')) return { models: [{ id: 'nai-test', name: 'Test' }], samplers: ['euler'], noise_schedules: ['karras'],
@@ -304,8 +305,11 @@ it('cancels, retries, restores and regenerates the saved request', async () => {
   await click(t('common.cancel'));
   expect(rows[0].status).toBe('cancelled');
   await edit(positive(), 'New draft');
+  await act(async () => qc.setQueryData(['image-queue', 'pause-state'], { paused: true }));
   await click(t('single.retry'));
   expect(rows[0].request?.positive).toBe('Original');
+  expect(post).not.toHaveBeenCalledWith('/api/image/queue/resume');
+  await vi.waitFor(() => expect(host.textContent).toContain(t('queue.waiting_while_paused')));
   rows[0] = { ...rows[0], status: 'done', image_url: '/api/image/files/_single/synthetic/a.png', path: '_single/synthetic/a.png',
     actual: { positive: 'Preserved tag, Original', negative: 'No blur, preserved negative', settings: { ...rows[0].actual.settings, cfg: 6.5 } } };
   await publish();

@@ -191,7 +191,10 @@ def test_single_cancel_retry_failure_and_queue_resume(unlocked, monkeypatch, ser
     runtime.run_job(job)
     assert job['status'] == 'failed' and runtime.paused
     again = client.post(f'/api/image/jobs/{retried}/retry').json()['job_id']
+    assert client.get('/api/image/queue?paused_only=true').json() == {'paused': True}
+    assert runtime.queue.get(again)['status'] == 'queued'
     assert client.post('/api/image/queue/resume').json()['paused'] is False
+    assert client.get('/api/image/queue?paused_only=true').json() == {'paused': False}
     assert runtime.queue.get(again)['status'] == 'queued'
     runs = client.get(f'{url}/runs').json()['runs']
     assert {row['status'] for row in runs} == {'cancelled', 'failed', 'queued'}

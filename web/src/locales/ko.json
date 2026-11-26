@@ -842,6 +842,7 @@
   "queue.pause": "일시 정지",
   "queue.paused": "일시 정지됨",
   "queue.resume": "다시 시작",
+  "queue.waiting_while_paused": "대기열이 일시 정지되어 이 작업은 대기 중입니다. 이미지 작업 대기열에서 [다시 시작]을 누르세요.",
   "queue.retry": "다시 시도",
   "queue.running": "진행 중",
   "queue.show.all": "전체",

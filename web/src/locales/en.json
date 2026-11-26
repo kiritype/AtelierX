@@ -775,6 +775,7 @@
   "queue.pause": "Pause",
   "queue.paused": "Paused",
   "queue.resume": "Resume",
+  "queue.waiting_while_paused": "This job is waiting while the queue is paused. Select Resume in the image job queue.",
   "queue.retry": "Retry",
   "queue.running": "Running",
   "queue.show.all": "All",
