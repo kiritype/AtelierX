@@ -36,7 +36,7 @@ export function useNovelAIInfo(preview = false) {
   });
 }
 
-export default function NovelAISettings({ value, onChange, preview = false, compact = false, section }: ServicePanelProps) {
+export default function NovelAISettings({ value, onChange, preview = false, compact = false, section, openSettings }: ServicePanelProps & { openSettings?: () => void }) {
   const info = useNovelAIInfo(preview);
   const account = useQuery<Account, ApiError>({
     queryKey: preview ? ['image-single-preview', 'novelai-account'] : ['image-service-account', 'novelai'],
@@ -155,6 +155,7 @@ export default function NovelAISettings({ value, onChange, preview = false, comp
         ) : (
           <span className="faint">{t('nai.account_loading')}</span>
         )}
+        {account.error && openSettings && <button type="button" className="ghost small" onClick={openSettings}>{t('gen.open_settings')}</button>}
         <button className="ghost small" onClick={() => account.refetch()}>
           {t('nai.account_refresh')}
         </button>

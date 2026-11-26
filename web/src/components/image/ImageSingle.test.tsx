@@ -15,7 +15,7 @@ import { freshMoss, newMossItem } from '../../lib/mossLayout';
 
 vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock('./ImageLab', () => ({ sendToLab: vi.fn() }));
-vi.mock('../AppSettings', () => ({ default: () => <p>Connection settings</p> }));
+vi.mock('../AppSettings', () => ({ default: ({ request }: { request?: { section: string } }) => <p data-settings-section={request?.section}>Connection settings</p> }));
 let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
@@ -61,6 +61,8 @@ beforeEach(async () => {
     settings: {}, artist: { positive: 'soft light', negative: '' } }]);
   qc.setQueryData(['image-single-runs', 'synthetic'], { runs: [] });
   vi.mocked(get).mockImplementation(async url => {
+    if (url === '/api/image/catalog') return catalog;
+    if (url === '/api/image/services') return services;
     if (url === '/api/image/single/draft') return { draft: savedDraft, revision: 'initial' };
     if (url.endsWith('/single/runs')) return { runs: [...rows] };
     if (url.endsWith('/novelai/info')) return { models: [{ id: 'nai-test', name: 'Test' }], samplers: ['euler'], noise_schedules: ['karras'],
@@ -154,6 +156,46 @@ it('keeps the standalone form through settings and protects leaving while a gene
   } finally { vi.unstubAllGlobals(); }
 });
 
+it('opens setup from standalone generation and rechecks the connection on return', async () => {
+  await act(async () => qc.setQueryData(['image-catalog'], { ...catalog, connected: false }));
+  await act(async () => root.render(<QueryClientProvider client={qc}><GlobalToolsWindow initialView="single" onClose={() => {}} /></QueryClientProvider>));
+  await edit(positive(), 'Keep this scene');
+  expect(host.textContent).toContain(t('gen.not_connected'));
+  expect(button(t('single.run')).disabled).toBe(true);
+  expect(post).not.toHaveBeenCalledWith('/api/image/single', expect.anything());
+  await click(t('gen.open_settings'));
+  expect(host.querySelector('[data-settings-section="image"]')).not.toBeNull();
+  expect(positive().closest('[hidden]')).not.toBeNull();
+  await click(t('image_menu.single'));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(get).toHaveBeenCalledWith('/api/image/catalog');
+  expect(positive().value).toBe('Keep this scene');
+  expect(host.textContent).toContain(t('single.readiness_ready'));
+  expect(button(t('single.run')).disabled).toBe(false);
+});
+
+it('offers image settings when a selected internet service has no key', async () => {
+  const setup = vi.fn();
+  await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle workId="synthetic" openView={openView} openSettings={setup} /></QueryClientProvider>));
+  await act(async () => qc.setQueryData(['image-services'], { ...services, services: services.services.map(service => ({ ...service, connected: false })) }));
+  await click('PixAI');
+  expect(host.textContent).toContain(t('single.service_unavailable'));
+  await click(t('gen.open_settings'));
+  expect(setup).toHaveBeenCalledWith('image');
+  expect(button(t('single.run')).disabled).toBe(true);
+});
+
+it('shows the existing required-model action when a selected style model is missing', async () => {
+  await act(async () => qc.setQueryData(['image-presets'], [{ id: 'soft', name: 'Soft', service: 'comfyui', family: 'anima',
+    settings: { model: 'missing.safetensors' }, artist: { positive: 'soft light', negative: '' } }]));
+  await edit(positive(), 'The model must be present');
+  const style = [...host.querySelectorAll('select')].find(select => [...select.options].some(option => option.value === 'soft'))!;
+  await act(async () => { style.value = 'soft'; style.dispatchEvent(new Event('change', { bubbles: true })); });
+  const notice = [...host.querySelectorAll('[role="status"]')].find(node => node.textContent === t('single.readiness_models'))!;
+  expect(notice?.parentElement?.textContent).toContain(t('preset_models.title'));
+  expect(button(t('single.run')).disabled).toBe(true);
+});
+
 it('keeps unsaved standalone input after a conflict until an explicit reload', async () => {
   vi.mocked(put).mockRejectedValue(new ApiError(409, { key: 'server.single.draft_stale', text: 'Changed elsewhere' }));
   await act(async () => root.render(<QueryClientProvider client={qc}><ImageSingle key="standalone" openView={openView} /></QueryClientProvider>));
@@ -241,7 +283,7 @@ it('keeps both prompts across services and submits a real queued request', async
   expect(post).toHaveBeenCalledWith('/api/works/synthetic/image/single', expect.objectContaining({
     positive: 'Two people beside a lake', negative: 'blur', service: 'comfyui',
   }));
-  expect(host.querySelector('[role="status"]')?.textContent).toBe(t('single.state.queued'));
+  expect([...host.querySelectorAll('[role="status"]')].map(node => node.textContent)).toContain(t('single.state.queued'));
   expect(button(t('single.multi')).hasAttribute('disabled')).toBe(true);
 });
 

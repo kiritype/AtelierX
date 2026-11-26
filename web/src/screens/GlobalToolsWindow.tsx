@@ -65,7 +65,7 @@ export default function GlobalToolsWindow({ workId, onClose, initialView = 'expl
           ))}
         </nav>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          {!workId && visited.includes('single') && <div hidden={view !== 'single'} inert={view !== 'single'} style={{ display: view === 'single' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="single"><Suspense fallback={<Loading />}><ImageSingle active={view === 'single'} openView={target => {
+          {!workId && visited.includes('single') && <div hidden={view !== 'single'} inert={view !== 'single'} style={{ display: view === 'single' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="single"><Suspense fallback={<Loading />}><ImageSingle active={view === 'single'} openSettings={openSettings} openView={target => {
             if (target === 'queue' || target === 'presets') openView(target);
           }} /></Suspense></TabScope></div>}
           {visited.includes('explorer') && <div hidden={view !== 'explorer'} inert={view !== 'explorer'} style={{ display: view === 'explorer' ? 'contents' : 'none' }}>

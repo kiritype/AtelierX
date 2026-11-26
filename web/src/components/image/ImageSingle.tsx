@@ -60,7 +60,12 @@ const localTime = (value: string) => {
 };
 const HISTORY_PAGE_SIZE = 6;
 
-export default function ImageSingle({ workId, openView, active: screenActive = true }: { workId?: string; openView: (view: ImageView) => void; active?: boolean }) {
+export default function ImageSingle({ workId, openView, openSettings, active: screenActive = true }: {
+  workId?: string;
+  openView: (view: ImageView) => void;
+  openSettings?: (section?: 'image' | 'install') => void;
+  active?: boolean;
+}) {
   const id = useId();
   const endpoint = workId ? `/api/works/${workId}/image/single` : '/api/image/single';
   const qc = useQueryClient();
@@ -83,6 +88,20 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const [historyPage, setHistoryPage] = useState(0);
   const services = useQuery<ImageServices>({ queryKey: ['image-services'], queryFn: () => get('/api/image/services') });
   const catalog = useCatalog();
+  const returnFromSettings = useRef(false);
+  useEffect(() => {
+    if (!screenActive || !returnFromSettings.current) return;
+    returnFromSettings.current = false;
+    void qc.invalidateQueries({ queryKey: ['image-catalog'] });
+    void qc.invalidateQueries({ queryKey: ['image-services'] });
+    void qc.invalidateQueries({ queryKey: ['image-service-account', 'novelai'] });
+  }, [qc, screenActive]);
+
+  function openPreparation(section: 'image' | 'install' = 'image') {
+    if (!openSettings) return;
+    returnFromSettings.current = true;
+    openSettings(section);
+  }
   const { compositions, rules } = useShotLibrary(workId);
   const [unappliedShot, setUnappliedShot] = useState<ShotChoice>(AUTO_SHOT);
   const presets = useQuery<Preset[]>({ queryKey: ['image-presets'], queryFn: () => get('/api/image/presets') });
@@ -149,8 +168,11 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
   const mossSceneMaterial = mossJoin(...draft.sources.filter(s => ['common', 'style', 'composition'].includes(s.kind)).map(s => s.positive));
   const setMoss = (moss_layout: MossDocument) => update({ moss_layout });
   const setSettings = (value: Record<string, unknown>) => setDraft(current => ({ ...current, settings: { ...current.settings, [current.service]: value } }));
+  const isComfy = draft.service === 'comfyui';
   const serviceInfo = services.data?.services.find(service => service.id === draft.service);
-  const ready = draft.service === 'comfyui' ? catalog.data?.connected : serviceInfo?.supported && serviceInfo.connected;
+  const serviceQuery = isComfy ? catalog : services;
+  const connected = serviceQuery.isSuccess && (isComfy ? catalog.data?.connected : serviceInfo?.supported && serviceInfo.connected);
+  const missingMoss = connected && isMoss && !catalog.data?.nodes?.moss;
   const servicePresets = (presets.data ?? []).filter(preset => preset.service === draft.service);
   const shotTarget = draft.service === 'comfyui' ? String(settings.family || 'anima') : draft.service;
   const frozenShot = draft.sources.find(source => source.kind === 'composition');
@@ -286,6 +308,30 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     busy={busy} handoffPending={handoffPending} restore={() => restore(run)} regenerate={regenerate}
     handoff={workId ? target => target === 'tools' ? handoffTools() : handoffLab() : undefined} />;
 
+  const comfy = settings as GenerationSettings;
+  const selectedCatalog = catalog.data;
+  const missingPresetModel = !!(connected && isComfy && appliedStyle?.id && selectedCatalog && [
+    [comfy.model, selectedCatalog.models],
+    [comfy.text_encoder, selectedCatalog.text_encoders],
+    [comfy.vae, selectedCatalog.vaes],
+    [comfy.upscale?.model, selectedCatalog.upscale_models],
+  ].some(([name, choices]) => typeof name === 'string' && name && Array.isArray(choices) && !choices.includes(name)));
+  const ready = connected && !missingMoss && !missingPresetModel;
+  const readinessLabel = serviceQuery.isPending ? 'single.readiness_checking'
+    : serviceQuery.isError ? 'single.readiness_failed'
+    : !connected ? isComfy ? 'gen.not_connected' : serviceInfo?.supported ? 'single.service_unavailable' : 'image_services.not_supported'
+    : missingMoss ? 'moss.nodes_missing'
+    : missingPresetModel ? 'single.readiness_models'
+    : isComfy ? 'single.readiness_ready' : 'single.readiness_key';
+  const canOpenPreparation = !serviceQuery.isPending
+    && (serviceQuery.isError || missingMoss || (!connected && (isComfy || serviceInfo?.supported)));
+  const modelCheck = isComfy && appliedStyle?.id && <PresetModelsButton ids={[appliedStyle.id]} onResolved={(before, after) => {
+    setDraft(current => ({ ...current, settings: { ...current.settings, comfyui: reconnectSettings(
+      current.settings.comfyui, before.find(p => p.id === appliedStyle.id), after.find(p => p.id === appliedStyle.id),
+    ) } }));
+    void qc.invalidateQueries({ queryKey: ['image-catalog'] });
+  }} />;
+
   if (!draftLoaded) return draftLoadingError ? <div role="alert">{draftLoadingError} <button onClick={() => setLoadAttempt(n => n + 1)}>{t('single.reload_draft')}</button></div> : <Loading />;
 
   return <section className={isMoss ? "single-image generation-page moss-single" : "single-image generation-page"} aria-label={t('image_menu.single')}>
@@ -297,7 +343,12 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
       <div className="generation-service-tabs" role="group" aria-label={t('gen.service')}>
         {(['comfyui', 'novelai', 'pixai'] as Service[]).map(service => <button type="button" key={service} className={draft.service === service ? 'on' : ''} aria-pressed={draft.service === service} onClick={() => selectService(service)}>{SERVICE_NAMES[service]}</button>)}
       </div>
-      {!ready && <p className="warn-text" role="alert">{draft.service === 'comfyui' ? t('gen.not_connected') : t('single.service_unavailable')}</p>}
+      <div className="row small" style={{ flexWrap: 'wrap' }}>
+        <span role="status" className={ready || serviceQuery.isPending ? 'faint' : 'warn-text'}>{t(readinessLabel)}</span>
+        {openSettings && canOpenPreparation && <button type="button" className="ghost" onClick={() => openPreparation(missingMoss ? 'install' : 'image')}>{t(missingMoss ? 'reference.open_install' : 'gen.open_settings')}</button>}
+        {!connected && !serviceQuery.isPending && (isComfy || serviceQuery.isError) && <button type="button" className="ghost" disabled={serviceQuery.isFetching} onClick={() => void serviceQuery.refetch()}>{t('common.retry')}</button>}
+        {missingPresetModel && modelCheck}
+      </div>
     </div>
     <div className="single-layout">
       <div className="single-form single-settings">
@@ -306,13 +357,13 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
           <option value="">{t('gen.no_preset')}</option>{servicePresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
         </select></label>
         {draft.legacyPreset && <p className="warn-text">{t('materials.legacy_draft')}</p>}
-        {draft.service === 'comfyui' && appliedStyle?.id && <PresetModelsButton ids={[appliedStyle.id]} onResolved={(before, after) => setDraft(current => ({ ...current, settings: { ...current.settings, comfyui: reconnectSettings(current.settings.comfyui, before.find(p => p.id === appliedStyle.id), after.find(p => p.id === appliedStyle.id)) } }))} />}
+        {!missingPresetModel && modelCheck}
         <StyleThumbnails presets={servicePresets} selected={appliedStyle?.id ?? ''} choose={choosePreset} disabled={commons.isPending} />
         <button type="button" className="ghost" onClick={() => openView('presets')}>{t('materials.open_styles')}</button>
         <div className="section-title">{t('single.settings')}</div>
         <p className="faint small">{t('single.settings_hint')}</p>
-        {draft.service === 'comfyui' && <GenSettings compact value={settings as GenerationSettings} onChange={value => setSettings(value)} />}
-        {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} />}
+        {isComfy && selectedCatalog?.connected && <GenSettings compact value={comfy} onChange={value => setSettings(value)} />}
+        {draft.service === 'novelai' && <NovelAISettings compact value={settings} onChange={setSettings} openSettings={openSettings && connected ? () => openPreparation() : undefined} />}
         {draft.service === 'pixai' && <PixAISettings compact value={settings} onChange={setSettings} />}
       </div>
       <div className="single-workspace">
@@ -368,7 +419,7 @@ export default function ImageSingle({ workId, openView, active: screenActive = t
     <footer className="image-gen-bar row" aria-label={t('gen.execution')}>
       <div className="generation-summary grow"><strong>{t('gen.images', { n: 1 })}</strong>
         <GenerationResolution service={draft.service} value={settings} />{isMoss && <span>{t("moss.active_input", { mode: t("moss.mode." + mossDoc.mode) })}</span>}</div>
-      <button type="button" className="primary" disabled={busy || !ready || !positive || (mossActive && (mossInvalid || mossErrors(mossDoc).length > 0)) || (isMoss && !catalog.data?.nodes?.moss)} onClick={() => enqueue()}>{t('single.run')}</button>
+      <button type="button" className="primary" disabled={busy || !ready || !positive || (mossActive && (mossInvalid || mossErrors(mossDoc).length > 0))} onClick={() => enqueue()}>{t('single.run')}</button>
       {busy && run && active(run) && <button type="button" onClick={cancel}>{t('common.cancel')}</button>}
     </footer>
     {previewOpen && run?.image_url && <GalleryDetailFrame imageUrl={run.image_url} label={`${t('single.result')} · ${filenameOf(run)}`} close={() => setPreviewOpen(false)}>
