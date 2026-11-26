@@ -10,6 +10,7 @@ import WorkSelect from './screens/WorkSelect';
 import { Loading } from './components/ui';
 import PasswordSuggest from './components/PasswordSuggest';
 import { AppThemeProvider } from './AppTheme';
+import type { GlobalToolsView } from './lib/imageNavigation';
 import type { GeneralSettings, ThemePreference } from './types';
 
 type Status = {
@@ -28,10 +29,8 @@ const GlobalToolsWindow = lazy(() => import('./screens/GlobalToolsWindow'));
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [workId, setWorkId] = useState<string | null>(null);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const [toolsView, setToolsView] = useState<'explorer' | 'single'>('explorer');
-  const openTools = useCallback(() => { setToolsView('explorer'); setToolsOpen(true); }, []);
-  const openSingle = useCallback(() => { setToolsView('single'); setToolsOpen(true); }, []);
+  const [toolsView, setToolsView] = useState<GlobalToolsView | null>(null);
+  const openExplorer = useCallback(() => setToolsView('explorer'), []);
   // Unlocked with a password shorter than new ones may be (#82): suggest changing it, once per unlock.
   const [suggestPassword, setSuggestPassword] = useState(false);
   const queryClient = useQueryClient();
@@ -45,7 +44,7 @@ export default function App() {
     const value = await get<Status>('/api/auth/status');
     setLanguage(value.language);
     setStatus(value);
-    if (!value.unlocked) setToolsOpen(false);
+    if (!value.unlocked) setToolsView(null);
     setSuggestPassword(!!value.unlocked && !!value.password_change_suggested);
   }, []);
 
@@ -53,7 +52,7 @@ export default function App() {
     refresh();
     setUnauthorizedHandler(() => {
       queryClient.clear();
-      setToolsOpen(false);
+      setToolsView(null);
       refresh();
     });
     setConsentHandler(async (msg, url) => {
@@ -77,18 +76,19 @@ export default function App() {
   let screen;
   if (!status.initialized) screen = <FirstRun onDone={refresh} />;
   else if (!status.unlocked) screen = <Lock wait={status.wait} onDone={refresh} />;
-  else if (!workId) screen = <WorkSelect onOpen={openWork} onOpenTools={openTools} onOpenSingle={openSingle} onLock={refresh} />;
-  else screen = <WorkWindow key={workId} workId={workId} active={!toolsOpen} onOpenTools={openTools} onLeave={() => setWorkId(null)} onLock={refresh} />;
+  else if (!workId) screen = <WorkSelect onOpen={openWork} onOpenTools={setToolsView} onLock={refresh} />;
+  else screen = <WorkWindow key={workId} workId={workId} active={!toolsView} onOpenTools={openExplorer} onLeave={() => setWorkId(null)} onLock={refresh} />;
+  const toolsOpen = toolsView !== null && status.unlocked;
 
   return (
     <AppThemeProvider preference={(status.unlocked ? settings.data?.theme : undefined) ?? status.theme ?? 'system'}>
       <ToastProvider>
-        <div hidden={toolsOpen && status.unlocked} inert={toolsOpen && status.unlocked} style={{ display: toolsOpen && status.unlocked ? 'none' : 'contents' }} aria-hidden={toolsOpen && status.unlocked || undefined}>
+        <div hidden={toolsOpen} inert={toolsOpen} style={{ display: toolsOpen ? 'none' : 'contents' }} aria-hidden={toolsOpen || undefined}>
           <Suspense fallback={<Loading />}>{screen}</Suspense>
         </div>
-        {toolsOpen && status.unlocked && (
+        {toolsOpen && (
           <Suspense fallback={<Loading />}>
-            <GlobalToolsWindow workId={workId ?? undefined} initialView={toolsView} onClose={() => setToolsOpen(false)} />
+            <GlobalToolsWindow workId={workId ?? undefined} initialView={toolsView} onClose={() => setToolsView(null)} />
           </Suspense>
         )}
         {suggestPassword && <PasswordSuggest onClose={() => setSuggestPassword(false)} />}

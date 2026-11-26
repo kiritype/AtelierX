@@ -8,6 +8,7 @@
   "server.single.draft_invalid": "The image draft is invalid or too large.",
   "server.single.draft_stale": "This draft changed in another window. Reload it before saving again.",
   "works.image_only": "Create an image",
+  "works.app_settings": "App Settings",
   "single.standalone_about": "Generate one image from a prompt without creating a work.",
   "materials.title": "Prompt materials",
   "materials.applied_style": "Applied style: {name}",

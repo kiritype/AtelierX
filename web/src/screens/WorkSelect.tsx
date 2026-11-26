@@ -10,8 +10,9 @@ import { Icon } from '../components/icons';
 import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/Help';
 import { MenuButton } from '../components/MenuBar';
 import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
+import { globalImageViews, type GlobalToolsView } from '../lib/imageNavigation';
 
-export default function WorkSelect({ onOpen, onOpenTools, onOpenSingle, onLock }: { onOpen: (id: string) => void; onOpenTools: () => void; onOpenSingle: () => void; onLock: () => void }) {
+export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (id: string) => void; onOpenTools: (view: GlobalToolsView) => void; onLock: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
@@ -65,7 +66,13 @@ export default function WorkSelect({ onOpen, onOpenTools, onOpenSingle, onLock }
             <Icon name="release" size={14} /> <span className="update-badge-label">{t('help.update_badge')}</span>
           </button>
         )}
-        <MenuButton className="ghost" label={t('menu.tools')} items={[{ label: t('image_menu.explorer'), run: onOpenTools }]} />
+        <MenuButton className="ghost" label={t('menu.image')} items={globalImageViews.map(view => ({
+          label: t(`image_menu.${view}`),
+          run: () => onOpenTools(view),
+        }))} />
+        <button type="button" className="ghost" onClick={() => onOpenTools('settings')}>
+          <Icon name="settings" /> {t('works.app_settings')}
+        </button>
         <MenuButton className="ghost" label={t('menu.help')} items={help.entries} />
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}
@@ -82,7 +89,7 @@ export default function WorkSelect({ onOpen, onOpenTools, onOpenSingle, onLock }
       </div>
       <div className="row">
         <input className="grow" placeholder={t('works.search')} value={search} onChange={(e) => setSearch(e.target.value)} />
-        <button onClick={onOpenSingle} title={t('single.standalone_about')}>{t('works.image_only')}</button>
+        <button onClick={() => onOpenTools('single')} title={t('single.standalone_about')}>{t('works.image_only')}</button>
         <button onClick={() => setDialog('samples')}>{t('works.samples')}</button>
         <button onClick={() => setDialog('import')} title={t('package.import_about')}>
           {t('package.import_short')}
