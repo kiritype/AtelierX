@@ -7,19 +7,21 @@ import { t, tm } from '../i18n';
 import type { PlatformPresetSummary, SampleSummary, TrashBundle, WorkCard, WorkList } from '../types';
 import { AppMark } from '../components/AppMark';
 import { Icon } from '../components/icons';
-import { useHelp, useStartupUpdateCheck, useUpdateResult } from '../components/Help';
+import type { HelpNavigation } from '../components/Help';
 import { MenuButton } from '../components/MenuBar';
 import { PackageExportDialog, PackageImportDialog } from '../components/Packages';
 import { globalImageViews, type GlobalToolsView } from '../lib/imageNavigation';
 
-export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (id: string) => void; onOpenTools: (view: GlobalToolsView) => void; onLock: () => void }) {
+export default function WorkSelect({ help, onOpen, onOpenTools, onBack, onLock }: {
+  help: HelpNavigation;
+  onOpen: (id: string) => void;
+  onOpenTools: (view: GlobalToolsView) => void;
+  onBack: () => void;
+  onLock: () => void;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
   const works = useQuery<WorkList>({ queryKey: ['works'], queryFn: () => get('/api/works') });
-  const help = useHelp();
-  const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
-  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start, help.setUpdateAvailable, help.openUpdate);
-  useUpdateResult(help.openUpdate);
   const ui = useQuery({ queryKey: ['ui-state'], queryFn: () => get('/api/ui-state') });
   const [search, setSearch] = useState('');
   const [dialog, setDialog] = useState<
@@ -57,7 +59,8 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
 
   return (
     <div className="select-page">
-      <div className="row">
+      <div className="row wrap">
+        <button type="button" className="ghost" onClick={onBack}><Icon name="back" /> {t('start.back')}</button>
         <h2 className="grow">
           <AppMark size={28} />
         </h2>
@@ -77,13 +80,7 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
         <button className="ghost" onClick={() => setDialog('trash')}>
           <Icon name="trash" /> {t('works.trash')}
         </button>
-        <button
-          className="ghost"
-          onClick={async () => {
-            await post('/api/auth/lock');
-            onLock();
-          }}
-        >
+        <button type="button" className="ghost" onClick={onLock}>
           <Icon name="lock" /> {t('common.lock')}
         </button>
       </div>
@@ -190,7 +187,6 @@ export default function WorkSelect({ onOpen, onOpenTools, onLock }: { onOpen: (i
           }}
         />
       )}
-      {help.element}
     </div>
   );
 }

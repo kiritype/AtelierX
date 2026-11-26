@@ -16,7 +16,7 @@ import { useToast } from '../components/Toasts';
 import { ContextMenu, Dialog, ErrorBoundary, formatBytes, Loading, type MenuItem } from '../components/ui';
 import { AppMark } from '../components/AppMark';
 import { Icon, type IconName } from '../components/icons';
-import { useHelp, useStartupUpdateCheck } from '../components/Help';
+import type { HelpNavigation } from '../components/Help';
 import WorkSettings from '../components/WorkSettings';
 import RunLlmSelector, { type LlmOverride } from '../components/RunLlmSelector';
 import { bulkCloseKeys, nextActiveKey, openQueueKey } from './tabActions';
@@ -53,7 +53,14 @@ const LAUNCHERS: { tab: 'relations' | 'glossary'; icon: IconName }[] = [
   { tab: 'glossary', icon: 'glossary' },
 ];
 
-export default function WorkWindow({ workId, active: windowActive = true, onOpenTools, onLeave, onLock }: { workId: string; active?: boolean; onOpenTools?: () => void; onLeave: () => void; onLock: () => void }) {
+export default function WorkWindow({ workId, help, active: windowActive = true, onOpenTools, onLeave, onLock }: {
+  workId: string;
+  help: HelpNavigation;
+  active?: boolean;
+  onOpenTools?: () => void;
+  onLeave: () => void;
+  onLock: () => void;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
   const info = useQuery<WorkInfo>({ queryKey: ['work', workId], queryFn: () => get(`/api/works/${workId}`) });
@@ -95,9 +102,6 @@ export default function WorkWindow({ workId, active: windowActive = true, onOpen
   const [renaming, setRenaming] = useState(false);
   const [authoring, setAuthoring] = useState(false);
   const [restored, setRestored] = useState(false);
-  const help = useHelp();
-  const appSettings = useQuery<{ update_check_on_start?: boolean }>({ queryKey: ['settings'], queryFn: () => get('/api/settings') });
-  useStartupUpdateCheck(!!appSettings.data?.update_check_on_start, help.setUpdateAvailable, help.openUpdate);
   // Leaving the work or locking waits here while tabs have unsaved changes (the server cannot keep what only the page has).
   const [pending, setPending] = useState<{ run: () => Promise<void> } | null>(null);
   const [savingAll, setSavingAll] = useState(false);
@@ -676,7 +680,6 @@ export default function WorkWindow({ workId, active: windowActive = true, onOpen
         <RunLlmSelector task="consistency" value={llm} onChange={setLlm} disabled={llmBusy} />
       </Dialog>}
       {authoring && <AuthoringDialog workId={workId} onClose={() => setAuthoring(false)} />}
-      {help.element}
       {pending && (
         <Dialog
           title={t('leave.title')}

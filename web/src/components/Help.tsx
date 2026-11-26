@@ -11,7 +11,7 @@ import type { MenuEntry } from './MenuBar';
 import { useToast } from './Toasts';
 import { Dialog } from './ui';
 
-// Help menu (top menu bar and the work list): manual, shortcuts, update check, about.
+// Help menu: manual, shortcuts, update check, about.
 
 type About = {
   version: string;
@@ -99,6 +99,8 @@ export function useHelp() {
   );
   return { entries, element, openUpdate, updateAvailable, setUpdateAvailable };
 }
+
+export type HelpNavigation = Pick<ReturnType<typeof useHelp>, 'entries' | 'openUpdate' | 'updateAvailable'>;
 
 export function AboutContent({ about, onNotices }: { about: About; onNotices?: () => void }) {
   return (
