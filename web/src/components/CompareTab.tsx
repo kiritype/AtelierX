@@ -6,6 +6,8 @@ import { useToast } from './Toasts';
 import { diffLines } from '../lib/diff';
 import { snapshotTime } from '../types';
 
+type SnapshotFile = { snapshot: string | null; current: string | null; binary?: boolean };
+
 export default function CompareTab({ workId, snapshot }: { workId: string; snapshot: string }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -18,7 +20,7 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
     queryKey: ['diff', workId, snapshot, against],
     queryFn: () => get(`/api/works/${workId}/snapshots/${snapshot}/diff?against=${against}`),
   });
-  const file = useQuery({
+  const file = useQuery<SnapshotFile>({
     queryKey: ['snapfile', workId, snapshot, path],
     queryFn: () => get(`/api/works/${workId}/snapshots/${snapshot}/file?path=${encodeURIComponent(path!)}`),
     enabled: !!path,
@@ -27,12 +29,13 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
   async function restore(paths?: string[]) {
     if (!confirm(paths ? t('history.restore_file_confirm') : t('history.restore_all_confirm'))) return;
     const changed = await post<string[]>(`/api/works/${workId}/snapshots/${snapshot}/restore`, { paths });
-    for (const key of ['tree', 'snapshots', 'check', 'item', 'diff', 'snapfile']) qc.invalidateQueries({ queryKey: [key, workId] });
+    for (const key of ['tree', 'snapshots', 'check', 'item', 'diff', 'snapfile', 'work-covers']) qc.invalidateQueries({ queryKey: [key, workId] });
+    if (changed.length) qc.invalidateQueries({ queryKey: ['works'] });
     toast({ text: changed.length ? t('history.restored_n', { n: changed.length }) : t('history.nothing_to_restore') });
   }
 
   const lines =
-    file.data && showDiff
+    file.data && !file.data.binary && showDiff
       ? against === 'current'
         ? diffLines((file.data.snapshot ?? '').split('\n'), (file.data.current ?? '').split('\n'))
         : null
@@ -65,7 +68,7 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
         {path && (
           <div className="row pad" style={{ borderBottom: '1px solid var(--border)' }}>
             <strong className="grow">{path}</strong>
-            {against === 'current' && (
+            {against === 'current' && !file.data?.binary && (
               <label className="row faint">
                 <input type="checkbox" checked={showDiff} onChange={(e) => setShowDiff(e.target.checked)} /> {t('history.show_diff')}
               </label>
@@ -73,15 +76,17 @@ export default function CompareTab({ workId, snapshot }: { workId: string; snaps
             <button onClick={() => restore([path])}>{t('history.restore_file')}</button>
           </div>
         )}
-        <pre className="mono" style={{ margin: 0, padding: 12, whiteSpace: 'pre-wrap' }}>
-          {lines
-            ? lines.map((l, i) => (
-                <div key={i} style={{ background: l.op === '-' ? 'var(--danger-bg)' : l.op === '+' ? 'var(--success-bg)' : undefined }}>
-                  {l.op} {l.text}
-                </div>
-              ))
-            : file.data?.snapshot}
-        </pre>
+        {file.data?.binary ? <p className="pad faint">{t('history.cover_archive')}</p> : (
+          <pre className="mono" style={{ margin: 0, padding: 12, whiteSpace: 'pre-wrap' }}>
+            {lines
+              ? lines.map((l, i) => (
+                  <div key={i} style={{ background: l.op === '-' ? 'var(--danger-bg)' : l.op === '+' ? 'var(--success-bg)' : undefined }}>
+                    {l.op} {l.text}
+                  </div>
+                ))
+              : file.data?.snapshot}
+          </pre>
+        )}
       </div>
     </div>
   );

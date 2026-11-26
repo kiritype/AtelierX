@@ -50,7 +50,9 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   qc.setQueryData(['relations', 'work'], relation);
   qc.setQueryData(['glossary', 'work'], { terms: [{ use: 'Original', avoid: [], note: '' }], revision: 'r0' });
-  vi.mocked(get).mockResolvedValue({});
+  vi.mocked(get).mockImplementation(async (url) =>
+    url.endsWith('/covers') ? { items: [], primary_id: null, revision: 'r0' } : {}
+  );
   vi.mocked(put).mockImplementation(async (_, body) => ({ ...(body as object), revision: 'r1' }));
   vi.mocked(patch).mockResolvedValue({});
   host = document.createElement('div');

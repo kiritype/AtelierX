@@ -2,8 +2,12 @@
 
 import shutil
 
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import Response
 from starlette.routing import Route
 
+from ..core import work_covers
+from ..core.i18n import AppError, Msg
 from ..core.snapshots import Snapshots
 from ..core.works import trash_bundle
 from ..image.uuid_migration import FileCheckpoint, migrate_runtime, migrate_runtime_guarded
@@ -124,6 +128,53 @@ async def work_get(request):
     )
 
 
+async def covers_list(request):
+    return ok(work_covers.view(work_of(request)))
+
+
+async def covers_upload(request):
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > work_covers.MAX_INPUT_BYTES:
+            raise work_covers.too_large()
+        raw.extend(chunk)
+    normalized = await run_in_threadpool(work_covers.normalized_image, bytes(raw))
+    return ok(
+        work_covers.add(
+            work_of(request),
+            request.query_params.get('base_revision'),
+            request.query_params.get('filename'),
+            normalized,
+        )
+    )
+
+
+async def covers_gallery(request):
+    data = await body(request)
+    if not isinstance(data, dict):
+        raise AppError(Msg('server.covers.gallery_scope', 'Choose an image from this work.'))
+    filename, normalized = await run_in_threadpool(
+        work_covers.gallery_image, st(request).image.gallery, work_of(request).id, data.get('gallery_path')
+    )
+    return ok(work_covers.add(work_of(request), data.get('base_revision'), filename, normalized))
+
+
+async def covers_update(request):
+    data = await body(request)
+    if not isinstance(data, dict):
+        raise AppError(Msg('server.covers.bad_order', 'Choose only covers that belong to this work.'))
+    return ok(
+        work_covers.update(
+            work_of(request), data.get('base_revision'), data.get('ids'), data.get('primary_id')
+        )
+    )
+
+
+async def covers_image(request):
+    raw = work_covers.image(work_of(request), request.path_params['cover_id'])
+    return Response(raw, media_type='image/webp', headers={'X-Content-Type-Options': 'nosniff'})
+
+
 def routes():
     w = '/api/works/{wid}'
     return [
@@ -139,4 +190,9 @@ def routes():
         Route(w, works_patch, methods=['PATCH']),
         Route(w, works_delete, methods=['DELETE']),
         Route(f'{w}/duplicate', works_duplicate, methods=['POST']),
+        Route(f'{w}/covers', covers_list),
+        Route(f'{w}/covers', covers_gallery, methods=['POST']),
+        Route(f'{w}/covers', covers_update, methods=['PUT']),
+        Route(f'{w}/covers/upload', covers_upload, methods=['POST']),
+        Route(f'{w}/covers/{{cover_id}}', covers_image),
     ]

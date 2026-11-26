@@ -5,6 +5,7 @@ import { t, tm } from '../i18n';
 import type { WorkInfo } from '../types';
 import { useToast } from './Toasts';
 import { ChipsInput } from './ui';
+import WorkCoverSettings from './WorkCoverSettings';
 import { useUnsaved } from './Unsaved';
 
 function flattenValues(value: any, sources: any, prefix = ''): { key: string; value: any; source: string }[] {
@@ -100,6 +101,8 @@ export default function WorkSettings({ workId, info }: { workId: string; info: W
           {t('common.save')}
         </button>
       </div>
+
+      <WorkCoverSettings workId={workId} />
 
       <div className="section-title">{t('work_settings.consent')}</div>
       {(doc.llm_consent ?? []).length === 0 ? (

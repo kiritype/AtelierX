@@ -2,8 +2,9 @@
 
 from starlette.routing import Route
 
-from ..core import exporter
+from ..core import exporter, work_covers
 from ..core.snapshots import Snapshots
+from ..core.works import APP_DIR
 from ..image.uuid_migration import migrate_runtime, migrate_runtime_guarded
 from .common import body, ok, st, work_of
 
@@ -34,6 +35,9 @@ async def snap_file(request):
     path = request.query_params['path']
     sid = request.path_params['sid']
     current = snaps.path_in_work(path)
+    if path.casefold() == f'{APP_DIR}/{work_covers.FILENAME}'.casefold():
+        snaps.get(sid)
+        return ok({'binary': True, 'snapshot': None, 'current': None})
     return ok(
         {
             'snapshot': snaps.file_text(sid, path),
