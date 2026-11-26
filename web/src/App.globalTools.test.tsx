@@ -129,7 +129,8 @@ it('returns to the start screen after locking and unlocking from standalone tool
 });
 
 it('keeps the startup update result available after moving from home into the work list', async () => {
-  const summary = { current: '0.8.3', latest: '0.9.0', newer: true };
+  const major = Number(__APP_VERSION__.split('.')[0]);
+  const summary = { current: __APP_VERSION__, latest: [major + 1, 0, 0].join('.'), newer: true };
   let finishCheck!: (result: typeof summary) => void;
   const check = new Promise<typeof summary>(resolve => { finishCheck = resolve; });
   vi.mocked(get).mockImplementation(async url => {
