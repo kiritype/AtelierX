@@ -223,9 +223,11 @@ function GalleryContents({ workId, openLab, openTools, openReference, characterI
 
   // The page keeps its snapshot so paging is stable; new images show as a refresh hint.
   useEffect(() => {
-    // Placeholder data is the previous page and carries the old snapshot.
-    if (list.data && !list.isPlaceholderData && !snapshot) setSnapshot(list.data.snapshot);
-  }, [list.data, list.isPlaceholderData, snapshot]);
+    // The query without a snapshot can still show cached results while fetching a fresh page.
+    if (list.isSuccess && list.fetchStatus === 'idle' && !list.isPlaceholderData && !snapshot) {
+      setSnapshot(list.data.snapshot);
+    }
+  }, [list.data, list.fetchStatus, list.isPlaceholderData, list.isSuccess, snapshot]);
   const newer = list.data?.newer ?? 0;
   const exportScope = libraryWork ? { ...scope, work: libraryWork } : scope;
   const selectActive = (next: ActiveImage | null) => { activeRef.current = next; setActive(next); };

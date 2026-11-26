@@ -142,3 +142,108 @@ it('can use exactly one checked image from the current work as a reference', asy
   expect(action()).toBeUndefined();
   expect(openReference).toHaveBeenCalledTimes(1);
 });
+
+const pathsInGallery = () => [...host.querySelectorAll('[data-gallery-path]')]
+  .map(cell => cell.getAttribute('data-gallery-path'));
+const newImagesButton = () => [...host.querySelectorAll<HTMLButtonElement>('.gallery-toolbar button')]
+  .find(button => button.textContent === t('gallery.new_images', { n: 2 }));
+
+function mockGalleryRefresh(initialCount: number) {
+  const getFixture = vi.mocked(get).getMockImplementation()!;
+  const original = Array.from({ length: initialCount }, (_, index) => image('w0/old-' + index + '.png', 'w0'));
+  const updated = [...original, image('w0/new-1.png', 'w0'), image('w0/new-2.png', 'w0')];
+  let latest = original;
+  let finishRefresh: () => void = () => {};
+  const refreshResponse = new Promise<void>(resolve => { finishRefresh = resolve; });
+  const requests: URLSearchParams[] = [];
+  vi.mocked(get).mockImplementation(async url => {
+    if (!url.startsWith('/api/image/gallery?')) return getFixture(url);
+    const params = new URL(url, 'http://localhost').searchParams;
+    const page = Number(params.get('page'));
+    const snapshot = params.get('snapshot');
+    requests.push(params);
+    if (params.get('outfit') !== 'o0') {
+      return { results: [image('w0/other-scope.png', 'w0')], total: 1, page, pages: 1, snapshot: 'other', newer: 0 };
+    }
+    if (!snapshot && latest === updated) await refreshResponse;
+    const results = snapshot === 'before' ? original : latest;
+    return { results: results.slice((page - 1) * 60, page * 60), total: results.length, page,
+      page_size: 60, pages: Math.ceil(results.length / 60), snapshot: snapshot ?? (results === original ? 'before' : 'after'),
+      newer: latest.length - results.length };
+  });
+
+  return {
+    requests, finishRefresh,
+    async notifyNewImages() {
+      latest = updated;
+      await act(async () => { await qc.invalidateQueries({ queryKey: ['gallery'] }); });
+      await settle();
+    },
+  };
+}
+
+async function openOutfitGallery() {
+  await act(async () => root.render(<QueryClientProvider client={qc}>
+    <ImageGallery workId="w0" characterId="c0" outfitId="o0" openLab={() => {}} openTools={() => {}} />
+  </QueryClientProvider>));
+  await settle();
+  const select = async (value: string) => {
+    const dropdown = [...host.querySelectorAll<HTMLSelectElement>('.gallery-toolbar select')]
+      .find(element => [...element.options].some(option => option.value === value))!;
+    await act(async () => {
+      dropdown.value = value;
+      dropdown.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await settle();
+  };
+  await select('unreviewed');
+  await select('oldest');
+}
+
+it.each([1, 60])('adopts the refreshed snapshot and keeps the gallery controls (%s existing images)', async initialCount => {
+  const { requests, finishRefresh, notifyNewImages } = mockGalleryRefresh(initialCount);
+  await openOutfitGallery();
+  expect(pathsInGallery()).toHaveLength(initialCount);
+
+  await notifyNewImages();
+  expect(newImagesButton()).toBeDefined();
+  await click(newImagesButton()!);
+  expect(pathsInGallery()).toHaveLength(initialCount);
+
+  await act(async () => { finishRefresh(); });
+  await settle();
+  expect(newImagesButton()).toBeUndefined();
+  expect(requests.some(params => params.get('snapshot') === 'after' && params.get('work') === 'w0' &&
+    params.get('character') === 'c0' && params.get('outfit') === 'o0' &&
+    params.get('human_status') === 'unreviewed' && params.get('sort') === 'oldest')).toBe(true);
+
+  if (initialCount === 60) {
+    const nextPage = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '›');
+    expect(nextPage).toBeDefined();
+    await click(nextPage!);
+    await settle();
+    expect(requests.some(params => params.get('snapshot') === 'after' && params.get('page') === '2')).toBe(true);
+  }
+  expect(pathsInGallery()).toEqual(initialCount === 60
+    ? ['w0/new-1.png', 'w0/new-2.png']
+    : ['w0/old-0.png', 'w0/new-1.png', 'w0/new-2.png']);
+});
+
+it('keeps the latest scope when an earlier refresh finishes', async () => {
+  const { requests, finishRefresh, notifyNewImages } = mockGalleryRefresh(1);
+  await openOutfitGallery();
+  await notifyNewImages();
+  await click(newImagesButton()!);
+  expect(requests.at(-1)?.get('outfit')).toBe('o0');
+
+  const thisWork = [...host.querySelectorAll<HTMLButtonElement>('.gallery-tree .tree-link')]
+    .find(button => button.textContent === t('gallery.this_work_images'));
+  await click(thisWork!);
+  await settle();
+  expect(pathsInGallery()).toEqual(['w0/other-scope.png']);
+
+  await act(async () => { finishRefresh(); });
+  await settle();
+  expect(pathsInGallery()).toEqual(['w0/other-scope.png']);
+  expect(requests.at(-1)?.get('snapshot')).toBe('other');
+});
