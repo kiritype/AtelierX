@@ -13,7 +13,7 @@ import logging
 import secrets
 import time
 import uuid
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from PIL import Image, PngImagePlugin
 
@@ -301,28 +301,28 @@ class GenerationMixin:
             raise ValueError(
                 Msg('server.reference.anima_only', 'Reference generation requires ComfyUI and Anima.')
             )
-        entry = reference.prepare(work, body.get('reference'))
+        entry = reference.prepare(reference.asset_root(self.paths, work), body.get('reference'))
         return self.enqueue_single(work, body, reference_entry=entry)
 
     def regenerate_reference(self, work, body):
         if not isinstance(body, dict):
-            raise ValueError(
-                Msg('server.reference.result', 'Choose a reference generation result from this work.')
-            )
+            raise ValueError(Msg('server.reference.invalid_result', 'Choose a reference generation result.'))
         relative = body.get('path')
-        _, record = reference.result_record(work, self.gallery, relative)
+        work_id = work.id if work else None
+        _, record = reference.result_record(work_id, self.gallery, relative)
+        assets = reference.asset_root(self.paths, work)
         entry = record['reference']
         moss_ref = reference.is_moss(entry)
         if moss_ref:
-            reference.data(work, entry.get('id'))
+            reference.data(assets, entry.get('id'))
             reference.check_moss_record(entry)
             readiness = self.reference_status('moss')
             moss_reference.require_ready(readiness)
         elif anima_reference.is_entry(entry):
-            reference.check_anima_record(work, entry)
+            reference.check_anima_record(assets, entry)
             anima_reference.require_ready(self.comfy, entry)
         else:
-            reference.prepare(work, entry)
+            reference.prepare(assets, entry)
             reference.require_ready(self.comfy)
         source = self.rounds.source_job(relative)
         if moss_ref:
@@ -572,7 +572,7 @@ class GenerationMixin:
                 record = self.gallery.metadata(item['path'])
             except ValueError:
                 continue
-            if record.get('kind') != 'single' or record.get('work_id') != work_id:
+            if record.get('kind') != 'single' or 'work_id' not in record or record['work_id'] != work_id:
                 continue
             if ('reference' in record) != reference_only:
                 continue
@@ -594,6 +594,18 @@ class GenerationMixin:
             if ('reference' in snapshot) != reference_only:
                 continue
             entry = saved.get(job['id'], {})
+            path = entry.get('path')
+            if path is None and reference_only and work_id is None and job['status'] == 'done':
+                # The scoped gallery index may still have the snapshot taken before this job finished.
+                url = job.get('image_url') or ''
+                relative = unquote(url.removeprefix('/api/image/files/'))
+                try:
+                    _, record = reference.result_record(work_id, self.gallery, relative)
+                except ValueError:
+                    pass
+                else:
+                    if record.get('job_id') == job['id']:
+                        path = relative
             saved[job['id']] = {
                 **entry,
                 'id': job['id'],
@@ -604,11 +616,12 @@ class GenerationMixin:
                 'request': snapshot.get('request'),
                 'actual': self._single_actual(snapshot),
                 'image_url': job.get('image_url') or entry.get('image_url'),
-                'path': entry.get('path'),
+                'path': path,
                 'error': message_of(job['error']) if job.get('error') else None,
                 **({'reference': reference.public(work_id, snapshot['reference'])} if reference_only else {}),
             }
-        return {'runs': sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)[:100]}
+        runs = sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)
+        return {'runs': runs if work_id is None and reference_only else runs[:100]}
 
     @staticmethod
     def _single_actual(snapshot):
@@ -766,7 +779,9 @@ class GenerationMixin:
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
             schema_version=(
-                8
+                9
+                if 'reference' in metadata and job.get('work_id') is None
+                else 8
                 if anima_reference.is_entry(metadata.get('reference'))
                 else 7
                 if reference.is_moss(metadata.get('reference') or {})

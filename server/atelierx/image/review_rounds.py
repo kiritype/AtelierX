@@ -315,7 +315,14 @@ class ReviewRounds:
         job['source_path'] = relative
         job['postprocessed'] = postprocessed
         if meta.get('kind') == 'single':
-            code(job['work_id'])
+            standalone_reference = (
+                'work_id' in meta
+                and job['work_id'] is None
+                and isinstance(meta.get('reference'), dict)
+                and relative.startswith('_standalone/')
+            )
+            if not standalone_reference:
+                code(job['work_id'])
             job.update(kind='single', review_requested=False)
         elif meta.get('kind') == 'lab':
             group, row, column = meta.get('lab_group'), meta.get('lab_row'), meta.get('lab_column')

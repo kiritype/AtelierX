@@ -1093,6 +1093,9 @@ MOSS에 자동 적용하지 않는다. 학습 계열을 추가하는 변경은 �
   연결한다. 재현용 ZIP은 `result.png`, `prompt.json`, `workflow.json`, `generation.json`을 담고, 사용자가 원본 첨부를
   고르면 사용한 원본을 각각 같은 `input/` 경로로 더한다. 두 명일 때는 실행 그래프의 `ImageStitch`가 두 원본을 합친다.
 - 작품의 `/image/reference/runs`에는 참조 생성 이력을, `/image/single/runs`에는 일반 단일 생성 이력을 표시한다. 참조 생성 재시도는 접수 당시의 원본 해시와 어댑터·생성 설정을 사용한다.
+- 작품 없는 참조 생성의 큐 작업과 결과 기록은 `work_id: null`을 쓴다. `kind: "single"`, `schema_version: 9`이며 어댑터별 v6·v7·v8의 `reference` 필드와 그래프 형식을 유지한다. 출력은 `<출력 루트>/_standalone/<날짜>/`에 PNG와 JSON으로 저장한다. `/api/image/reference/runs`와 `/api/image/single/runs`는 `reference` 유무로 결과를 구분한다. 기존 v6·v7·v8 작품 기록과 v4 일반 독립 기록은 기존 형식으로 읽는다.
+- 독립 원본은 포터블 `data/image/references/` 아래에 SHA-256 파일명과 동일 이름 JSON(`name`, `format`)으로 저장한다. 원본 조회와 선택은 `/api/image/reference/assets` 범위에서 처리한다. 작품 참조 원본은 기존 **작품** 경로에서 읽는다.
+- 독립 초안은 `state/image/reference-draft.json`에 `schema_version: 1`로 저장한다. `positive`·`negative`·`description`·`guidance`, `family`, `animaEngine`·`snaprefMode`, `firstOnRight`, 계열별 `parameters`(`settings`, `preset`), `reference`와 `second`(각 원본의 메타데이터와 두 번째 인물 설명)를 담는다. 원본 객체의 `id`로 저장 위치를 확인하고 `url`은 독립 원본 API를 가리킨다. `/api/image/reference/draft`의 `revision`으로 동시 저장 충돌을 확인한다.
 
 이미지 도구가 단일 이미지·생성 비교 결과를 후처리하면 `_tools/<날짜>/`의 `kind: "postprocess"` 기록에
 `source.path`로 직전 이미지를 가리킨다. 생성 출처가 확인되면 기존 `service`·`work_id` 필드를 결과 기록에도 남긴다.

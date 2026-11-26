@@ -1,4 +1,4 @@
-"""Work-scoped, content-addressed inputs and portable exports for reference generation."""
+"""Content-addressed inputs and portable exports for reference generation."""
 
 import base64
 import binascii
@@ -39,9 +39,13 @@ def _missing_image():
     )
 
 
-def _asset_root(work):
-    root = work.app / 'image' / 'references'
-    if not root.resolve().is_relative_to(work.app.resolve()):
+def asset_root(paths, work=None):
+    owner = work.app if work else paths.data
+    suffix = Path('image', 'references')
+    root = owner / suffix
+    resolved_owner = owner.resolve()
+    resolved = root.resolve()
+    if not resolved.is_relative_to(resolved_owner) or (work is None and resolved != resolved_owner / suffix):
         raise _missing_image()
     return root
 
@@ -85,16 +89,18 @@ def _data_url(value):
         raise _invalid_image() from error
 
 
-def data(work, ident):
+def data(assets, ident):
     """Return private input metadata and its file. Read or hash the bytes only when needed."""
     if not isinstance(ident, str) or not re.fullmatch(r'[0-9a-f]{64}', ident):
         raise _missing_image()
-    root = _asset_root(work)
-    record = read_json(root / f'{ident}.json')
+    meta = assets / f'{ident}.json'
+    if meta.is_symlink():
+        raise _missing_image()
+    record = read_json(meta)
     image_format = record.get('format') if isinstance(record, dict) else None
     if not isinstance(image_format, str) or image_format not in FORMATS:
         raise _missing_image()
-    path = root / (ident + FORMATS[image_format])
+    path = assets / (ident + FORMATS[image_format])
     if path.is_symlink() or not path.is_file():
         raise _missing_image()
     name = record.get('name')
@@ -105,18 +111,37 @@ def public(work_id, entry):
     if anima_reference.is_entry(entry):
         return {**entry, 'subjects': [public(work_id, subject) for subject in entry['subjects']]}
     ident = entry['id']
-    return {**entry, 'url': f'/api/works/{quote(work_id, safe="")}/image/reference/assets/{ident}'}
+    prefix = f'/api/works/{quote(work_id, safe="")}' if work_id is not None else '/api'
+    return {**entry, 'url': f'{prefix}/image/reference/assets/{ident}'}
 
 
-def store(work, gallery, body):
+def list_assets(paths):
+    items = []
+    assets = asset_root(paths)
+    for record in assets.glob('*.json'):
+        try:
+            asset, _ = data(assets, record.stem)
+        except ValueError:
+            continue
+        items.append(public(None, asset))
+    return {'assets': sorted(items, key=lambda item: (item['name'].casefold(), item['id']))}
+
+
+def store(paths, work, gallery, body):
+    work_id = work.id if work else None
     if not isinstance(body, dict) or ('gallery_path' in body) == ('data_url' in body):
         raise _invalid_image()
     if 'gallery_path' in body:
+        if work_id is None:
+            raise _invalid_image()
         source = body['gallery_path']
         path = gallery.safe_path(source)
         parts = path.relative_to(gallery.root).parts
-        work_id = code(work.id)
-        if parts[0] != work_id and parts[:2] != ('_single', work_id):
+        work_id = code(work_id)
+        work_folder = parts[0] == work_id
+        if work_folder and parts[0].casefold() in ('_standalone', '_single'):
+            work_folder = gallery.find(source)['work_id'] == work_id
+        if not work_folder and parts[:2] != ('_single', work_id):
             raise ValueError(Msg('server.reference.gallery_scope', 'Choose an image from this work.'))
         name, raw = path.name, _image_bytes(path)
     else:
@@ -125,22 +150,22 @@ def store(work, gallery, body):
         raw = _data_url(body['data_url'])
     image_format = _image_format(raw)
     ident = _hash(raw)
-    root = _asset_root(work)
-    root.mkdir(parents=True, exist_ok=True)
-    target = root / (ident + FORMATS[image_format])
-    if target.is_symlink():
+    assets = asset_root(paths, work)
+    assets.mkdir(parents=True, exist_ok=True)
+    target = assets / (ident + FORMATS[image_format])
+    metadata = assets / f'{ident}.json'
+    if target.is_symlink() or metadata.is_symlink():
         raise _missing_image()
     if not target.is_file() or _hash(_image_bytes(target)) != ident:
-        temp = root / f'{ident}.{uuid.uuid4().hex}.tmp'
+        temp = assets / f'{ident}.{uuid.uuid4().hex}.tmp'
         try:
             temp.write_bytes(raw)
             replace_file(temp, target)
         finally:
             temp.unlink(missing_ok=True)
-    metadata = root / f'{ident}.json'
     if not isinstance(read_json(metadata), dict):
         atomic_json(metadata, {'name': name or target.name, 'format': image_format})
-    return public(work.id, data(work, ident)[0])
+    return public(work_id, data(assets, ident)[0])
 
 
 def require_ready(comfy):
@@ -181,7 +206,7 @@ def _invalid_subjects():
     )
 
 
-def _anima_subjects(work, subjects):
+def _anima_subjects(assets, subjects):
     if not isinstance(subjects, list) or len(subjects) not in (1, 2):
         raise _invalid_subjects()
     chosen = []
@@ -197,7 +222,7 @@ def _anima_subjects(work, subjects):
             or not isinstance(description, str)
         ):
             raise _invalid_subjects()
-        asset, _ = data(work, subject.get('id'))
+        asset, _ = data(assets, subject.get('id'))
         chosen.append(
             {**asset, 'slot': slot, 'position': position, 'description': strip_text(description).strip()}
         )
@@ -218,8 +243,8 @@ def _image_size(path):
         raise _missing_image() from error
 
 
-def _anima_files(work, subjects):
-    files = [data(work, subject['id']) for subject in sorted(subjects, key=lambda item: item['position'])]
+def _anima_files(assets, subjects):
+    files = [data(assets, subject['id']) for subject in sorted(subjects, key=lambda item: item['position'])]
     if len(files) == 2:
         left_width, left_height = _image_size(files[0][1])
         right_width, right_height = _image_size(files[1][1])
@@ -244,13 +269,13 @@ def _anima_parameters(parameters):
     return {'guidance': _guidance(parameters)}
 
 
-def _prepare_anima(work, parameters):
+def _prepare_anima(assets, parameters):
     engine = parameters['engine']
     option = 'snapref_mode' if engine == anima_reference.SNAPREF else 'guidance'
     if set(parameters) - {'engine', 'subjects', option}:
         raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
-    subjects = _anima_subjects(work, parameters.get('subjects'))
-    _anima_files(work, subjects)
+    subjects = _anima_subjects(assets, parameters.get('subjects'))
+    _anima_files(assets, subjects)
     return {
         'engine': engine,
         'subjects': subjects,
@@ -259,17 +284,17 @@ def _prepare_anima(work, parameters):
     }
 
 
-def prepare(work, parameters):
+def prepare(assets, parameters):
     if not isinstance(parameters, dict):
         raise _invalid_image()
     if anima_reference.is_entry(parameters):
-        return _prepare_anima(work, parameters)
+        return _prepare_anima(assets, parameters)
     if is_moss(parameters):
         if set(parameters) != {'id', 'engine'}:
             raise ValueError(
                 Msg('server.reference.moss_reference', 'MossRef accepts one reference image in Auto mode.')
             )
-        asset, _ = data(work, parameters.get('id'))
+        asset, _ = data(assets, parameters.get('id'))
         return {
             **asset,
             'engine': moss_reference.ENGINE,
@@ -279,7 +304,7 @@ def prepare(work, parameters):
     if 'engine' in parameters:
         raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
     guidance = _guidance(parameters)
-    asset, _ = data(work, parameters.get('id'))
+    asset, _ = data(assets, parameters.get('id'))
     return {
         **asset,
         'guidance': guidance,
@@ -295,7 +320,7 @@ def check_moss_record(entry):
             )
 
 
-def check_anima_record(work, entry):
+def check_anima_record(assets, entry):
     fields = {**anima_reference.provenance(entry['engine']), **_anima_parameters(entry)}
     if any(entry.get(key) != value for key, value in fields.items()):
         raise ValueError(
@@ -305,13 +330,13 @@ def check_anima_record(work, entry):
             )
         )
     subjects = _anima_subjects(
-        work,
+        assets,
         [
             {key: subject[key] for key in ('id', 'slot', 'position', 'description')}
             for subject in entry['subjects']
         ],
     )
-    return _anima_files(work, subjects)
+    return _anima_files(assets, subjects)
 
 
 def _checked_bytes(asset, path):
@@ -332,9 +357,9 @@ def _upload_image(comfy, path, raw):
     return name
 
 
-def upload(comfy, work, entry):
+def upload(comfy, assets, entry):
     if anima_reference.is_entry(entry):
-        files = check_anima_record(work, entry)
+        files = check_anima_record(assets, entry)
         anima_reference.require_ready(comfy, entry)
         originals = {path: _checked_bytes(asset, path) for asset, path in files}
         uploaded = {path: _upload_image(comfy, path, raw) for path, raw in originals.items()}
@@ -347,7 +372,7 @@ def upload(comfy, work, entry):
         check_moss_record(entry)
     else:
         require_ready(comfy)
-    asset, path = data(work, entry['id'])
+    asset, path = data(assets, entry['id'])
     name = _upload_image(comfy, path, _checked_bytes(asset, path))
     return (
         {
@@ -360,28 +385,31 @@ def upload(comfy, work, entry):
     )
 
 
-def result_record(work, gallery, relative):
+def result_record(work_id, gallery, relative):
     path = gallery.safe_path(relative)
-    prefix = path.relative_to(gallery.root).parts[:2]
-    if prefix != ('_single', code(work.id)):
-        raise ValueError(
-            Msg('server.reference.result', 'Choose a reference generation result from this work.')
-        )
+    parts = path.relative_to(gallery.root).parts
+    expected = ('_standalone',) if work_id is None else ('_single', code(work_id))
+    error = (
+        Msg('server.reference.standalone_result', 'Choose a result from image-only reference generation.')
+        if work_id is None
+        else Msg('server.reference.result', 'Choose a reference generation result from this work.')
+    )
+    if parts[: len(expected)] != expected:
+        raise ValueError(error)
     record = gallery.metadata(relative)
     if (
         record.get('kind') != 'single'
-        or record.get('work_id') != work.id
+        or 'work_id' not in record
+        or record['work_id'] != work_id
         or record.get('service') != 'comfyui'
         or not isinstance(record.get('reference'), dict)
     ):
-        raise ValueError(
-            Msg('server.reference.result', 'Choose a reference generation result from this work.')
-        )
+        raise ValueError(error)
     return path, record
 
 
-def export_zip(work, gallery, relative, include_reference):
-    image_path, record = result_record(work, gallery, relative)
+def export_zip(assets, work_id, gallery, relative, include_reference):
+    image_path, record = result_record(work_id, gallery, relative)
     try:
         with Image.open(image_path) as image:
             editor = json.loads(image.text['workflow'])
@@ -395,7 +423,7 @@ def export_zip(work, gallery, relative, include_reference):
         entry = record['reference']
         subjects = entry['subjects'] if anima_reference.is_entry(entry) else [entry]
         for ident in dict.fromkeys(subject['id'] for subject in subjects):
-            asset, asset_path = data(work, ident)
+            asset, asset_path = data(assets, ident)
             originals[f'input/{INPUT_PREFIX}{asset_path.name}'] = _checked_bytes(asset, asset_path)
     with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as file:
         destination = Path(file.name)

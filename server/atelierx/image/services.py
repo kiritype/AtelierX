@@ -106,8 +106,10 @@ class ComfyService(GenerationService):
                 readiness = self.rt.reference_status('moss')
                 moss_reference.require_ready(readiness)
                 moss_reference.validate_settings(job['snapshot']['settings'], readiness)
-            work = self.rt.works.get(job['work_id'])
-            graph = self.graph(job, reference_input=reference.upload(self.comfy, work, entry))
+            work_id = job['work_id']
+            work = self.rt.works.get(work_id) if work_id is not None else None
+            assets = reference.asset_root(self.rt.paths, work)
+            graph = self.graph(job, reference_input=reference.upload(self.comfy, assets, entry))
         else:
             graph = self.graph(job)
         response = self.comfy.request('/prompt', {'prompt': graph, 'client_id': 'atelierx-' + job['id']})

@@ -9,7 +9,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library, library_share, reference, shots, single_draft
+from ..image import library, library_share, reference, reference_draft, shots, single_draft
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
@@ -415,15 +415,20 @@ async def enqueue(request):
     return await call(runtime.enqueue, work, data)
 
 
+def _optional_work(runtime, request):
+    wid = request.path_params.get('wid')
+    return runtime.works.get(wid) if wid is not None else None
+
+
 async def single_enqueue(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid']) if 'wid' in request.path_params else None
+    work = _optional_work(runtime, request)
     return await call(runtime.enqueue_single, work, await _body(request))
 
 
 async def single_runs(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid']) if 'wid' in request.path_params else None
+    work = _optional_work(runtime, request)
     return await call(runtime.single_runs, work)
 
 
@@ -433,15 +438,20 @@ async def reference_status(request):
 
 async def reference_assets(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid'])
-    return await call(reference.store, work, runtime.gallery, await _body(request, reference.MAX_BODY_BYTES))
+    if request.method != 'POST':
+        return await call(reference.list_assets, runtime.paths)
+    work = _optional_work(runtime, request)
+    return await call(
+        reference.store, runtime.paths, work, runtime.gallery, await _body(request, reference.MAX_BODY_BYTES)
+    )
 
 
 async def reference_asset(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid'])
+    work = _optional_work(runtime, request)
     try:
-        _, target = await run_in_threadpool(reference.data, work, request.path_params['ident'])
+        assets = reference.asset_root(runtime.paths, work)
+        _, target = await run_in_threadpool(reference.data, assets, request.path_params['ident'])
     except ValueError as error:
         raise AppError(_as_msg(error), 404) from error
     return FileResponse(target, headers={'Cache-Control': 'private, max-age=86400'})
@@ -449,30 +459,28 @@ async def reference_asset(request):
 
 async def reference_runs(request):
     runtime = _runtime(request)
-    return await call(runtime.single_runs, runtime.works.get(request.path_params['wid']), True)
+    return await call(runtime.single_runs, _optional_work(runtime, request), True)
 
 
 async def reference_enqueue(request):
     runtime = _runtime(request)
-    return await call(
-        runtime.enqueue_reference, runtime.works.get(request.path_params['wid']), await _body(request)
-    )
+    return await call(runtime.enqueue_reference, _optional_work(runtime, request), await _body(request))
 
 
 async def reference_regenerate(request):
     runtime = _runtime(request)
-    return await call(
-        runtime.regenerate_reference, runtime.works.get(request.path_params['wid']), await _body(request)
-    )
+    return await call(runtime.regenerate_reference, _optional_work(runtime, request), await _body(request))
 
 
 async def reference_export(request):
     runtime = _runtime(request)
-    work = runtime.works.get(request.path_params['wid'])
+    work = _optional_work(runtime, request)
     try:
+        assets = reference.asset_root(runtime.paths, work)
         target, name = await run_in_threadpool(
             reference.export_zip,
-            work,
+            assets,
+            work.id if work else None,
             runtime.gallery,
             request.query_params.get('path', ''),
             request.query_params.get('include_reference') == 'true',
@@ -485,6 +493,13 @@ async def reference_export(request):
         filename=name,
         background=BackgroundTask(target.unlink, missing_ok=True),
     )
+
+
+async def standalone_reference_draft(request):
+    paths = _runtime(request).paths
+    if request.method == 'PUT':
+        return await call(reference_draft.save, paths, await _body(request))
+    return await call(reference_draft.read, paths)
 
 
 async def standalone_draft(request):
@@ -940,6 +955,13 @@ def routes():
         Route('/api/works/{wid}/image/single', single_enqueue, methods=['POST']),
         Route('/api/works/{wid}/image/single/runs', single_runs),
         Route(f'{p}/reference/status', reference_status),
+        Route(f'{p}/reference/draft', standalone_reference_draft, methods=['GET', 'PUT']),
+        Route(f'{p}/reference/assets', reference_assets, methods=['GET', 'POST']),
+        Route(f'{p}/reference/assets/{{ident}}', reference_asset),
+        Route(f'{p}/reference/runs', reference_runs),
+        Route(f'{p}/reference/queue', reference_enqueue, methods=['POST']),
+        Route(f'{p}/reference/regenerate', reference_regenerate, methods=['POST']),
+        Route(f'{p}/reference/export', reference_export),
         Route('/api/works/{wid}/image/reference/assets', reference_assets, methods=['POST']),
         Route('/api/works/{wid}/image/reference/assets/{ident}', reference_asset),
         Route('/api/works/{wid}/image/reference/runs', reference_runs),
