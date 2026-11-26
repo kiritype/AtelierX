@@ -88,6 +88,7 @@ beforeEach(() => {
     if (url.endsWith('/runs')) return { runs: history };
     if (url.endsWith('/catalog')) return catalog;
     if (url.endsWith('/presets')) return presets;
+    if (url === '/api/image/queue?paused_only=true') return { paused: false };
     throw new Error('Unexpected GET ' + url);
   });
   vi.mocked(post).mockImplementation(async (url, body) => {
@@ -291,7 +292,7 @@ it('distinguishes missing local files from unverified remote files', async () =>
   expect(button(t('single.run')).disabled).toBe(false);
 });
 
-it('retries a saved MOSS run from the Anima draft even if Anima is unavailable', async () => {
+it('retries a saved MOSS run from the Anima draft and keeps the paused queue waiting', async () => {
   status = { ready: false, node_ready: false, weights_ready: false };
   const actual = {
     positive: 'new scene', negative: '',
@@ -302,13 +303,19 @@ it('retries a saved MOSS run from the Anima draft even if Anima is unavailable',
     reference: { ...reference, engine: 'mossref' }, actual, request: { ...actual, service: 'comfyui', preset_id: '' },
   }];
   qc.setQueryData(['image-reference-runs', 'example'], { runs: history });
-  vi.mocked(post).mockImplementation(async url => url.endsWith('/retry') ? { job_id: 'retried' } : {});
+  qc.setQueryData(['image-queue', 'pause-state'], { paused: true });
+  vi.mocked(post).mockImplementation(async url => {
+    if (!url.endsWith('/retry')) throw new Error('Unexpected POST ' + url);
+    history = [{ ...history[0], id: 'retried', status: 'queued' }, ...history];
+    return { job_id: 'retried' };
+  });
   await render();
   expect(button('Anima').getAttribute('aria-pressed')).toBe('true');
   await vi.waitFor(() => expect(button(t('single.retry')).disabled).toBe(false));
   await act(async () => button(t('single.retry')).click());
   expect(post).toHaveBeenCalledWith('/api/image/jobs/moss-job/retry');
-  expect(post).toHaveBeenCalledWith('/api/image/queue/resume');
+  expect(post).not.toHaveBeenCalledWith('/api/image/queue/resume');
+  await vi.waitFor(() => expect(host.textContent).toContain(t('queue.waiting_while_paused')));
 });
 
 it('restores a MossRef result and sends its saved path for regeneration and export', async () => {

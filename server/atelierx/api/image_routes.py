@@ -495,7 +495,10 @@ async def standalone_draft(request):
 
 
 async def queue_get(request):
-    return await call(_runtime(request).public_jobs)
+    runtime = _runtime(request)
+    if request.query_params.get('paused_only') == 'true':
+        return JSONResponse({'paused': runtime.paused})
+    return await call(runtime.public_jobs)
 
 
 async def queue_action(request):

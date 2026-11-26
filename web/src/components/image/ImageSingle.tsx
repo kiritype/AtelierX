@@ -26,6 +26,7 @@ import GenerationResolution, { ShotResolution } from './GenerationResolution';
 import SinglePromptMaterials, { StyleThumbnails, tagsText, type StyleChoice } from './SinglePromptMaterials';
 import ShotPicker from './ShotPicker';
 import { AUTO_SHOT, compositionSource, shotChoiceFromSource, useShotLibrary, type ShotChoice } from '../../lib/shots';
+import QueuedImageNotice from './QueuedImageNotice';
 import './ImageSingle.css';
 import MossLayoutEditor, { MossMode } from './MossLayoutEditor';
 import { compileMoss, freshMoss, mossErrors, mossJoin } from '../../lib/mossLayout';
@@ -260,7 +261,6 @@ export default function ImageSingle({ workId, openView, openSettings, active: sc
       setRunId(response.job_id);
       setHistoryPage(0);
       setPreviewOpen(false);
-      await post('/api/image/queue/resume');
       await refresh();
     } catch (err) { fail(err); }
     finally { setPending(false); }
@@ -389,6 +389,7 @@ export default function ImageSingle({ workId, openView, openSettings, active: sc
       </div>
       <div className="single-result">
         <div className="single-result-head"><h3>{t('single.result')}</h3><span role="status" aria-live="polite">{t(`single.state.${pending && !run ? 'queued' : run?.status ?? 'idle'}`)}</span></div>
+        {screenActive && run?.status === 'queued' && <QueuedImageNotice />}
         {error && !previewOpen && <div className="single-review" role="alert">{error}</div>}
         {run?.error && <div className="single-review" role="alert">{msgText(run.error)}</div>}
         {run && ['failed', 'cancelled', 'interrupted'].includes(run.status) && <button type="button" disabled={busy} onClick={retry}>{t('single.retry')}</button>}

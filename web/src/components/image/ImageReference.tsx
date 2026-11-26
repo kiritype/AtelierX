@@ -12,6 +12,7 @@ import { editablePrompt } from '../../lib/singlePromptSources';
 import type { ImageView } from '../../types';
 import { useUnsaved } from '../Unsaved';
 import GalleryDetailFrame from './GalleryDetailFrame';
+import QueuedImageNotice from './QueuedImageNotice';
 import GenSettings, { FAMILY_DEFAULTS, modelsForFamily, useCatalog, type GenerationSettings } from './GenSettings';
 import SingleResultDetails from './SingleResultDetails';
 import { resultSettings } from './singleResult';
@@ -639,6 +640,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
               <h3>{t('single.result')}</h3>
               <span role="status">{t('single.state.' + (run?.status ?? 'idle'))}</span>
             </div>
+            {active && run?.status === 'queued' && <QueuedImageNotice />}
             {runs.error && <p className="warn-text" role="alert">{errorText(runs.error)}</p>}
             {run?.error && <p className="warn-text" role="alert">{msgText(run.error)}</p>}
             {run?.image_url ? <button type="button" className="single-canvas" aria-label={t('single.open_preview')} onClick={() => setPreview('result')}>
@@ -648,11 +650,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
               onClick={() => void runAction('cancel', async () => { await post('/api/image/jobs/' + q(run.id) + '/cancel'); })}>{t('common.cancel')}</button>}
             {run && failed(run) && resultReadiness && readinessNotice(resultReadiness)}
             {run && failed(run) && <button type="button" disabled={busy || !retryReady}
-              onClick={() => void runAction('retry', async () => {
-                const result = await post<{ job_id: string }>('/api/image/jobs/' + q(run.id) + '/retry');
-                await post('/api/image/queue/resume');
-                return result;
-              })}>{t('single.retry')}</button>}
+              onClick={() => void runAction('retry', () => post<{ job_id: string }>('/api/image/jobs/' + q(run.id) + '/retry'))}>{t('single.retry')}</button>}
             {resultDetails}
             {run?.status === 'done' && <div className="single-result-links"><button type="button" className="ghost" onClick={() => openView('gallery')}>{t('image_menu.gallery')}</button></div>}
             {!!history.length && <div className="single-history">
