@@ -37,7 +37,8 @@ it('keeps the original workspace and live generation form mounted during image f
   });
   const toggle = () => host.querySelector<HTMLButtonElement>('.image-focus-toggle')!;
   try {
-    await act(async () => root.render(<QueryClientProvider client={qc}><WorkWindow workId="focus" onLeave={vi.fn()} onLock={vi.fn()} /></QueryClientProvider>));
+    const help = { entries: [], openUpdate: vi.fn(), updateAvailable: false };
+    await act(async () => root.render(<QueryClientProvider client={qc}><WorkWindow workId="focus" help={help} onLeave={vi.fn()} onLock={vi.fn()} /></QueryClientProvider>));
     for (let attempt = 0; attempt < 40 && !host.querySelector('.generation-details'); attempt++) {
       await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
     }

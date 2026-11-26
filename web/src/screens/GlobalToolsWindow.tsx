@@ -20,7 +20,13 @@ const views: { view: GlobalToolsView; label: string }[] = [
 
 type SettingsRequest = { section: 'image' | 'install'; at: number };
 
-export default function GlobalToolsWindow({ workId, onClose, initialView = 'explorer' }: { workId?: string; onClose: () => void; initialView?: GlobalToolsView }) {
+export default function GlobalToolsWindow({ workId, onClose, onLock, backLabel, initialView = 'explorer' }: {
+  workId?: string;
+  onClose: () => void;
+  onLock?: () => void;
+  backLabel?: string;
+  initialView?: GlobalToolsView;
+}) {
   const [view, setView] = useState(initialView);
   const [visited, setVisited] = useState<GlobalToolsView[]>([initialView]);
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | undefined>(initialView === 'settings' ? undefined : { section: 'image', at: 0 });
@@ -54,7 +60,10 @@ export default function GlobalToolsWindow({ workId, onClose, initialView = 'expl
         <span className="topbar-mark" title="AtelierX"><AppMark size={20} /></span>
         <strong style={{ padding: '4px 8px' }}>{t('menu.tools')}</strong>
         <span className="grow" />
-        <button type="button" className="ghost" onClick={close}><Icon name="back" size={16} /> {t(workId ? 'tools.back_to_work' : 'tools.back')}</button>
+        <button type="button" className="ghost" onClick={close}><Icon name="back" size={16} /> {backLabel ?? t(workId ? 'tools.back_to_work' : 'tools.back')}</button>
+        {onLock && <button type="button" className="ghost" onClick={() => { if (canLeave()) onLock(); }}>
+          <Icon name="lock" /> {t('common.lock')}
+        </button>}
       </div>
       <div className="col" style={{ minHeight: 0, background: 'var(--panel)' }}>
         <nav className="row image-flow" aria-label={t('menu.tools')}>

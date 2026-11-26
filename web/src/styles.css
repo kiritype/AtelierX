@@ -161,6 +161,13 @@ h1, h2, h3 { font-weight: 600; margin: 0; }
 
 /* work select */
 .select-page { max-width: 980px; margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+.start-screen h1 { margin: 20px 0 0; font-size: 24px; }
+.start-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+button.start-choice { min-height: 104px; display: flex; align-items: center; gap: 16px; padding: 20px;
+  text-align: left; background: var(--panel); }
+.start-choice:hover { border-color: var(--accent); }
+.start-choice > .icon { flex-shrink: 0; color: var(--accent); }
+.start-choice strong { font-size: 16px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .work-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
   cursor: pointer; display: flex; flex-direction: column; gap: 6px; position: relative; }

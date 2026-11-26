@@ -23,6 +23,7 @@ vi.mock('../components/image/StyleExplorer', () => ({ default: ({ openSettings }
 }));
 
 const mounted: { root: ReturnType<typeof createRoot>; qc: QueryClient; host: HTMLElement }[] = [];
+const help = { entries: [], openUpdate: vi.fn(), updateAvailable: false };
 afterEach(async () => {
   for (const { root, qc, host } of mounted.splice(0)) {
     await act(async () => root.unmount());
@@ -51,7 +52,7 @@ it('opens all app settings and image destinations before a work is selected', as
   });
   const openTools = vi.fn();
   const openWork = vi.fn();
-  const host = await render(<WorkSelect onOpen={openWork} onOpenTools={openTools} onLock={vi.fn()} />);
+  const host = await render(<WorkSelect help={help} onOpen={openWork} onOpenTools={openTools} onBack={vi.fn()} onLock={vi.fn()} />);
   const settings = [...host.querySelectorAll('button')].find(button => button.textContent?.trim() === t('works.app_settings'))!;
   await act(async () => settings.click());
   expect(openTools).toHaveBeenLastCalledWith('settings');
@@ -71,7 +72,7 @@ it('opens all app settings and image destinations before a work is selected', as
 it('moves keyboard focus through the image menu and returns it on Escape', async () => {
   vi.mocked(get).mockImplementation(async url => url === '/api/works' ? { works: [] } : {});
   const openTools = vi.fn();
-  const host = await render(<WorkSelect onOpen={vi.fn()} onOpenTools={openTools} onLock={vi.fn()} />);
+  const host = await render(<WorkSelect help={help} onOpen={vi.fn()} onOpenTools={openTools} onBack={vi.fn()} onLock={vi.fn()} />);
   const trigger = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === t('menu.image'))!;
   trigger.focus();
   const press = async (key: string) => act(async () => {
@@ -121,7 +122,7 @@ it('redirects an active legacy explorer tab and removes explorer from Image navi
     return [];
   });
   const openTools = vi.fn();
-  const host = await render(<WorkWindow workId="story" onOpenTools={openTools} onLeave={vi.fn()} onLock={vi.fn()} />);
+  const host = await render(<WorkWindow workId="story" help={help} onOpenTools={openTools} onLeave={vi.fn()} onLock={vi.fn()} />);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   expect(openTools).toHaveBeenCalledOnce();
   expect([...host.querySelectorAll('.tab-title')].map(tab => tab.textContent)).toEqual(['chapter.md']);
@@ -136,7 +137,7 @@ it('ignores work keyboard shortcuts while global Tools covers the work', async (
     if (url === '/api/ui-state') return { works: {} };
     return [];
   });
-  const host = await render(<WorkWindow workId="story" active={false} onLeave={vi.fn()} onLock={vi.fn()} />);
+  const host = await render(<WorkWindow workId="story" help={help} active={false} onLeave={vi.fn()} onLock={vi.fn()} />);
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
   await act(async () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }));

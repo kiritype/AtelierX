@@ -134,25 +134,36 @@ it.each(['comfyui', 'novelai', 'pixai'] as const)('generates a standalone %s ima
   expect(positive().value).toBe('Standalone lake');
 });
 
-it('keeps the standalone form through settings and protects leaving while a generation is active', async () => {
+it('keeps the standalone form through settings, protects leaving or locking while busy, and restores the saved draft', async () => {
   const close = vi.fn();
+  const lock = vi.fn();
   const confirm = vi.fn(() => false);
+  const renderTools = (key: string) => act(async () => root.render(<QueryClientProvider client={qc}>
+    <GlobalToolsWindow key={key} initialView="single" backLabel={t('start.back')} onClose={close} onLock={lock} />
+  </QueryClientProvider>));
   vi.stubGlobal('confirm', confirm);
   try {
-    await act(async () => root.render(<QueryClientProvider client={qc}><GlobalToolsWindow initialView="single" onClose={close} /></QueryClientProvider>));
+    await renderTools('before-lock');
     await edit(positive(), 'Keep through settings');
     await click(t('window.settings'));
     expect(positive().closest('[hidden]')).not.toBeNull();
     await click(t('image_menu.single'));
     expect(positive().value).toBe('Keep through settings');
     await click(t('single.run'));
-    await click(t('tools.back'));
-    expect(confirm).toHaveBeenCalled();
+    await click(t('common.lock'));
+    await click(t('start.back'));
+    expect(confirm).toHaveBeenCalledTimes(2);
     expect(close).not.toHaveBeenCalled();
+    expect(lock).not.toHaveBeenCalled();
     await click(t('common.cancel'));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)); });
-    await click(t('tools.back'));
+    await click(t('common.lock'));
+    expect(lock).toHaveBeenCalledOnce();
+    await click(t('start.back'));
     expect(close).toHaveBeenCalledOnce();
+    localStorage.removeItem('atelierx-single-standalone-v1');
+    await renderTools('after-restart');
+    expect(positive().value).toBe('Keep through settings');
   } finally { vi.unstubAllGlobals(); }
 });
 
