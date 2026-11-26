@@ -186,9 +186,7 @@
   border-radius: 6px;
 }
 .explorer-ranking img {
-  width: 160px;
-  max-height: 180px;
-  object-fit: contain;
+  --thumbnail-size: min(160px, 100%);
 }
 .explorer-confirm {
   position: fixed;
@@ -208,6 +206,6 @@
     gap: 8px;
   }
   .explorer-ranking img {
-    width: 90px;
+    --thumbnail-size: min(90px, 100%);
   }
 }

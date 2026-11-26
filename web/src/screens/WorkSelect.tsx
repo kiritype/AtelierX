@@ -118,17 +118,19 @@ export default function WorkSelect({ help, onOpen, onOpenTools, onBack, onLock }
       <div className="cards">
         {list.map((work) => (
           <div key={work.id} className="work-card" onClick={() => onOpen(work.id)}>
-            <button
-              className="ghost menu"
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenu({ x: e.clientX, y: e.clientY, work });
-              }}
-            >
-              ⋯
-            </button>
             {work.cover_url && <CoverThumbnail key={work.cover_url} src={work.cover_url} />}
-            <strong>{work.name}</strong>
+            <div className="work-card-title">
+              <strong>{work.name}</strong>
+              <button
+                className="ghost menu"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenu({ x: e.clientX, y: e.clientY, work });
+                }}
+              >
+                ⋯
+              </button>
+            </div>
             <span className="faint">
               {work.id} · {t(`scale.${work.scale}`)}
             </span>

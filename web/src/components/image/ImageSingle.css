@@ -47,7 +47,7 @@ button.single-canvas { cursor: zoom-in; }
 .single-history-list { display: grid; gap: 6px; }
 .single-history-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 4px; text-align: left; }
 .single-history-row.is-selected { border-color: var(--accent); background: var(--accent-bg); }
-.single-history-thumb { display: block; width: 64px; height: 64px; border: 1px solid var(--border); border-radius: 3px; background: var(--panel-2); object-fit: contain; }
+.single-history-thumb { --thumbnail-size: 64px; border: 1px solid var(--border); border-radius: 3px; }
 .single-history-content { display: grid; gap: 4px; min-width: 0; }
 .single-history-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .single-history-pages { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
