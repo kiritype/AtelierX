@@ -95,6 +95,23 @@ export type SingleRequest = {
 export type ReferenceAsset = { id: string; name: string; url: string; sha256: string };
 export type ReferenceAssets = { assets: ReferenceAsset[] };
 export type ReferenceDraftFile<T> = { draft: (T & { schema_version: 1 }) | null; revision: string };
+export type ReferenceEmotionComposition = { mode: 'none' | 'linked' } | { mode: 'library'; id: string };
+export type ReferenceEmotionSelection = {
+  family: 'anima' | 'moss';
+  expression_ids: string[];
+  composition: ReferenceEmotionComposition;
+};
+export type ReferenceEmotion = {
+  expression_id: string;
+  expression_name: string;
+  composition_id: string | null;
+  composition_name: string | null;
+};
+export type ReferenceEmotionPreview = {
+  rows: (ReferenceEmotion & { composition_omitted: boolean; positive: string; negative: string })[];
+  revision: string;
+};
+export type ReferenceEmotionBatch = ReferenceEmotion & { id: string; index: number; count: number };
 export type AnimaReferenceEngine = 'anima_v2' | 'snapref';
 export type SnapRefMode = 'cs' | 'char';
 export type ReferenceSlot = 'a' | 'b';
@@ -139,6 +156,7 @@ export type SingleRun = {
   seed: number;
   request: SingleRequest | null;
   reference?: ReferenceSnapshot;
+  reference_batch?: ReferenceEmotionBatch;
   actual: {
     moss_layout?: MossDocument;
     positive: string;

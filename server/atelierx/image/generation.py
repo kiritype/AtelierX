@@ -17,8 +17,9 @@ from urllib.parse import quote, unquote
 
 from PIL import Image, PngImagePlugin
 
+from ..core import revisions
 from ..core.i18n import AppError, Msg, message_of
-from . import anima_reference, library, moss_layout, moss_reference, reference
+from . import anima_reference, library, moss_layout, moss_reference, reference, reference_emotions
 from .comments import strip_text
 from .compose import Composer, _join
 from .prompt_sources import combine_sources, normalize_sources
@@ -304,6 +305,61 @@ class GenerationMixin:
         entry = reference.prepare(reference.asset_root(self.paths, work), body.get('reference'))
         return self.enqueue_single(work, body, reference_entry=entry)
 
+    def enqueue_reference_emotions(self, body):
+        preview = reference_emotions.preview(self.paths, body)
+        revisions.check(body.get('preview_revision'), preview['revision'], reference_emotions.STALE)
+        rows = preview['rows']
+        self.queue.check_room(len(rows))
+        settings = body.get('settings')
+        if not isinstance(settings, dict) or settings.get('family') != body['family']:
+            raise ValueError(
+                Msg('server.reference.emotions_family', 'Choose the same model family as the preview.')
+            )
+        entry = reference.prepare(reference.asset_root(self.paths), body.get('reference'))
+        if anima_reference.is_entry(entry) and len(entry['subjects']) != 1:
+            raise ValueError(
+                Msg('server.reference.emotions_subject', 'Choose one reference image for the emotion batch.')
+            )
+        # Readiness and generation settings are identical for the whole batch.
+        first = rows[0]
+        template = self._single_job(
+            None,
+            {
+                'service': DEFAULT_SERVICE,
+                'positive': first['positive'],
+                'negative': first['negative'],
+                'settings': settings,
+            },
+            reference_entry=entry,
+            prompts_are_composed=True,
+        )
+        batch_id = uuid.uuid4().hex
+        use_random_seed = int(settings.get('seed', -1)) == -1
+        jobs = []
+        for index, row in enumerate(rows):
+            job = copy.deepcopy(template)
+            seed = secrets.randbits(32) if use_random_seed and index else template['seed']
+            job.update(id=uuid.uuid4().hex, seed=seed, title=row['expression_name'][:80])
+            snapshot = job['snapshot']
+            snapshot['settings']['seed'] = seed
+            prompts = {key: row[key] for key in ('positive', 'negative')}
+            snapshot.update(prompts)
+            snapshot['request'].update(prompts)
+            if anima_reference.is_entry(entry):
+                snapshot['reference']['scene'] = row['positive']
+            snapshot['reference_batch'] = {
+                'id': batch_id,
+                'index': index,
+                'count': len(rows),
+                **{
+                    key: row[key]
+                    for key in ('expression_id', 'expression_name', 'composition_id', 'composition_name')
+                },
+            }
+            jobs.append(job)
+        self.queue.add(jobs, rollback_on_save_error=True)
+        return {'batch_id': batch_id, 'job_id': jobs[0]['id'], 'count': len(jobs)}
+
     def regenerate_reference(self, work, body):
         if not isinstance(body, dict):
             raise ValueError(Msg('server.reference.invalid_result', 'Choose a reference generation result.'))
@@ -338,6 +394,11 @@ class GenerationMixin:
     def enqueue_single(self, work, body, *, reference_entry=None):
         """Queue one free-prompt image, optionally scoped to an existing work."""
         self.queue.check_room(1)
+        job = self._single_job(work, body, reference_entry=reference_entry)
+        self.queue.add([job])
+        return {'job_id': job['id']}
+
+    def _single_job(self, work, body, *, reference_entry, prompts_are_composed=False):
         if not isinstance(body, dict):
             raise ValueError(Msg('server.single.request', 'Choose an image service and enter a prompt.'))
         positive, negative = body.get('positive'), body.get('negative', '')
@@ -352,7 +413,7 @@ class GenerationMixin:
             )
         layout = body.get('moss_layout')
         layout_active = isinstance(layout, dict) and layout.get('mode') == 'layout'
-        if not layout_active:
+        if not layout_active and not prompts_are_composed:
             positive, negative = strip_text(positive).strip(), strip_text(negative).strip()
         sources = (
             normalize_sources(
@@ -542,23 +603,18 @@ class GenerationMixin:
             snapshot['reference'] = reference_entry
         if preset:
             snapshot['generation_preset'] = {'id': preset['id'], 'name': preset.get('name', preset['id'])}
-        self.queue.add(
-            [
-                {
-                    'id': job_id,
-                    'kind': 'single',
-                    'status': 'queued',
-                    'created_at': created,
-                    'work_id': work.id if work else None,
-                    'service': service.id,
-                    'seed': seed,
-                    'title': positive[:80],
-                    'review_requested': False,
-                    'snapshot': snapshot,
-                }
-            ]
-        )
-        return {'job_id': job_id}
+        return {
+            'id': job_id,
+            'kind': 'single',
+            'status': 'queued',
+            'created_at': created,
+            'work_id': work.id if work else None,
+            'service': service.id,
+            'seed': seed,
+            'title': positive[:80],
+            'review_requested': False,
+            'snapshot': snapshot,
+        }
 
     def single_runs(self, work, reference_only=False):
         """Recent single results survive clearing the queue because the PNG sidecars are authoritative."""
@@ -588,6 +644,11 @@ class GenerationMixin:
                 'image_url': item['image_url'],
                 'path': item['path'],
                 **({'reference': reference.public(work_id, record['reference'])} if reference_only else {}),
+                **(
+                    {'reference_batch': record['reference_batch']}
+                    if reference_only and 'reference_batch' in record
+                    else {}
+                ),
             }
         for job in self.queue.select(lambda j: j.get('kind') == 'single' and j.get('work_id') == work_id):
             snapshot = job.get('snapshot') or {}
@@ -619,6 +680,11 @@ class GenerationMixin:
                 'path': path,
                 'error': message_of(job['error']) if job.get('error') else None,
                 **({'reference': reference.public(work_id, snapshot['reference'])} if reference_only else {}),
+                **(
+                    {'reference_batch': snapshot['reference_batch']}
+                    if reference_only and 'reference_batch' in snapshot
+                    else {}
+                ),
             }
         runs = sorted(saved.values(), key=lambda run: run['created_at'] or '', reverse=True)
         return {'runs': runs if work_id is None and reference_only else runs[:100]}
@@ -779,7 +845,9 @@ class GenerationMixin:
         metadata = copy.deepcopy(job['snapshot'])
         metadata.update(
             schema_version=(
-                9
+                10
+                if 'reference_batch' in metadata
+                else 9
                 if 'reference' in metadata and job.get('work_id') is None
                 else 8
                 if anima_reference.is_entry(metadata.get('reference'))

@@ -3,15 +3,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { get, post } from '../../api';
+import { ApiError, get, post, put } from '../../api';
 import { t } from '../../i18n';
 import type { AnimaReferenceStatus, MossReferenceStatus, ReferenceStatus, SingleRun } from '../../imageTypes';
 import { clearReferenceGalleryRequest, sendReferenceHandoff } from '../../lib/referenceHandoff';
 import ImageReference from './ImageReference';
+import type { Draft } from './referenceDraft';
 
-vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn() }));
+vi.mock('../../api', async original => ({ ...await original<typeof import('../../api')>(), get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 
 const endpoint = '/api/works/example/image/reference';
+const standalone = '/api/image/reference';
+const emotionEndpoint = standalone + '/emotions';
 const reference = { id: 'asset', name: 'source.png', url: endpoint + '/assets/asset', sha256: '5'.repeat(64) };
 const secondReference = { id: 'asset-b', name: 'second.png', url: endpoint + '/assets/asset-b', sha256: '6'.repeat(64) };
 const model = 'silvermoonmix.safetensors';
@@ -40,6 +43,7 @@ const adapterReady: ReferenceStatus = { ready: true, node_ready: true, weights_r
 let status: AnimaReferenceStatus;
 let mossStatus: MossReferenceStatus;
 let history: SingleRun[];
+let standaloneDraft: Partial<Draft> | null;
 let host: HTMLDivElement;
 let root: Root;
 let qc: QueryClient;
@@ -53,8 +57,8 @@ const button = (label: string | RegExp) => {
   return found!;
 };
 
-const render = async (active = true) => act(async () => {
-  root.render(<QueryClientProvider client={qc}><ImageReference workId="example" openView={openView} openSettings={openSettings} active={active} /></QueryClientProvider>);
+const render = async (active = true, workId: string | null = 'example') => act(async () => {
+  root.render(<QueryClientProvider client={qc}><ImageReference workId={workId ?? undefined} openView={openView} openSettings={openSettings} active={active} /></QueryClientProvider>);
   await new Promise(resolve => setTimeout(resolve, 0));
 });
 
@@ -78,6 +82,7 @@ beforeEach(() => {
     models: [mossModel], text_encoders: [mossEncoder], vaes: [mossVae],
   };
   history = [];
+  standaloneDraft = null;
   qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   qc.setQueryData(['image-catalog'], catalog);
   qc.setQueryData(['image-presets'], presets);
@@ -86,11 +91,23 @@ beforeEach(() => {
     if (url.endsWith('/reference/status?family=moss')) return mossStatus;
     if (url.endsWith('/reference/status?family=anima')) return status;
     if (url.endsWith('/runs')) return { runs: history };
+    if (url === standalone + '/draft') return { draft: standaloneDraft, revision: 'draft-r1' };
+    if (url === '/api/image/library/expressions') return {
+      happy: { id: 'happy', name: 'Happy' },
+      sad: { id: 'sad', name: 'Sad', targets: ['anima'] },
+      startled: { id: 'startled', name: 'Startled', targets: ['moss'] },
+    };
+    if (url === '/api/image/library/compositions') return {
+      park: { id: 'park', name: 'Park', targets: ['anima'] },
+      street: { id: 'street', name: 'Street', targets: ['moss'] },
+      layout: { id: 'layout', name: 'Layout', moss_layout: { mode: 'layout' } },
+    };
     if (url.endsWith('/catalog')) return catalog;
     if (url.endsWith('/presets')) return presets;
     if (url === '/api/image/queue?paused_only=true') return { paused: false };
     throw new Error('Unexpected GET ' + url);
   });
+  vi.mocked(put).mockResolvedValue({ revision: 'draft-r2' });
   vi.mocked(post).mockImplementation(async (url, body) => {
     if (url.endsWith('/assets')) return (body as { gallery_path?: string; filename?: string }).gallery_path === 'chosen/second.png'
       || (body as { filename?: string }).filename === secondReference.name ? secondReference : reference;
@@ -128,6 +145,7 @@ it('imports the gallery reference and queues the chosen Anima preset', async () 
   expect(post).toHaveBeenCalledWith(endpoint + '/assets', { gallery_path: 'chosen/source.png' });
   expect(button(/^NovelAI/).disabled).toBe(true);
   expect(button('MOSS').disabled).toBe(false);
+  expect(host.querySelector('.reference-generation-modes')).toBeNull();
 
   const select = host.querySelector<HTMLSelectElement>('.single-settings select')!;
   expect([...select.options].map(option => option.value)).toEqual(['', 'anima']);
@@ -141,6 +159,153 @@ it('imports the gallery reference and queues the chosen Anima preset', async () 
     reference: { engine: 'anima_v2', subjects: [{ slot: 'a', id: reference.id, position: 'center' }], guidance: 4.5 },
   }));
   await vi.waitFor(() => expect(host.querySelector('.single-result-head')?.textContent).toContain(t('single.state.queued')));
+});
+
+it('previews and queues just the selected emotions with shared settings while keeping the single draft', async () => {
+  standaloneDraft = {
+    reference, description: 'red hair', second: { reference: secondReference, description: 'blue jacket' },
+    positive: 'private single scene', negative: 'private negative', firstOnRight: true, guidance: '6',
+    parameters: {
+      anima: { settings: { family: 'anima', model, steps: 16 }, preset: 'anima' },
+      moss: { settings: {}, preset: '' },
+    },
+  };
+  const noComposition = { family: 'anima', expression_ids: ['happy'], composition: { mode: 'none' } };
+  const selection = { ...noComposition, expression_ids: ['happy', 'sad'], composition: { mode: 'library', id: 'park' } };
+  const rows = [
+    { expression_id: 'happy', expression_name: 'Happy', composition_id: 'park', composition_name: 'Park',
+      composition_omitted: false, positive: 'park, smile', negative: 'frown' },
+    { expression_id: 'sad', expression_name: 'Sad', composition_id: 'park', composition_name: 'Park',
+      composition_omitted: false, positive: 'park, tears', negative: 'smile' },
+  ];
+  vi.mocked(post).mockImplementation(async (url, body) => {
+    if (url === emotionEndpoint + '/preview') {
+      return body && (body as { expression_ids: string[] }).expression_ids.length === 2
+        ? { rows, revision: 'multi' }
+        : { rows: [{ ...rows[0], composition_id: null, composition_name: null }], revision: 'single' };
+    }
+    if (url === emotionEndpoint + '/queue') return { batch_id: 'new-batch', job_id: 'job-happy', count: 2 };
+    throw new Error('Unexpected POST ' + url);
+  });
+  await render(true, null);
+  await vi.waitFor(() => expect(button(t('reference.emotions_mode'))).toBeTruthy());
+  await act(async () => button(t('reference.emotions_mode')).click());
+  const form = host.querySelector<HTMLFormElement>('form.reference-emotions')!;
+  expect(host.querySelector('[data-slot="a"] img')?.getAttribute('src')).toBe(reference.url);
+  expect(host.querySelector('[data-slot="b"], .reference-subject-description, textarea')).toBeNull();
+  await vi.waitFor(() => expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(2));
+  const [happy, sad] = [...form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+  expect(form.textContent).not.toContain('Startled');
+  const preview = () => button(t('reference.emotions_preview_action'));
+  const queue = () => button(t('reference.emotions_queue'));
+  expect(queue().disabled).toBe(true);
+  await act(async () => happy.click());
+  await act(async () => preview().click());
+  expect(post).toHaveBeenCalledWith(emotionEndpoint + '/preview', noComposition);
+  await vi.waitFor(() => expect(queue().disabled).toBe(false));
+  await act(async () => sad.click());
+  expect(queue().disabled).toBe(true);
+  await act(async () => form.querySelector<HTMLInputElement>('input[value="library"]')!.click());
+  const composition = form.querySelector('select')!;
+  await vi.waitFor(() => expect([...composition.options].map(item => item.value)).toEqual(['', 'park']));
+  expect(preview().disabled).toBe(true);
+  await changeSelect(composition, 'park');
+  await act(async () => preview().click());
+  expect(post).toHaveBeenCalledWith(emotionEndpoint + '/preview', selection);
+  expect(form.querySelectorAll('.reference-emotion-preview-list details')).toHaveLength(2);
+  expect(form.textContent).toContain('park, smile');
+  expect(form.textContent).toContain(t('reference.emotions_total', { count: 2 }));
+
+  vi.mocked(post).mockRejectedValueOnce(new ApiError(409, { key: 'server.reference.emotions_stale', text: 'Stale preview' }));
+  await act(async () => queue().click());
+  expect(queue().disabled).toBe(true);
+  expect(host.textContent).toContain(t('server.reference.emotions_stale'));
+  await act(async () => preview().click());
+  expect(host.textContent).not.toContain(t('server.reference.emotions_stale'));
+  await act(async () => queue().click());
+  expect(post).toHaveBeenLastCalledWith(emotionEndpoint + '/queue', {
+    ...selection, preview_revision: 'multi',
+    settings: expect.objectContaining({ family: 'anima', model, steps: 16 }),
+    reference: { engine: 'anima_v2', guidance: 6, subjects: [{ slot: 'a', position: 'center', id: reference.id }] },
+  });
+
+  await act(async () => button(t('reference.single_mode')).click());
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-scene"]')?.value).toBe('private single scene');
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-negative"]')?.value).toBe('private negative');
+  expect(host.querySelector<HTMLInputElement>('[data-slot="a"] input')?.value).toBe('red hair');
+  expect(host.querySelector<HTMLInputElement>('[data-slot="b"] input')?.value).toBe('blue jacket');
+  expect(host.querySelector('[data-slot="b"] img')?.getAttribute('src')).toBe(secondReference.url);
+});
+
+it('uses MossRef and marks an incompatible linked composition in the preview', async () => {
+  standaloneDraft = { reference };
+  const selection = { family: 'moss', expression_ids: ['startled'], composition: { mode: 'linked' } };
+  vi.mocked(post).mockImplementation(async url => {
+    if (url === emotionEndpoint + '/preview') return {
+      revision: 'moss-revision',
+      rows: [{ expression_id: 'startled', expression_name: 'Startled', composition_id: null, composition_name: null,
+        composition_omitted: true, positive: 'The person is startled', negative: '' }],
+    };
+    if (url === emotionEndpoint + '/queue') return { batch_id: 'moss-batch', job_id: 'job-startled', count: 1 };
+    throw new Error('Unexpected POST ' + url);
+  });
+  await render(true, null);
+  await vi.waitFor(() => expect(button(t('reference.emotions_mode'))).toBeTruthy());
+  await act(async () => button(t('reference.emotions_mode')).click());
+  await act(async () => button('MOSS').click());
+  const form = host.querySelector<HTMLFormElement>('form.reference-emotions')!;
+  await vi.waitFor(() => expect(form.textContent).toContain('Startled'));
+  expect(form.textContent).not.toContain('Sad');
+  await act(async () => [...form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].at(-1)!.click());
+  await act(async () => form.querySelector<HTMLInputElement>('input[value="linked"]')!.click());
+  await act(async () => button(t('reference.emotions_preview_action')).click());
+  expect(post).toHaveBeenCalledWith(emotionEndpoint + '/preview', selection);
+  expect(form.textContent).toContain(t('reference.emotions_composition_omitted'));
+  await vi.waitFor(() => expect(button(t('reference.emotions_queue')).disabled).toBe(false));
+  await act(async () => button(t('reference.emotions_queue')).click());
+  expect(post).toHaveBeenLastCalledWith(emotionEndpoint + '/queue', {
+    ...selection, preview_revision: 'moss-revision',
+    settings: expect.objectContaining({ family: 'moss', model: mossModel, text_encoder: mossEncoder, vae: mossVae }),
+    reference: { id: reference.id, engine: 'mossref' },
+  });
+});
+
+it('keeps an entire batch on one history page and restores a selected emotion as a single run', async () => {
+  const actual = { positive: 'park, smile', negative: 'frown', settings: { family: 'anima', model, text_encoder: animaEncoder, vae: animaVae } };
+  const saved: SingleRun = {
+    id: 'happy-job', status: 'done', created_at: '2026-11-27', service: 'comfyui', seed: 7, actual,
+    request: { ...actual, service: 'comfyui', preset_id: '' },
+    image_url: '/example.png', path: '_reference/example.png',
+    reference: { engine: 'anima_v2', scene: actual.positive, subjects: [{ ...reference, slot: 'a', position: 'center' }] },
+  };
+  const batch = { id: 'emotion-batch', composition_id: 'park', composition_name: 'Park', count: 2 };
+  const happy: SingleRun = { ...saved, reference_batch: { ...batch, index: 0, expression_id: 'happy', expression_name: 'Happy' } };
+  const sad: SingleRun = {
+    ...saved, id: 'sad-job', status: 'failed', image_url: null,
+    reference_batch: { ...batch, index: 1, expression_id: 'sad', expression_name: 'Sad' },
+  };
+  history = [
+    ...Array.from({ length: 11 }, (_, index) => ({ ...saved, id: 'individual-' + index, path: '_reference/' + index + '.png' })),
+    sad, { ...saved, id: 'older', path: '_reference/older.png' }, happy,
+  ];
+  qc.setQueryData(['image-reference-runs', undefined], { runs: history });
+  await render(true, null);
+  await vi.waitFor(() => expect(host.querySelector('.reference-history-batch')).toBeTruthy());
+  const batchRows = [...host.querySelectorAll<HTMLButtonElement>('.reference-history-batch button')];
+  expect(batchRows.map(row => row.querySelector('.single-history-name')?.textContent)).toEqual(['Happy', 'Sad']);
+  expect(batchRows[1].textContent).toContain(t('single.state.failed'));
+  await act(async () => batchRows[1].click());
+  expect(button(t('single.retry')).disabled).toBe(false);
+  await act(async () => batchRows[0].click());
+  expect(host.querySelector('.single-canvas img')?.getAttribute('src')).toBe(saved.image_url);
+  await act(async () => button(t('reference.emotions_mode')).click());
+  await act(async () => button(t('single.restore')).click());
+  expect(button(t('reference.single_mode')).getAttribute('aria-pressed')).toBe('true');
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-scene"]')?.value).toBe(actual.positive);
+  expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-negative"]')?.value).toBe(actual.negative);
+  await act(async () => button(t('single.next_page')).click());
+  expect(host.querySelector('.reference-history-batch')).toBeNull();
+  expect(host.querySelector('.single-history-list button')?.textContent).toContain('older.png');
 });
 
 it.each(['file', 'gallery'])('previews a %s reference and returns to the existing draft on Escape', async source => {

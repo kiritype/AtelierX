@@ -29,4 +29,29 @@
 .reference-record dd { overflow-wrap: anywhere; }
 .reference-record { margin-top: 14px; }
 .reference-saved-assets { max-height: 55vh; overflow: auto; }
+.reference-generation-modes { margin-bottom: 16px; }
+.reference-emotion-hint { margin: 0; }
+.reference-emotions fieldset {
+  min-width: 0; margin: 0 0 16px; padding: 10px 12px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.reference-emotions legend { padding-inline: 4px; font-weight: 600; }
+.reference-emotions fieldset p { margin: 4px 0; }
+.reference-emotion-options, .reference-emotion-group { display: grid; gap: 8px; }
+.reference-emotion-options { max-height: 240px; overflow: auto; }
+.reference-emotion-choices { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.reference-emotion-choices label { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.reference-emotion-choices :is(input[type="checkbox"], input[type="radio"]) { flex: none; margin: 0; }
+.reference-emotion-composition { margin: 12px 0 0; }
+.reference-emotion-preview-list { display: grid; gap: 6px; margin-top: 12px; }
+.reference-emotion-preview-list details { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.reference-emotion-preview-list summary { cursor: pointer; overflow-wrap: anywhere; }
+.reference-emotion-preview-list summary span { margin-inline-start: 8px; }
+.reference-emotion-preview-list dl { margin: 8px 0 0; }
+.reference-emotion-preview-list dl div + div { margin-top: 6px; }
+.reference-emotion-preview-list dt { font-weight: 600; }
+.reference-emotion-preview-list dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.reference-history-batch { padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.reference-history-batch h5 { margin: 0 0 6px; font-size: inherit; }
+.reference-result-emotion { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 12px; overflow-wrap: anywhere; }
 @media (max-width: 550px) { .reference-card { flex-direction: column; } }
