@@ -4,8 +4,8 @@
 .reference-family { align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 16px; }
 .reference-adapter { align-items: center; flex-wrap: wrap; max-width: 100%; }
 .reference-adapter select { max-width: 100%; }
-.reference-status { justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.reference-status .row, .reference-card .row { flex-wrap: wrap; }
+.reference-status { justify-content: space-between; align-items: flex-start; overflow-wrap: anywhere; }
+.reference-status-actions, .reference-card .row { flex-wrap: wrap; }
 .reference-card {
   display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; padding: 14px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2);

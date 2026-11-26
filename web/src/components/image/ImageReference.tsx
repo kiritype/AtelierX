@@ -11,7 +11,6 @@ import { pickReferenceFromGallery, takeReferenceHandoff } from '../../lib/refere
 import { editablePrompt } from '../../lib/singlePromptSources';
 import type { ImageView } from '../../types';
 import { useUnsaved } from '../Unsaved';
-import { Loading } from '../ui';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import GenSettings, { FAMILY_DEFAULTS, modelsForFamily, useCatalog, type GenerationSettings } from './GenSettings';
 import SingleResultDetails from './SingleResultDetails';
@@ -21,6 +20,14 @@ import './ImageReference.css';
 
 type Preset = { id: string; name: string; service: string; family: string; settings: GenerationSettings };
 type ReferenceFamily = 'anima' | 'moss';
+type ReadinessAction = 'image' | 'install' | 'models' | 'moss' | 'update';
+type Readiness = {
+  family: ReferenceFamily;
+  reasons: string[];
+  actions: Set<ReadinessAction>;
+  checking?: boolean;
+  unverified?: boolean;
+};
 type FamilyDraft = { settings: GenerationSettings; preset: string };
 type SecondSubject = { reference: ReferenceAsset | null; description: string };
 type Draft = {
@@ -116,6 +123,17 @@ function supportsMossPreset(value: GenerationSettings, status?: MossReferenceSta
     && (!value.vae || status.vaes.includes(value.vae));
 }
 
+function catalogSelection(value: string, names: string[]) {
+  if (names.includes(value)) return value;
+  const file = (path: string) => {
+    const parts = path.split('::');
+    const name = parts.pop()?.split(/[\\/]/).at(-1);
+    return [...parts, name].join('::');
+  };
+  const matches = names.filter(name => file(name) === file(value));
+  return matches.length === 1 ? matches[0] : value;
+}
+
 function fileData(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -179,43 +197,99 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const second = !moss ? draft.second : null;
   const firstPosition: ReferencePosition = second ? (draft.firstOnRight ? 'right' : 'left') : 'center';
   const secondPosition: ReferencePosition = draft.firstOnRight ? 'left' : 'right';
-  const status = moss ? mossStatus : animaStatus;
   const animaInfo = animaStatus.data;
   const animaAdapter = (engine: AnimaReferenceEngine) => animaInfo?.adapters?.[engine] ?? (engine === 'anima_v2' ? animaInfo : undefined);
-  const adapter = animaAdapter(draft.animaEngine);
   const mossInfo = mossStatus.data;
   const settings = moss ? mossSettings(rawSettings, mossInfo) : rawSettings;
   const mossModelChoices: Pick<MossReferenceStatus, 'models' | 'text_encoders' | 'vaes'> =
     mossInfo ?? { models: [], text_encoders: [], vaes: [] };
   const guidance = Number(draft.guidance);
   const validGuidance = moss || snapref || (draft.guidance !== '' && Number.isFinite(guidance) && guidance >= 0 && guidance <= 20);
-  const installed = !!((moss ? mossInfo : adapter)?.ready && catalog?.connected);
   const animaModels = catalog?.connected ? modelsForFamily(catalog, 'anima') : [];
-  const ready = installed && (moss
-    ? mossModelChoices.models.includes(settings.model ?? '')
-      && mossModelChoices.text_encoders.includes(settings.text_encoder ?? '')
-      && mossModelChoices.vaes.includes(settings.vae ?? '')
-    : animaModels.includes(settings.model ?? ''));
-  const validSubjects = !!draft.reference && (!second || (!!second.reference && !!animaInfo?.stitch_ready));
-  const canGenerate = !busy && ready && validSubjects && !pendingAsset && validGuidance && !!draft.positive.trim();
+  const draftReadiness = checkReadiness(family, draft.animaEngine, settings, !!second);
+  const validSubjects = !!draft.reference && (!second || !!second.reference);
+  const canGenerate = !busy && !draftReadiness.reasons.length && validSubjects && !pendingAsset && validGuidance && !!draft.positive.trim();
   const presetChoices = (presets.data ?? []).filter(item =>
     item.service === 'comfyui' && item.family === family && (!moss || supportsMossPreset(item.settings, mossInfo)));
-  const mossFilesUnverified = moss && (mossInfo?.weights_ready === null || mossInfo?.foundation_ready === null);
-  const statusMessages = [
-    !catalog?.connected && t('gen.not_connected'),
-    ...(moss ? [
-      mossInfo?.node_ready === false && t('reference.moss_node_missing'),
-      mossInfo?.edit_node_ready === false && t('reference.moss_edit_node_missing'),
-      mossInfo?.weights_ready === false && t('reference.moss_weights_missing'),
-      mossInfo?.foundation_ready === false && t('reference.moss_foundation_missing'),
-      mossInfo?.node_ready && mossInfo.edit_node_ready
-        && (!mossInfo.models.length || !mossInfo.text_encoders.length || !mossInfo.vaes.length)
-        && t('reference.moss_models_missing'),
-    ] : [
-      !adapter?.node_ready && t(snapref ? 'reference.snapref_node_missing' : 'reference.node_missing'),
-      !adapter?.weights_ready && t(snapref ? 'reference.snapref_weights_missing' : 'reference.weights_missing'),
-    ]),
-  ].filter(Boolean);
+
+  function checkReadiness(targetFamily: ReferenceFamily, engine: AnimaReferenceEngine,
+    choices: Record<string, unknown> | undefined, twoSubjects: boolean, saved = false): Readiness {
+    const isMoss = targetFamily === 'moss';
+    const targetStatus = isMoss ? mossStatus : animaStatus;
+    const reasons: string[] = [];
+    const actions = new Set<ReadinessAction>();
+    const add = (key: string, action: ReadinessAction) => { reasons.push(t(key)); actions.add(action); };
+    const state = { family: targetFamily, reasons, actions };
+    if (catalogQuery.error) {
+      reasons.push(errorText(catalogQuery.error));
+      actions.add('image');
+    } else if (catalogQuery.isPending) return { ...state, reasons: [t('reference.checking_setup')], checking: true };
+    else if (!catalog?.connected) add('gen.not_connected', 'image');
+    if (!catalog?.connected || catalogQuery.error) return state;
+    if (targetStatus.error) return { ...state, reasons: [errorText(targetStatus.error)] };
+    if (targetStatus.isPending) return { ...state, reasons: [t('reference.checking_setup')], checking: true };
+
+    if (isMoss) {
+      if (!mossInfo?.node_ready) add('reference.moss_node_missing', 'moss');
+      if (!mossInfo?.edit_node_ready) add('reference.moss_edit_node_missing', 'update');
+      if (mossInfo?.weights_ready === false) add('reference.moss_weights_missing', 'moss');
+      if (mossInfo?.foundation_ready === false) add('reference.moss_foundation_missing', 'moss');
+      if (mossInfo && !mossInfo.ready && !reasons.length
+        && mossInfo.models.length && mossInfo.text_encoders.length && mossInfo.vaes.length) {
+        add('reference.moss_native_missing', 'update');
+      }
+    } else {
+      const adapter = animaAdapter(engine);
+      if (!adapter?.node_ready) add(engine === 'snapref' ? 'reference.snapref_node_missing' : 'reference.node_missing', 'install');
+      if (!adapter?.weights_ready) add(engine === 'snapref' ? 'reference.snapref_weights_missing' : 'reference.weights_missing', 'install');
+      if (adapter && !adapter.ready && !reasons.length) add('reference.not_ready', 'install');
+      if (twoSubjects && !animaInfo?.stitch_ready) add('reference.stitch_missing', 'update');
+    }
+
+    const components = [
+      { key: 'model', label: 'gen.model', catalogNames: catalog.models, allowed: isMoss ? mossModelChoices.models : animaModels },
+      { key: 'text_encoder', label: 'gen.text_encoder', catalogNames: catalog.text_encoders, allowed: isMoss ? mossModelChoices.text_encoders : catalog.text_encoders },
+      { key: 'vae', label: 'gen.vae', catalogNames: catalog.vaes, allowed: isMoss ? mossModelChoices.vaes : catalog.vaes },
+    ] as const;
+    for (const { key, label, catalogNames, allowed } of components) {
+      const value = choices?.[key];
+      // Anima fills omitted encoder and VAE choices from the connected server when queuing a new draft.
+      if (!saved && !isMoss && key !== 'model' && value === undefined && allowed.length) continue;
+      const selected = typeof value === 'string' ? value : '';
+      const name = saved ? selected : catalogSelection(selected, catalogNames);
+      if (allowed.includes(name) && catalogNames.includes(name)) continue;
+      const component = t(label);
+      if (selected) {
+        reasons.push(t(saved ? 'reference.recorded_component_unavailable' : 'reference.selected_component_unavailable', { component, name: selected }));
+      } else if (!saved && !isMoss && key === 'model') reasons.push(t('reference.choose_anima_model'));
+      else reasons.push(t(saved ? 'reference.recorded_component_missing' : 'reference.choose_component', { component }));
+      if (saved || !allowed.length || selected) actions.add(isMoss ? 'moss' : 'models');
+    }
+    return {
+      ...state,
+      unverified: isMoss && (mossInfo?.weights_ready === null || mossInfo?.foundation_ready === null),
+    };
+  }
+
+  function readinessNotice({ family, reasons, actions, checking, unverified }: Readiness) {
+    if (!reasons.length && !unverified) return null;
+    const targetStatus = family === 'moss' ? mossStatus : animaStatus;
+    return <div className="single-review reference-status" role="status">
+      <div>
+        {reasons.length ? reasons.map(reason => <div key={reason}>{reason}</div>)
+          : <div>{t('reference.moss_files_unverified')}</div>}
+      </div>
+      {!!reasons.length && !checking && <div className="row reference-status-actions">
+        {openSettings && actions.has('image') && <button type="button" onClick={() => openSettings('image')}>{t('gen.open_settings')}</button>}
+        {openSettings && actions.has('install') && <button type="button" onClick={() => openSettings('install')}>{t('reference.open_install')}</button>}
+        {actions.has('models') && <button type="button" onClick={() => openView('models')}>{t('reference.open_models')}</button>}
+        {actions.has('moss') && <a href="https://github.com/Neon3579/MossRef/tree/v2.0.0#install--quick-start" target="_blank" rel="noreferrer">{t('reference.moss_install')}</a>}
+        {actions.has('update') && <a href="https://docs.comfy.org/installation/update_comfyui" target="_blank" rel="noreferrer">{t('reference.comfy_update')}</a>}
+        <button type="button" disabled={targetStatus.isFetching || catalogQuery.isFetching}
+          onClick={() => { void targetStatus.refetch(); void catalogQuery.refetch(); }}>{t('reference.recheck')}</button>
+      </div>}
+    </div>;
+  }
 
   function update(patch: Partial<Draft>) {
     setDraft(current => ({ ...current, ...patch }));
@@ -378,14 +452,11 @@ export default function ImageReference({ workId, openView, openSettings, active 
     : preview === 'result' && run?.image_url ? { url: run.image_url, name: filename(run) } : null;
   const resultReference = run ? usedReference(run) : undefined;
   const resultSubjects = resultReference && 'subjects' in resultReference ? resultReference.subjects : undefined;
-  const resultModel = run?.actual?.settings.model;
   const resultIsMoss = resultReference?.engine === 'mossref';
   const resultAdapter = runAnimaEngine(resultReference);
-  const retryReady = !!catalog?.connected && (resultIsMoss
-    ? !!mossInfo?.ready && (typeof resultModel !== 'string' || mossInfo.models.includes(resultModel))
-    : !!animaAdapter(resultAdapter)?.ready
-      && (!resultSubjects || resultSubjects.length < 2 || !!animaInfo?.stitch_ready)
-      && (typeof resultModel !== 'string' || animaModels.includes(resultModel)));
+  const resultReadiness = resultReference && checkReadiness(
+    resultIsMoss ? 'moss' : 'anima', resultAdapter, run?.actual?.settings, resultSubjects?.length === 2, true);
+  const retryReady = resultReadiness?.reasons.length === 0;
   const resultDetails = run?.status === 'done' && <>
     {resultReference && <dl className="single-result-summary reference-record">
       <div><dt>{t('gen.family')}</dt><dd>{resultIsMoss ? 'MOSS (MossRef)' : 'Anima'}</dd></div>
@@ -405,10 +476,11 @@ export default function ImageReference({ workId, openView, openSettings, active 
       run={run}
       current={{ service: 'comfyui', positive: draft.positive, negative: draft.negative, settings }}
       busy={busy || !resultReference || !run.path}
+      regenerateReadiness={resultReadiness && { blocked: !retryReady, notice: readinessNotice(resultReadiness) }}
       handoffPending={false}
       restore={() => restore(run)}
       regenerate={newSeed => {
-        if (!run.path) return;
+        if (!run.path || !retryReady) return;
         void runAction('regenerate', () => post<{ job_id: string }>(endpoint + '/regenerate', { path: run.path, same_seed: !newSeed }));
       }}
     />
@@ -503,20 +575,6 @@ export default function ImageReference({ workId, openView, openSettings, active 
           </select>
         </label>}
       </div>
-      {status.isPending && <Loading />}
-      {(!installed && !status.isPending) && <div className="single-review reference-status" role="status">
-        <div>
-          <strong>{t('reference.not_ready')}</strong>
-          <div>{status.error ? errorText(status.error) : statusMessages.join(' · ')}</div>
-        </div>
-        <div className="row">
-          {moss && <a href="https://github.com/Neon3579/MossRef/tree/v2.0.0#install--quick-start" target="_blank" rel="noreferrer">{t('reference.moss_install')}</a>}
-          {openSettings && (!moss || !catalog?.connected) && <button type="button" onClick={() => openSettings(catalog?.connected ? 'install' : 'image')}>{t(catalog?.connected ? 'reference.open_install' : 'gen.open_settings')}</button>}
-          <button type="button" disabled={status.isFetching || catalogQuery.isFetching} onClick={() => { void status.refetch(); void catalogQuery.refetch(); }}>{t('reference.recheck')}</button>
-        </div>
-      </div>}
-      {installed && mossFilesUnverified && <p className="warn-text" role="status">{t('reference.moss_files_unverified')}</p>}
-      {installed && !ready && <p className="warn-text" role="status">{t(moss ? 'reference.choose_moss_model' : 'reference.choose_anima_model')}</p>}
       {storageFailed && <p className="warn-text" role="alert">{t('reference.storage_failed')}</p>}
       {error && <p className="warn-text" role="alert">{error}</p>}
       <div className="single-layout">
@@ -553,8 +611,6 @@ export default function ImageReference({ workId, openView, openSettings, active 
                 {t('reference.swap_positions')}
               </button>}
             </div>}
-            {second && !status.isPending && !animaInfo?.stitch_ready
-              && <p role="status" className="warn-text">{t('reference.stitch_missing')}</p>}
             <label className="single-field" htmlFor={id + '-scene'}>
               <span>{t('reference.scene')}</span>
               <textarea id={id + '-scene'} rows={5} value={draft.positive} placeholder={t(moss ? 'reference.moss_scene_hint' : 'reference.scene_hint')} onChange={event => update({ positive: event.target.value })} />
@@ -572,6 +628,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
               </label>
               <p id={id + '-guidance-hint'} className="faint small">{t('reference.guidance_hint')}</p>
             </details>}
+            {readinessNotice(draftReadiness)}
             <div className="row reference-actions">
               <button type="submit" className="primary" disabled={!canGenerate}>{t('single.run')}</button>
               <button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button>
@@ -589,6 +646,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
             </button> : <p className="faint">{t('reference.result_hint')}</p>}
             {run && working(run) && <button type="button" disabled={!!pendingJob || run.status === 'cancelling'}
               onClick={() => void runAction('cancel', async () => { await post('/api/image/jobs/' + q(run.id) + '/cancel'); })}>{t('common.cancel')}</button>}
+            {run && failed(run) && resultReadiness && readinessNotice(resultReadiness)}
             {run && failed(run) && <button type="button" disabled={busy || !retryReady}
               onClick={() => void runAction('retry', async () => {
                 const result = await post<{ job_id: string }>('/api/image/jobs/' + q(run.id) + '/retry');
