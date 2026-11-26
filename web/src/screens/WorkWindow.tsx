@@ -466,6 +466,7 @@ export default function WorkWindow({ workId, active: windowActive = true, onOpen
           <Suspense fallback={<Loading />}>
           <TestScreen
             workId={workId}
+            active={windowActive && testing}
             openItem={(path) => {
               setTesting(false);
               open({ type: 'item', path });
