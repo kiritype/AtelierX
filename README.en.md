@@ -2,6 +2,8 @@
 
 [Download for Windows](https://github.com/kiritype/AtelierX/releases/latest) · [User manual](https://atelierx.cftm.net/) · [Bug reports, ideas and questions](https://github.com/kiritype/AtelierX/discussions)
 
+[![Discord Community](https://img.shields.io/badge/Discord%20Community-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/WVBzAu3FET)
+
 [한국어](README.md) | English
 
 A Windows desktop tool for making role-play chatbots. It keeps each work's main prompt, opening scenes, lorebook,
