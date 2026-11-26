@@ -43,7 +43,7 @@ export default function ImageScreen({
   outfitId?: string;
 }) {
   const content = () => {
-  if (view === 'single') return <ImageSingle workId={workId} openView={openView} active={active} />;
+  if (view === 'single') return <ImageSingle workId={workId} openView={openView} openSettings={openSettings} active={active} />;
   if (view === 'reference') return <ImageReference workId={workId} openView={openView} openSettings={openSettings} active={active} />;
   if (view === 'library') return <ImageLibrary workId={workId} />;
   if (view === 'models') return <ModelsScreen openSettings={openSettings} />;
