@@ -69,7 +69,7 @@ See the [external components guide](https://atelierx.cftm.net/guide/external.htm
 | [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | Background removal | [MIT](https://github.com/cubiq/ComfyUI_essentials/blob/9d9f4bedfc9f0321c19faf71855e228c93bd0dc9/LICENSE) |
 | [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | Detailer | [GPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Pack/blob/429d0159ad429e64d2b3916e6e7be9c22d025c3c/LICENSE.txt) |
 | [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | Detection and detailer | [AGPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Subpack/blob/50c7b71a6a224734cc9b21963c6d1926816a97f1/LICENSE.txt) |
-| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Reference image generation BETA for Anima | [Apache-2.0](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/LICENSE) |
+| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Reference image generation BETA for Anima. AtelierX uses this node to run [SnapRef](https://github.com/ArcAnima/SnapRef) v2a. | [Apache-2.0](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/LICENSE) |
 
 The Anima Ref Adapter node and example workflow are also available as a ZIP for manual installation (`AtelierX-<version>-anima-ref-adapter.zip`). [Release downloads](https://github.com/kiritype/AtelierX/releases)
 

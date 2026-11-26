@@ -66,12 +66,23 @@ ComfyUI and calls the packs above there; it does not include their code.
 
 The separate `AtelierX-<version>-anima-ref-adapter.zip` release asset provides the unmodified runtime
 files and basic workflow from [the pinned ArcAnima commit](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/tree/f02d54dd34593b4d4ce27b38de2a996049aeac58).
-The archive includes the upstream Apache-2.0 license and a credits file. The [Anima Ref Adapter v2 weights](https://huggingface.co/ElectronGirl/anima-ref-adapter)
-and [SnapRef v2a weights](https://huggingface.co/0ppxnhximxr/snapref-v2a/tree/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2)
-are separate optional downloads under the CircleStone Labs Non-Commercial License v1.2.
+The archive includes the upstream Apache-2.0 license and a credits file. The node's
+[`snapref.py`](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/snapref.py)
+adapts the [original SnapRef code](https://github.com/ArcAnima/SnapRef) under [Apache-2.0](https://github.com/ArcAnima/SnapRef/blob/main/LICENSE).
+
+The [Anima Ref Adapter v2 weights](https://huggingface.co/ElectronGirl/anima-ref-adapter) and
+[SnapRef v2a weights](https://huggingface.co/0ppxnhximxr/snapref-v2a/tree/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2)
+are separate optional downloads under the [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md).
 
 Licenses above reflect the metadata published by each project at the time this file was prepared; check the project pages
 for their current terms.
+
+### SnapRef v2a 한국어 안내
+
+AtelierX는 `ComfyUI-Anima-Ref-Adapter` 통합 노드로 SnapRef v2a를 실행합니다. 이 노드의 `snapref.py`는
+[SnapRef 원본 코드](https://github.com/ArcAnima/SnapRef)를 바탕으로 작성됐으며 [Apache-2.0](https://github.com/ArcAnima/SnapRef/blob/main/LICENSE)이 적용됩니다.
+[SnapRef v2a 가중치](https://huggingface.co/0ppxnhximxr/snapref-v2a/tree/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2)는 별도로 내려받으며
+비상업용 이용 조건인 [CircleStone Labs Non-Commercial License v1.2](https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md)가 적용됩니다.
 
 ## Models
 
