@@ -15,16 +15,18 @@ const endpoint = '/api/works/example/image/reference';
 const reference = { id: 'asset', name: 'source.png', url: endpoint + '/assets/asset', sha256: '5'.repeat(64) };
 const secondReference = { id: 'asset-b', name: 'second.png', url: endpoint + '/assets/asset-b', sha256: '6'.repeat(64) };
 const model = 'silvermoonmix.safetensors';
+const animaEncoder = 'qwen_3_06b_base.safetensors';
+const animaVae = 'qwen_image_vae.safetensors';
 const mossModel = 'moss/moss-image-sft-dit-int8-convrot.safetensors';
 const mossEncoder = 'moss-image-sft-qwen35-int8-convrot.safetensors';
 const mossVae = 'moss-image-sft-vae.safetensors';
 const otherMoss = 'moss/unsupported.safetensors';
 const catalog = {
-  connected: true, models: [model, mossModel, otherMoss], text_encoders: [mossEncoder, 'unsupported_encoder.safetensors'],
-  vaes: [mossVae, 'unsupported_vae.safetensors'], loras: [],
+  connected: true, models: [model, mossModel, otherMoss], text_encoders: [animaEncoder, mossEncoder, 'unsupported_encoder.safetensors'],
+  vaes: [animaVae, mossVae, 'unsupported_vae.safetensors'], loras: [],
   samplers: ['euler'], schedulers: ['simple', 'sgm_uniform'], nodes: { moss: true },
   families: { models: { [model]: 'anima', [mossModel]: 'moss', [otherMoss]: 'moss' } },
-  defaults: { family: 'anima', model },
+  defaults: { family: 'anima', model, text_encoder: animaEncoder, vae: animaVae },
 };
 const presets = [
   { id: 'anima', name: 'Silvermoon', service: 'comfyui', family: 'anima', settings: { model, steps: 16 } },
@@ -194,6 +196,46 @@ it('keeps generation disabled when ComfyUI only offers a MOSS model', async () =
   expect(button(t('single.run')).disabled).toBe(true);
 });
 
+it('blocks an Anima draft with stale component selections until the actual selections are replaced', async () => {
+  const staleEncoder = 'old-encoder.safetensors';
+  const staleVae = 'old-vae.safetensors';
+  localStorage.setItem('atelierx-reference-draft-example', JSON.stringify({
+    reference, positive: 'a new scene', settings: { family: 'anima', model, text_encoder: staleEncoder, vae: staleVae },
+  }));
+  await render();
+  const actions = host.querySelector('.single-prompts')!;
+  await vi.waitFor(() => expect(actions.querySelector('.reference-status')?.textContent).toContain(staleEncoder));
+  expect(actions.querySelector('.reference-status')?.textContent).toContain(staleVae);
+  expect(button(t('single.run')).disabled).toBe(true);
+  await act(async () => button(t('reference.open_models')).click());
+  expect(openView).toHaveBeenCalledWith('models');
+
+  const select = (key: string) => host.querySelector<HTMLSelectElement>(`[data-setting="${key}"] select`)!;
+  await changeSelect(select('text_encoder'), animaEncoder);
+  expect(actions.querySelector('.reference-status')?.textContent).not.toContain(staleEncoder);
+  expect(button(t('single.run')).disabled).toBe(true);
+  await changeSelect(select('vae'), animaVae);
+  expect(button(t('single.run')).disabled).toBe(false);
+  await act(async () => button(t('single.run')).click());
+  expect(post).toHaveBeenCalledWith(endpoint + '/queue', expect.objectContaining({
+    settings: expect.objectContaining({ model, text_encoder: animaEncoder, vae: animaVae }),
+  }));
+});
+
+it('explains a lost ComfyUI connection beside generation and rechecks the connection', async () => {
+  localStorage.setItem('atelierx-reference-draft-example', JSON.stringify({ reference, positive: 'new scene' }));
+  qc.setQueryData(['image-catalog'], { ...catalog, connected: false });
+  await render();
+  expect(button(t('single.run')).disabled).toBe(true);
+  expect(host.querySelector('.single-prompts .reference-status')?.textContent).toContain(t('gen.not_connected'));
+  await act(async () => button(t('gen.open_settings')).click());
+  expect(openSettings).toHaveBeenCalledWith('image');
+  await vi.waitFor(() => expect(button(t('reference.recheck')).disabled).toBe(false));
+  await act(async () => button(t('reference.recheck')).click());
+  expect(get).toHaveBeenCalledWith('/api/image/catalog');
+  await vi.waitFor(() => expect(button(t('single.run')).disabled).toBe(false));
+});
+
 it('keeps the legacy Anima draft and queues one MOSS reference with supported settings', async () => {
   localStorage.setItem('atelierx-reference-draft-example', JSON.stringify({
     positive: 'standing by the sea', negative: 'blur', settings: { family: 'anima', model, steps: 16 },
@@ -251,7 +293,10 @@ it('distinguishes missing local files from unverified remote files', async () =>
 
 it('retries a saved MOSS run from the Anima draft even if Anima is unavailable', async () => {
   status = { ready: false, node_ready: false, weights_ready: false };
-  const actual = { positive: 'new scene', negative: '', settings: { family: 'moss', model: mossModel } };
+  const actual = {
+    positive: 'new scene', negative: '',
+    settings: { family: 'moss', model: mossModel, text_encoder: mossEncoder, vae: mossVae },
+  };
   history = [{
     id: 'moss-job', created_at: '2026-11-26', status: 'failed', service: 'comfyui', seed: 8,
     reference: { ...reference, engine: 'mossref' }, actual, request: { ...actual, service: 'comfyui', preset_id: '' },
@@ -268,7 +313,10 @@ it('retries a saved MOSS run from the Anima draft even if Anima is unavailable',
 
 it('restores a MossRef result and sends its saved path for regeneration and export', async () => {
   const path = '_single/example/result.png';
-  const actual = { positive: 'a scene from Picture 1', negative: '', settings: { family: 'moss', model: mossModel, seed: 21 } };
+  const actual = {
+    positive: 'a scene from Picture 1', negative: '',
+    settings: { family: 'moss', model: mossModel, text_encoder: mossEncoder, vae: mossVae, seed: 21 },
+  };
   history = [{
     id: 'result', created_at: '2026-11-26', status: 'done', service: 'comfyui', seed: 21, path,
     reference: { ...reference, engine: 'mossref' }, actual, request: { ...actual, service: 'comfyui', preset_id: '' },
@@ -282,6 +330,7 @@ it('restores a MossRef result and sends its saved path for regeneration and expo
   await vi.waitFor(() => expect(button(t('single.restore')).disabled).toBe(false));
   expect(button('Anima').getAttribute('aria-pressed')).toBe('true');
 
+  await vi.waitFor(() => expect(button(t('single.regenerate')).disabled).toBe(false));
   await act(async () => button(t('single.regenerate')).click());
   expect(post).toHaveBeenCalledWith(endpoint + '/regenerate', { path, same_seed: true });
   await act(async () => button(t('single.restore')).click());
@@ -289,6 +338,66 @@ it('restores a MossRef result and sends its saved path for regeneration and expo
   expect(host.querySelector<HTMLTextAreaElement>('textarea[id$="-scene"]')?.value).toBe('a scene from Picture 1');
   await act(async () => button(t('gallery.download_zip')).click());
   expect(copy).toHaveBeenCalledWith(endpoint + '/export?path=' + encodeURIComponent(path) + '&include_reference=false', { credentials: 'same-origin' });
+});
+
+it('checks the selected saved adapter and Stitch independently of the ready draft', async () => {
+  localStorage.setItem('atelierx-reference-draft-example', JSON.stringify({ reference, positive: 'different scene' }));
+  const path = '_single/example/snapref.png';
+  const actual = {
+    positive: 'two people', negative: '',
+    settings: { family: 'anima', model, text_encoder: animaEncoder, vae: animaVae, seed: 17 },
+  };
+  const savedInputs = {
+    id: 'snap-result', created_at: '2026-11-26', service: 'comfyui', seed: 17, path, actual,
+    request: { ...actual, service: 'comfyui', preset_id: '' },
+    reference: { engine: 'snapref', scene: 'two people', subjects: [
+      { ...reference, slot: 'a', position: 'left' }, { ...secondReference, slot: 'b', position: 'right' },
+    ] },
+  } as const;
+  history = [{ ...savedInputs, status: 'done', reference: { ...savedInputs.reference, subjects: [...savedInputs.reference.subjects] } }];
+  qc.setQueryData(['image-reference-runs', 'example'], { runs: history });
+  status = { ...status, stitch_ready: false, adapters: {
+    anima_v2: adapterReady, snapref: { ready: false, node_ready: true, weights_ready: false },
+  } };
+  vi.mocked(post).mockResolvedValue({ job_id: 'regenerated' });
+  await render();
+  await vi.waitFor(() => expect(button(t('single.run')).disabled).toBe(false));
+  const result = host.querySelector('.single-result')!;
+  expect(result.textContent).toContain(t('reference.snapref_weights_missing'));
+  expect(result.textContent).toContain(t('reference.stitch_missing'));
+  expect(button(t('single.regenerate')).disabled).toBe(true);
+  expect(button(t('single.result_new_seed')).disabled).toBe(true);
+  expect(button(t('single.restore')).disabled).toBe(false);
+  expect(button(t('gallery.download_zip')).disabled).toBe(false);
+  await act(async () => button(t('reference.open_install')).click());
+  expect(openSettings).toHaveBeenCalledWith('install');
+
+  status = { ...status, adapters: { anima_v2: adapterReady, snapref: adapterReady } };
+  await act(async () => button(t('reference.recheck')).click());
+  await vi.waitFor(() => expect(result.textContent).not.toContain(t('reference.snapref_weights_missing')));
+  expect(button(t('single.regenerate')).disabled).toBe(true);
+  status = { ...status, stitch_ready: true };
+  await act(async () => button(t('reference.recheck')).click());
+  await vi.waitFor(() => expect(button(t('single.result_new_seed')).disabled).toBe(false));
+  expect(button(t('single.regenerate')).disabled).toBe(false);
+  await act(async () => button(t('single.result_new_seed')).click());
+  expect(post).toHaveBeenCalledWith(endpoint + '/regenerate', { path, same_seed: false });
+});
+
+it('shows missing frozen components beside retry even while the draft is ready', async () => {
+  localStorage.setItem('atelierx-reference-draft-example', JSON.stringify({ reference, positive: 'different scene' }));
+  const unavailable = 'lost-vae.safetensors';
+  const actual = { positive: 'original scene', negative: '', settings: { family: 'moss', model: mossModel, text_encoder: mossEncoder, vae: unavailable } };
+  history = [{
+    id: 'failed-result', created_at: '2026-11-26', status: 'failed', service: 'comfyui', seed: 7,
+    reference: { ...reference, engine: 'mossref' }, actual, request: { ...actual, service: 'comfyui', preset_id: '' },
+  }];
+  qc.setQueryData(['image-reference-runs', 'example'], { runs: history });
+  await render();
+  await vi.waitFor(() => expect(button(t('single.run')).disabled).toBe(false));
+  expect(host.querySelector('.single-result .reference-status')?.textContent).toContain(unavailable);
+  expect(button(t('single.retry')).disabled).toBe(true);
+  expect(post).not.toHaveBeenCalled();
 });
 
 it('adds a second SnapRef subject from the gallery and swaps only their positions', async () => {
@@ -379,7 +488,10 @@ it.each([false, true])('restores a v8 scene and pair with preset applied: %s', a
 });
 
 it('restores a legacy Anima result as one subject and preserves its guidance', async () => {
-  const actual = { positive: 'legacy scene', negative: '', settings: { family: 'anima', model, seed: 7 } };
+  const actual = {
+    positive: 'legacy scene', negative: '',
+    settings: { family: 'anima', model, text_encoder: animaEncoder, vae: animaVae, seed: 7 },
+  };
   history = [{
     id: 'legacy', created_at: '2026-11-26', status: 'done', service: 'comfyui', seed: 7, path: '_single/example/legacy.png',
     reference: { ...reference, guidance: 7 }, actual, request: { ...actual, service: 'comfyui', preset_id: '' },
@@ -388,6 +500,7 @@ it('restores a legacy Anima result as one subject and preserves its guidance', a
   await render();
   await act(async () => button(t('reference.add_subject')).click());
   await changeSelect(host.querySelector<HTMLSelectElement>('.reference-adapter select')!, 'snapref');
+  await vi.waitFor(() => expect(button(t('single.regenerate')).disabled).toBe(false));
   await act(async () => button(t('single.restore')).click());
   expect(host.querySelector<HTMLSelectElement>('.reference-adapter select')?.value).toBe('anima_v2');
   expect(host.querySelector<HTMLInputElement>('.reference-guidance input')?.value).toBe('7');

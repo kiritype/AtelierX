@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { t } from '../../i18n';
 import type { SingleRun, SingleService } from '../../imageTypes';
 import { SERVICE_NAMES } from './serviceSettings';
@@ -18,7 +19,7 @@ const settingLabels: Record<string, string> = {
   cfg: 'single.result_cfg', cfg_scale: 'single.result_cfg', scale: 'single.result_cfg',
 };
 
-export default function SingleResultDetails({ run, current, restoredSources = [], busy, handoffPending, restore, regenerate, handoff }: {
+export default function SingleResultDetails({ run, current, restoredSources = [], busy, handoffPending, restore, regenerate, regenerateReadiness, handoff }: {
   run: SingleRun;
   current: SingleInput;
   restoredSources?: ResultPromptSource[];
@@ -26,6 +27,7 @@ export default function SingleResultDetails({ run, current, restoredSources = []
   handoffPending: boolean;
   restore: () => void;
   regenerate: (newSeed: boolean) => void;
+  regenerateReadiness?: { blocked: boolean; notice: ReactNode };
   handoff?: (target: 'tools' | 'lab') => void;
 }) {
   const actual = run.actual;
@@ -66,7 +68,7 @@ export default function SingleResultDetails({ run, current, restoredSources = []
     })),
   ] : [];
   const cannotRestore = busy || !actual || !run.service;
-  const cannotGenerate = cannotRestore || !actual?.positive.trim();
+  const cannotGenerate = cannotRestore || !actual?.positive.trim() || regenerateReadiness?.blocked;
   const compareReason = run.service !== 'comfyui' ? 'single.compare_comfy_only'
     : !run.path ? 'single.result_no_file' : !actual ? 'single.result_no_settings' : '';
 
@@ -95,8 +97,9 @@ export default function SingleResultDetails({ run, current, restoredSources = []
         <button type="button" disabled={cannotGenerate || seed === undefined} onClick={() => regenerate(false)}>{t('single.regenerate')}</button>
         <button type="button" disabled={cannotGenerate} onClick={() => regenerate(true)}>{t('single.result_new_seed')}</button>
       </div>
-      <p className="faint small">{!actual ? t('single.result_no_settings') : busy ? t('single.result_busy')
-        : !run.service ? t('single.result_no_service') : !actual.positive.trim() ? t('single.result_no_prompt') : seed === undefined ? t('single.result_no_seed') : t('single.result_seed_note')}</p>
+      {regenerateReadiness?.notice}
+      {!regenerateReadiness?.blocked && <p className="faint small">{!actual ? t('single.result_no_settings') : busy ? t('single.result_busy')
+        : !run.service ? t('single.result_no_service') : !actual.positive.trim() ? t('single.result_no_prompt') : seed === undefined ? t('single.result_no_seed') : t('single.result_seed_note')}</p>}
     </div>
     {handoff && <div className="single-result-group" role="group" aria-label={t('single.result_next_group')}>
       <h4>{t('single.result_next_group')}</h4>
