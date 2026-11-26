@@ -132,11 +132,18 @@ Positive·Negative를 제출하며, 서비스별 기존 어댑터가 유효성 �
 
 ## 참조 이미지로 생성 BETA (#336, #358)
 
-- 작품의 **이미지 → 참조 이미지로 생성 BETA**, 갤러리 목록의 단일 선택, 갤러리 상세에서 연다. ComfyUI의 Anima와 MOSS-Image-SFT에서 참조 한 장을 지원한다.
-- 참조는 작품에 원본으로 보관한다. 장면 프롬프트, 생성 설정, 어댑터와 참조를 대기열에 고정한다. 실패 재시도와 같은 시드 재생성은 원래 모델 계열과 참조를 쓴다.
-- Anima v2는 LoRA와 모델 보정 뒤, 첫 샘플러 앞에 연결한다. MOSS는 한 이미지를 `TextEncodeMOSSImageEdit`와 `MossRefApply` 양쪽에 연결하고 참조가 적용된 모델 및 positive conditioning을 첫 샘플러에 넘긴다. 공식 단일 참조의 `auto` 역할을 사용한다.
+- 작품의 **이미지 → 참조 이미지로 생성 BETA**, 갤러리 목록의 단일 선택, 갤러리 상세에서 연다. ComfyUI의 Anima는
+  Anima Ref Adapter v2와 SnapRef v2a 중 하나를 고르고 한 명 또는 두 명에게 참조를 배정한다. MOSS-Image-SFT는 참조 한 장을 쓴다.
+- 참조는 작품에 원본으로 보관한다. 장면과 인물별 설명, 좌우 위치, 최종 프롬프트, 생성 설정 및 어댑터를 대기열에 고정한다.
+  실패 재시도와 같은 시드 재생성은 원래 모델 계열과 참조를 쓴다.
+- Anima는 LoRA와 모델 보정 뒤, 첫 샘플러 앞에 같은 `AnimaRefAdapter` 노드를 연결한다. SnapRef v2a를 고르면
+  `CLIP`을 함께 연결하고 캐릭터와 그림체 또는 캐릭터 모드를 전달한다. 두 명이면 `ImageStitch`가 두 원본을 좌우로
+  합치고 프롬프트가 각 인물의 위치를 유도한다. 출력에서는 인물의 위치나 외형·의상·그림체가 섞일 수 있다.
+  [어댑터 비교 조사](https://github.com/kiritype/AtelierX/issues/359)
+- MOSS는 한 이미지를 `TextEncodeMOSSImageEdit`와 `MossRefApply` 양쪽에 연결하고 참조가 적용된 모델 및
+  positive conditioning을 첫 샘플러에 넘긴다. 공식 단일 참조의 `auto` 역할을 사용한다.
 - ComfyUI 0.45.0과 RTX 4090에서 SFT·Qwen3.5 9B INT8 convrot, Flux2 VAE, MossRef v2.0.0 조합으로 실제 생성을 확인했다. 앱의 결과 PNG와 재현용 ZIP을 읽고, ComfyUI 편집기에서 워크플로를 열어 참조 연결을 확인했다.
-- PNG에 실행 그래프와 편집용 워크플로가 들어간다. 재현용 ZIP에서 참조 원본 첨부 여부를 선택할 수 있다. [참조 생성 안내](../manual/guide/reference-generation.md)
+- PNG에 실행 그래프와 편집용 워크플로가 들어간다. 재현용 ZIP에 원본 첨부를 고르면 사용한 참조 원본을 각각 넣는다. [참조 생성 안내](../manual/guide/reference-generation.md)
 
 ## 화면
 

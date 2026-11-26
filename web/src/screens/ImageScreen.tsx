@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import ImageBoard from '../components/image/ImageBoard';
 import ImageGallery from '../components/image/ImageGallery';
 import ImageGenerate from '../components/image/ImageGenerate';
@@ -14,7 +15,7 @@ import ModelsScreen from '../components/image/ModelsScreen';
 import { t } from '../i18n';
 import type { ImageView } from '../types';
 import { imageFlow } from '../lib/imageNavigation';
-import { sendReferenceHandoff } from '../lib/referenceHandoff';
+import { clearReferenceGalleryRequest, sendReferenceHandoff } from '../lib/referenceHandoff';
 
 // Image module screens (decision 0018). Views not ported yet say what is coming.
 export default function ImageScreen({
@@ -42,6 +43,19 @@ export default function ImageScreen({
   characterId?: string;
   outfitId?: string;
 }) {
+  const galleryActivation = useRef<symbol | null>(null);
+  useEffect(() => {
+    if (!active || view !== 'gallery') return;
+    const activation = Symbol();
+    galleryActivation.current = activation;
+    return () => {
+      // A development StrictMode remount keeps the gallery request active.
+      queueMicrotask(() => {
+        if (galleryActivation.current === activation) clearReferenceGalleryRequest(workId);
+      });
+    };
+  }, [active, view, workId]);
+
   const content = () => {
   if (view === 'single') return <ImageSingle workId={workId} openView={openView} openSettings={openSettings} active={active} />;
   if (view === 'reference') return <ImageReference workId={workId} openView={openView} openSettings={openSettings} active={active} />;

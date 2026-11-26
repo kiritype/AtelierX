@@ -43,9 +43,12 @@ The upstream files in this archive are unmodified and distributed under Apache-2
 The full license is in LICENSE.
 
 Unpack the node folder into ComfyUI/custom_nodes and restart ComfyUI.
-Install the adapter weights separately from https://huggingface.co/ElectronGirl/anima-ref-adapter
-under the CircleStone Non-Commercial License. Open workflows/anima_ref_adapter.json
-in ComfyUI and select your own reference image in Load Image.
+Put the weights for the selected adapter in ComfyUI/models/loras.
+Anima Ref Adapter v2 is available at https://huggingface.co/ElectronGirl/anima-ref-adapter
+and SnapRef v2a at https://huggingface.co/0ppxnhximxr/snapref-v2a.
+Both weight downloads use the CircleStone Labs Non-Commercial License v1.2.
+For the bundled Anima v2 example, open workflows/anima_ref_adapter.json in ComfyUI
+and select your own reference image in Load Image.
 """
     credits_bytes = credits.encode('utf-8')
     members = {f'{prefix}/{path}': digest for path, digest in UPSTREAM.items()}

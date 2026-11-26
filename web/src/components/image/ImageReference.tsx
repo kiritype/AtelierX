@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ApiError, get, notifyUnauthorized, post, q } from '../../api';
-import type { MossReferenceStatus, ReferenceAsset, ReferenceSnapshot, ReferenceStatus, SingleRun, SingleRuns } from '../../imageTypes';
+import type {
+  AnimaReferenceEngine, AnimaReferenceStatus, MossReferenceStatus, ReferenceAsset,
+  ReferencePosition, ReferenceSlot, ReferenceSnapshot, SingleRun, SingleRuns, SnapRefMode,
+} from '../../imageTypes';
 import { msgText, t, tm } from '../../i18n';
 import { settingsFromPreset } from '../../lib/presetSettings';
-import { takeReferenceHandoff } from '../../lib/referenceHandoff';
+import { pickReferenceFromGallery, takeReferenceHandoff } from '../../lib/referenceHandoff';
 import { editablePrompt } from '../../lib/singlePromptSources';
 import type { ImageView } from '../../types';
 import { useUnsaved } from '../Unsaved';
@@ -19,6 +22,7 @@ import './ImageReference.css';
 type Preset = { id: string; name: string; service: string; family: string; settings: GenerationSettings };
 type ReferenceFamily = 'anima' | 'moss';
 type FamilyDraft = { settings: GenerationSettings; preset: string };
+type SecondSubject = { reference: ReferenceAsset | null; description: string };
 type Draft = {
   positive: string;
   negative: string;
@@ -26,12 +30,18 @@ type Draft = {
   parameters: Record<ReferenceFamily, FamilyDraft>;
   reference: ReferenceAsset | null;
   guidance: string;
+  animaEngine: AnimaReferenceEngine;
+  snaprefMode: SnapRefMode;
+  description: string;
+  second: SecondSubject | null;
+  firstOnRight: boolean;
 };
 const mossDefaults: GenerationSettings = {
   ...FAMILY_DEFAULTS.moss, family: 'moss', steps: 35, cfg: 3.5, scheduler: 'sgm_uniform', seed: -1, shift: undefined, moss_slg: false, loras: [],
 };
 const initialDraft = (): Draft => ({
   positive: '', negative: '', family: 'anima', reference: null, guidance: '4.5',
+  animaEngine: 'anima_v2', snaprefMode: 'cs', description: '', second: null, firstOnRight: false,
   parameters: {
     anima: { settings: { ...FAMILY_DEFAULTS.anima, family: 'anima', seed: -1 }, preset: '' },
     moss: { settings: mossDefaults, preset: '' },
@@ -43,6 +53,16 @@ const usedReference = (run: SingleRun): ReferenceSnapshot | undefined => run.ref
 const errorText = (error: unknown) => error instanceof ApiError ? tm(error.msg) : String(error);
 const filename = (run: SingleRun) => run.path?.split('/').pop() || run.id;
 const draftKey = (workId: string) => 'atelierx-reference-draft-' + workId;
+const adapterName = { anima_v2: 'Anima Ref Adapter v2', snapref: 'SnapRef v2a' };
+const emptySubject = (): SecondSubject => ({ reference: null, description: '' });
+
+function runAnimaEngine(reference?: ReferenceSnapshot): AnimaReferenceEngine {
+  return reference?.engine === 'snapref' ? 'snapref' : 'anima_v2';
+}
+
+function subjectPositionKey(position: ReferencePosition) {
+  return 'reference.position_' + position;
+}
 
 function loadDraft(workId: string): Draft {
   const initial = initialDraft();
@@ -54,6 +74,11 @@ function loadDraft(workId: string): Draft {
       negative: saved.negative ?? initial.negative,
       reference: saved.reference ?? initial.reference,
       guidance: saved.guidance ?? initial.guidance,
+      animaEngine: saved.animaEngine === 'snapref' ? 'snapref' : 'anima_v2',
+      snaprefMode: saved.snaprefMode === 'char' ? 'char' : 'cs',
+      description: saved.description ?? initial.description,
+      second: saved.second ?? initial.second,
+      firstOnRight: saved.firstOnRight === true,
       family: saved.family === 'moss' ? 'moss' : 'anima',
       parameters: {
         anima: {
@@ -108,22 +133,23 @@ export default function ImageReference({ workId, openView, openSettings, active 
 }) {
   const id = useId();
   const fileInput = useRef<HTMLInputElement>(null);
+  const fileSlot = useRef<ReferenceSlot>('a');
   const assetRequest = useRef(0);
   const endpoint = '/api/works/' + q(workId) + '/image/reference';
   const [draft, setDraft] = useState(() => loadDraft(workId));
   const [storageFailed, setStorageFailed] = useState(false);
   const [error, setError] = useState('');
-  const [pendingAsset, setPendingAsset] = useState(false);
+  const [pendingAsset, setPendingAsset] = useState<ReferenceSlot | null>(null);
   const [pendingJob, setPendingJob] = useState('');
   const [selectedRunId, setSelectedRunId] = useState('');
-  const [preview, setPreview] = useState<'reference' | 'result' | null>(null);
+  const [preview, setPreview] = useState<ReferenceSlot | 'result' | null>(null);
   const [includeReference, setIncludeReference] = useState(false);
   const [exporting, setExporting] = useState(false);
   const catalogQuery = useCatalog();
   const catalog = catalogQuery.data;
-  const animaStatus = useQuery<ReferenceStatus>({
+  const animaStatus = useQuery<AnimaReferenceStatus>({
     queryKey: ['image-reference-status'],
-    queryFn: () => get('/api/image/reference/status'),
+    queryFn: () => get('/api/image/reference/status?family=anima'),
     enabled: active,
     staleTime: 0,
   });
@@ -149,21 +175,29 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const { family } = draft;
   const { preset, settings: rawSettings } = draft.parameters[family];
   const moss = family === 'moss';
+  const snapref = !moss && draft.animaEngine === 'snapref';
+  const second = !moss ? draft.second : null;
+  const firstPosition: ReferencePosition = second ? (draft.firstOnRight ? 'right' : 'left') : 'center';
+  const secondPosition: ReferencePosition = draft.firstOnRight ? 'left' : 'right';
   const status = moss ? mossStatus : animaStatus;
+  const animaInfo = animaStatus.data;
+  const animaAdapter = (engine: AnimaReferenceEngine) => animaInfo?.adapters?.[engine] ?? (engine === 'anima_v2' ? animaInfo : undefined);
+  const adapter = animaAdapter(draft.animaEngine);
   const mossInfo = mossStatus.data;
   const settings = moss ? mossSettings(rawSettings, mossInfo) : rawSettings;
   const mossModelChoices: Pick<MossReferenceStatus, 'models' | 'text_encoders' | 'vaes'> =
     mossInfo ?? { models: [], text_encoders: [], vaes: [] };
   const guidance = Number(draft.guidance);
-  const validGuidance = moss || (draft.guidance !== '' && Number.isFinite(guidance) && guidance >= 0 && guidance <= 20);
-  const installed = !!(status.data?.ready && catalog?.connected);
+  const validGuidance = moss || snapref || (draft.guidance !== '' && Number.isFinite(guidance) && guidance >= 0 && guidance <= 20);
+  const installed = !!((moss ? mossInfo : adapter)?.ready && catalog?.connected);
   const animaModels = catalog?.connected ? modelsForFamily(catalog, 'anima') : [];
   const ready = installed && (moss
     ? mossModelChoices.models.includes(settings.model ?? '')
       && mossModelChoices.text_encoders.includes(settings.text_encoder ?? '')
       && mossModelChoices.vaes.includes(settings.vae ?? '')
     : animaModels.includes(settings.model ?? ''));
-  const canGenerate = !busy && ready && !!draft.reference && !pendingAsset && validGuidance && !!draft.positive.trim();
+  const validSubjects = !!draft.reference && (!second || (!!second.reference && !!animaInfo?.stitch_ready));
+  const canGenerate = !busy && ready && validSubjects && !pendingAsset && validGuidance && !!draft.positive.trim();
   const presetChoices = (presets.data ?? []).filter(item =>
     item.service === 'comfyui' && item.family === family && (!moss || supportsMossPreset(item.settings, mossInfo)));
   const mossFilesUnverified = moss && (mossInfo?.weights_ready === null || mossInfo?.foundation_ready === null);
@@ -178,8 +212,8 @@ export default function ImageReference({ workId, openView, openSettings, active 
         && (!mossInfo.models.length || !mossInfo.text_encoders.length || !mossInfo.vaes.length)
         && t('reference.moss_models_missing'),
     ] : [
-      !animaStatus.data?.node_ready && t('reference.node_missing'),
-      !animaStatus.data?.weights_ready && t('reference.weights_missing'),
+      !adapter?.node_ready && t(snapref ? 'reference.snapref_node_missing' : 'reference.node_missing'),
+      !adapter?.weights_ready && t(snapref ? 'reference.snapref_weights_missing' : 'reference.weights_missing'),
     ]),
   ].filter(Boolean);
 
@@ -195,7 +229,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
       setStorageFailed(true);
     }
   }, [workId, draft]);
-  useUnsaved('reference-draft', storageFailed || pendingAsset);
+  useUnsaved('reference-draft', storageFailed || !!pendingAsset);
 
   useEffect(() => {
     if (!catalog?.connected) return;
@@ -211,26 +245,30 @@ export default function ImageReference({ workId, openView, openSettings, active 
     });
   }, [catalog]);
 
-  const addAsset = useCallback(async (source: File | string) => {
+  const addAsset = useCallback(async (source: File | string, slot: ReferenceSlot) => {
     const selection = ++assetRequest.current;
-    setPendingAsset(true);
+    setPendingAsset(slot);
     setError('');
     try {
       if (typeof source !== 'string' && source.size > 32 * 1024 * 1024) throw new Error(t('server.reference.invalid_image'));
       const body = typeof source === 'string' ? { gallery_path: source } : { data_url: await fileData(source), filename: source.name };
       const reference = await post<ReferenceAsset>(endpoint + '/assets', body);
-      if (selection === assetRequest.current) setDraft(current => ({ ...current, reference }));
+      if (selection === assetRequest.current) {
+        setDraft(current => slot === 'a'
+          ? { ...current, reference }
+          : { ...current, second: { ...(current.second ?? emptySubject()), reference } });
+      }
     } catch (err) {
       if (selection === assetRequest.current) setError(errorText(err));
     } finally {
-      if (selection === assetRequest.current) setPendingAsset(false);
+      if (selection === assetRequest.current) setPendingAsset(null);
     }
   }, [endpoint]);
 
   useEffect(() => {
     if (!active) return;
-    const galleryPath = takeReferenceHandoff(workId);
-    if (galleryPath) void addAsset(galleryPath);
+    const handoff = takeReferenceHandoff(workId);
+    if (handoff) void addAsset(handoff.path, handoff.slot);
   }, [active, workId, addAsset]);
 
   function choosePreset(presetId: string) {
@@ -268,10 +306,16 @@ export default function ImageReference({ workId, openView, openSettings, active 
   function enqueue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canGenerate || !draft.reference) return;
+    const first = { slot: 'a', id: draft.reference.id, position: firstPosition, description: draft.description.trim() || undefined };
+    const subjects = second?.reference
+      ? [first, { slot: 'b', id: second.reference.id, position: secondPosition, description: second.description.trim() || undefined }]
+      : [first];
     const body = {
       service: 'comfyui', positive: draft.positive, negative: draft.negative,
       preset_id: presetChoices.some(item => item.id === preset) ? preset : undefined, settings,
-      reference: moss ? { id: draft.reference.id, engine: 'mossref' } : { id: draft.reference.id, guidance },
+      reference: moss ? { id: draft.reference.id, engine: 'mossref' } : {
+        engine: draft.animaEngine, subjects, ...(snapref ? { snapref_mode: draft.snaprefMode } : { guidance }),
+      },
     };
     void runAction('generate', () => post<{ job_id: string }>(endpoint + '/queue', body));
   }
@@ -281,17 +325,28 @@ export default function ImageReference({ workId, openView, openSettings, active 
     if (!reference || !selected.actual) return;
     const family = reference.engine === 'mossref' ? 'moss' : 'anima';
     const actual = selected.actual;
+    const first = 'subjects' in reference ? reference.subjects.find(item => item.slot === 'a') : reference;
+    const second = 'subjects' in reference ? reference.subjects.find(item => item.slot === 'b') : undefined;
+    if (!first) return;
+    const scene = 'scene' in reference ? reference.scene_prompt ?? reference.scene : actual.positive;
     setDraft(current => ({
       ...current,
-      positive: editablePrompt(actual.positive),
+      positive: editablePrompt(scene),
       negative: editablePrompt(actual.negative),
       family,
       parameters: {
         ...current.parameters,
         [family]: { settings: { ...resultSettings(selected), family }, preset: '' },
       },
-      reference,
-      guidance: reference.engine === 'mossref' ? current.guidance : String(reference.guidance),
+      reference: first,
+      ...(reference.engine !== 'mossref' && {
+        animaEngine: runAnimaEngine(reference),
+        snaprefMode: reference.engine === 'snapref' ? reference.snapref_mode ?? 'cs' : current.snaprefMode,
+        description: 'subjects' in reference ? reference.subjects.find(item => item.slot === 'a')?.description ?? '' : '',
+        second: second ? { reference: second, description: second.description ?? '' } : null,
+        firstOnRight: 'position' in first && first.position === 'right',
+        guidance: typeof reference.guidance === 'number' ? String(reference.guidance) : current.guidance,
+      }),
     }));
   }
 
@@ -319,20 +374,32 @@ export default function ImageReference({ workId, openView, openSettings, active 
     }
   }
 
-  const previewImage = preview === 'reference' ? draft.reference
+  const previewImage = preview === 'a' ? draft.reference : preview === 'b' ? second?.reference
     : preview === 'result' && run?.image_url ? { url: run.image_url, name: filename(run) } : null;
   const resultReference = run ? usedReference(run) : undefined;
+  const resultSubjects = resultReference && 'subjects' in resultReference ? resultReference.subjects : undefined;
   const resultModel = run?.actual?.settings.model;
   const resultIsMoss = resultReference?.engine === 'mossref';
+  const resultAdapter = runAnimaEngine(resultReference);
   const retryReady = !!catalog?.connected && (resultIsMoss
     ? !!mossInfo?.ready && (typeof resultModel !== 'string' || mossInfo.models.includes(resultModel))
-    : !!animaStatus.data?.ready && (typeof resultModel !== 'string' || animaModels.includes(resultModel)));
+    : !!animaAdapter(resultAdapter)?.ready
+      && (!resultSubjects || resultSubjects.length < 2 || !!animaInfo?.stitch_ready)
+      && (typeof resultModel !== 'string' || animaModels.includes(resultModel)));
   const resultDetails = run?.status === 'done' && <>
     {resultReference && <dl className="single-result-summary reference-record">
-      <div><dt>{t('reference.image')}</dt><dd>{resultReference.name}</dd></div>
       <div><dt>{t('gen.family')}</dt><dd>{resultIsMoss ? 'MOSS (MossRef)' : 'Anima'}</dd></div>
-      {resultReference.engine !== 'mossref' && <div><dt>{t('reference.guidance')}</dt><dd>{resultReference.guidance}</dd></div>}
-      <div><dt>SHA-256</dt><dd className="mono">{resultReference.sha256}</dd></div>
+      {!resultIsMoss && <div><dt>{t('reference.adapter')}</dt><dd>{adapterName[resultAdapter]}</dd></div>}
+      {resultReference.engine === 'snapref' && <div><dt>{t('reference.snapref_mode')}</dt><dd>{t(resultReference.snapref_mode === 'char' ? 'reference.snapref_char' : 'reference.snapref_cs')}</dd></div>}
+      {resultReference.engine !== 'mossref' && resultReference.guidance !== undefined
+        && <div><dt>{t('reference.guidance')}</dt><dd>{resultReference.guidance}</dd></div>}
+      {'subjects' in resultReference ? resultReference.subjects.map(subject => <div key={subject.slot}>
+        <dt>{t(subject.slot === 'a' ? 'reference.subject_a' : 'reference.subject_b')} · {t(subjectPositionKey(subject.position))}</dt>
+        <dd>{subject.name}{subject.description ? ' · ' + subject.description : ''}<br /><span className="mono">SHA-256 {subject.sha256}</span></dd>
+      </div>) : <>
+        <div><dt>{t('reference.image')}</dt><dd>{resultReference.name}</dd></div>
+        <div><dt>SHA-256</dt><dd className="mono">{resultReference.sha256}</dd></div>
+      </>}
     </dl>}
     <SingleResultDetails
       run={run}
@@ -348,11 +415,58 @@ export default function ImageReference({ workId, openView, openSettings, active 
     {run.path && <div className="single-result-group col">
       <h4>{t('reference.export')}</h4>
       <label className="row"><input type="checkbox" checked={includeReference} onChange={event => setIncludeReference(event.target.checked)} />
-        {t('reference.include_original')}
+        {t(resultSubjects && resultSubjects.length > 1 ? 'reference.include_originals' : 'reference.include_original')}
       </label>
       <div><button type="button" disabled={exporting} onClick={() => void download(run.path!)}>{t('gallery.download_zip')}</button></div>
     </div>}
   </>;
+
+  function renderReference(slot: ReferenceSlot, asset: ReferenceAsset | null, description: string, position: ReferencePosition) {
+    const title = t(second ? (slot === 'a' ? 'reference.subject_a' : 'reference.subject_b') : 'reference.image');
+    return <section key={slot} id={slot === 'b' ? id + '-second' : undefined} className="reference-card" data-slot={slot}
+      aria-labelledby={id + '-subject-' + slot} aria-describedby={second ? id + '-position-' + slot : undefined}>
+      {asset && <button type="button" className="reference-preview" aria-haspopup="dialog"
+        aria-label={t('reference.open_preview', { name: asset.name })} onClick={event => {
+          event.currentTarget.focus();
+          setPreview(slot);
+        }}>
+        <img src={asset.url} alt="" />
+      </button>}
+      <div className="col">
+        <div className="row">
+          <h3 id={id + '-subject-' + slot}>{title}</h3>
+          {second && <span id={id + '-position-' + slot} className="muted small">{t(subjectPositionKey(position))}</span>}
+        </div>
+        {asset ? <strong>{asset.name}</strong> : <span className="faint">{t('reference.choose_hint')}</span>}
+        <div className="row">
+          <button type="button" disabled={!!pendingAsset} onClick={() => {
+            fileSlot.current = slot;
+            fileInput.current?.click();
+          }}>{t(asset ? 'reference.replace_file' : 'reference.choose_file')}</button>
+          <button type="button" disabled={!!pendingAsset} onClick={() => {
+            pickReferenceFromGallery(workId, slot);
+            openView('gallery');
+          }} title={t('reference.gallery_hint')}>{t('reference.choose_gallery')}</button>
+          {asset && <button type="button" className="ghost" disabled={!!pendingAsset} onClick={() => {
+            if (slot === 'a') update({ reference: null });
+            else if (second) update({ second: { ...second, reference: null } });
+          }}>{t('reference.remove')}</button>}
+        </div>
+        {!moss && (second || description) && <label className="single-field reference-subject-description">
+          <span>{t('reference.subject_description')}</span>
+          <input value={description} placeholder={t('reference.subject_description_hint')} onChange={event => {
+            const value = event.target.value;
+            if (slot === 'a') update({ description: value });
+            else if (second) update({ second: { ...second, description: value } });
+          }} />
+        </label>}
+        {pendingAsset === slot && <span role="status" className="faint">{t('reference.importing')}</span>}
+      </div>
+    </section>;
+  }
+
+  const firstCard = renderReference('a', draft.reference, draft.description, firstPosition);
+  const secondCard = second && renderReference('b', second.reference, second.description, secondPosition);
 
   return <section className="single-image generation-page reference-image" aria-label={t('image_menu.reference')}>
     <div className="generation-content">
@@ -374,6 +488,20 @@ export default function ImageReference({ workId, openView, openSettings, active 
           <button type="button" className={!moss ? 'on' : ''} aria-pressed={!moss} onClick={() => update({ family: 'anima' })}>Anima</button>
           <button type="button" className={moss ? 'on' : ''} aria-pressed={moss} onClick={() => update({ family: 'moss' })}>MOSS</button>
         </div>
+        {!moss && <label className="row reference-adapter">
+          <span className="muted">{t('reference.adapter')}</span>
+          <select value={draft.animaEngine} onChange={event => update({ animaEngine: event.target.value === 'snapref' ? 'snapref' : 'anima_v2' })}>
+            <option value="anima_v2">{adapterName.anima_v2}</option>
+            <option value="snapref">{adapterName.snapref}</option>
+          </select>
+        </label>}
+        {snapref && <label className="row reference-adapter">
+          <span className="muted">{t('reference.snapref_mode')}</span>
+          <select value={draft.snaprefMode} onChange={event => update({ snaprefMode: event.target.value === 'char' ? 'char' : 'cs' })}>
+            <option value="cs">{t('reference.snapref_cs')}</option>
+            <option value="char">{t('reference.snapref_char')}</option>
+          </select>
+        </label>}
       </div>
       {status.isPending && <Loading />}
       {(!installed && !status.isPending) && <div className="single-review reference-status" role="status">
@@ -406,35 +534,27 @@ export default function ImageReference({ workId, openView, openSettings, active 
         </aside>
         <div className="single-workspace">
           <form className="single-form single-prompts" onSubmit={enqueue}>
-            <div className="reference-card">
-              {draft.reference && <button type="button" className="reference-preview" aria-haspopup="dialog"
-                aria-label={t('reference.open_preview', { name: draft.reference.name })} onClick={event => {
-                  event.currentTarget.focus();
-                  setPreview('reference');
-                }}>
-                <img src={draft.reference.url} alt="" />
-              </button>}
-              <div className="col">
-                <h3>{t('reference.image')}</h3>
-                {draft.reference ? <strong>{draft.reference.name}</strong> : <span className="faint">{t('reference.choose_hint')}</span>}
-                <div className="row">
-                  <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden
-                    onChange={event => {
-                      const file = event.currentTarget.files?.[0];
-                      event.currentTarget.value = '';
-                      if (file) void addAsset(file);
-                    }} />
-                  <button type="button" disabled={pendingAsset} onClick={() => fileInput.current?.click()}>
-                    {t(draft.reference ? 'reference.replace_file' : 'reference.choose_file')}
-                  </button>
-                  <button type="button" disabled={pendingAsset} onClick={() => openView('gallery')} title={t('reference.gallery_hint')}>{t('reference.choose_gallery')}</button>
-                  {draft.reference && <button type="button" className="ghost" disabled={pendingAsset} onClick={() => update({ reference: null })}>
-                    {t('reference.remove')}
-                  </button>}
-                </div>
-                {pendingAsset && <span role="status" className="faint">{t('reference.importing')}</span>}
-              </div>
+            <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden
+              onChange={event => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = '';
+                if (file) void addAsset(file, fileSlot.current);
+              }} />
+            <div className={second ? 'reference-subjects-pair' : undefined}>
+              {secondCard && draft.firstOnRight ? [secondCard, firstCard] : [firstCard, secondCard]}
+              {!moss && !second && <div id={id + '-second'} hidden />}
             </div>
+            {!moss && <div className="row reference-subject-actions">
+              <button type="button" className="ghost" aria-expanded={!!second} aria-controls={id + '-second'}
+                disabled={!!pendingAsset} onClick={() => update({ second: second ? null : emptySubject(), firstOnRight: false })}>
+                {t(second ? 'reference.remove_subject' : 'reference.add_subject')}
+              </button>
+              {second && <button type="button" onClick={() => update({ firstOnRight: !draft.firstOnRight })}>
+                {t('reference.swap_positions')}
+              </button>}
+            </div>}
+            {second && !status.isPending && !animaInfo?.stitch_ready
+              && <p role="status" className="warn-text">{t('reference.stitch_missing')}</p>}
             <label className="single-field" htmlFor={id + '-scene'}>
               <span>{t('reference.scene')}</span>
               <textarea id={id + '-scene'} rows={5} value={draft.positive} placeholder={t(moss ? 'reference.moss_scene_hint' : 'reference.scene_hint')} onChange={event => update({ positive: event.target.value })} />
@@ -443,7 +563,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
               <span>{t('single.negative')}</span>
               <textarea id={id + '-negative'} rows={3} value={draft.negative} onChange={event => update({ negative: event.target.value })} />
             </label>
-            {!moss && <details className="single-details">
+            {!moss && !snapref && <details className="single-details">
               <summary>{t('reference.details')}</summary>
               <label className="row reference-guidance">
                 <span>{t('reference.guidance')}</span>
@@ -496,7 +616,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
         </div>
       </div>
       {previewImage && <GalleryDetailFrame imageUrl={previewImage.url}
-        label={preview === 'reference' ? t('reference.preview_title', { name: previewImage.name }) : previewImage.name}
+        label={preview === 'result' ? previewImage.name : t('reference.preview_title', { name: previewImage.name })}
         close={() => setPreview(null)}>
         <div className="row"><strong className="grow">{previewImage.name}</strong>
           <button type="button" className="ghost" aria-label={t('common.close')} onClick={() => setPreview(null)}>×</button>

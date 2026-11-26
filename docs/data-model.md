@@ -1073,9 +1073,25 @@ MOSS에 자동 적용하지 않는다. 학습 계열을 추가하는 변경은 �
 #### 참조 이미지로 생성 (#336, #358)
 
 - 원본 바이트는 작품의 `.atelierx/image/references/<SHA-256>.<png|jpg|webp>`에 보관한다. 같은 이름의 JSON에는 표시 이름과 이미지 형식이 있다. 큐에서 쓰는 식별자는 SHA-256이며 갤러리에서 참조를 골라도 작품에 사본을 저장한다.
-- 결과는 같은 작품의 `_single` 경로에 저장한다. 참조 생성 기록은 `kind: "single"`이며 Anima는 `schema_version: 6`, MossRef는 `schema_version: 7`을 쓴다. 공통으로 `reference`에 원본 `id`·`name`·`sha256`, 노드 클래스 `node`, 가중치 파일명 `weights`, 검증 기준 `expected_node_commit`·`expected_weights_sha256`을 남긴다. 기대 버전과 해시는 제공하는 배포본의 기준이고 원격 서버에서 해당 파일의 바이트를 읽어 검사했다는 뜻은 아니다.
-- 기존 Anima 기록의 `reference.engine`은 생략하고 실제 `guidance`를 남긴다. `engine: "mossref"`는 MossRef v2를 뜻한다. 이 경우 `foundation`·`foundation_revision`·`expected_foundation_weights_sha256`·`edit_node`와 `role`·`cfg_reference`·`ref_edge`·`ref_attn_bias`·`target_strength`·`edit_format`·`image_strength`를 남긴다.
-- PNG의 `prompt`와 `workflow`는 같은 실행 그래프에서 만든다. 참조 원본은 `input/atelierx-reference-<SHA-256>.<확장자>`로 연결한다. 재현용 ZIP은 `result.png`, `prompt.json`, `workflow.json`, `generation.json`을 담고, 사용자가 원본 첨부를 고르면 같은 `input/` 경로로 참조 파일을 더한다.
+- 새 Anima 대기열 요청의 `reference.engine`은 `anima_v2`(기본 어댑터) 또는 `snapref`다. `reference.subjects`의
+  각 항목은 `{slot, id, position, description?}`이다. `slot`은 `a` 또는 `b`, `id`는 참조 원본의 SHA-256이다.
+  한 명은 슬롯 `a`에 `center`를, 두 명은 슬롯 `a`와 `b`에 `left`와 `right`를 하나씩 지정한다. `description`에는 인물의 특징이나 행동을 적는다.
+  `guidance`는 `anima_v2`의 선택값(기본 4.5)이다. `snapref_mode`는 `snapref`의 선택값으로 `cs`(기본, 캐릭터와 그림체)
+  또는 `char`(캐릭터)다.
+- 결과는 같은 작품의 `_single` 경로에 저장한다. 기록은 `kind: "single"`이며 이전 Anima 단일 참조 형식은 `schema_version: 6`,
+  MossRef 형식은 `schema_version: 7`, 새 Anima 인물별 형식은 `schema_version: 8`을 쓴다. `reference`에 노드 클래스
+  `node`, 가중치 파일명 `weights`, 배포본의 기준인 `expected_node_commit`·`expected_weights_sha256`을 남긴다.
+- v8의 `reference.subjects`에는 원본 `id`·`name`·`sha256`과 인물의 `slot`·`position`·설명을 남긴다. 이미지 `url`은
+  API 응답에서 제공한다. `reference.scene`은 주석을 제거한 공통 장면 입력이며, 최상위 `positive`는 실제 전달한 프롬프트다.
+  프리셋 등으로 공통 장면이 바뀌면 `reference.scene_prompt`에 좌우 지시를 붙이기 전 프롬프트를 저장해 편집에 복원한다.
+  두 명을 선택하면 `position`으로 원본의 합성 순서를 정하고 프롬프트에도 해당 위치를 적는다.
+- v6의 `reference`는 `id`·`name`·`sha256`과 실제 `guidance`를 저장한다. 이전 요청은 `{id, guidance?}`로 한 장을
+  지정할 수 있다. v7의 `reference`는 한 장의 `id`·`name`·`sha256`과 `engine: "mossref"`를 저장한다. MossRef v2의
+  `foundation`·`foundation_revision`·`expected_foundation_weights_sha256`·`edit_node`와 `role`·`cfg_reference`·
+  `ref_edge`·`ref_attn_bias`·`target_strength`·`edit_format`·`image_strength`도 남긴다.
+- PNG의 `prompt`와 `workflow`는 같은 실행 그래프에서 만든다. 원본은 `input/atelierx-reference-<SHA-256>.<확장자>`로
+  연결한다. 재현용 ZIP은 `result.png`, `prompt.json`, `workflow.json`, `generation.json`을 담고, 사용자가 원본 첨부를
+  고르면 사용한 원본을 각각 같은 `input/` 경로로 더한다. 두 명일 때는 실행 그래프의 `ImageStitch`가 두 원본을 합친다.
 - 작품의 `/image/reference/runs`에는 참조 생성 이력을, `/image/single/runs`에는 일반 단일 생성 이력을 표시한다. 참조 생성 재시도는 접수 당시의 원본 해시와 어댑터·생성 설정을 사용한다.
 
 이미지 도구가 단일 이미지·생성 비교 결과를 후처리하면 `_tools/<날짜>/`의 `kind: "postprocess"` 기록에
