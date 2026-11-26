@@ -160,6 +160,26 @@ def model_folders(url: str = 'http://127.0.0.1:8188', timeout: float = 2.0) -> d
     return {key: [str(p) for p in value] for key, value in data.items() if isinstance(value, list)}
 
 
+def running_models_root(url: str) -> Path | None:
+    """The live local server's native models directory, when its path can be verified."""
+    if not _is_loopback_url(url):
+        return None
+    local = running(url)
+    if not local:
+        return None
+    directories = {}
+    arguments = iter(local['arguments'])
+    for argument in arguments:
+        option, equals, value = argument.partition('=')
+        if option in ('--models-directory', '--base-directory'):
+            directories[option] = value if equals else next(arguments, '')
+    if '--models-directory' in directories:
+        models = Path(directories['--models-directory'])
+        return models if models.is_absolute() else None
+    base = Path(directories.get('--base-directory', local['comfy_path']))
+    return base / 'models' if base.is_absolute() else None
+
+
 def suggest_lora_dir(folders: dict | None) -> str:
     """A LoRA folder to save trained LoRAs in: never ComfyUI's output folder, and one with
     an ``anima`` subfolder (kept for Anima LoRAs) when there is one."""

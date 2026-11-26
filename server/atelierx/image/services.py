@@ -10,7 +10,7 @@ import json
 from urllib.parse import quote, urlencode
 
 from ..core.i18n import Msg
-from . import reference
+from . import moss_reference, reference
 from .workflow import build_workflow
 
 
@@ -102,6 +102,10 @@ class ComfyService(GenerationService):
     def submit(self, job):
         entry = (job.get('snapshot') or {}).get('reference')
         if entry is not None:
+            if reference.is_moss(entry):
+                readiness = self.rt.reference_status('moss')
+                moss_reference.require_ready(readiness)
+                moss_reference.validate_settings(job['snapshot']['settings'], readiness)
             work = self.rt.works.get(job['work_id'])
             graph = self.graph(job, reference_input=reference.upload(self.comfy, work, entry))
         else:
@@ -124,11 +128,24 @@ class ComfyService(GenerationService):
             return None
         entry = history[prompt_id]
         if entry.get('status', {}).get('status_str') == 'error':
+            detail = json.dumps(entry['status'].get('messages', []), ensure_ascii=False)
+            ref = (job.get('snapshot') or {}).get('reference') or {}
+            if reference.is_moss(ref) and any(
+                marker in detail for marker in ('Moss-Ref adapter', 'Moss-Image-Edit foundation directory')
+            ):
+                return {
+                    'error': Msg(
+                        'server.reference.moss_files',
+                        'ComfyUI could not load the MossRef v2 adapter or foundation. '
+                        'Check the files in models/moss_ref on the ComfyUI machine. {detail}',
+                        detail=detail[-2000:],
+                    )
+                }
             return {
                 'error': Msg(
                     'server.worker.comfyui_generation_error',
                     'ComfyUI generation error: {status}',
-                    status=json.dumps(entry['status'].get('messages', []), ensure_ascii=False)[-2500:],
+                    status=detail[-2500:],
                 )
             }
         if job.get('kind') == 'tag':

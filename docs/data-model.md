@@ -1070,12 +1070,13 @@ MOSS에 자동 적용하지 않는다. 학습 계열을 추가하는 변경은 �
 갤러리에서 단일 이미지를 새 시드로 재생성할 때도 `kind: "single"`과 작품 연결을 작업에 복원한다. 새 결과는
 같은 `_single/<작품 ID>/` 계열에 별도 파일로 남고 원본 파일은 유지된다. 단일 이미지에는 자동 검수 라운드를 열지 않는다.
 
-#### 참조 이미지로 생성 (#336)
+#### 참조 이미지로 생성 (#336, #358)
 
 - 원본 바이트는 작품의 `.atelierx/image/references/<SHA-256>.<png|jpg|webp>`에 보관한다. 같은 이름의 JSON에는 표시 이름과 이미지 형식이 있다. 큐에서 쓰는 식별자는 SHA-256이며 갤러리에서 참조를 골라도 작품에 사본을 저장한다.
-- 결과는 같은 작품의 `_single` 경로에 저장한다. 참조 생성 기록은 `kind: "single"`, `schema_version: 6`이며 `reference`에 원본 `id`·`name`·`sha256`, 실제 `guidance`, 노드 클래스 `node`, 가중치 파일명 `weights`, 검증 기준 `expected_node_commit`·`expected_weights_sha256`을 남긴다. 기대 버전과 해시는 제공하는 배포본의 기준이고 원격 서버에서 해당 파일의 바이트를 읽어 검사했다는 뜻은 아니다.
+- 결과는 같은 작품의 `_single` 경로에 저장한다. 참조 생성 기록은 `kind: "single"`이며 Anima는 `schema_version: 6`, MossRef는 `schema_version: 7`을 쓴다. 공통으로 `reference`에 원본 `id`·`name`·`sha256`, 노드 클래스 `node`, 가중치 파일명 `weights`, 검증 기준 `expected_node_commit`·`expected_weights_sha256`을 남긴다. 기대 버전과 해시는 제공하는 배포본의 기준이고 원격 서버에서 해당 파일의 바이트를 읽어 검사했다는 뜻은 아니다.
+- 기존 Anima 기록의 `reference.engine`은 생략하고 실제 `guidance`를 남긴다. `engine: "mossref"`는 MossRef v2를 뜻한다. 이 경우 `foundation`·`foundation_revision`·`expected_foundation_weights_sha256`·`edit_node`와 `role`·`cfg_reference`·`ref_edge`·`ref_attn_bias`·`target_strength`·`edit_format`·`image_strength`를 남긴다.
 - PNG의 `prompt`와 `workflow`는 같은 실행 그래프에서 만든다. 참조 원본은 `input/atelierx-reference-<SHA-256>.<확장자>`로 연결한다. 재현용 ZIP은 `result.png`, `prompt.json`, `workflow.json`, `generation.json`을 담고, 사용자가 원본 첨부를 고르면 같은 `input/` 경로로 참조 파일을 더한다.
-- 작품의 `/image/reference/runs`에는 참조 생성 이력을, `/image/single/runs`에는 일반 단일 생성 이력을 표시한다. 참조 생성 재시도는 접수 당시의 원본 해시와 가이던스를 사용한다.
+- 작품의 `/image/reference/runs`에는 참조 생성 이력을, `/image/single/runs`에는 일반 단일 생성 이력을 표시한다. 참조 생성 재시도는 접수 당시의 원본 해시와 어댑터·생성 설정을 사용한다.
 
 이미지 도구가 단일 이미지·생성 비교 결과를 후처리하면 `_tools/<날짜>/`의 `kind: "postprocess"` 기록에
 `source.path`로 직전 이미지를 가리킨다. 생성 출처가 확인되면 기존 `service`·`work_id` 필드를 결과 기록에도 남긴다.

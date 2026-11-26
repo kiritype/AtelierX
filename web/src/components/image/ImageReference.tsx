@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { ApiError, get, notifyUnauthorized, post, q } from '../../api';
-import type { ReferenceAsset, ReferenceSnapshot, ReferenceStatus, SingleRun, SingleRuns } from '../../imageTypes';
+import type { MossReferenceStatus, ReferenceAsset, ReferenceSnapshot, ReferenceStatus, SingleRun, SingleRuns } from '../../imageTypes';
 import { msgText, t, tm } from '../../i18n';
 import { settingsFromPreset } from '../../lib/presetSettings';
 import { takeReferenceHandoff } from '../../lib/referenceHandoff';
@@ -17,17 +17,25 @@ import './ImageSingle.css';
 import './ImageReference.css';
 
 type Preset = { id: string; name: string; service: string; family: string; settings: GenerationSettings };
+type ReferenceFamily = 'anima' | 'moss';
+type FamilyDraft = { settings: GenerationSettings; preset: string };
 type Draft = {
   positive: string;
   negative: string;
-  settings: GenerationSettings;
-  preset: string;
+  family: ReferenceFamily;
+  parameters: Record<ReferenceFamily, FamilyDraft>;
   reference: ReferenceAsset | null;
   guidance: string;
 };
+const mossDefaults: GenerationSettings = {
+  ...FAMILY_DEFAULTS.moss, family: 'moss', steps: 35, cfg: 3.5, scheduler: 'sgm_uniform', seed: -1, shift: undefined, moss_slg: false, loras: [],
+};
 const initialDraft = (): Draft => ({
-  positive: '', negative: '', settings: { ...FAMILY_DEFAULTS.anima, family: 'anima', seed: -1 },
-  preset: '', reference: null, guidance: '4.5',
+  positive: '', negative: '', family: 'anima', reference: null, guidance: '4.5',
+  parameters: {
+    anima: { settings: { ...FAMILY_DEFAULTS.anima, family: 'anima', seed: -1 }, preset: '' },
+    moss: { settings: mossDefaults, preset: '' },
+  },
 });
 const working = (run: SingleRun | undefined) => run && ['queued', 'running', 'cancelling'].includes(run.status);
 const failed = (run: SingleRun) => ['failed', 'cancelled', 'interrupted'].includes(run.status);
@@ -37,12 +45,50 @@ const filename = (run: SingleRun) => run.path?.split('/').pop() || run.id;
 const draftKey = (workId: string) => 'atelierx-reference-draft-' + workId;
 
 function loadDraft(workId: string): Draft {
+  const initial = initialDraft();
   try {
-    const saved = JSON.parse(localStorage.getItem(draftKey(workId)) || 'null') as Draft | null;
-    return saved ? { ...initialDraft(), ...saved, settings: { ...saved.settings, family: 'anima' } } : initialDraft();
+    const saved = JSON.parse(localStorage.getItem(draftKey(workId)) || 'null') as (Partial<Draft> & Partial<FamilyDraft>) | null;
+    if (!saved) return initial;
+    return {
+      positive: saved.positive ?? initial.positive,
+      negative: saved.negative ?? initial.negative,
+      reference: saved.reference ?? initial.reference,
+      guidance: saved.guidance ?? initial.guidance,
+      family: saved.family === 'moss' ? 'moss' : 'anima',
+      parameters: {
+        anima: {
+          settings: { ...initial.parameters.anima.settings, ...(saved.parameters?.anima?.settings ?? saved.settings), family: 'anima' },
+          preset: saved.parameters?.anima?.preset ?? saved.preset ?? '',
+        },
+        moss: {
+          settings: { ...mossDefaults, ...saved.parameters?.moss?.settings },
+          preset: saved.parameters?.moss?.preset ?? '',
+        },
+      },
+    };
   } catch {
-    return initialDraft();
+    return initial;
   }
+}
+
+function mossSettings(value: GenerationSettings, status?: MossReferenceStatus): GenerationSettings {
+  return {
+    ...mossDefaults, ...value,
+    family: 'moss', clip_type: 'moss_image', moss_slg: false, loras: [],
+    model: value.model || status?.models[0],
+    text_encoder: value.text_encoder || status?.text_encoders[0],
+    vae: value.vae || status?.vaes[0],
+  };
+}
+
+function supportsMossPreset(value: GenerationSettings, status?: MossReferenceStatus) {
+  return !!status
+    && !value.moss_slg && !value.upscale && !value.detailer && !value.clip_skip
+    && (!value.clip_type || value.clip_type === 'moss_image')
+    && !value.loras?.some(lora => lora.enabled !== false)
+    && (!value.model || status.models.includes(value.model))
+    && (!value.text_encoder || status.text_encoders.includes(value.text_encoder))
+    && (!value.vae || status.vaes.includes(value.vae));
 }
 
 function fileData(file: File): Promise<string> {
@@ -75,9 +121,15 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const [exporting, setExporting] = useState(false);
   const catalogQuery = useCatalog();
   const catalog = catalogQuery.data;
-  const status = useQuery<ReferenceStatus>({
+  const animaStatus = useQuery<ReferenceStatus>({
     queryKey: ['image-reference-status'],
     queryFn: () => get('/api/image/reference/status'),
+    enabled: active,
+    staleTime: 0,
+  });
+  const mossStatus = useQuery<MossReferenceStatus>({
+    queryKey: ['image-reference-status', 'moss'],
+    queryFn: () => get('/api/image/reference/status?family=moss'),
     enabled: active,
     staleTime: 0,
   });
@@ -94,12 +146,42 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const history = runs.data?.runs ?? [];
   const run = history.find(item => item.id === selectedRunId) ?? history[0];
   const busy = !!pendingJob || history.some(working);
+  const { family } = draft;
+  const { preset, settings: rawSettings } = draft.parameters[family];
+  const moss = family === 'moss';
+  const status = moss ? mossStatus : animaStatus;
+  const mossInfo = mossStatus.data;
+  const settings = moss ? mossSettings(rawSettings, mossInfo) : rawSettings;
+  const mossModelChoices: Pick<MossReferenceStatus, 'models' | 'text_encoders' | 'vaes'> =
+    mossInfo ?? { models: [], text_encoders: [], vaes: [] };
   const guidance = Number(draft.guidance);
-  const validGuidance = draft.guidance !== '' && Number.isFinite(guidance) && guidance >= 0 && guidance <= 20;
+  const validGuidance = moss || (draft.guidance !== '' && Number.isFinite(guidance) && guidance >= 0 && guidance <= 20);
   const installed = !!(status.data?.ready && catalog?.connected);
   const animaModels = catalog?.connected ? modelsForFamily(catalog, 'anima') : [];
-  const ready = installed && animaModels.includes(draft.settings.model ?? '');
-  const presetChoices = (presets.data ?? []).filter(preset => preset.service === 'comfyui' && preset.family === 'anima');
+  const ready = installed && (moss
+    ? mossModelChoices.models.includes(settings.model ?? '')
+      && mossModelChoices.text_encoders.includes(settings.text_encoder ?? '')
+      && mossModelChoices.vaes.includes(settings.vae ?? '')
+    : animaModels.includes(settings.model ?? ''));
+  const canGenerate = !busy && ready && !!draft.reference && !pendingAsset && validGuidance && !!draft.positive.trim();
+  const presetChoices = (presets.data ?? []).filter(item =>
+    item.service === 'comfyui' && item.family === family && (!moss || supportsMossPreset(item.settings, mossInfo)));
+  const mossFilesUnverified = moss && (mossInfo?.weights_ready === null || mossInfo?.foundation_ready === null);
+  const statusMessages = [
+    !catalog?.connected && t('gen.not_connected'),
+    ...(moss ? [
+      mossInfo?.node_ready === false && t('reference.moss_node_missing'),
+      mossInfo?.edit_node_ready === false && t('reference.moss_edit_node_missing'),
+      mossInfo?.weights_ready === false && t('reference.moss_weights_missing'),
+      mossInfo?.foundation_ready === false && t('reference.moss_foundation_missing'),
+      mossInfo?.node_ready && mossInfo.edit_node_ready
+        && (!mossInfo.models.length || !mossInfo.text_encoders.length || !mossInfo.vaes.length)
+        && t('reference.moss_models_missing'),
+    ] : [
+      !animaStatus.data?.node_ready && t('reference.node_missing'),
+      !animaStatus.data?.weights_ready && t('reference.weights_missing'),
+    ]),
+  ].filter(Boolean);
 
   function update(patch: Partial<Draft>) {
     setDraft(current => ({ ...current, ...patch }));
@@ -119,11 +201,13 @@ export default function ImageReference({ workId, openView, openSettings, active 
     if (!catalog?.connected) return;
     const models = modelsForFamily(catalog, 'anima');
     setDraft(current => {
-      if (current.settings.model) return current;
+      const anima = current.parameters.anima;
+      if (anima.settings.model) return current;
       const model = models.find(name => name.split(/[\\/]/).at(-1) === 'anima-base-v1.0.safetensors')
         ?? (models.includes(catalog.defaults.model ?? '') ? catalog.defaults.model : models[0]);
       if (!model) return current;
-      return { ...current, settings: { ...catalog.defaults, ...current.settings, model, family: 'anima' } };
+      const settings: GenerationSettings = { ...catalog.defaults, ...anima.settings, model, family: 'anima' };
+      return { ...current, parameters: { ...current.parameters, anima: { ...anima, settings } } };
     });
   }, [catalog]);
 
@@ -150,11 +234,16 @@ export default function ImageReference({ workId, openView, openSettings, active 
   }, [active, workId, addAsset]);
 
   function choosePreset(presetId: string) {
-    const preset = presetChoices.find(item => item.id === presetId);
+    const chosen = presetChoices.find(item => item.id === presetId);
     setDraft(current => ({
       ...current,
-      preset: preset?.id ?? '',
-      settings: preset ? settingsFromPreset(current.settings, preset.settings, 'anima', FAMILY_DEFAULTS) : current.settings,
+      parameters: {
+        ...current.parameters,
+        [family]: {
+          preset: chosen?.id ?? '',
+          settings: chosen ? settingsFromPreset(settings, chosen.settings, family, FAMILY_DEFAULTS) : settings,
+        },
+      },
     }));
   }
 
@@ -178,11 +267,11 @@ export default function ImageReference({ workId, openView, openSettings, active 
 
   function enqueue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || !ready || !draft.reference || pendingAsset || !validGuidance || !draft.positive.trim()) return;
+    if (!canGenerate || !draft.reference) return;
     const body = {
       service: 'comfyui', positive: draft.positive, negative: draft.negative,
-      preset_id: draft.preset || undefined, settings: draft.settings,
-      reference: { id: draft.reference.id, guidance },
+      preset_id: presetChoices.some(item => item.id === preset) ? preset : undefined, settings,
+      reference: moss ? { id: draft.reference.id, engine: 'mossref' } : { id: draft.reference.id, guidance },
     };
     void runAction('generate', () => post<{ job_id: string }>(endpoint + '/queue', body));
   }
@@ -190,14 +279,20 @@ export default function ImageReference({ workId, openView, openSettings, active 
   function restore(selected: SingleRun) {
     const reference = usedReference(selected);
     if (!reference || !selected.actual) return;
-    update({
-      positive: editablePrompt(selected.actual.positive),
-      negative: editablePrompt(selected.actual.negative),
-      preset: '',
-      settings: { ...resultSettings(selected), family: 'anima' },
+    const family = reference.engine === 'mossref' ? 'moss' : 'anima';
+    const actual = selected.actual;
+    setDraft(current => ({
+      ...current,
+      positive: editablePrompt(actual.positive),
+      negative: editablePrompt(actual.negative),
+      family,
+      parameters: {
+        ...current.parameters,
+        [family]: { settings: { ...resultSettings(selected), family }, preset: '' },
+      },
       reference,
-      guidance: String(reference.guidance),
-    });
+      guidance: reference.engine === 'mossref' ? current.guidance : String(reference.guidance),
+    }));
   }
 
   async function download(path: string) {
@@ -227,15 +322,21 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const previewImage = preview === 'reference' ? draft.reference
     : preview === 'result' && run?.image_url ? { url: run.image_url, name: filename(run) } : null;
   const resultReference = run ? usedReference(run) : undefined;
+  const resultModel = run?.actual?.settings.model;
+  const resultIsMoss = resultReference?.engine === 'mossref';
+  const retryReady = !!catalog?.connected && (resultIsMoss
+    ? !!mossInfo?.ready && (typeof resultModel !== 'string' || mossInfo.models.includes(resultModel))
+    : !!animaStatus.data?.ready && (typeof resultModel !== 'string' || animaModels.includes(resultModel)));
   const resultDetails = run?.status === 'done' && <>
     {resultReference && <dl className="single-result-summary reference-record">
       <div><dt>{t('reference.image')}</dt><dd>{resultReference.name}</dd></div>
-      <div><dt>{t('reference.guidance')}</dt><dd>{resultReference.guidance}</dd></div>
+      <div><dt>{t('gen.family')}</dt><dd>{resultIsMoss ? 'MOSS (MossRef)' : 'Anima'}</dd></div>
+      {resultReference.engine !== 'mossref' && <div><dt>{t('reference.guidance')}</dt><dd>{resultReference.guidance}</dd></div>}
       <div><dt>SHA-256</dt><dd className="mono">{resultReference.sha256}</dd></div>
     </dl>}
     <SingleResultDetails
       run={run}
-      current={{ service: 'comfyui', positive: draft.positive, negative: draft.negative, settings: draft.settings }}
+      current={{ service: 'comfyui', positive: draft.positive, negative: draft.negative, settings }}
       busy={busy || !resultReference || !run.path}
       handoffPending={false}
       restore={() => restore(run)}
@@ -267,34 +368,41 @@ export default function ImageReference({ workId, openView, openSettings, active 
           <button type="button" disabled aria-pressed="false">NovelAI <small>{t('reference.coming')}</small></button>
         </div>
       </div>
+      <div className="row reference-family">
+        <span id={id + '-family'} className="muted">{t('gen.family')}</span>
+        <div className="seg" role="group" aria-labelledby={id + '-family'}>
+          <button type="button" className={!moss ? 'on' : ''} aria-pressed={!moss} onClick={() => update({ family: 'anima' })}>Anima</button>
+          <button type="button" className={moss ? 'on' : ''} aria-pressed={moss} onClick={() => update({ family: 'moss' })}>MOSS</button>
+        </div>
+      </div>
       {status.isPending && <Loading />}
       {(!installed && !status.isPending) && <div className="single-review reference-status" role="status">
         <div>
           <strong>{t('reference.not_ready')}</strong>
-          <div>{status.error ? errorText(status.error) : [
-            !catalog?.connected && t('gen.not_connected'),
-            !status.data?.node_ready && t('reference.node_missing'),
-            !status.data?.weights_ready && t('reference.weights_missing'),
-          ].filter(Boolean).join(' · ')}</div>
+          <div>{status.error ? errorText(status.error) : statusMessages.join(' · ')}</div>
         </div>
         <div className="row">
-          {openSettings && <button type="button" onClick={() => openSettings(catalog?.connected ? 'install' : 'image')}>{t(catalog?.connected ? 'reference.open_install' : 'gen.open_settings')}</button>}
+          {moss && <a href="https://github.com/Neon3579/MossRef/tree/v2.0.0#install--quick-start" target="_blank" rel="noreferrer">{t('reference.moss_install')}</a>}
+          {openSettings && (!moss || !catalog?.connected) && <button type="button" onClick={() => openSettings(catalog?.connected ? 'install' : 'image')}>{t(catalog?.connected ? 'reference.open_install' : 'gen.open_settings')}</button>}
           <button type="button" disabled={status.isFetching || catalogQuery.isFetching} onClick={() => { void status.refetch(); void catalogQuery.refetch(); }}>{t('reference.recheck')}</button>
         </div>
       </div>}
-      {installed && !ready && <p className="warn-text" role="status">{t('reference.choose_anima_model')}</p>}
+      {installed && mossFilesUnverified && <p className="warn-text" role="status">{t('reference.moss_files_unverified')}</p>}
+      {installed && !ready && <p className="warn-text" role="status">{t(moss ? 'reference.choose_moss_model' : 'reference.choose_anima_model')}</p>}
       {storageFailed && <p className="warn-text" role="alert">{t('reference.storage_failed')}</p>}
       {error && <p className="warn-text" role="alert">{error}</p>}
       <div className="single-layout">
         <aside className="single-form single-settings">
           <label className="single-field">
             <span>{t('single.preset')}</span>
-            <select value={draft.preset} onChange={event => choosePreset(event.target.value)}>
+            <select value={presetChoices.some(item => item.id === preset) ? preset : ''} onChange={event => choosePreset(event.target.value)}>
               <option value="">{t('gen.default')}</option>
               {presetChoices.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
             </select>
           </label>
-          <GenSettings value={draft.settings} onChange={settings => update({ settings })} onlyFamily="anima" />
+          <GenSettings value={settings} onChange={settings => setDraft(current => ({
+            ...current, parameters: { ...current.parameters, [family]: { ...current.parameters[family], settings } },
+          }))} onlyFamily={family} showFamily={false} mossReference={moss ? mossModelChoices : undefined} />
         </aside>
         <div className="single-workspace">
           <form className="single-form single-prompts" onSubmit={enqueue}>
@@ -329,13 +437,13 @@ export default function ImageReference({ workId, openView, openSettings, active 
             </div>
             <label className="single-field" htmlFor={id + '-scene'}>
               <span>{t('reference.scene')}</span>
-              <textarea id={id + '-scene'} rows={5} value={draft.positive} placeholder={t('reference.scene_hint')} onChange={event => update({ positive: event.target.value })} />
+              <textarea id={id + '-scene'} rows={5} value={draft.positive} placeholder={t(moss ? 'reference.moss_scene_hint' : 'reference.scene_hint')} onChange={event => update({ positive: event.target.value })} />
             </label>
             <label className="single-field" htmlFor={id + '-negative'}>
               <span>{t('single.negative')}</span>
               <textarea id={id + '-negative'} rows={3} value={draft.negative} onChange={event => update({ negative: event.target.value })} />
             </label>
-            <details className="single-details">
+            {!moss && <details className="single-details">
               <summary>{t('reference.details')}</summary>
               <label className="row reference-guidance">
                 <span>{t('reference.guidance')}</span>
@@ -343,9 +451,9 @@ export default function ImageReference({ workId, openView, openSettings, active 
                   aria-describedby={id + '-guidance-hint'} />
               </label>
               <p id={id + '-guidance-hint'} className="faint small">{t('reference.guidance_hint')}</p>
-            </details>
+            </details>}
             <div className="row reference-actions">
-              <button type="submit" className="primary" disabled={busy || !ready || !draft.reference || pendingAsset || !validGuidance || !draft.positive.trim()}>{t('single.run')}</button>
+              <button type="submit" className="primary" disabled={!canGenerate}>{t('single.run')}</button>
               <button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button>
             </div>
           </form>
@@ -361,7 +469,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
             </button> : <p className="faint">{t('reference.result_hint')}</p>}
             {run && working(run) && <button type="button" disabled={!!pendingJob || run.status === 'cancelling'}
               onClick={() => void runAction('cancel', async () => { await post('/api/image/jobs/' + q(run.id) + '/cancel'); })}>{t('common.cancel')}</button>}
-            {run && failed(run) && <button type="button" disabled={busy || !ready}
+            {run && failed(run) && <button type="button" disabled={busy || !retryReady}
               onClick={() => void runAction('retry', async () => {
                 const result = await post<{ job_id: string }>('/api/image/jobs/' + q(run.id) + '/retry');
                 await post('/api/image/queue/resume');

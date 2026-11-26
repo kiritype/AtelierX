@@ -1,4 +1,4 @@
-"""Work-scoped, content-addressed inputs and portable exports for Anima reference generation."""
+"""Work-scoped, content-addressed inputs and portable exports for reference generation."""
 
 import base64
 import binascii
@@ -15,6 +15,7 @@ from urllib.parse import quote
 from PIL import Image
 
 from ..core.i18n import Msg
+from . import moss_reference
 from .comfy import REFERENCE_NODE, REFERENCE_WEIGHT
 from .tools.inspect import MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS
 from .util import atomic_json, code, read_json, replace_file
@@ -160,9 +161,27 @@ def require_ready(comfy):
         )
 
 
+def is_moss(entry):
+    return entry.get('engine') == moss_reference.ENGINE
+
+
 def prepare(work, parameters):
     if not isinstance(parameters, dict):
         raise _invalid_image()
+    if is_moss(parameters):
+        if set(parameters) != {'id', 'engine'}:
+            raise ValueError(
+                Msg('server.reference.moss_reference', 'MossRef accepts one reference image in Auto mode.')
+            )
+        asset, _ = data(work, parameters.get('id'))
+        return {
+            **asset,
+            'engine': moss_reference.ENGINE,
+            **moss_reference.PROVENANCE,
+            **moss_reference.PARAMETERS,
+        }
+    if 'engine' in parameters:
+        raise ValueError(Msg('server.reference.engine', 'Choose a supported reference generation engine.'))
     guidance = parameters.get('guidance', 4.5)
     if isinstance(guidance, bool) or not isinstance(guidance, (int, float)) or not 0 <= guidance <= 20:
         raise ValueError(Msg('server.reference.guidance', 'Choose reference guidance from 0 to 20.'))
@@ -177,8 +196,19 @@ def prepare(work, parameters):
     }
 
 
+def check_moss_record(entry):
+    for key, expected in {**moss_reference.PROVENANCE, **moss_reference.PARAMETERS}.items():
+        if entry.get(key) != expected:
+            raise ValueError(
+                Msg('server.reference.moss_revision', 'This run needs a different version of MossRef.')
+            )
+
+
 def upload(comfy, work, entry):
-    require_ready(comfy)
+    if is_moss(entry):
+        check_moss_record(entry)
+    else:
+        require_ready(comfy)
     asset, path = data(work, entry['id'])
     raw = _image_bytes(path)
     if _hash(raw) != asset['sha256'] or len(raw) > MAX_IMAGE_BYTES:
@@ -190,7 +220,15 @@ def upload(comfy, work, entry):
         raise RuntimeError(
             Msg('server.reference.upload', 'ComfyUI did not keep the uploaded reference image.')
         )
-    return {'image': name, 'guidance': entry['guidance']}
+    return (
+        {
+            'image': name,
+            'engine': moss_reference.ENGINE,
+            **{key: entry[key] for key in moss_reference.PARAMETERS},
+        }
+        if is_moss(entry)
+        else {'image': name, 'guidance': entry['guidance']}
+    )
 
 
 def result_record(work, gallery, relative):

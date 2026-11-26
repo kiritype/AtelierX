@@ -93,8 +93,21 @@ export type SingleRequest = {
   prompt_sources?: PromptSource[];
 };
 export type ReferenceAsset = { id: string; name: string; url: string; sha256: string };
-export type ReferenceSnapshot = ReferenceAsset & { guidance: number };
+export type ReferenceSnapshot = ReferenceAsset & (
+  | { engine?: 'anima'; guidance: number }
+  | { engine: 'mossref' }
+);
 export type ReferenceStatus = { ready: boolean; node_ready: boolean; weights_ready: boolean };
+export type MossReferenceStatus = {
+  ready: boolean;
+  node_ready: boolean;
+  edit_node_ready: boolean;
+  weights_ready: boolean | null;
+  foundation_ready: boolean | null;
+  models: string[];
+  text_encoders: string[];
+  vaes: string[];
+};
 
 export type SingleRun = {
   id: string;

@@ -1,6 +1,7 @@
 .reference-image .generation-service-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .reference-image .generation-service-tabs small { margin-left: 4px; color: var(--text-2); }
 .reference-image .single-heading p { margin-bottom: 0; }
+.reference-family { align-items: center; margin-bottom: 16px; }
 .reference-status { justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .reference-status .row, .reference-card .row { flex-wrap: wrap; }
 .reference-card {
