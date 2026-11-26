@@ -230,7 +230,9 @@ it('explains a lost ComfyUI connection beside generation and rechecks the connec
   expect(host.querySelector('.single-prompts .reference-status')?.textContent).toContain(t('gen.not_connected'));
   await act(async () => button(t('gen.open_settings')).click());
   expect(openSettings).toHaveBeenCalledWith('image');
+  await vi.waitFor(() => expect(button(t('reference.recheck')).disabled).toBe(false));
   await act(async () => button(t('reference.recheck')).click());
+  expect(get).toHaveBeenCalledWith('/api/image/catalog');
   await vi.waitFor(() => expect(button(t('single.run')).disabled).toBe(false));
 });
 
