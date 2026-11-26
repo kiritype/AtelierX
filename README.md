@@ -2,6 +2,8 @@
 
 [Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://atelierx.cftm.net/) · [오류 제보·제안·질문](https://github.com/kiritype/AtelierX/discussions)
 
+[![Discord 커뮤니티](https://img.shields.io/badge/Discord%20%EC%BB%A4%EB%AE%A4%EB%8B%88%ED%8B%B0-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/WVBzAu3FET)
+
 한국어 | [English](README.en.md)
 
 RP 챗봇을 만드는 Windows 데스크톱 도구입니다. 메인 프롬프트, 시작 상황, 로어북, 캐릭터, JSX 컴포넌트를 작품 단위로 관리하고,
