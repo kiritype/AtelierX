@@ -4,16 +4,19 @@ import { ApiError, del, get, put } from '../../api';
 import { t, tm } from '../../i18n';
 import TagInput from '../TagInput';
 import { useToast } from '../Toasts';
-import { byGroup, targetNames, type Target } from '../../lib/fragments';
+import { byGroup, fits, targetNames, type Target } from '../../lib/fragments';
 import { useUnsaved } from '../Unsaved';
 import { afterRevisionSave, followSelection } from '../../lib/libraryDraft';
 import { displayName, nameIdHint, nameLabel } from '../../lib/nameLabels';
 import type { MossDocument } from '../../imageTypes';
 import MossLayoutEditor, { MossBadge } from './MossLayoutEditor';
 import LibraryImport from './LibraryImport';
+import { SERVICE_NAMES } from './serviceSettings';
 
 type Kind = 'expressions' | 'compositions' | 'common' | 'outfits' | 'targets';
 const KINDS: Kind[] = ['expressions', 'compositions', 'common', 'outfits', 'targets'];
+const SERVICE_TARGETS = { comfyui: ['anima', 'sdxl', 'moss'], novelai: ['novelai'], pixai: ['pixai'] };
+type ServiceFilter = '' | keyof typeof SERVICE_TARGETS;
 type Item = {
   moss_layout?: MossDocument;
   id: string;
@@ -38,6 +41,7 @@ type Rules = { slots: { id: string; name: string }[]; ratings: { id: string; nam
 // Image menu → Prompt library: global items and this work's own (a work item with the same id overrides).
 export default function ImageLibrary({ workId }: { workId: string }) {
   const [kind, setKind] = useState<Kind>('expressions');
+  const [service, setService] = useState<ServiceFilter>('');
   // Whether the open editor has unsaved changes: switching the kind would drop them (#167).
   const [dirty, setDirty] = useState(false);
   function chooseKind(next: Kind) {
@@ -57,7 +61,7 @@ export default function ImageLibrary({ workId }: { workId: string }) {
       {kind === 'targets' ? (
         <Targets onDirty={setDirty} />
       ) : (
-        <Items key={kind} workId={workId} kind={kind} onDirty={setDirty} />
+        <Items key={kind} workId={workId} kind={kind} onDirty={setDirty} service={service} onServiceChange={setService} />
       )}
     </div>
   );
@@ -68,7 +72,13 @@ function useFail() {
   return (err: unknown) => toast({ text: err instanceof ApiError ? tm(err.msg) : String(err), tone: 'error' });
 }
 
-function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 'targets'>; onDirty: (dirty: boolean) => void }) {
+function Items({ workId, kind, onDirty, service, onServiceChange }: {
+  workId: string;
+  kind: Exclude<Kind, 'targets'>;
+  onDirty: (dirty: boolean) => void;
+  service: ServiceFilter;
+  onServiceChange: (service: ServiceFilter) => void;
+}) {
   const qc = useQueryClient();
   const fail = useFail();
   const toast = useToast();
@@ -90,8 +100,12 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
   const [importing, setImporting] = useState<unknown>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const allItems = Object.values(items.data ?? {});
-  const list = allItems.filter((i) => !filter || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(filter.toLowerCase()));
-  const groups = [...new Set(Object.values(items.data ?? {}).map((i) => i.group ?? '').filter(Boolean))];
+  const query = filter.toLowerCase();
+  const list = allItems.filter((i) =>
+    (!service || SERVICE_TARGETS[service].some((target) => fits(i, target))) &&
+    (!query || `${i.id} ${i.name} ${i.group ?? ''}`.toLowerCase().includes(query)),
+  );
+  const groups = [...new Set(allItems.map((i) => i.group ?? '').filter(Boolean))];
   const targets = rules.data?.targets ?? [];
 
   // The draft follows the selection. A list fetched again (focus, another save) does not replace an edit in progress;
@@ -191,9 +205,18 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
     <>
       <div className="image-lib-list">
         <div className="row pad" style={{ paddingBottom: 4 }}>
-          <input className="grow" placeholder={t('lib.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          <input className="grow" aria-label={t('lib.filter')} placeholder={t('lib.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />
           <button onClick={create}>+</button>
         </div>
+        <label className="row pad small" style={{ paddingTop: 0, paddingBottom: 4 }}>
+          <span className="muted">{t('lib.filter_service')}</span>
+          <select className="grow" value={service} onChange={(e) => onServiceChange(e.target.value as ServiceFilter)}>
+            <option value="">{t('lib.filter_service_all')}</option>
+            {Object.keys(SERVICE_TARGETS).map((service) => (
+              <option key={service} value={service}>{SERVICE_NAMES[service]}</option>
+            ))}
+          </select>
+        </label>
         <div className="row pad small" style={{ paddingTop: 0, paddingBottom: 4, gap: 6 }}>
           <a
             className={`button small${Object.keys(items.data ?? {}).length ? '' : ' disabled'}`}
@@ -249,7 +272,7 @@ function Items({ workId, kind, onDirty }: { workId: string; kind: Exclude<Kind, 
                   {kind === 'expressions' && item.code && <span className="chip small mono" title={t('lib.code')}>{item.code}</span>}
                   {item.moss_layout && <MossBadge />}
                   {kind === 'compositions' && item.hide_outfit && <span className="chip small" title={t('lib.hide_outfit_hint')}>{t('lib.hide_outfit')}</span>}
-                  {!!item.targets?.length && <span className="faint small"> · {targetNames(item.targets, targets)}</span>}
+                  <span className="faint small"> · {item.targets?.length ? targetNames(item.targets, targets) : t('lib.all_services')}</span>
                 </span>
                 <span className={`chip scope-${item.scope}`}>{t(`lib.scope.${item.scope}`)}</span>
               </div>

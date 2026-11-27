@@ -23,18 +23,27 @@ const latest = { ...initial, name: 'Remote change', revision: 'new' };
 const key = ['image-lib', 'expressions', 'work'];
 const advance = () => act(async () => { await vi.advanceTimersByTimeAsync(1); });
 const name = () => host.querySelector('.image-lib-edit label input') as HTMLInputElement;
+const serviceSelect = () => host.querySelector<HTMLSelectElement>('.image-lib-list select')!;
+const libraryRows = () => [...host.querySelectorAll<HTMLElement>('.image-lib-list .list-row')];
+const rowIds = () => libraryRows().map((row) => row.querySelector<HTMLElement>('span[title]')!.title).sort();
 async function click(label: string) {
   const button = [...host.querySelectorAll('button')].find((el) => el.textContent?.trim() === label);
   expect(button).toBeTruthy();
   await act(async () => button!.click());
   await advance();
 }
-async function edit(value: string) {
+async function changeInput(input: HTMLInputElement, value: string) {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(name(), value);
-    name().dispatchEvent(new Event('input', { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
+const edit = (value: string) => changeInput(name(), value);
+const chooseService = (service: string) => act(async () => {
+  const select = serviceSelect();
+  select.value = service;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -84,6 +93,77 @@ it('shows names first and keeps same-name and unnamed items distinct by ID and s
   expect(host.querySelector('.image-lib-edit strong')?.textContent).toBe('Original');
   expect(host.querySelector('.image-lib-edit .faint.small')?.textContent).toContain('two');
   expect(name().value).toBe('Original');
+});
+
+it('combines service and text filters across shared, multi-target, global and work items', async () => {
+  const item = (id: string, targets: string[], scope = 'work', group = '') => ({
+    ...initial, id, name: id, targets, scope, group,
+  });
+  await act(async () => qc.setQueryData(key, {
+    one: initial,
+    shared: item('shared', [], 'global'),
+    anima: item('anima', ['anima']),
+    sdxl: item('sdxl', ['sdxl'], 'global'),
+    moss: item('moss', ['moss'], 'work', 'Portraits'),
+    novelai: item('novelai', ['novelai'], 'global', 'Portraits'),
+    pixai: item('pixai', ['pixai']),
+    both: item('both', ['novelai', 'sdxl']),
+    custom: item('custom', ['other']),
+  }));
+  await advance();
+  expect(serviceSelect().value).toBe('');
+  expect(rowIds()).toEqual(['anima', 'both', 'custom', 'moss', 'novelai', 'one', 'pixai', 'sdxl', 'shared']);
+  await chooseService('novelai');
+  expect(rowIds()).toEqual(['both', 'novelai', 'one', 'shared']);
+  expect(libraryRows().find((row) => row.textContent?.includes('shared'))?.textContent).toContain(t('lib.all_services'));
+  expect(libraryRows().find((row) => row.textContent?.includes('shared'))?.textContent).toContain(t('lib.scope.global'));
+  await chooseService('comfyui');
+  expect(rowIds()).toEqual(['anima', 'both', 'moss', 'one', 'sdxl', 'shared']);
+  await chooseService('pixai');
+  expect(rowIds()).toEqual(['one', 'pixai', 'shared']);
+
+  const search = host.querySelector<HTMLInputElement>('.image-lib-list input.grow')!;
+  await changeInput(search, 'PORTRAITS');
+  expect(rowIds()).toEqual([]);
+  await chooseService('comfyui');
+  expect(rowIds()).toEqual(['moss']);
+  await chooseService('novelai');
+  expect(rowIds()).toEqual(['novelai']);
+  await chooseService('');
+  expect(rowIds()).toEqual(['moss', 'novelai']);
+  await changeInput(search, 'custom');
+  expect(rowIds()).toEqual(['custom']);
+});
+
+it('keeps a hidden editor dirty and uses the existing discard confirmation when changing items or kinds', async () => {
+  const scoped = { ...initial, id: 'scoped', name: 'For NovelAI', targets: ['novelai'] };
+  const comp = { ...initial, id: 'composition', name: 'Comfy composition', targets: ['sdxl'] };
+  await act(async () => {
+    qc.setQueryData(key, { one: initial, scoped });
+    qc.setQueryData(['image-lib', 'compositions', 'work'], { composition: comp, scoped });
+  });
+  await advance();
+  await act(async () => libraryRows().find((row) => row.textContent?.includes(scoped.name))!.click());
+  await edit('Still editing');
+  const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+  vi.stubGlobal('confirm', confirm);
+  await chooseService('comfyui');
+  expect(rowIds()).toEqual(['one']);
+  expect(confirm).not.toHaveBeenCalled();
+  expect(registry.dirty('library')).toBe(true);
+  expect(name().value).toBe('Still editing');
+  expect(put).not.toHaveBeenCalled();
+
+  await act(async () => libraryRows()[0].click());
+  expect(confirm).toHaveBeenLastCalledWith(t('lib.discard_confirm'));
+  expect(name().value).toBe('Still editing');
+  const kind = [...host.querySelectorAll<HTMLElement>('.image-lib-kinds .tree-row')]
+    .find((row) => row.textContent?.trim() === t('lib.kind.compositions'))!;
+  await act(async () => kind.click());
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(serviceSelect().value).toBe('comfyui');
+  expect(rowIds()).toEqual(['composition']);
+  expect(registry.dirty('library')).toBe(false);
 });
 
 it('preserves actual editor input, dirty state and stale revision after a rejected save', async () => {
