@@ -1094,6 +1094,7 @@ MOSS에 자동 적용하지 않는다. 학습 계열을 추가하는 변경은 �
   고르면 사용한 원본을 각각 같은 `input/` 경로로 더한다. 두 명일 때는 실행 그래프의 `ImageStitch`가 두 원본을 합친다.
 - 작품의 `/image/reference/runs`에는 참조 생성 이력을, `/image/single/runs`에는 일반 단일 생성 이력을 표시한다. 참조 생성 재시도는 접수 당시의 원본 해시와 어댑터·생성 설정을 사용한다.
 - 작품 없는 참조 생성의 큐 작업과 결과 기록은 `work_id: null`을 쓴다. `kind: "single"`, `schema_version: 9`이며 어댑터별 v6·v7·v8의 `reference` 필드와 그래프 형식을 유지한다. 출력은 `<출력 루트>/_standalone/<날짜>/`에 PNG와 JSON으로 저장한다. `/api/image/reference/runs`와 `/api/image/single/runs`는 `reference` 유무로 결과를 구분한다. 기존 v6·v7·v8 작품 기록과 v4 일반 독립 기록은 기존 형식으로 읽는다.
+- 이미지 전용 **감정 일괄 생성** 기록은 v9에 `reference_batch`를 더한 `schema_version: 10`이다. `reference_batch`는 `{id, expression_id, expression_name, composition_id, composition_name, index, count}`를 담는다. `id`는 같은 접수의 UUIDv4 32자리 hex, `index`는 0부터 시작하는 선택 순서, `count`는 원래 접수한 감정 수다. 선택한 구도가 없거나 적용할 수 없는 연결 구도면 `composition_id`와 `composition_name`은 `null`이다. 스냅샷·PNG·JSON의 최종 Positive와 Negative는 그때 합성한 감정 및 구도 문구다. 결과 이력과 재시도·재생성은 스냅샷의 묶음과 표시 이름을 재사용한다. v9의 일반 참조 결과는 이 필드 없이 읽는다.
 - 독립 원본은 포터블 `data/image/references/` 아래에 SHA-256 파일명과 동일 이름 JSON(`name`, `format`)으로 저장한다. 원본 조회와 선택은 `/api/image/reference/assets` 범위에서 처리한다. 작품 참조 원본은 기존 **작품** 경로에서 읽는다.
 - 독립 초안은 `state/image/reference-draft.json`에 `schema_version: 1`로 저장한다. `positive`·`negative`·`description`·`guidance`, `family`, `animaEngine`·`snaprefMode`, `firstOnRight`, 계열별 `parameters`(`settings`, `preset`), `reference`와 `second`(각 원본의 메타데이터와 두 번째 인물 설명)를 담는다. 원본 객체의 `id`로 저장 위치를 확인하고 `url`은 독립 원본 API를 가리킨다. `/api/image/reference/draft`의 `revision`으로 동시 저장 충돌을 확인한다.
 

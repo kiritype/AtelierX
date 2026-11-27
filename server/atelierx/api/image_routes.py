@@ -9,7 +9,15 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Route
 
 from ..core.i18n import AppError, Msg, message_of, wire
-from ..image import library, library_share, reference, reference_draft, shots, single_draft
+from ..image import (
+    library,
+    library_share,
+    reference,
+    reference_draft,
+    reference_emotions,
+    shots,
+    single_draft,
+)
 from ..image import settings as image_settings
 from ..image.deploy import targets as deploy_targets
 from ..image.tools.inspect import MAX_IMAGE_BYTES, inspect_image
@@ -465,6 +473,14 @@ async def reference_runs(request):
 async def reference_enqueue(request):
     runtime = _runtime(request)
     return await call(runtime.enqueue_reference, _optional_work(runtime, request), await _body(request))
+
+
+async def reference_emotions_preview(request):
+    return await call(reference_emotions.preview, _runtime(request).paths, await _body(request))
+
+
+async def reference_emotions_enqueue(request):
+    return await call(_runtime(request).enqueue_reference_emotions, await _body(request))
 
 
 async def reference_regenerate(request):
@@ -960,6 +976,8 @@ def routes():
         Route(f'{p}/reference/assets/{{ident}}', reference_asset),
         Route(f'{p}/reference/runs', reference_runs),
         Route(f'{p}/reference/queue', reference_enqueue, methods=['POST']),
+        Route(f'{p}/reference/emotions/preview', reference_emotions_preview, methods=['POST']),
+        Route(f'{p}/reference/emotions/queue', reference_emotions_enqueue, methods=['POST']),
         Route(f'{p}/reference/regenerate', reference_regenerate, methods=['POST']),
         Route(f'{p}/reference/export', reference_export),
         Route('/api/works/{wid}/image/reference/assets', reference_assets, methods=['POST']),

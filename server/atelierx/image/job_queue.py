@@ -145,15 +145,22 @@ class JobQueue:
                     )
                 )
 
-    def add(self, prepared, before_save=None):
+    def add(self, prepared, before_save=None, *, rollback_on_save_error=False):
         """Append new jobs, refusing when too many would wait. ``before_save`` sees them first (under the lock)."""
         with self.lock:
             # Checked again under the same lock: another request may have queued jobs since the early check.
             self.check_room(len(prepared))
+            start = len(self.jobs)
             self.jobs.extend(prepared)
-            if before_save:
-                before_save(prepared)
-            self.persist()
+            try:
+                if before_save:
+                    before_save(prepared)
+                self.persist()
+            except OSError:
+                # Workflows with a durable intent can reconcile an entry retained in memory.
+                if rollback_on_save_error:
+                    del self.jobs[start:]
+                raise
 
     def update(self, job, **fields):
         with self.lock:

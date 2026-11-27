@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { ApiError, get, notifyUnauthorized, post, q } from '../../api';
 import type {
   AnimaReferenceEngine, AnimaReferenceStatus, MossReferenceStatus, ReferenceAsset,
-  ReferenceAssets, ReferencePosition, ReferenceSlot, ReferenceSnapshot, SingleRun, SingleRuns,
+  ReferenceAssets, ReferenceEmotionSelection, ReferencePosition, ReferenceSlot, ReferenceSnapshot, SingleRun, SingleRuns,
 } from '../../imageTypes';
 import { msgText, t, tm } from '../../i18n';
 import { settingsFromPreset } from '../../lib/presetSettings';
@@ -16,6 +16,7 @@ import ContentDialog from './ContentDialog';
 import GalleryDetailFrame from './GalleryDetailFrame';
 import QueuedImageNotice from './QueuedImageNotice';
 import GenSettings, { FAMILY_DEFAULTS, modelsForFamily, useCatalog, type GenerationSettings } from './GenSettings';
+import ReferenceEmotions from './ReferenceEmotions';
 import SingleResultDetails from './SingleResultDetails';
 import { resultSettings } from './singleResult';
 import { mossDefaults, useReferenceDraft, type Draft, type ReferenceFamily, type SecondSubject } from './referenceDraft';
@@ -38,6 +39,29 @@ const errorText = (error: unknown) => error instanceof ApiError ? tm(error.msg) 
 const filename = (run: SingleRun) => run.path?.split('/').pop() || run.id;
 const adapterName = { anima_v2: 'Anima Ref Adapter v2', snapref: 'SnapRef v2a' };
 const emptySubject = (): SecondSubject => ({ reference: null, description: '' });
+
+function groupHistory(history: SingleRun[]) {
+  const entries: (SingleRun | { batchId: string; runs: SingleRun[] })[] = [];
+  const batches = new Map<string, SingleRun[]>();
+  for (const item of history) {
+    if (!item.reference_batch) {
+      entries.push(item);
+      continue;
+    }
+    const batchId = item.reference_batch.id;
+    const existing = batches.get(batchId);
+    if (existing) existing.push(item);
+    else {
+      const runs = [item];
+      batches.set(batchId, runs);
+      entries.push({ batchId, runs });
+    }
+  }
+  for (const items of batches.values()) {
+    items.sort((a, b) => a.reference_batch!.index - b.reference_batch!.index);
+  }
+  return entries;
+}
 
 function runAnimaEngine(reference?: ReferenceSnapshot): AnimaReferenceEngine {
   return reference?.engine === 'snapref' ? 'snapref' : 'anima_v2';
@@ -99,6 +123,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const assetRequest = useRef(0);
   const endpoint = workId ? '/api/works/' + q(workId) + '/image/reference' : '/api/image/reference';
   const { draft, setDraft, loaded, dirty, loadError, saving, saveError, save, reload } = useReferenceDraft(workId, endpoint);
+  const [generationMode, setGenerationMode] = useState<'single' | 'emotions'>('single');
   const [savedSlot, setSavedSlot] = useState<ReferenceSlot | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
   const [error, setError] = useState('');
@@ -138,7 +163,8 @@ export default function ImageReference({ workId, openView, openSettings, active 
     enabled: active && !workId && savedSlot !== null,
   });
   const history = runs.data?.runs ?? [];
-  const historyPageCount = Math.max(1, Math.ceil(history.length / 12));
+  const historyEntries = workId ? history : groupHistory(history);
+  const historyPageCount = Math.max(1, Math.ceil(historyEntries.length / 12));
   const page = workId ? 0 : Math.min(historyPage, historyPageCount - 1);
   const run = history.find(item => item.id === selectedRunId) ?? history[0];
   const busy = !!pendingJob || history.some(working);
@@ -146,7 +172,8 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const { preset, settings: rawSettings } = draft.parameters[family];
   const moss = family === 'moss';
   const snapref = !moss && draft.animaEngine === 'snapref';
-  const second = !moss ? draft.second : null;
+  const batch = !workId && generationMode === 'emotions';
+  const second = !moss && !batch ? draft.second : null;
   const firstPosition: ReferencePosition = second ? (draft.firstOnRight ? 'right' : 'left') : 'center';
   const secondPosition: ReferencePosition = draft.firstOnRight ? 'left' : 'right';
   const animaInfo = animaStatus.data;
@@ -160,7 +187,8 @@ export default function ImageReference({ workId, openView, openSettings, active 
   const animaModels = catalog?.connected ? modelsForFamily(catalog, 'anima') : [];
   const draftReadiness = checkReadiness(family, draft.animaEngine, settings, !!second);
   const validSubjects = !!draft.reference && (!second || !!second.reference);
-  const canGenerate = !busy && !draftReadiness.reasons.length && validSubjects && !pendingAsset && validGuidance && !!draft.positive.trim();
+  const canUseReference = !busy && !draftReadiness.reasons.length && validSubjects && !pendingAsset && validGuidance;
+  const canGenerate = canUseReference && !!draft.positive.trim();
   const presetChoices = (presets.data ?? []).filter(item =>
     item.service === 'comfyui' && item.family === family && (!moss || supportsMossPreset(item.settings, mossInfo)));
 
@@ -308,7 +336,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
     }));
   }
 
-  async function runAction(action: string, submit: () => Promise<{ job_id: string } | void>) {
+  async function runAction(action: string, submit: () => Promise<{ job_id: string } | void>, handleError?: (error: unknown) => boolean) {
     setPendingJob(action);
     setError('');
     try {
@@ -321,7 +349,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
       }
       await runs.refetch();
     } catch (err) {
-      setError(errorText(err));
+      if (!handleError?.(err)) setError(errorText(err));
     } finally {
       setPendingJob('');
     }
@@ -344,6 +372,22 @@ export default function ImageReference({ workId, openView, openSettings, active 
     void runAction('generate', () => post<{ job_id: string }>(endpoint + '/queue', body));
   }
 
+  function enqueueEmotions(selection: ReferenceEmotionSelection, revision: string, previewStale: (message: string) => void) {
+    if (!batch || !canUseReference || !draft.reference || selection.family !== family) return;
+    const reference = moss ? { id: draft.reference.id, engine: 'mossref' } : {
+      engine: draft.animaEngine,
+      subjects: [{ slot: 'a', id: draft.reference.id, position: 'center' }],
+      ...(snapref ? { snapref_mode: draft.snaprefMode } : { guidance }),
+    };
+    void runAction('generate', () => post<{ job_id: string }>(endpoint + '/emotions/queue', {
+      ...selection, settings, reference, preview_revision: revision,
+    }), err => {
+      if (!(err instanceof ApiError) || err.msg.key !== 'server.reference.emotions_stale') return false;
+      previewStale(tm(err.msg));
+      return true;
+    });
+  }
+
   function restore(selected: SingleRun) {
     const reference = usedReference(selected);
     if (!reference || !selected.actual) return;
@@ -353,6 +397,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
     const second = 'subjects' in reference ? reference.subjects.find(item => item.slot === 'b') : undefined;
     if (!first) return;
     const scene = 'scene' in reference ? reference.scene_prompt ?? reference.scene : actual.positive;
+    setGenerationMode('single');
     setDraft(current => ({
       ...current,
       positive: editablePrompt(scene),
@@ -459,6 +504,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
           <h3 id={id + '-subject-' + slot}>{title}</h3>
           {second && <span id={id + '-position-' + slot} className="muted small">{t(subjectPositionKey(position))}</span>}
         </div>
+        {batch && <p className="reference-emotion-hint muted small">{t('reference.emotions_reference_hint')}</p>}
         {asset ? <strong>{asset.name}</strong> : <span className="faint">{t('reference.choose_hint')}</span>}
         <div className="row">
           <button type="button" disabled={!!pendingAsset} onClick={() => {
@@ -477,7 +523,7 @@ export default function ImageReference({ workId, openView, openSettings, active 
             else if (second) update({ second: { ...second, reference: null } });
           }}>{t('reference.remove')}</button>}
         </div>
-        {!moss && (second || description) && <label className="single-field reference-subject-description">
+        {!batch && !moss && (second || description) && <label className="single-field reference-subject-description">
           <span>{t('reference.subject_description')}</span>
           <input value={description} placeholder={t('reference.subject_description_hint')} onChange={event => {
             const value = event.target.value;
@@ -490,12 +536,37 @@ export default function ImageReference({ workId, openView, openSettings, active 
     </section>;
   }
 
+  function renderHistoryItem(item: SingleRun) {
+    const batchItem = item.reference_batch;
+    const name = batchItem?.expression_name ?? filename(item);
+    return <button key={item.id} type="button" className={'single-history-row' + (item.id === run?.id ? ' is-selected' : '')}
+      aria-pressed={item.id === run?.id} onClick={() => {
+        setSelectedRunId(item.id); setIncludeReference(false); setPreview(null);
+      }}>
+      {item.image_url ? <img className="single-history-thumb" src={item.image_url} alt="" loading="lazy" /> : <span className="single-history-thumb" />}
+      <span className="single-history-content">
+        <span className="single-history-name" title={name}>{name}</span>
+        {batchItem?.composition_name && <span className="faint small">{batchItem.composition_name}</span>}
+        <span className="faint small">{t('single.state.' + item.status)}</span>
+      </span>
+    </button>;
+  }
+
   if (!loaded) return loadError
     ? <div role="alert">{loadError} <button type="button" onClick={reload}>{t('single.reload_draft')}</button></div>
     : <Loading />;
 
   const firstCard = renderReference('a', draft.reference, draft.description, firstPosition);
   const secondCard = second && renderReference('b', second.reference, second.description, secondPosition);
+  const guidanceSettings = !moss && !snapref && <details className="single-details">
+    <summary>{t('reference.details')}</summary>
+    <label className="row reference-guidance">
+      <span>{t('reference.guidance')}</span>
+      <input type="number" min={0} max={20} step="any" value={draft.guidance} onChange={event => update({ guidance: event.target.value })}
+        aria-describedby={id + '-guidance-hint'} />
+    </label>
+    <p id={id + '-guidance-hint'} className="faint small">{t('reference.guidance_hint')}</p>
+  </details>;
 
   return <section className="single-image generation-page reference-image" aria-label={t('image_menu.reference')}>
     <div className="generation-content">
@@ -511,6 +582,12 @@ export default function ImageReference({ workId, openView, openSettings, active 
           <button type="button" disabled aria-pressed="false">NovelAI <small>{t('reference.coming')}</small></button>
         </div>
       </div>
+      {!workId && <div className="seg reference-generation-modes" role="group" aria-label={t('reference.generation_mode')}>
+        <button type="button" className={!batch ? 'on' : ''} aria-pressed={!batch}
+          onClick={() => setGenerationMode('single')}>{t('reference.single_mode')}</button>
+        <button type="button" className={batch ? 'on' : ''} aria-pressed={batch}
+          onClick={() => setGenerationMode('emotions')}>{t('reference.emotions_mode')}</button>
+      </div>}
       <div className="row reference-family">
         <span id={id + '-family'} className="muted">{t('gen.family')}</span>
         <div className="seg" role="group" aria-labelledby={id + '-family'}>
@@ -536,10 +613,17 @@ export default function ImageReference({ workId, openView, openSettings, active 
         {!workId && <button type="button" disabled={saving} onClick={() => { if (confirm(t('single.reload_draft_confirm'))) reload(); }}>{t('single.reload_draft')}</button>}
       </p> : !workId && <p className="faint small">{t(dirty ? 'single.saving_draft' : 'single.portable_draft')}</p>}
       {error && <p className="warn-text" role="alert">{error}</p>}
+      <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden
+        onChange={event => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = '';
+          if (file) void addAsset(file, fileSlot.current);
+        }} />
+      {batch && firstCard}
       <div className="single-layout">
         <aside className="single-form single-settings">
           <label className="single-field">
-            <span>{t('single.preset')}</span>
+            <span>{t(batch ? 'reference.emotions_settings_preset' : 'single.preset')}</span>
             <select value={presetChoices.some(item => item.id === preset) ? preset : ''} onChange={event => choosePreset(event.target.value)}>
               <option value="">{t('gen.default')}</option>
               {presetChoices.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
@@ -548,15 +632,12 @@ export default function ImageReference({ workId, openView, openSettings, active 
           <GenSettings value={settings} onChange={settings => setDraft(current => ({
             ...current, parameters: { ...current.parameters, [family]: { ...current.parameters[family], settings } },
           }))} onlyFamily={family} showFamily={false} mossReference={moss ? mossModelChoices : undefined} />
+          {batch && guidanceSettings}
         </aside>
         <div className="single-workspace">
-          <form className="single-form single-prompts" onSubmit={enqueue}>
-            <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" hidden
-              onChange={event => {
-                const file = event.currentTarget.files?.[0];
-                event.currentTarget.value = '';
-                if (file) void addAsset(file, fileSlot.current);
-              }} />
+          {!workId && <ReferenceEmotions family={family} shown={batch} active={active} ready={canUseReference} busy={busy}
+            readiness={batch && readinessNotice(draftReadiness)} enqueue={enqueueEmotions} openQueue={() => openView('queue')} />}
+          {!batch && <form className="single-form single-prompts" onSubmit={enqueue}>
             <div className={second ? 'reference-subjects-pair' : undefined}>
               {secondCard && draft.firstOnRight ? [secondCard, firstCard] : [firstCard, secondCard]}
               {!moss && !second && <div id={id + '-second'} hidden />}
@@ -578,26 +659,22 @@ export default function ImageReference({ workId, openView, openSettings, active 
               <span>{t('single.negative')}</span>
               <textarea id={id + '-negative'} rows={3} value={draft.negative} onChange={event => update({ negative: event.target.value })} />
             </label>
-            {!moss && !snapref && <details className="single-details">
-              <summary>{t('reference.details')}</summary>
-              <label className="row reference-guidance">
-                <span>{t('reference.guidance')}</span>
-                <input type="number" min={0} max={20} step="any" value={draft.guidance} onChange={event => update({ guidance: event.target.value })}
-                  aria-describedby={id + '-guidance-hint'} />
-              </label>
-              <p id={id + '-guidance-hint'} className="faint small">{t('reference.guidance_hint')}</p>
-            </details>}
+            {guidanceSettings}
             {readinessNotice(draftReadiness)}
             <div className="row reference-actions">
               <button type="submit" className="primary" disabled={!canGenerate}>{t('single.run')}</button>
               <button type="button" className="ghost" onClick={() => openView('queue')}>{t('image_menu.queue')}</button>
             </div>
-          </form>
+          </form>}
           <section className="single-result">
             <div className="single-result-head">
               <h3>{t('single.result')}</h3>
               <span role="status">{t('single.state.' + (run?.status ?? 'idle'))}</span>
             </div>
+            {run?.reference_batch && <p className="reference-result-emotion">
+              <strong>{run.reference_batch.expression_name}</strong>
+              {run.reference_batch.composition_name && <span className="muted">{run.reference_batch.composition_name}</span>}
+            </p>}
             {active && run?.status === 'queued' && <QueuedImageNotice />}
             {runs.error && <p className="warn-text" role="alert">{errorText(runs.error)}</p>}
             {run?.error && <p className="warn-text" role="alert">{msgText(run.error)}</p>}
@@ -614,16 +691,12 @@ export default function ImageReference({ workId, openView, openSettings, active 
             {!!history.length && <div className="single-history">
               <h4>{t(workId ? 'single.history' : 'reference.standalone_history')}</h4>
               <div className="single-history-list">
-                {history.slice(page * 12, (page + 1) * 12).map(item => <button key={item.id} type="button" className={'single-history-row' + (item.id === run?.id ? ' is-selected' : '')}
-                  aria-pressed={item.id === run?.id} onClick={() => {
-                    setSelectedRunId(item.id); setIncludeReference(false); setPreview(null);
-                  }}>
-                  {item.image_url ? <img className="single-history-thumb" src={item.image_url} alt="" loading="lazy" /> : <span className="single-history-thumb" />}
-                  <span className="single-history-content">
-                    <span className="single-history-name" title={filename(item)}>{filename(item)}</span>
-                    <span className="faint small">{t('single.state.' + item.status)}</span>
-                  </span>
-                </button>)}
+                {historyEntries.slice(page * 12, (page + 1) * 12).map(item => 'batchId' in item
+                  ? <section key={item.batchId} className="reference-history-batch">
+                    <h5>{t('reference.emotions_batch', { count: item.runs[0].reference_batch!.count })}</h5>
+                    <div className="single-history-list">{item.runs.map(renderHistoryItem)}</div>
+                  </section>
+                  : renderHistoryItem(item))}
               </div>
               {!workId && historyPageCount > 1 && <div className="single-history-pages">
                 <button type="button" disabled={page === 0} onClick={() => setHistoryPage(page - 1)}>{t('single.previous_page')}</button>
