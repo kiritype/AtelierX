@@ -85,12 +85,14 @@ class MossComfy(ReferenceComfy):
 
 
 @pytest.fixture
-def moss(unlocked):
+def moss(unlocked, request):
     client = unlocked
-    work_id = client.post('/api/works', json={'name': 'MossRef test'}).json()['id']
     runtime = client.app.state.app.image
     runtime.set_paused(True)
     runtime.comfy = MossComfy()
+    if getattr(request, 'param', False):
+        return client, runtime, '/api/image/reference'
+    work_id = client.post('/api/works', json={'name': 'MossRef test'}).json()['id']
     return client, runtime, f'/api/works/{work_id}/image/reference'
 
 
@@ -232,6 +234,7 @@ def test_moss_reference_workflow_and_replay(moss):
     assert copy['status'] == 'done' and runtime.comfy.prompts[1] == graph
 
 
+@pytest.mark.parametrize('moss', [False, True], indirect=True, ids=['work', 'image_only'])
 def test_moss_reference_retry_keeps_original_graph_after_setup(moss, monkeypatch):
     client, runtime, url = moss
     asset = upload(client, url, png())
@@ -275,6 +278,7 @@ def test_moss_reference_retry_keeps_original_graph_after_setup(moss, monkeypatch
     assert reply.status_code == 200, reply.text
     retry = runtime.queue.get(reply.json()['job_id'])
     assert retry['snapshot'] == job['snapshot'] and retry['seed'] == 815
+    assert retry['work_id'] == job['work_id'] and runtime.paused
     retry['status'] = 'running'
     runtime.run_job(retry)
     assert retry['status'] == 'done' and runtime.comfy.prompts[1] == runtime.comfy.prompts[0]

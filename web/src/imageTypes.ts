@@ -93,6 +93,8 @@ export type SingleRequest = {
   prompt_sources?: PromptSource[];
 };
 export type ReferenceAsset = { id: string; name: string; url: string; sha256: string };
+export type ReferenceAssets = { assets: ReferenceAsset[] };
+export type ReferenceDraftFile<T> = { draft: (T & { schema_version: 1 }) | null; revision: string };
 export type AnimaReferenceEngine = 'anima_v2' | 'snapref';
 export type SnapRefMode = 'cs' | 'char';
 export type ReferenceSlot = 'a' | 'b';

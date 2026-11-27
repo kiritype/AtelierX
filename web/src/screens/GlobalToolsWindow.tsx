@@ -12,6 +12,7 @@ const ImageQueue = lazy(() => import('../components/image/ImageQueue'));
 const PresetExplorer = lazy(() => import('../components/image/PresetExplorer'));
 const AppSettings = lazy(() => import('../components/AppSettings'));
 const ImageSingle = lazy(() => import('../components/image/ImageSingle'));
+const ImageReference = lazy(() => import('../components/image/ImageReference'));
 
 const views: { view: GlobalToolsView; label: string }[] = [
   ...globalImageViews.map(view => ({ view, label: `image_menu.${view}` })),
@@ -67,7 +68,7 @@ export default function GlobalToolsWindow({ workId, onClose, onLock, backLabel, 
       </div>
       <div className="col" style={{ minHeight: 0, background: 'var(--panel)' }}>
         <nav className="row image-flow" aria-label={t('menu.tools')}>
-          {views.filter(entry => !workId || entry.view !== 'single').map((entry) => (
+          {views.filter(entry => !workId || (entry.view !== 'single' && entry.view !== 'reference')).map((entry) => (
             <button key={entry.view} type="button" className={view === entry.view ? 'selected' : 'ghost'} aria-current={view === entry.view ? 'page' : undefined} onClick={() => openView(entry.view)}>
               {t(entry.label)}
             </button>
@@ -77,6 +78,15 @@ export default function GlobalToolsWindow({ workId, onClose, onLock, backLabel, 
           {!workId && visited.includes('single') && <div hidden={view !== 'single'} inert={view !== 'single'} style={{ display: view === 'single' ? 'contents' : 'none' }}><TabScope registry={unsaved} tab="single"><Suspense fallback={<Loading />}><ImageSingle active={view === 'single'} openSettings={openSettings} openView={target => {
             if (target === 'queue' || target === 'presets') openView(target);
           }} /></Suspense></TabScope></div>}
+          {!workId && visited.includes('reference') && <div hidden={view !== 'reference'} inert={view !== 'reference'} style={{ display: view === 'reference' ? 'contents' : 'none' }}>
+            <TabScope registry={unsaved} tab="reference">
+              <Suspense fallback={<Loading />}>
+                <ImageReference active={view === 'reference'} openSettings={openSettings} openView={target => {
+                  if (target === 'queue') openView(target);
+                }} />
+              </Suspense>
+            </TabScope>
+          </div>}
           {visited.includes('explorer') && <div hidden={view !== 'explorer'} inert={view !== 'explorer'} style={{ display: view === 'explorer' ? 'contents' : 'none' }}>
             <TabScope registry={unsaved} tab="explorer">
               <Suspense fallback={<Loading />}>

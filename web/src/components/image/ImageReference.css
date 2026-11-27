@@ -28,4 +28,5 @@
 .reference-guidance input { width: 85px; }
 .reference-record dd { overflow-wrap: anywhere; }
 .reference-record { margin-top: 14px; }
+.reference-saved-assets { max-height: 55vh; overflow: auto; }
 @media (max-width: 550px) { .reference-card { flex-direction: column; } }

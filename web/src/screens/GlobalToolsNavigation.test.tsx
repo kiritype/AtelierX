@@ -60,7 +60,7 @@ it('opens all app settings and image destinations before a work is selected', as
   await act(async () => single.click());
   expect(openTools).toHaveBeenLastCalledWith('single');
   const image = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === t('menu.image'))!;
-  for (const view of ['single', 'explorer', 'presets', 'queue']) {
+  for (const view of ['single', 'reference', 'explorer', 'presets', 'queue']) {
     await act(async () => image.click());
     const item = [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(button => button.textContent === t(`image_menu.${view}`))!;
     await act(async () => item.click());
@@ -81,6 +81,8 @@ it('moves keyboard focus through the image menu and returns it on Escape', async
   await press('ArrowDown');
   expect(trigger.getAttribute('aria-expanded')).toBe('true');
   expect(document.activeElement?.textContent).toBe(t('image_menu.single'));
+  await press('ArrowDown');
+  expect(document.activeElement?.textContent).toBe(t('image_menu.reference'));
   await press('ArrowDown');
   expect(document.activeElement?.textContent).toBe(t('image_menu.explorer'));
   await press('Escape');

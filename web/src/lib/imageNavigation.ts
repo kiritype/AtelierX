@@ -11,5 +11,5 @@ export const imageNavigation: { group: string; views: ImageView[] }[] = [
 
 export const imageFlow: ImageView[] = ['single', 'reference', 'generate', 'board', 'gallery', 'tools', 'queue'];
 
-export const globalImageViews = ['single', 'explorer', 'presets', 'queue'] as const;
+export const globalImageViews = ['single', 'reference', 'explorer', 'presets', 'queue'] as const;
 export type GlobalToolsView = (typeof globalImageViews)[number] | 'settings';
