@@ -1,110 +1,79 @@
 # AtelierX
 
-[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest) · [웹 사용 설명서](https://atelierx.cftm.net/) · [오류 제보·제안·질문](https://github.com/kiritype/AtelierX/discussions)
+AtelierX는 **Windows용 포터블 RP 챗봇 제작 도구**입니다. 시작 상황과 로어북을 작품 파일로 쓰고 대화로 확인하세요.
+같은 작품에서 캐릭터의 의상·표정 이미지를 일괄 생성하고, 채택한 이미지를 ZIP으로 내보낼 수 있습니다.
+
+**[Windows용 다운로드](https://github.com/kiritype/AtelierX/releases/latest)** · **[샘플로 시작하기](#샘플로-시작하기)** · [웹 사용 설명서](https://atelierx.cftm.net/) · [English](README.en.md)
 
 [![Discord 커뮤니티](https://img.shields.io/badge/Discord%20%EC%BB%A4%EB%AE%A4%EB%8B%88%ED%8B%B0-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/WVBzAu3FET)
 
-한국어 | [English](README.en.md)
+## 샘플로 시작하기
 
-RP 챗봇을 만드는 Windows 데스크톱 도구입니다. 메인 프롬프트, 시작 상황, 로어북, 캐릭터, JSX 컴포넌트를 작품 단위로 관리하고,
-LLM 에이전트로 쓰고 다듬은 뒤 대화 테스트로 확인합니다. 캐릭터 이미지 생성·검수·후처리와 LoRA 학습도 같은 프로그램에서 합니다.
+1. 최신 릴리스에서 Windows용 ZIP을 받아 쓰기 가능한 폴더에 풉니다.
+2. `AtelierX.exe`를 실행하고 마스터 비밀번호를 정합니다.
+3. **작품으로 시작 → 샘플**에서 **ensemble** 옆의 **설치**를 누릅니다. 아래 두 데모는 이 샘플의 한서윤을 사용합니다.
 
-![작품 편집 화면](docs/manual/screenshots/work-main.webp)
+Windows 10/11 x64, Microsoft Edge WebView2 Runtime, .NET Framework 4.8이 필요합니다.
+원고를 직접 편집하고 내보내는 작업은 외부 서비스 연결 없이 시작할 수 있습니다.
 
-> **현재 상태: 1.0 이전 릴리스(0.x).** 앱 안에서 업데이트를 받을 수 있습니다. 1.0 전에는 기능과 데이터 형식이 바뀔 수 있고,
-> 형식이 바뀌면 변환 도구를 함께 냅니다. 개발 PC에서 확인한 범위와 아직 확인하지 않은 범위는 설명서의
-> [검증 범위와 출시 상태](https://atelierx.cftm.net/guide/release-status.html)에 있습니다.
+[설치와 첫 실행](https://atelierx.cftm.net/tutorial/first-run.html) · [포터블 패키지 안내](packaging/PORTABLE_README.txt) · [검증 범위와 출시 상태](https://atelierx.cftm.net/guide/release-status.html)
 
-## 주요 기능
+## 프롬프트 제작
 
-**작품 작성**
-- 작품은 직접 정리하는 Markdown·JSX 파일 폴더입니다. 파일 트리, 디스크 내용, 내보내기 결과가 같습니다.
-- 파일마다 종류(메인·시작 상황·로어북·캐릭터·JSX·메모)와 ID를 두고, 로어북 키워드·우선순위는 편집기 상단 폼에서 정합니다.
-- 플랫폼별 규칙(용량, 로어북 활성화, JSX 규칙)은 수정할 수 있는 플랫폼 프리셋으로 관리합니다.
-- 규칙 검사, 관계도·용어집, 이름 일괄 변경, JSX 미리보기를 제공합니다.
+메인 프롬프트, 시작 상황, 로어북, 캐릭터 설정, JSX 컴포넌트를 작품별 Markdown·JSX 파일로 관리합니다.
 
-**LLM**
-- 오른쪽 **에이전트** 패널에서 모드(작성·압축·JSX 문구 등)를 골라 작업을 맡깁니다. 결과는 파일 전체 교체 제안으로 오고,
-  검토 탭에서 덩어리 단위로 골라 적용합니다. 몰래 덮어쓰지 않습니다.
-- 상단 **▶ 테스트**(`F5`)로 대화 테스트 화면을 엽니다. 시작 상황·페르소나·테스트 세트로 고치기 전후를 비교합니다.
-- 로컬 OpenAI 호환 서버와 Ollama Cloud·Gemini API·Vertex AI·OpenRouter·DeepSeek 연결 프리셋을 제공합니다.
+![시작 상황 수정 제안의 변경 부분을 선택하고 대화 테스트에서 불러온 로어북을 확인하는 화면](docs/assets/atelierx-prompt-creation.gif)
 
-**캐릭터 이미지**
-- 캐릭터 × 의상 × 표정 조합을 미리 보고 한꺼번에 생성합니다. 표정·구도·공통 프롬프트와 그림체 프리셋(모델·설정·artist 태그 묶음)을 조합합니다.
-- 생성 서비스: 이 PC의 ComfyUI, 또는 인터넷 서비스 NovelAI·PixAI(사용자 계정과 API 키 필요, 요금은 각 서비스 기준).
-- 갤러리에서 검수(통과·실패·채택)하고, 완성도 보드로 빠진 조합을 찾습니다.
-- 이미지 도구: 업스케일, 디테일러, 검열, 배경 제거, 인페인트, 태깅, WebP 변환, 프롬프트 형식 변환.
-- 채택 이미지로 LoRA 데이터셋을 만들고 학습해 등록합니다.
+시작 상황 수정안에서 원하는 부분을 골라 적용하고, `F5` 대화 테스트에서 불러온 로어북을 확인합니다.
+[에이전트로 원고 쓰기](https://atelierx.cftm.net/tutorial/write-with-agent.html) · [대화 테스트와 내보내기](https://atelierx.cftm.net/tutorial/test-and-export.html)
 
-**보관과 보안**
-- 스냅숏 기록, 비교(diff), 복원, 배포 표시, 휴지통.
-- 작품 꾸러미(ZIP)로 다른 PC로 옮기거나 전체를 백업합니다.
-- 마스터 비밀번호로 앱을 잠그고, API 키 같은 인증 정보는 금고에 암호화해 저장합니다(작품 파일은 평문).
-- 포터블: 프로그램·설정·데이터·출력을 앱 폴더 하나에 둡니다.
+- **플랫폼 프리셋**으로 용량 제한과 로어북 활성화 규칙을 관리합니다.
+- **대화 테스트**에서 시작 상황과 페르소나를 바꿔 보며, 어떤 로어북 항목이 어떤 키워드로 불러와졌는지 확인합니다.
+- 완성된 원고는 **작품 → 내보내기**에서 내보낼 수 있습니다.
 
-## 실행 환경
+에이전트와 대화 테스트에는 로컬 또는 외부 LLM 연결이 필요합니다. [LLM 연결](https://atelierx.cftm.net/tutorial/connect-llm.html)
 
-Windows x64, Microsoft Edge WebView2 Runtime, .NET Framework 4.8이 필요합니다. 받은 ZIP을 풀어 `AtelierX.exe`를 실행합니다.
-자세한 내용은 [포터블 패키지 안내](packaging/PORTABLE_README.txt)를 보세요.
+## 이미지 제작
 
-작성·편집과 클라우드 LLM은 추가 설치 없이 씁니다. 이미지 생성 서버(ComfyUI), 로컬 LLM 서버, LoRA 학습 도구는 선택 사항이며
-AtelierX에 들어 있지 않습니다. 필요한 것만 따로 설치하거나 앱의 **설정 → 설치**에서 받습니다.
+캐릭터 × 의상 × 표정 조합과 최종 프롬프트를 미리 확인하고 한꺼번에 생성합니다.
 
-## 외부 구성 요소
+![한서윤의 교복과 미소·웃음 표정을 일괄 생성하고 갤러리에서 검수하는 화면](docs/assets/atelierx-image-creation.gif)
 
-로컬 이미지 기능은 [ComfyUI](https://github.com/comfyanonymous/ComfyUI)에 연결해 사용합니다. 필요한 확장 노드와 모델은 앱의 **설정 → 설치**에서 받을 수 있습니다.
-버전과 설치 위치는 [외부 구성 요소 안내](https://atelierx.cftm.net/guide/external.html)를 참고하세요.
+한서윤의 교복에 미소·웃음 표정을 조합해 만들고, 갤러리에서 사용할 이미지를 골라 채택합니다.
+[캐릭터 이미지 만들기](https://atelierx.cftm.net/tutorial/character-images.html) · [갤러리와 내보내기](https://atelierx.cftm.net/guide/gallery-export.html)
 
-### ComfyUI 외부 커스텀 노드
+- **완성도 보드**에서 빠진 조합을 찾고, 업스케일·배경 제거·인페인트 등으로 결과를 다듬습니다.
+- **채택 이미지**를 ZIP으로 내보내거나 LoRA 학습용 데이터셋으로 만들 수 있습니다.
 
-| 노드 | 용도 | 라이선스 |
-|---|---|---|
-| [ComfyUI-WD14-Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger) | 이미지 태깅 | [MIT](https://github.com/pythongosssss/ComfyUI-WD14-Tagger/blob/9e0a6e700299182fc05c58b62e7ad9f72182a78b/LICENSE) |
-| [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) | 배경 제거 | [MIT](https://github.com/cubiq/ComfyUI_essentials/blob/9d9f4bedfc9f0321c19faf71855e228c93bd0dc9/LICENSE) |
-| [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) | 디테일러 | [GPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Pack/blob/429d0159ad429e64d2b3916e6e7be9c22d025c3c/LICENSE.txt) |
-| [ComfyUI-Impact-Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack) | 영역 감지 및 디테일러 | [AGPL-3.0](https://github.com/ltdrdata/ComfyUI-Impact-Subpack/blob/50c7b71a6a224734cc9b21963c6d1926816a97f1/LICENSE.txt) |
-| [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) | Anima 참조 이미지 생성 BETA. AtelierX는 이 노드로 [SnapRef](https://github.com/ArcAnima/SnapRef) v2a를 실행합니다. | [Apache-2.0](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter/blob/f02d54dd34593b4d4ce27b38de2a996049aeac58/LICENSE) |
+이미지를 생성하려면 로컬 ComfyUI 또는 NovelAI·PixAI에 연결합니다. 온라인 서비스는 사용자 계정과 API 키가 필요합니다.
+[이미지 환경 준비](https://atelierx.cftm.net/guide/image-setup.html)
 
-Anima Ref Adapter 노드와 예제 워크플로는 수동 설치용 ZIP(`AtelierX-<버전>-anima-ref-adapter.zip`)으로도 제공합니다. [릴리스 다운로드](https://github.com/kiritype/AtelierX/releases)
+## 작품 관리와 보안
 
-**설정 → 설치 → 모델**에서 **참조 이미지 BETA (Anima)**의 Anima Ref Adapter v2 가중치 또는 **참조 이미지 BETA (SnapRef v2a)**의 SnapRef 가중치를 받습니다. 두 어댑터는 같은 확장 노드를 사용합니다. [Anima Ref Adapter 이용 조건](https://huggingface.co/ElectronGirl/anima-ref-adapter/raw/b729afd0c3307f27438df42697ccafaecf051d26/LICENSE.md) · [SnapRef v2a 이용 조건](https://huggingface.co/0ppxnhximxr/snapref-v2a/blob/e6d6a21e4d56faae4454a1cc9bfd065d87358bf2/LICENSE.md)
+스냅숏으로 변경 이력을 비교하고 이전 상태를 복원할 수 있습니다. 작품 꾸러미(ZIP)로 백업하거나 다른 PC로 옮길 수 있으며,
+설정·작품·출력은 앱 폴더에 저장됩니다.
 
-### 모델과 도구
+마스터 비밀번호로 앱을 잠그고 API 키를 암호화합니다. 작품 파일은 평문으로 저장됩니다.
 
-- 모델: [Anima](https://huggingface.co/circlestone-labs/Anima)(비상업 라이선스), [adetailer](https://huggingface.co/Bingsu/adetailer),
-  [Segment Anything](https://github.com/facebookresearch/segment-anything), [2x-AnimeSharpV4](https://huggingface.co/Kim2091/2x-AnimeSharpV4)·[UltraSharp](https://huggingface.co/Kim2091/UltraSharp)(비상업)
-- LoRA 학습: [anima_lora](https://github.com/sorryhyun/anima_lora), [anime_tools](https://github.com/sorryhyun/anime_tools)
-- 보조 도구: [uv](https://github.com/astral-sh/uv), [Git for Windows](https://github.com/git-for-windows/git)(MinGit)
+## 제보와 기여
 
-인터넷 이미지 서비스 [NovelAI](https://novelai.net/)·[PixAI](https://pixai.art/)는 설치하는 것이 아니라 사용자 계정으로 쓰는
-유료 외부 서비스입니다. API 키는 사용자가 직접 등록하고, 이용 약관과 요금은 각 서비스를 따릅니다.
+- 오류 제보, 기능 제안, 질문은 [GitHub Discussions](https://github.com/kiritype/AtelierX/discussions)에 남겨 주세요.
+- 보안 취약점은 [보안 정책](SECURITY.md)에 따라 비공개로 제보해 주세요.
+- 개발 환경과 PR 절차는 [기여 안내](CONTRIBUTING.md), 앱 설계는 [설계 문서](docs/README.md)에서 확인할 수 있습니다.
 
-## 저장소 구성
+## 서드파티 프로젝트
 
-| 폴더 | 내용 |
-|---|---|
-| [server/](server/) | Python 서버(Starlette): 작품, LLM, 이미지, 설치, 꾸러미 |
-| [web/](web/) | 화면(React + TypeScript + Vite) |
-| [tests/](tests/) | 서버 테스트(pytest). 화면 테스트는 `web/` 안에 있습니다(vitest) |
-| [docs/](docs/README.md) | 설계 문서: 개요, 데이터 구조, 구조, 플랫폼 프리셋, 기능별 설계, 결정 기록 |
-| [docs/manual/](docs/manual/index.md) | 사용 설명서 원본(웹·오프라인) |
-| [defaults/](defaults/README.md) | 처음 실행할 때 복사하는 기본 지침과 이미지 라이브러리, 모델 다운로드 목록 |
-| [samples/](samples/README.md) | 앱에 함께 들어가는 샘플 작품 세 개 |
-| [comfy_nodes/](comfy_nodes/) | 앱이 ComfyUI에 설치하는 노드 묶음 |
-| [trainer/](trainer/) | LoRA 학습 도구에 적용하는 패치 |
-| [packaging/](packaging/), [tools/](tools/) | Windows 패키지 빌드와 개발 도구 |
+- **이미지 생성 서버** · [ComfyUI](https://github.com/Comfy-Org/ComfyUI)
+- **ComfyUI 확장 노드** · [WD14 Tagger](https://github.com/pythongosssss/ComfyUI-WD14-Tagger) ·
+  [ComfyUI_essentials](https://github.com/cubiq/ComfyUI_essentials) · [Impact Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) ·
+  [Impact Subpack](https://github.com/ltdrdata/ComfyUI-Impact-Subpack)
+- **참조 이미지** · [ComfyUI-Anima-Ref-Adapter](https://github.com/ArcAnima/ComfyUI-Anima-Ref-Adapter) ·
+  [SnapRef 원본 코드](https://github.com/ArcAnima/SnapRef) · [MossRef](https://github.com/Neon3579/MossRef)
+- **LoRA 학습** · [anima_lora](https://github.com/sorryhyun/anima_lora) · [anime_tools](https://github.com/sorryhyun/anime_tools)
+- **설치 보조 도구** · [uv](https://github.com/astral-sh/uv) · [Git for Windows (MinGit)](https://github.com/git-for-windows/git)
 
-## 제보와 문의
-
-오류 제보, 기능 제안, 질문은 [Discussions](https://github.com/kiritype/AtelierX/discussions)에 남겨 주세요(앱의 **도움말** 메뉴에서도
-열 수 있습니다). Issues는 확인된 작업 목록으로 씁니다. 보안 취약점은 [보안 정책](SECURITY.md)에 따라 비공개로 제보해 주세요.
-
-## 기여
-
-개발 환경, 검사, 코드 규칙, 브랜치와 릴리스, 설명서 빌드는 [기여 안내](CONTRIBUTING.md)에 있습니다.
+설치 방법, 버전, 모델·가중치 배포처는 [외부 구성 요소 안내](https://atelierx.cftm.net/guide/external.html)에서 확인할 수 있습니다.
 
 ## 라이선스
 
-[MIT](LICENSE)
-
-[서드파티 라이선스 및 출처](THIRD_PARTY_NOTICES.md)
+[AtelierX MIT 라이선스](LICENSE) · [서드파티 라이선스 및 출처](THIRD_PARTY_NOTICES.md)
